@@ -4,6 +4,7 @@ import { ChevronDownIcon, CheckIcon } from '../shared/icons'
 import { useAgentsStore, getAgentColor } from '../../stores/agents'
 import { AgentsModal } from '../settings/AgentsModal'
 import { useKeybindings } from '../../hooks/useKeybindings'
+import { useClickOutside } from '../../hooks/useClickOutside'
 import { formatKeybinding } from '../../lib/keybindings'
 export function AgentSelector() {
   const currentMode = useSessionStore((state) => state.currentSession?.mode)
@@ -22,15 +23,7 @@ export function AgentSelector() {
   }, [fetchAgents])
 
   // Close dropdown when clicking outside
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+  useClickOutside(dropdownRef, () => setIsOpen(false))
 
   const keybindings = useKeybindings()
 

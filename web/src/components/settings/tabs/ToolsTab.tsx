@@ -3,13 +3,14 @@ import { authFetch } from '../../../lib/api'
 import { Button } from '../../shared/Button'
 import { Toggle } from '../../shared/Toggle'
 import { Input } from '../../shared/Input'
-import { ChevronDownIcon } from '../../shared/icons'
+import { mcpStatusColor, mcpStatusDot } from '../../../lib/mcp-utils'
 import { SETTINGS_KEYS } from '../../../stores/settings'
 import { useSettingsStoreState } from '../useSettingsStore'
 import { useTestButton } from '../../../hooks/useTestButton'
 import { CRUDListView } from '../CRUDListView'
 import { useConfirmDialog, FormField, ErrorBanner } from '../CRUDModal'
 import { Modal } from '../../shared/SelfContainedModal'
+import { McpServerCard } from '../McpServerCard'
 
 function parseKeyValueLines(text: string): Record<string, string> {
   const result: Record<string, string> = {}
@@ -147,16 +148,12 @@ interface McpServerState {
     url?: string
     headers?: Record<string, string>
     timeout?: number
+    disabled?: boolean
   }
-  status: 'connected' | 'disconnected' | 'error'
+  status: 'connected' | 'disconnected' | 'error' | 'disabled'
   tools: McpToolInfo[]
   estimatedTokens: number
   error?: string
-}
-
-function formatTokens(n: number): string {
-  if (n >= 1000) return `~${(n / 1000).toFixed(1)}K`
-  return `~${n}`
 }
 
 function useDebouncedSave(
@@ -300,7 +297,6 @@ export function ToolsTab() {
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingServer, setEditingServer] = useState<string | null>(null)
   const [expandedServers, setExpandedServers] = useState<Set<string>>(new Set())
-  const [expandedDescs, setExpandedDescs] = useState<Set<string>>(new Set())
   const [formData, setFormData] = useState<McpFormData>({
     name: '',
     transport: 'stdio' as 'stdio' | 'http',
@@ -320,7 +316,8 @@ export function ToolsTab() {
     try {
       const res = await authFetch('/api/mcp/servers')
       const data = await res.json()
-      setServers(data.servers ?? [])
+      const sorted = (data.servers ?? []).sort((a: McpServerState, b: McpServerState) => a.name.localeCompare(b.name))
+      setServers(sorted)
     } catch {
       /* ignore */
     }
@@ -340,8 +337,8 @@ export function ToolsTab() {
   const toggleExpand = (name: string) => {
     setExpandedServers((prev) => {
       const next = new Set(prev)
-      if (next.has(name)) next.delete(name)
-      else next.add(name)
+      if (next.has(name)) { next.delete(name); return next }
+      next.add(name)
       return next
     })
   }
@@ -511,25 +508,21 @@ export function ToolsTab() {
     }
   }
 
-  const statusColor = (status: string) => {
-    switch (status) {
-      case 'connected':
-        return 'text-accent-success'
-      case 'error':
-        return 'text-accent-error'
-      default:
-        return 'text-text-muted'
-    }
-  }
-
-  const statusDot = (status: string) => {
-    switch (status) {
-      case 'connected':
-        return '●'
-      case 'error':
-        return '●'
-      default:
-        return '○'
+  const handleToggleServer = async (serverName: string, newDisabled: boolean) => {
+    try {
+      const res = await authFetch(`/api/mcp/servers/${encodeURIComponent(serverName)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ disabled: newDisabled }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error((data as { error?: string }).error ?? 'Failed to toggle server')
+      }
+      setMcpError('')
+      await loadServers()
+    } catch (err) {
+      setMcpError(err instanceof Error ? err.message : String(err))
     }
   }
 
@@ -734,13 +727,18 @@ export function ToolsTab() {
       {/* ── MCP Servers Section ── */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-medium text-text-primary">MCP Servers</h3>
+          <h3 className="text-sm font-medium text-text-primary" data-testid="mcp-servers-heading">
+            MCP Servers
+          </h3>
           <Button variant="primary" size="sm" onClick={() => setShowAddForm(true)}>
             + Add Server
           </Button>
         </div>
         <p className="text-sm text-text-muted mb-3">
           MCP servers provide external tools that extend OpenFox's capabilities.
+        </p>
+        <p className="text-xs text-text-muted mb-3">
+          Changes here apply as defaults for new projects only — existing projects and conversations are not affected.
         </p>
         {mcpError && <ErrorBanner message={mcpError} />}
 
@@ -750,137 +748,63 @@ export function ToolsTab() {
           loadingLabel="Loading MCP servers..."
           emptyLabel="No MCP servers configured."
         >
-          {servers.map((server) => (
-            <div key={server.name} className="rounded border border-border bg-bg-tertiary overflow-hidden">
-              <div
-                className="flex items-center justify-between p-3 cursor-pointer hover:bg-bg-primary/50 transition-colors"
-                onClick={() => toggleExpand(server.name)}
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className={`text-sm ${statusColor(server.status)}`}>{statusDot(server.status)}</span>
-                  <span className="text-sm font-medium text-text-primary">{server.name}</span>
-                  <span className="text-xs text-text-muted">{server.config.transport}</span>
-                  <span className="text-xs text-text-muted">({server.tools.length} tools)</span>
-                  <span className="text-xs text-text-muted">{formatTokens(server.estimatedTokens)} tokens</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  {server.status === 'error' && server.error && (
-                    <span className="text-xs text-accent-error truncate max-w-[200px]" title={server.error}>
-                      {server.error}
-                    </span>
-                  )}
-                  {expandedServers.has(server.name) &&
-                    (isConfirming(server.name, 'delete') ? (
-                      <>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleRemove(server.name)
-                          }}
-                          className="px-2 py-1 rounded text-xs font-medium hover:opacity-90 transition-colors bg-accent-error/20 text-accent-error hover:bg-accent-error/30"
-                        >
-                          Delete
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            clearConfirm()
-                          }}
-                          className="px-2 py-1 rounded text-xs text-text-muted hover:bg-bg-primary transition-colors"
-                        >
-                          Cancel
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleEdit(server)
-                          }}
-                          className="px-2 py-1 rounded text-xs font-medium text-text-muted hover:text-text-primary hover:bg-bg-primary transition-colors"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            requestDelete(server.name)
-                          }}
-                          className="px-2 py-1 rounded text-xs font-medium text-accent-error/80 hover:text-accent-error hover:bg-accent-error/10 transition-colors"
-                        >
-                          Remove
-                        </button>
-                      </>
-                    ))}
-                  <span className="text-xs text-text-muted">{expandedServers.has(server.name) ? '▲' : '▼'}</span>
-                </div>
-              </div>
+          {servers.map((server) => {
+            const actions = expandedServers.has(server.name) ? (
+              isConfirming(server.name, 'delete') ? (
+                <>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleRemove(server.name) }}
+                    className="px-2 py-1 rounded text-xs font-medium hover:opacity-90 transition-colors bg-accent-error/20 text-accent-error hover:bg-accent-error/30"
+                  >
+                    Delete
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); clearConfirm() }}
+                    className="px-2 py-1 rounded text-xs text-text-muted hover:bg-bg-primary transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleEdit(server) }}
+                    className="px-2 py-1 rounded text-xs font-medium text-text-muted hover:text-text-primary hover:bg-bg-primary transition-colors"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); requestDelete(server.name) }}
+                    className="px-2 py-1 rounded text-xs font-medium text-accent-error/80 hover:text-accent-error hover:bg-accent-error/10 transition-colors"
+                  >
+                    Remove
+                  </button>
+                </>
+              )
+            ) : null
 
-              {expandedServers.has(server.name) && (
-                <div className="border-t border-border px-3 py-2 space-y-1.5">
-                  {server.config.command && (
-                    <div className="text-xs text-text-muted font-mono">
-                      {server.config.command} {server.config.args?.join(' ') ?? ''}
-                    </div>
-                  )}
-                  {server.config.url && <div className="text-xs text-text-muted font-mono">{server.config.url}</div>}
-                  {server.config.timeout !== undefined && (
-                    <div className="text-xs text-text-muted">Timeout: {server.config.timeout}s</div>
-                  )}
-                  {server.tools.length === 0 ? (
-                    <div className="text-xs text-text-muted">No tools available</div>
-                  ) : (
-                    <div className="space-y-1">
-                      {server.tools.map((tool) => (
-                        <div key={tool.name} className="py-1">
-                          <div className="flex items-center justify-between">
-                            <div className="min-w-0 flex-1 mr-2">
-                              <span className="text-xs text-text-primary font-mono">{tool.name}</span>
-                              {tool.description && tool.description.length > 80 ? (
-                                <button
-                                  onClick={() => {
-                                    const key = `${server.name}:${tool.name}`
-                                    setExpandedDescs((prev) => {
-                                      const next = new Set(prev)
-                                      if (next.has(key)) next.delete(key)
-                                      else next.add(key)
-                                      return next
-                                    })
-                                  }}
-                                  className="inline-flex items-center gap-0.5 text-xs text-text-muted hover:text-text-primary transition-colors ml-2"
-                                >
-                                  <span className="truncate max-w-[300px]">{tool.description}</span>
-                                  <ChevronDownIcon
-                                    rotate={expandedDescs.has(`${server.name}:${tool.name}`) ? 180 : 0}
-                                    className="w-3 h-3 flex-shrink-0"
-                                  />
-                                </button>
-                              ) : tool.description ? (
-                                <span className="text-xs text-text-muted ml-2">{tool.description}</span>
-                              ) : null}
-                            </div>
-                            <span className="text-xs text-text-muted mr-2 flex-shrink-0">
-                              {formatTokens(tool.estimatedTokens)}
-                            </span>
-                            <Toggle
-                              enabled={tool.enabled}
-                              onClick={() => handleToggleTool(server.name, tool.name, !tool.enabled)}
-                            />
-                          </div>
-                          {tool.description &&
-                            tool.description.length > 80 &&
-                            expandedDescs.has(`${server.name}:${tool.name}`) && (
-                              <div className="text-xs text-text-muted mt-1 ml-1">{tool.description}</div>
-                            )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
+            const errorEl = server.status === "error" && server.error ? (
+              <span className="text-xs text-accent-error truncate max-w-[200px]" title={server.error}>
+                {server.error}
+              </span>
+            ) : null
+
+            return (
+              <McpServerCard
+                key={server.name}
+                server={server}
+                expanded={expandedServers.has(server.name)}
+                onToggleExpand={toggleExpand}
+                serverToggleEnabled={!server.config.disabled}
+                onServerToggle={() => handleToggleServer(server.name, !server.config.disabled)}
+                tools={server.tools}
+                onToolToggle={(toolName) => handleToggleTool(server.name, toolName, !server.tools.find((t) => t.name === toolName)?.enabled)}
+                statusDot={mcpStatusDot(server.status)}
+                statusColor={mcpStatusColor(server.status)}
+                actions={<>{errorEl}{actions}</>}
+              />
+            )
+          })}
         </CRUDListView>
 
         {showAddForm && (

@@ -16,6 +16,7 @@ export async function loadWorkspaceConfig(workdir: string): Promise<WorkspaceCon
     const parsed = JSON.parse(raw)
     const config: WorkspaceConfig = {}
     if (parsed.setup) config.setup = parsed.setup
+    if (parsed.mcpOverrides && typeof parsed.mcpOverrides === 'object') config.mcpOverrides = parsed.mcpOverrides
 
     // Migration: copy legacy rootDir from file to DB if project exists
     if (parsed.rootDir) {

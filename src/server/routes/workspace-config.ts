@@ -76,16 +76,31 @@ export function createWorkspaceConfigRoutes(): Router {
   router.post('/config', async (req, res) => {
     const workdir = req.query['workdir'] as string
     if (!workdir) return res.status(400).json({ error: 'workdir required' })
-    const { setup, rootDir } = req.body
-    if (!Array.isArray(setup) && typeof rootDir !== 'string') {
-      return res.status(400).json({ error: 'At least one of setup or rootDir must be provided' })
+    const { setup, rootDir, mcpOverrides } = req.body
+    if (!Array.isArray(setup) && typeof rootDir !== 'string' && mcpOverrides === undefined) {
+      return res.status(400).json({ error: 'At least one of setup, rootDir, or mcpOverrides must be provided' })
     }
     if (setup !== undefined && !Array.isArray(setup)) {
       return res.status(400).json({ error: 'setup must be an array of strings' })
     }
-    const config: WorkspaceConfig = {}
+    if (
+      mcpOverrides !== undefined &&
+      (typeof mcpOverrides !== 'object' || mcpOverrides === null || Array.isArray(mcpOverrides))
+    ) {
+      return res.status(400).json({ error: 'mcpOverrides must be an object mapping server names to overrides' })
+    }
+    // Merge with existing config to preserve fields not in this request
+    const existing = await loadWorkspaceConfig(workdir)
+    const config: WorkspaceConfig = { ...existing }
     if (Array.isArray(setup)) {
       config.setup = setup
+    }
+    if (mcpOverrides !== undefined) {
+      if (Object.keys(mcpOverrides).length > 0) {
+        config.mcpOverrides = mcpOverrides
+      } else {
+        delete config.mcpOverrides
+      }
     }
     let savedRootDir: string | null | undefined // null=clear, string=set, undefined=skip
     if (typeof rootDir === 'string') {

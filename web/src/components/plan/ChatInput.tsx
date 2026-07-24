@@ -17,6 +17,7 @@ import { QueuedMessages } from './QueuedMessages'
 import { AgentSelector } from './AgentSelector'
 import { DangerLevelSelector } from './DangerLevelSelector'
 import { ProviderSelector } from '../settings/ProviderSelector'
+import { McpSelector } from './McpSelector'
 import {
   AtMentionAutocomplete,
   type AtMentionAutocompleteHandle,
@@ -508,7 +509,10 @@ export function ChatInput({
           <AgentSelector />
           <DangerLevelSelector />
         </div>
-        <ProviderSelector />
+        <div className="flex items-center gap-2">
+          <McpSelector />
+          <ProviderSelector />
+        </div>
       </div>
     </form>
   )

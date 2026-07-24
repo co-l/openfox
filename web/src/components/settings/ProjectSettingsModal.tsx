@@ -1,9 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { Project, DangerLevel } from '@shared/types.js'
 import { Modal } from '../shared/SelfContainedModal'
+import { McpServerCard } from './McpServerCard'
 import { ModalFooter } from '../shared/ModalFooter'
 import { useProjectStore } from '../../stores/project'
 import { useWorkspaceConfigStore } from '../../stores/workspace-config'
+import { useMcpStore } from '../../stores/mcp'
+import { mcpStatusColor, mcpStatusDot } from '../../lib/mcp-utils'
 import { wsClient } from '../../lib/ws'
 import { authFetch } from '../../lib/api'
 import { getRootDirBlockReason } from '@shared/workspace.js'
@@ -48,7 +51,11 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
   const [pendingWorkspaces, setPendingWorkspaces] = useState<{ name: string }[]>([])
   const [resolvedPath, setResolvedPath] = useState('')
 
-  const isDirty = instructionsDirty || dangerLevelDirty || setupDirty || rootDirDirty
+  const [mcpOverrides, setMcpOverrides] = useState<Record<string, { disabled?: boolean; disabledTools?: string[] }>>({})
+  const [mcpDirty, setMcpDirty] = useState(false)
+  const [expandedServers, setExpandedServers] = useState<Set<string>>(new Set())
+
+  const isDirty = instructionsDirty || dangerLevelDirty || setupDirty || rootDirDirty || mcpDirty
 
   useEffect(() => {
     if (isOpen) {
@@ -58,6 +65,8 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
       setDangerLevelDirty(false)
       setSetupDirty(false)
       setRootDirDirty(false)
+      setMcpDirty(false)
+      setExpandedServers(new Set())
       fetchWsConfig(project.workdir)
     }
   }, [isOpen, project, fetchWsConfig])
@@ -69,7 +78,49 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
       setSetupCmd('')
     }
     setRootDir(wsConfig?.rootDir ?? '')
+    setMcpOverrides(wsConfig?.mcpOverrides ?? {})
   }, [wsConfig])
+
+  const mcpServers = useMcpStore((s) => s.servers)
+
+  const getServerOverride = (name: string) => mcpOverrides[name] ?? {}
+  const isServerDisabled = (name: string) => {
+    const override = getServerOverride(name)
+    if (override.disabled !== undefined) return override.disabled
+    const server = mcpServers.find((s) => s.name === name)
+    return !!server?.config?.disabled
+  }
+  const isToolDisabled = (serverName: string, toolName: string) => {
+    const override = getServerOverride(serverName)
+    return override.disabledTools?.includes(toolName) ?? false
+  }
+  const toggleServer = (name: string) => {
+    setMcpOverrides((prev) => ({
+      ...prev,
+      [name]: { ...prev[name], disabled: !isServerDisabled(name) },
+    }))
+    setMcpDirty(true)
+  }
+  const toggleTool = (serverName: string, toolName: string) => {
+    setMcpOverrides((prev) => {
+      const override = prev[serverName] ?? {}
+      const currentDisabled = override.disabledTools ?? []
+      const newDisabled = currentDisabled.includes(toolName)
+        ? currentDisabled.filter((t) => t !== toolName)
+        : [...currentDisabled, toolName]
+      return {
+        ...prev,
+        [serverName]: { ...override, disabledTools: newDisabled.length > 0 ? newDisabled : undefined },
+      }
+    })
+    setMcpDirty(true)
+  }
+  const toggleExpand = (name: string) => {
+    setExpandedServers((prev) => {
+      if (prev.has(name)) { const n = new Set(prev); n.delete(name); return n }
+      const n = new Set(prev); n.add(name); return n
+    })
+  }
 
   const handleInstructionsChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setCustomInstructions(e.target.value)
@@ -106,11 +157,13 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
     await saveWsConfig(project.workdir, {
       ...(setup.length > 0 ? { setup } : {}),
       rootDir: rootDir.trim(),
+      ...(Object.keys(mcpOverrides).length > 0 ? { mcpOverrides } : { mcpOverrides: undefined }),
     })
     setInstructionsDirty(false)
     setDangerLevelDirty(false)
     setSetupDirty(false)
     setRootDirDirty(false)
+    setMcpDirty(false)
     handleClose()
   }, [
     project.id,
@@ -118,6 +171,7 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
     customInstructions,
     setupCmd,
     rootDir,
+    mcpOverrides,
     updateProject,
     saveWsConfig,
     project.workdir,
@@ -382,6 +436,35 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
             disabled={wsLoading || saving}
           />
         </div>
+
+        {mcpServers.length > 0 && (
+          <div>
+            <label className="block text-sm font-medium text-text-primary mb-1 flex-shrink-0">MCP Servers</label>
+            <p className="text-sm text-text-muted mb-3">
+              Override MCP server availability for this project. These overrides apply to new conversations in this
+              project and can be further overridden per conversation from the chat MCP selector.
+            </p>
+                        <div className="space-y-2">
+              {mcpServers.map((server) => {
+                const effectiveDisabled = isServerDisabled(server.name)
+                return (
+                  <McpServerCard
+                    key={server.name}
+                    server={server}
+                    expanded={expandedServers.has(server.name)}
+                    onToggleExpand={toggleExpand}
+                    serverToggleEnabled={!effectiveDisabled}
+                    onServerToggle={() => toggleServer(server.name)}
+                    tools={server.tools.map((t) => ({ ...t, enabled: !isToolDisabled(server.name, t.name) }))}
+                    onToolToggle={(toolName) => toggleTool(server.name, toolName)}
+                    statusDot={mcpStatusDot(effectiveDisabled ? "disabled" : server.status)}
+                    statusColor={mcpStatusColor(effectiveDisabled ? "disabled" : server.status)}
+                  />
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {saveError && (
           <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded px-3 py-2">
