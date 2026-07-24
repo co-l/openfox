@@ -11,6 +11,7 @@ import { ansiToReact } from '../../lib/ansiParser'
 
 interface DevServerFooterProps {
   workdir?: string
+  compact?: boolean
 }
 
 const LogHoverExpand = memo(function LogHoverExpand({
@@ -103,7 +104,7 @@ const LogHoverExpand = memo(function LogHoverExpand({
   )
 })
 
-export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevServerFooterProps) {
+export const DevServerFooter = memo(function DevServerFooter({ workdir, compact }: DevServerFooterProps) {
   const setWorkdir = useDevServerStore((s) => s.setWorkdir)
   const status = useDevServerStore((s) => s.status)
   const config = useDevServerStore((s) => s.config)
@@ -157,7 +158,7 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
   }
 
   return (
-    <div className="mt-2 pt-3 border-t border-border space-y-3">
+    <div className={`space-y-3 ${compact ? '' : 'mt-2 pt-3 border-t border-border'}`}>
       {/* Header row: [dot] Dev Server ... [settings] */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -230,7 +231,7 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
         ref={logContainerRef}
         className={`relative ${hasConfig && isAlive ? '' : 'hidden'}`}
         onMouseEnter={() => {
-          if (!hasConfig || !isAlive) return
+          if (!hasConfig || !isAlive || compact) return
           if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current)
           showTimeoutRef.current = setTimeout(() => {
             setIsHoveringLogs(true)
@@ -249,7 +250,7 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
           preClassName="text-sm bg-bg-primary p-2 rounded overflow-auto max-h-[200px] border border-border"
         />
 
-        {hasConfig && isAlive && (
+        {hasConfig && isAlive && !compact && (
           <>
             <div className="absolute bottom-1 right-1 z-50 flex items-center gap-1">
               {(isHoveringLogs || isHidingLogs) && (

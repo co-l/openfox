@@ -19,6 +19,7 @@ import { WorkflowsModal } from '../settings/WorkflowsModal'
 import { QuickActionModal } from '../QuickActionModal'
 import { MessageSearchModal } from './MessageSearchModal'
 import { ChatInput } from './ChatInput'
+import { SidebarSummaryHeader } from './SidebarSummaryHeader'
 import { shouldCaptureMessageSearchShortcut } from './message-search-shortcut'
 
 import { groupMessages, type DisplayItem } from './groupMessages.js'
@@ -198,6 +199,8 @@ export function PlanPanel({
         messages={messages}
       >
         <SessionHeader />
+
+        <SidebarSummaryHeader visible={!criteriaSidebarOpen} />
 
         {turnStatsModal && <TurnStatsModal stats={turnStatsModal} onClose={() => setTurnStatsModal(null)} />}
         <ConnectionStatusBar />

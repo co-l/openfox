@@ -202,168 +202,165 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
       {/* Mobile/tablet backdrop */}
       {isOpen && onClose && <div className="md:hidden fixed inset-0 bg-black/50 z-40" onClick={onClose} />}
 
-      <aside
-        className={`
-          ${isOpen ? 'md:w-[300px] md:shrink-0' : 'md:w-0 md:shrink-0 md:overflow-hidden'}
-          md:relative md:h-auto md:translate-x-0
-
-          fixed z-50 h-[calc(100vh-32px)]
-          w-[300px] bg-secondary border-r border-border flex flex-col
-          ${isOpen ? 'translate-x-0' : '-translate-x-full'}
-        `}
-      >
-        <div className="p-4 border-b border-border flex gap-2">
-          <Link
-            href={`/p/${projectId}/new`}
-            className="flex-1 block text-center rounded font-medium transition-colors bg-accent-primary/25 text-text-primary hover:bg-accent-primary/40 px-3 py-1.5 text-sm"
-            data-testid="sidebar-new-session-button"
-          >
-            + New Session
-          </Link>
-          <DropdownMenu
-            items={[
-              {
-                label: 'Edit project settings',
-                onClick: () => setShowSettings(true),
-              },
-              {
-                label: 'Delete all sessions',
-                onClick: handleDeleteAllSessions,
-                danger: true,
-              },
-            ]}
-            trigger={
-              <button
-                className="flex-shrink-0 p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
-                title="Options"
-              >
-                <EllipsisIcon />
-              </button>
-            }
-          />
-          {/* Mobile close button */}
-          {onClose && <CloseButton onClick={onClose} className="md:hidden" variant="sidebar" size="md" />}
-        </div>
-
-        {/* Search bar */}
-        <div className="px-4 py-2 border-b border-border">
-          <div className="relative flex items-center">
-            <SearchIcon className="absolute left-2.5 w-3.5 h-3.5 text-text-muted pointer-events-none" />
-            <input
-              ref={searchRef}
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={handleSearchKeyDown}
-              placeholder="Search sessions..."
-              className="w-full bg-bg-tertiary border border-border rounded pl-8 pr-8 py-1.5 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:ring-1 focus:ring-accent-primary/50 focus:border-accent-primary transition-colors"
+      {isOpen && (
+        <aside className="md:relative md:h-auto fixed z-50 h-[calc(100vh-32px)] w-[300px] bg-secondary border-r border-border flex flex-col">
+          <div className="p-4 border-b border-border flex gap-2">
+            <Link
+              href={`/p/${projectId}/new`}
+              className="flex-1 block text-center rounded font-medium transition-colors bg-accent-primary/25 text-text-primary hover:bg-accent-primary/40 px-3 py-1.5 text-sm"
+              data-testid="sidebar-new-session-button"
+            >
+              + New Session
+            </Link>
+            <DropdownMenu
+              items={[
+                {
+                  label: 'Edit project settings',
+                  onClick: () => setShowSettings(true),
+                },
+                {
+                  label: 'Delete all sessions',
+                  onClick: handleDeleteAllSessions,
+                  danger: true,
+                },
+              ]}
+              trigger={
+                <button
+                  className="flex-shrink-0 p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
+                  title="Options"
+                >
+                  <EllipsisIcon />
+                </button>
+              }
             />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={handleClearSearch}
-                className="absolute right-1.5 p-0.5 rounded text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors"
-                aria-label="Clear search"
-              >
-                <XCloseIcon className="w-3.5 h-3.5" />
-              </button>
+            {/* Mobile close button */}
+            {onClose && <CloseButton onClick={onClose} className="md:hidden" variant="sidebar" size="md" />}
+          </div>
+
+          {/* Search bar */}
+          <div className="px-4 py-2 border-b border-border">
+            <div className="relative flex items-center">
+              <SearchIcon className="absolute left-2.5 w-3.5 h-3.5 text-text-muted pointer-events-none" />
+              <input
+                ref={searchRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
+                placeholder="Search sessions..."
+                className="w-full bg-bg-tertiary border border-border rounded pl-8 pr-8 py-1.5 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:ring-1 focus:ring-accent-primary/50 focus:border-accent-primary transition-colors"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={handleClearSearch}
+                  className="absolute right-1.5 p-0.5 rounded text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors"
+                  aria-label="Clear search"
+                >
+                  <XCloseIcon className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+            {isSearching && !hasNoResults && (
+              <div className="mt-1 text-xs text-text-muted px-1">
+                {filteredSessions.length} {filteredSessions.length === 1 ? 'match' : 'matches'}
+              </div>
             )}
           </div>
-          {isSearching && !hasNoResults && (
-            <div className="mt-1 text-xs text-text-muted px-1">
-              {filteredSessions.length} {filteredSessions.length === 1 ? 'match' : 'matches'}
-            </div>
-          )}
-        </div>
 
-        {/* Project Settings Modal */}
-        {currentProject && (
-          <ProjectSettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} project={currentProject} />
-        )}
-
-        <ConfirmModal
-          isOpen={sessionToDelete !== null}
-          onClose={() => setSessionToDelete(null)}
-          onConfirm={handleConfirmDeleteSession}
-          title="Delete session?"
-          message="This session will be permanently deleted."
-          confirmLabel="Delete session"
-          confirmVariant="danger"
-        />
-
-        <ConfirmModal
-          isOpen={showDeleteAll}
-          onClose={() => setShowDeleteAll(false)}
-          onConfirm={handleConfirmDeleteAll}
-          title="Delete all sessions?"
-          message="Delete all sessions in this project? This cannot be undone."
-          confirmLabel="Delete all"
-          confirmVariant="danger"
-        />
-
-        <Modal
-          isOpen={sessionToRename !== null}
-          onClose={() => {
-            setSessionToRename(null)
-            setRenameValue('')
-          }}
-          title="Rename session"
-          size="sm"
-          footer={
-            <ModalFooter
-              onCancel={() => {
-                setSessionToRename(null)
-                setRenameValue('')
-              }}
-              onSave={handleConfirmRename}
-              saving={false}
-              saveDisabled={renameValue.trim() === ''}
-              saveLabel="Rename"
+          {/* Project Settings Modal */}
+          {currentProject && (
+            <ProjectSettingsModal
+              isOpen={showSettings}
+              onClose={() => setShowSettings(false)}
+              project={currentProject}
             />
-          }
-        >
-          <input
-            type="text"
-            value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleConfirmRename()
-            }}
-            onFocus={(e) => e.target.select()}
-            className="w-full px-3 py-2 text-sm text-text-primary bg-bg-tertiary border border-border rounded focus:outline-none focus:ring-1 focus:ring-accent-primary"
-            autoFocus
-          />
-        </Modal>
-
-        <div className="flex-1 overflow-y-auto scrollbar-stable">
-          {filteredSessions.length === 0 ? (
-            <div className="p-4 text-center text-text-muted text-xs">
-              {isSearching ? 'No matching sessions' : 'No sessions'}
-            </div>
-          ) : (
-            <>
-              <div className="divide-y divide-border" ref={sessionListRef} onClick={handleSessionListClick}>
-                {renderSessionGroups(
-                  filteredSessions,
-                  currentSession,
-                  unreadSessionIds,
-                  handleDeleteSession,
-                  handleRenameSession,
-                  projectId,
-                  sessionsWithPendingConfirmations,
-                  pendingPathConfirmations,
-                  searchQuery,
-                  focusedIndex,
-                )}
-              </div>
-              {sessionsPaginationLoading && (
-                <div className="p-4 text-center text-text-muted text-xs">Loading more...</div>
-              )}
-              <div ref={loadMoreRef} className="h-px" />
-            </>
           )}
-        </div>
-      </aside>
+
+          <ConfirmModal
+            isOpen={sessionToDelete !== null}
+            onClose={() => setSessionToDelete(null)}
+            onConfirm={handleConfirmDeleteSession}
+            title="Delete session?"
+            message="This session will be permanently deleted."
+            confirmLabel="Delete session"
+            confirmVariant="danger"
+          />
+
+          <ConfirmModal
+            isOpen={showDeleteAll}
+            onClose={() => setShowDeleteAll(false)}
+            onConfirm={handleConfirmDeleteAll}
+            title="Delete all sessions?"
+            message="Delete all sessions in this project? This cannot be undone."
+            confirmLabel="Delete all"
+            confirmVariant="danger"
+          />
+
+          <Modal
+            isOpen={sessionToRename !== null}
+            onClose={() => {
+              setSessionToRename(null)
+              setRenameValue('')
+            }}
+            title="Rename session"
+            size="sm"
+            footer={
+              <ModalFooter
+                onCancel={() => {
+                  setSessionToRename(null)
+                  setRenameValue('')
+                }}
+                onSave={handleConfirmRename}
+                saving={false}
+                saveDisabled={renameValue.trim() === ''}
+                saveLabel="Rename"
+              />
+            }
+          >
+            <input
+              type="text"
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleConfirmRename()
+              }}
+              onFocus={(e) => e.target.select()}
+              className="w-full px-3 py-2 text-sm text-text-primary bg-bg-tertiary border border-border rounded focus:outline-none focus:ring-1 focus:ring-accent-primary"
+              autoFocus
+            />
+          </Modal>
+
+          <div className="flex-1 overflow-y-auto scrollbar-stable">
+            {filteredSessions.length === 0 ? (
+              <div className="p-4 text-center text-text-muted text-xs">
+                {isSearching ? 'No matching sessions' : 'No sessions'}
+              </div>
+            ) : (
+              <>
+                <div className="divide-y divide-border" ref={sessionListRef} onClick={handleSessionListClick}>
+                  {renderSessionGroups(
+                    filteredSessions,
+                    currentSession,
+                    unreadSessionIds,
+                    handleDeleteSession,
+                    handleRenameSession,
+                    projectId,
+                    sessionsWithPendingConfirmations,
+                    pendingPathConfirmations,
+                    searchQuery,
+                    focusedIndex,
+                  )}
+                </div>
+                {sessionsPaginationLoading && (
+                  <div className="p-4 text-center text-text-muted text-xs">Loading more...</div>
+                )}
+                <div ref={loadMoreRef} className="h-px" />
+              </>
+            )}
+          </div>
+        </aside>
+      )}
     </>
   )
 }
