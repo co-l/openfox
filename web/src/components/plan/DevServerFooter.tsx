@@ -12,6 +12,7 @@ import { ansiToReact } from '../../lib/ansiParser'
 interface DevServerFooterProps {
   workdir?: string
   compact?: boolean
+  onExpand?: () => void
 }
 
 const LogHoverExpand = memo(function LogHoverExpand({
@@ -104,7 +105,7 @@ const LogHoverExpand = memo(function LogHoverExpand({
   )
 })
 
-export const DevServerFooter = memo(function DevServerFooter({ workdir, compact }: DevServerFooterProps) {
+export const DevServerFooter = memo(function DevServerFooter({ workdir, compact, onExpand }: DevServerFooterProps) {
   const setWorkdir = useDevServerStore((s) => s.setWorkdir)
   const status = useDevServerStore((s) => s.status)
   const config = useDevServerStore((s) => s.config)
@@ -250,10 +251,10 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir, compact 
           preClassName="text-sm bg-bg-primary p-2 rounded overflow-auto max-h-[200px] border border-border"
         />
 
-        {hasConfig && isAlive && !compact && (
+        {hasConfig && isAlive && (
           <>
             <div className="absolute bottom-1 right-1 z-50 flex items-center gap-1">
-              {(isHoveringLogs || isHidingLogs) && (
+              {!compact && (isHoveringLogs || isHidingLogs) && (
                 <AutoScrollToggle
                   isActive={isAutoScrollActive}
                   onToggle={setAutoScroll}
@@ -261,15 +262,16 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir, compact 
                 />
               )}
               <button
-                onClick={() => setShowExpandModal(true)}
+                onClick={() => (compact ? onExpand?.() : setShowExpandModal(true))}
                 className="px-2 py-0.5 rounded text-xs font-medium bg-accent-primary/30 text-text-primary hover:bg-accent-primary/50 transition-colors"
               >
                 Expand
               </button>
             </div>
 
-            {/* Hover expansion portal */}
-            {(isHoveringLogs || isHidingLogs) &&
+            {/* Hover expansion portal — only in sidebar */}
+            {!compact &&
+              (isHoveringLogs || isHidingLogs) &&
               logContainerRef.current &&
               createPortal(
                 <LogHoverExpand

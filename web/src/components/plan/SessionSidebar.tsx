@@ -17,6 +17,7 @@ import { BackgroundProcesses } from './BackgroundProcesses'
 import { ReloadIcon } from '../shared/icons'
 import { AutoUpdateModal } from '../AutoUpdateModal'
 import { WorkspaceBranchSection } from './WorkspaceBranchSection'
+import { ContextPopover } from './ContextPopover'
 import type { Message } from '@shared/types.js'
 
 interface SessionSidebarProps {
@@ -46,6 +47,9 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Context info */}
+      <ContextPopover variant="sidebar" />
+
       {/* AI Stats at the top */}
       {stats && (
         <div className="mb-4">
@@ -71,7 +75,7 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
 
       {/* Metadata sections */}
       <div className="flex flex-col flex-1 overflow-y-auto scrollbar-stable">
-        <div className="mt-4">
+        <div>
           <button
             onClick={() => setActiveMetadataKey('criteria')}
             className="w-full text-left cursor-pointer hover:bg-bg-tertiary rounded px-1 -mx-1 transition-colors"

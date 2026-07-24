@@ -1,15 +1,18 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { LogViewer } from './LogViewer'
 import { createPortal } from 'react-dom'
 import { useSessionStore } from '../../stores/session'
 import { useDevServerStore } from '../../stores/dev-server'
 import { useGitStatus } from '../../hooks/useGitStatus'
 import { useSettingsStore, SETTINGS_KEYS } from '../../stores/settings'
+import { ProgressBar } from '../shared/ProgressBar'
 import { MetadataSectionHeader } from '../shared/MetadataEntries'
 import { MetadataStatusIcon, statusOrder } from '../shared/MetadataStatusIcon'
 import { CriteriaEditor } from './CriteriaEditor'
 import { DevServerFooter } from './DevServerFooter'
 import { WorkspaceBranchSection } from './WorkspaceBranchSection'
-import { FolderIcon, BranchIcon, ChevronDownIcon, OpenExternalIcon } from '../shared/icons'
+import { ContextPopover } from './ContextPopover'
+import { FolderIcon, BranchIcon, ChevronDownIcon, OpenExternalIcon, PlayIcon } from '../shared/icons'
 import { MetadataEntries } from '../shared/MetadataEntries'
 import { formatMetadataKeyLabel } from '../../lib/metadata-keys'
 
@@ -70,11 +73,14 @@ function Popover({ trigger, children }: { trigger: React.ReactNode; children: Re
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') close()
     }
+    const handleBlur = () => close()
     document.addEventListener('mousedown', handleClick)
     document.addEventListener('keydown', handleEscape)
+    window.addEventListener('blur', handleBlur)
     return () => {
       document.removeEventListener('mousedown', handleClick)
       document.removeEventListener('keydown', handleEscape)
+      window.removeEventListener('blur', handleBlur)
     }
   }, [open, close])
 
@@ -84,6 +90,7 @@ function Popover({ trigger, children }: { trigger: React.ReactNode; children: Re
         ref={triggerRef}
         role="button"
         tabIndex={0}
+        aria-expanded={open}
         className="inline-flex cursor-pointer text-text-muted hover:text-text-primary transition-colors outline-none focus-visible:ring-1 focus-visible:ring-accent-primary/50 rounded"
         onClick={() => {
           if (!open) {
@@ -105,7 +112,7 @@ function Popover({ trigger, children }: { trigger: React.ReactNode; children: Re
             style={(() => {
               if (!triggerRef.current) return { zIndex: POPOVER_Z_INDEX, top: 0, left: 0 }
               const rect = triggerRef.current.getBoundingClientRect()
-              const estWidth = 360
+              const estWidth = 320
               const margin = 8
               let left = rect.left
               if (left + estWidth > window.innerWidth - margin) {
@@ -161,7 +168,10 @@ export function SidebarSummaryHeader({ visible }: SidebarSummaryHeaderProps) {
   const devServerStatus = useDevServerStore((s) => s.status)
   const devServerConfig = useDevServerStore((s) => s.config)
   const devServerStart = useDevServerStore((s) => s.start)
+  const contextState = useSessionStore((state) => state.contextState)
+  const devServerLogs = useDevServerStore((s) => s.logs)
   const { branch, diff } = useGitStatus()
+  const [showLogModal, setShowLogModal] = useState(false)
   const showEditorLink = useSettingsStore((s) => s.settings[SETTINGS_KEYS.DISPLAY_SHOW_OPEN_IN_EDITOR]) === 'true'
   if (!visible || !session) return null
 
@@ -203,14 +213,14 @@ export function SidebarSummaryHeader({ visible }: SidebarSummaryHeaderProps) {
 
   return (
     <div className="flex-shrink-0 px-4 py-1.5 border-b border-border bg-secondary">
-      <div className="flex items-center justify-between text-sm">
+      <div className="grid grid-cols-2 sm:flex sm:items-center sm:justify-between gap-x-2 gap-y-1 text-sm">
         {/* ---- Workspace / Branch ---- */}
-        <div className="flex items-center gap-1 min-w-0 shrink-0">
+        <div className="flex items-center gap-1 min-w-0 sm:shrink-0">
           <FolderIcon className="w-3.5 h-3.5 text-text-muted flex-shrink-0" />
-          <span className="truncate text-text-secondary max-w-[80px]">{workspaceName}</span>
+          <span className="truncate text-text-secondary max-w-[120px]">{workspaceName}</span>
           <span className="text-text-muted">/</span>
           <BranchIcon className="w-3.5 h-3.5 text-text-muted flex-shrink-0" />
-          <span className="truncate text-text-secondary max-w-[80px]">{branch ?? '-'}</span>
+          <span className="truncate text-text-secondary max-w-[120px]">{branch ?? '-'}</span>
           {diffFiles.length > 0 ? (
             <span className="text-text-muted shrink-0 font-mono">
               +{totalAdditions} -{totalDeletions}
@@ -231,10 +241,10 @@ export function SidebarSummaryHeader({ visible }: SidebarSummaryHeaderProps) {
         </div>
 
         {/* ---- Divider ---- */}
-        <div className="w-px bg-border self-stretch mx-1" />
+        <div className="hidden sm:block w-px bg-border self-stretch mx-1" />
 
         {/* ---- Metadata Status ---- */}
-        <div className="flex-1 flex items-center justify-center gap-1 min-w-0">
+        <div className="flex-1 flex items-center sm:justify-center justify-self-end gap-1 min-w-0">
           <MetadataStatusSummary entries={criteriaEntries} />
           {otherCount > 0 && (
             <span
@@ -264,10 +274,37 @@ export function SidebarSummaryHeader({ visible }: SidebarSummaryHeaderProps) {
         </div>
 
         {/* ---- Divider ---- */}
-        <div className="w-px bg-border self-stretch mx-1" />
+        <div className="hidden sm:block w-px bg-border self-stretch mx-1" />
+
+        {/* Mobile row separator — full width */}
+        <div className="col-span-2 border-t border-border sm:hidden -mx-4" />
+
+        {/* ---- Context ---- */}
+        <div className="flex items-center gap-1.5 min-w-0 shrink-0">
+          {contextState && (
+            <>
+              <span className="text-text-muted text-xs font-mono tabular-nums">
+                {contextState.currentTokens >= 1000
+                  ? `${Math.round(contextState.currentTokens / 1000)}K`
+                  : contextState.currentTokens}
+              </span>
+              <ProgressBar
+                percent={Math.round((contextState.currentTokens / contextState.maxTokens) * 100)}
+                dangerZone={contextState.dangerZone}
+                size="sm"
+              />
+              <Popover trigger={<ChevronDownIcon className="w-3 h-3" />}>
+                <ContextPopover />
+              </Popover>
+            </>
+          )}
+        </div>
+
+        {/* ---- Divider ---- */}
+        <div className="hidden sm:block w-px bg-border self-stretch mx-1" />
 
         {/* ---- Dev Server ---- */}
-        <div className="flex items-center gap-1.5 min-w-0 shrink-0">
+        <div className="flex items-center gap-1.5 min-w-0 shrink-0 justify-self-end">
           <span
             className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${
               state === 'running'
@@ -291,9 +328,10 @@ export function SidebarSummaryHeader({ visible }: SidebarSummaryHeaderProps) {
             ) : (
               <button
                 onClick={handleStart}
-                className="px-1.5 py-0.5 rounded text-xs font-medium bg-accent-primary/25 text-text-primary hover:bg-accent-primary/40 transition-colors leading-none"
+                className="flex items-center justify-center p-1 rounded text-sm font-medium bg-accent-primary/25 text-text-primary hover:bg-accent-primary/40 transition-colors leading-none"
+                title="Start dev server"
               >
-                Start
+                <PlayIcon className="w-3.5 h-3.5" />
               </button>
             )
           ) : (
@@ -301,10 +339,14 @@ export function SidebarSummaryHeader({ visible }: SidebarSummaryHeaderProps) {
           )}
 
           <Popover trigger={<ChevronDownIcon className="w-3 h-3" />}>
-            <DevServerFooter workdir={workdir} compact />
+            <DevServerFooter workdir={workdir} compact onExpand={() => setShowLogModal(true)} />
           </Popover>
         </div>
       </div>
+
+      {showLogModal && (
+        <LogViewer title="Dev Server Logs" logs={devServerLogs} onClose={() => setShowLogModal(false)} />
+      )}
     </div>
   )
 }

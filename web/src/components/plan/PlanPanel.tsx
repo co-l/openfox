@@ -198,9 +198,9 @@ export function PlanPanel({
         onCriteriaSidebarToggle={onCriteriaSidebarToggle}
         messages={messages}
       >
-        <SessionHeader />
-
         <SidebarSummaryHeader visible={!criteriaSidebarOpen} />
+
+        <SessionHeader />
 
         {turnStatsModal && <TurnStatsModal stats={turnStatsModal} onClose={() => setTurnStatsModal(null)} />}
         <ConnectionStatusBar />
