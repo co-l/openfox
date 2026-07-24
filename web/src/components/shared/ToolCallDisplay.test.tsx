@@ -32,6 +32,56 @@ const pendingConfirmation = {
   reason: 'dangerous_command' as const,
 }
 
+describe('ToolCallDisplay — remote execution', () => {
+  beforeEach(() => {
+    useSessionStore.setState({ pendingPathConfirmations: [] })
+    useSettingsStore.setState({ settings: {} })
+  })
+
+  afterEach(cleanup)
+
+  it.each([
+    ['ssh host', 'SSH'],
+    ['scp file host:/tmp', 'SCP'],
+    ['sftp host', 'SFTP'],
+    ['mosh host', 'MOSH'],
+  ])('marks compact %s calls as remote', (command, protocol) => {
+    const { container } = render(
+      <ToolCallDisplay tool="run_command" args={{ command }} status="pending" variant="compact" />,
+    )
+
+    expect(container.textContent).toContain(`REMOTE · ${protocol}`)
+    expect(container.firstElementChild?.className).toContain('border-purple-500')
+  })
+
+  it('wraps an associated permission request in the remote frame', () => {
+    useSessionStore.setState({ pendingPathConfirmations: [pendingConfirmation] })
+
+    const { container } = render(
+      <ToolCallDisplay
+        tool="run_command"
+        args={{ command: 'ssh host cat /restricted/file' }}
+        status="pending"
+        variant="expandable"
+        callId="call-run-1"
+      />,
+    )
+
+    expect(container.textContent).toContain('REMOTE · SSH')
+    expect(container.textContent).toContain('Allow')
+    expect(container.firstElementChild?.className).toContain('border-purple-500')
+  })
+
+  it('does not mark a local command mentioning ssh as remote', () => {
+    const { container } = render(
+      <ToolCallDisplay tool="run_command" args={{ command: 'echo ssh' }} status="success" variant="expandable" />,
+    )
+
+    expect(container.textContent).not.toContain('REMOTE')
+    expect(container.firstElementChild?.className).not.toContain('border-purple-500')
+  })
+})
+
 describe('ToolCallDisplay — PathConfirmationButtons placement', () => {
   beforeEach(() => {
     useSessionStore.setState({ pendingPathConfirmations: [] })

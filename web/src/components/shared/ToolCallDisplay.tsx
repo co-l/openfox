@@ -14,6 +14,7 @@ import { formatToolArgsFull, formatToolArgsWithMetadata } from '../../lib/format
 import { useSessionStore, type PendingPathConfirmation } from '../../stores/session'
 import { useSettingsStore, SETTINGS_KEYS } from '../../stores/settings'
 import { buildEditorUrl } from '../../lib/editor-link'
+import { detectRemoteExecution } from '../../lib/remote-execution'
 
 type ToolStatus = 'pending' | 'success' | 'error' | 'interrupted'
 
@@ -88,6 +89,12 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
   const shouldAutoExpand = !forceCompact
   const [expanded, setExpanded] = useState(shouldAutoExpand)
   const config = statusConfig[status]
+  const remoteProtocol = detectRemoteExecution(tool, args)
+  const remoteBadge = remoteProtocol ? (
+    <span className="shrink-0 rounded border border-purple-400/50 bg-purple-500/15 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-purple-300">
+      REMOTE · {remoteProtocol}
+    </span>
+  ) : null
   const showEditorLink = useSettingsStore((s) => s.settings[SETTINGS_KEYS.DISPLAY_SHOW_OPEN_IN_EDITOR]) === 'true'
 
   const editorLine =
@@ -118,9 +125,12 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
   }
   if (variant === 'compact') {
     return (
-      <div className="flex items-center gap-1.5 text-xs bg-secondary rounded px-2 py-1.5">
+      <div
+        className={`flex items-center gap-1.5 text-xs rounded px-2 py-1.5 border ${remoteProtocol ? 'border-purple-500/60 bg-purple-950/30' : 'border-transparent bg-secondary'}`}
+      >
         <ToolIcon tool={tool} />
         <span className="text-accent-primary font-medium">{tool}</span>
+        {remoteBadge}
         <span className="text-text-muted truncate flex-1">{formatToolArgsWithMetadata(tool, args, metadata)}</span>
         <span className={`${config.color} ${config.animate ? 'animate-pulse' : ''}`}>
           {status === 'pending' ? '...' : 'done'}
@@ -130,13 +140,16 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
   }
 
   return (
-    <div className="border border-border rounded overflow-hidden my-1 min-w-0">
+    <div
+      className={`border rounded overflow-hidden my-1 min-w-0 ${remoteProtocol ? 'border-purple-500/60 shadow-[0_0_0_1px_rgb(168_85_247_/_0.12)]' : 'border-border'}`}
+    >
       <button
-        className="w-full flex items-center gap-1.5 p-2 bg-secondary hover:bg-secondary/80 text-left"
+        className={`w-full flex items-center gap-1.5 p-2 text-left ${remoteProtocol ? 'bg-purple-950/30 hover:bg-purple-950/40' : 'bg-secondary hover:bg-secondary/80'}`}
         onClick={() => setExpanded(!expanded)}
       >
         <span className={`${config.color} ${config.animate ? 'animate-pulse' : ''}`}>{config.icon}</span>
         <span className="font-mono text-accent-primary text-sm">{tool}</span>
+        {remoteBadge}
         <span className="text-text-muted text-xs flex-1 truncate">
           {formatToolArgsWithMetadata(tool, args, metadata)}
         </span>
@@ -144,7 +157,9 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
       </button>
 
       {expanded && (
-        <div className="p-2 bg-primary border-t border-border space-y-2 min-w-0">
+        <div
+          className={`p-2 border-t space-y-2 min-w-0 ${remoteProtocol ? 'border-purple-500/40 bg-purple-950/10' : 'border-border bg-primary'}`}
+        >
           {/* Specialized rendering for run_command with streaming output */}
           {tool === 'run_command' && (
             <RunCommandView
