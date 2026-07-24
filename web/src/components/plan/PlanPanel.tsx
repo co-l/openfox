@@ -207,6 +207,7 @@ export function PlanPanel({
           scrollContainerRef={scrollContainerRef}
           highlightedMessageId={null}
           onLaunchWorkflow={handleLaunchWorkflow}
+          onScrollToTop={() => setAutoScroll(false)}
           hiddenCount={hiddenCount}
         />
 

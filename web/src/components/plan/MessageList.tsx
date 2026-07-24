@@ -1,9 +1,10 @@
-import { memo, useState, useRef, type RefObject } from 'react'
+import { memo, useState, useRef, useCallback, useEffect, useLayoutEffect, type RefObject } from 'react'
 import { useSessionStore, useIsRunning } from '../../stores/session'
 import { useWorkflowsStore } from '../../stores/workflows'
 import { useDisplaySettings } from '../../stores/settings'
 import { ChatFeedItems } from './ChatFeedItems'
 import { CloseButton } from '../shared/CloseButton'
+import { ChevronUpIcon } from '../shared/icons'
 import { useClickOutside } from '../../hooks/useClickOutside'
 import type { DisplayItem } from './groupMessages.js'
 import type { MetadataEntry } from '@shared/types.js'
@@ -15,6 +16,7 @@ interface MessageListProps {
   scrollContainerRef: RefObject<HTMLDivElement | null>
   highlightedMessageId: string | null
   onLaunchWorkflow: (workflowId: string, subGroup?: string) => void
+  onScrollToTop?: () => void
   hiddenCount?: number
 }
 
@@ -23,6 +25,7 @@ export const MessageList = memo(function MessageList({
   scrollContainerRef,
   highlightedMessageId,
   onLaunchWorkflow,
+  onScrollToTop,
   hiddenCount = 0,
 }: MessageListProps) {
   const criteria = useSessionStore((state) => state.currentSession?.metadataEntries?.['criteria'] ?? EMPTY_CRITERIA)
@@ -47,6 +50,23 @@ export const MessageList = memo(function MessageList({
 
   const projectId = useSessionStore((state) => state.currentSession?.projectId)
   const [popupBlocked, setPopupBlocked] = useState(false)
+  const [isScrollable, setIsScrollable] = useState(false)
+  const [scrolledPastTop, setScrolledPastTop] = useState(false)
+
+  useLayoutEffect(() => {
+    const el = scrollContainerRef.current
+    if (!el) return
+    setIsScrollable(el.scrollHeight > el.clientHeight + 1)
+  }, [scrollContainerRef, displayItems])
+
+  useEffect(() => {
+    const el = scrollContainerRef.current
+    if (!el) return
+    const onScroll = () => setScrolledPastTop(el.scrollTop > 4)
+    onScroll()
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [scrollContainerRef])
 
   const openFullHistory = () => {
     if (!projectId || !sessionId) return
@@ -57,91 +77,111 @@ export const MessageList = memo(function MessageList({
     }
   }
 
+  const scrollToTop = useCallback(() => {
+    onScrollToTop?.()
+    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [scrollContainerRef, onScrollToTop])
+
   return (
-    <div
-      ref={scrollContainerRef}
-      data-testid="chat-scroll-container"
-      className="flex-1 min-w-0 overflow-y-auto relative bg-primary scrollbar-stable"
-    >
-      <div className="pt-4">
-        {hiddenCount > 0 && (
-          <div className="px-2 md:px-4 pb-2 space-y-1">
-            <button
-              onClick={openFullHistory}
-              className="w-full text-sm text-text-muted hover:text-text-primary bg-bg-tertiary/50 hover:bg-bg-tertiary border border-border rounded px-3 py-2 transition-colors text-center"
-            >
-              {hiddenCount} older item{hiddenCount !== 1 ? 's' : ''} hidden — View full history
-            </button>
-            {popupBlocked && (
-              <p className="text-xs text-text-muted text-center">
-                Popup blocked.{' '}
-                <a
-                  href={projectId && sessionId ? `/p/${projectId}/s/${sessionId}/readonly` : '#'}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline hover:text-text-primary"
-                >
-                  Open manually
-                </a>
-              </p>
-            )}
-          </div>
-        )}
-
-        <ChatFeedItems
-          displayItems={displayItems}
-          highlightedMessageId={highlightedMessageId}
-          sessionId={sessionId}
-          showThinking={showThinking}
-          showVerboseToolOutput={showVerboseToolOutput}
-          showStats={showStats}
-          showAgentDefinitions={showAgentDefinitions}
-          showWorkflowBars={showWorkflowBars}
-        />
-      </div>
-      <div className="px-2 md:px-4 pb-4">
-        {error && (
-          <div className="feed-item bg-text-tool-error/10 border border-text-tool-error/50 rounded p-2">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <div className="text-text-tool-error text-sm font-medium">{error.code}</div>
-                <div className="text-text-tool-error/80 text-xs mt-0.5">{error.message}</div>
-              </div>
-              <CloseButton
-                onClick={clearError}
-                className="text-text-tool-error hover:text-text-tool-error/80 p-0.5"
-                size="sm"
-              />
+    <div className="relative flex-1 min-w-0 group">
+      <div
+        ref={scrollContainerRef}
+        data-testid="chat-scroll-container"
+        className="absolute inset-0 overflow-y-auto bg-primary scrollbar-stable"
+      >
+        <div className="pt-4">
+          {hiddenCount > 0 && (
+            <div className="px-2 md:px-4 pb-2 space-y-1">
+              <button
+                onClick={openFullHistory}
+                className="w-full text-sm text-text-muted hover:text-text-primary bg-bg-tertiary/50 hover:bg-bg-tertiary border border-border rounded px-3 py-2 transition-colors text-center"
+              >
+                {hiddenCount} older item{hiddenCount !== 1 ? 's' : ''} hidden — View full history
+              </button>
+              {popupBlocked && (
+                <p className="text-xs text-text-muted text-center">
+                  Popup blocked.{' '}
+                  <a
+                    href={projectId && sessionId ? `/p/${projectId}/s/${sessionId}/readonly` : '#'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline hover:text-text-primary"
+                  >
+                    Open manually
+                  </a>
+                </p>
+              )}
             </div>
-          </div>
-        )}
+          )}
 
-        {showStartBuilding && (
-          <div className="flex justify-center gap-2 feed-item flex-wrap">
-            {workflows.map((w) => {
-              const c = w.color ?? '#3b82f6'
-              const r = parseInt(c.slice(1, 3), 16),
-                g = parseInt(c.slice(3, 5), 16),
-                b = parseInt(c.slice(5, 7), 16)
-              const bg = `rgba(${r},${g},${b},0.12)`
-              const bgHover = `rgba(${r},${g},${b},0.22)`
-              const border = `rgba(${r},${g},${b},0.25)`
-              return (
-                <WorkflowButton
-                  key={w.id}
-                  workflowName={w.name}
-                  color={c}
-                  bg={bg}
-                  bgHover={bgHover}
-                  border={border}
-                  subGroups={w.subGroups}
-                  onLaunch={(subGroup?: string) => onLaunchWorkflow(w.id, subGroup)}
+          <ChatFeedItems
+            displayItems={displayItems}
+            highlightedMessageId={highlightedMessageId}
+            sessionId={sessionId}
+            showThinking={showThinking}
+            showVerboseToolOutput={showVerboseToolOutput}
+            showStats={showStats}
+            showAgentDefinitions={showAgentDefinitions}
+            showWorkflowBars={showWorkflowBars}
+          />
+        </div>
+        <div className="px-2 md:px-4 pb-4">
+          {error && (
+            <div className="feed-item bg-text-tool-error/10 border border-text-tool-error/50 rounded p-2">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="text-text-tool-error text-sm font-medium">{error.code}</div>
+                  <div className="text-text-tool-error/80 text-xs mt-0.5">{error.message}</div>
+                </div>
+                <CloseButton
+                  onClick={clearError}
+                  className="text-text-tool-error hover:text-text-tool-error/80 p-0.5"
+                  size="sm"
                 />
-              )
-            })}
-          </div>
-        )}
+              </div>
+            </div>
+          )}
+
+          {showStartBuilding && (
+            <div className="flex justify-center gap-2 feed-item flex-wrap">
+              {workflows.map((w) => {
+                const c = w.color ?? '#3b82f6'
+                const r = parseInt(c.slice(1, 3), 16),
+                  g = parseInt(c.slice(3, 5), 16),
+                  b = parseInt(c.slice(5, 7), 16)
+                const bg = `rgba(${r},${g},${b},0.12)`
+                const bgHover = `rgba(${r},${g},${b},0.22)`
+                const border = `rgba(${r},${g},${b},0.25)`
+                return (
+                  <WorkflowButton
+                    key={w.id}
+                    workflowName={w.name}
+                    color={c}
+                    bg={bg}
+                    bgHover={bgHover}
+                    border={border}
+                    subGroups={w.subGroups}
+                    onLaunch={(subGroup?: string) => onLaunchWorkflow(w.id, subGroup)}
+                  />
+                )
+              })}
+            </div>
+          )}
+        </div>
       </div>
+
+      {isScrollable && scrolledPastTop && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          <button
+            type="button"
+            onClick={scrollToTop}
+            className="pointer-events-auto text-sm text-text-muted hover:text-text-primary flex items-center gap-1.5 px-2 py-0.5 rounded hover:bg-bg-tertiary transition-colors backdrop-blur-sm bg-bg-secondary/60"
+          >
+            <ChevronUpIcon className="w-3 h-3" />
+            scroll to top
+          </button>
+        </div>
+      )}
     </div>
   )
 })
