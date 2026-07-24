@@ -19,6 +19,7 @@ import { WorkflowsModal } from '../settings/WorkflowsModal'
 import { QuickActionModal } from '../QuickActionModal'
 import { MessageSearchModal } from './MessageSearchModal'
 import { ChatInput } from './ChatInput'
+import { SidebarSummaryHeader } from './SidebarSummaryHeader'
 import { shouldCaptureMessageSearchShortcut } from './message-search-shortcut'
 
 import { groupMessages, type DisplayItem } from './groupMessages.js'
@@ -197,6 +198,8 @@ export function PlanPanel({
         onCriteriaSidebarToggle={onCriteriaSidebarToggle}
         messages={messages}
       >
+        <SidebarSummaryHeader visible={!criteriaSidebarOpen} />
+
         <SessionHeader />
 
         {turnStatsModal && <TurnStatsModal stats={turnStatsModal} onClose={() => setTurnStatsModal(null)} />}
@@ -207,6 +210,7 @@ export function PlanPanel({
           scrollContainerRef={scrollContainerRef}
           highlightedMessageId={null}
           onLaunchWorkflow={handleLaunchWorkflow}
+          onScrollToTop={() => setAutoScroll(false)}
           hiddenCount={hiddenCount}
         />
 

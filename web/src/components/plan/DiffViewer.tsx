@@ -57,7 +57,7 @@ function DiffRow({ file, showEditorLink, workdir }: DiffRowProps) {
     return (
       <a
         href={href}
-        className="flex items-center justify-between gap-1 py-0.5 text-xs min-w-0 hover:bg-bg-tertiary rounded px-1 -mx-1 transition-colors no-underline"
+        className="flex items-center justify-between gap-1 py-0.5 text-xs min-w-0 hover:bg-bg-tertiary rounded px-1 transition-colors no-underline"
         title={`Open ${file.path} in VSCode`}
       >
         {content}

@@ -91,6 +91,16 @@ export function DisplayTab() {
   return (
     <div className="space-y-6">
       <ThemePicker />
+
+      <div className="border-t border-border pt-4">
+        <h3 className="text-sm font-medium text-text-primary mb-2">Scrollbar / Custom CSS</h3>
+        <p className="text-xs text-text-muted mb-3">
+          Scrollbars are quite finicky, so there is no CSS for them in OpenFox. You can add your own below or select one
+          of the options and see if they match your browser needs.
+        </p>
+        <CustomCssEditor />
+      </div>
+
       <div className="border-t border-border pt-4">
         <h3 className="text-sm font-medium text-text-primary mb-4">Feed Display</h3>
         <div className="space-y-4">
@@ -143,6 +153,116 @@ export function DisplayTab() {
           />
         </label>
       </div>
+    </div>
+  )
+}
+
+const SCROLLBAR_PRESETS = [
+  { label: 'None (browser default)', css: '' },
+  {
+    label: 'Thin scrollbars',
+    css: [
+      '/* Thin scrollbars for Chrome/Safari/Edge */',
+      '::-webkit-scrollbar { width: 6px; height: 6px; }',
+      '::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.4); border-radius: 3px; }',
+      '',
+      '/* Thin scrollbars for Firefox */',
+      '@-moz-document url-prefix() {',
+      '  * { scrollbar-width: thin; }',
+      '}',
+    ].join('\n'),
+  },
+  {
+    label: 'Stable gutter (prevent layout shift)',
+    css: [
+      '/* Reserve scrollbar space so content does not jump when scrollbar appears */',
+      '.scrollbar-stable { scrollbar-gutter: stable; }',
+    ].join('\n'),
+  },
+  {
+    label: 'Balanced gutter (stable + symmetrical)',
+    css: [
+      '/* Reserve space on both sides — keeps content centered */',
+      '/* Note: Chrome has a bug where both-edges reserves space but the scrollbar',
+      '   may not occupy it properly. Test in your browser. */',
+      '.scrollbar-stable { scrollbar-gutter: stable both-edges; }',
+    ].join('\n'),
+  },
+  {
+    label: 'Always visible scrollbar',
+    css: [
+      '/* Force scrollbar to always show — no layout shift, no surprises */',
+      '.scrollbar-stable { overflow-y: scroll; }',
+    ].join('\n'),
+  },
+  {
+    label: 'Custom colors',
+    css: [
+      '/* Chrome/Safari/Edge */',
+      '::-webkit-scrollbar { width: 8px; height: 8px; }',
+      '::-webkit-scrollbar-track { background: transparent; }',
+      '::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }',
+      '::-webkit-scrollbar-thumb:hover { background: #555; }',
+      '',
+      '/* Firefox */',
+      '* { scrollbar-color: #888 transparent; }',
+    ].join('\n'),
+  },
+] as const
+
+function CustomCssEditor() {
+  const { settings, getSetting, setSetting } = useSettingsStoreState()
+  const savedCss = settings[SETTINGS_KEYS.DISPLAY_CUSTOM_CSS] ?? ''
+  const [localCss, setLocalCss] = useState(savedCss)
+  const [selectedPreset, setSelectedPreset] = useState('')
+
+  useEffect(() => {
+    getSetting(SETTINGS_KEYS.DISPLAY_CUSTOM_CSS)
+  }, [getSetting])
+
+  useEffect(() => {
+    setLocalCss(savedCss)
+  }, [savedCss])
+
+  const handleSave = () => {
+    setSetting(SETTINGS_KEYS.DISPLAY_CUSTOM_CSS, localCss)
+  }
+
+  const handlePresetChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const preset = SCROLLBAR_PRESETS.find((p) => p.label === e.target.value)
+    if (preset) {
+      setSelectedPreset(preset.label)
+      setLocalCss(preset.css)
+      setSetting(SETTINGS_KEYS.DISPLAY_CUSTOM_CSS, preset.css)
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <select
+        value={selectedPreset}
+        onChange={handlePresetChange}
+        className="w-full px-2 py-1.5 text-xs text-text-primary bg-bg-tertiary border border-border rounded focus:outline-none focus:ring-2 focus:ring-accent-primary/50 focus:border-accent-primary"
+      >
+        <option value="">Try a preset…</option>
+        {SCROLLBAR_PRESETS.map((preset) => (
+          <option key={preset.label} value={preset.label}>
+            {preset.label}
+          </option>
+        ))}
+      </select>
+      <textarea
+        value={localCss}
+        onChange={(e) => setLocalCss(e.target.value)}
+        onBlur={handleSave}
+        placeholder={`/* Paste or edit your custom CSS here */
+/* Example: make Firefox scrollbar thicker */
+@-moz-document url-prefix() {
+  * { scrollbar-width: auto; }
+}`}
+        className="w-full h-32 px-3 py-2 text-xs font-mono text-text-primary bg-bg-tertiary border border-border rounded resize-y focus:outline-none focus:ring-2 focus:ring-accent-primary/50 focus:border-accent-primary"
+        spellCheck={false}
+      />
     </div>
   )
 }

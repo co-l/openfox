@@ -11,6 +11,8 @@ import { ansiToReact } from '../../lib/ansiParser'
 
 interface DevServerFooterProps {
   workdir?: string
+  compact?: boolean
+  onExpand?: () => void
 }
 
 const LogHoverExpand = memo(function LogHoverExpand({
@@ -103,7 +105,7 @@ const LogHoverExpand = memo(function LogHoverExpand({
   )
 })
 
-export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevServerFooterProps) {
+export const DevServerFooter = memo(function DevServerFooter({ workdir, compact, onExpand }: DevServerFooterProps) {
   const setWorkdir = useDevServerStore((s) => s.setWorkdir)
   const status = useDevServerStore((s) => s.status)
   const config = useDevServerStore((s) => s.config)
@@ -157,7 +159,7 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
   }
 
   return (
-    <div className="mt-2 pt-3 border-t border-border space-y-3">
+    <div className={`space-y-3 ${compact ? '' : 'mt-2 pt-3 border-t border-border'}`}>
       {/* Header row: [dot] Dev Server ... [settings] */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -230,7 +232,7 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
         ref={logContainerRef}
         className={`relative ${hasConfig && isAlive ? '' : 'hidden'}`}
         onMouseEnter={() => {
-          if (!hasConfig || !isAlive) return
+          if (!hasConfig || !isAlive || compact) return
           if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current)
           showTimeoutRef.current = setTimeout(() => {
             setIsHoveringLogs(true)
@@ -252,7 +254,7 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
         {hasConfig && isAlive && (
           <>
             <div className="absolute bottom-1 right-1 z-50 flex items-center gap-1">
-              {(isHoveringLogs || isHidingLogs) && (
+              {!compact && (isHoveringLogs || isHidingLogs) && (
                 <AutoScrollToggle
                   isActive={isAutoScrollActive}
                   onToggle={setAutoScroll}
@@ -260,15 +262,16 @@ export const DevServerFooter = memo(function DevServerFooter({ workdir }: DevSer
                 />
               )}
               <button
-                onClick={() => setShowExpandModal(true)}
+                onClick={() => (compact ? onExpand?.() : setShowExpandModal(true))}
                 className="px-2 py-0.5 rounded text-xs font-medium bg-accent-primary/30 text-text-primary hover:bg-accent-primary/50 transition-colors"
               >
                 Expand
               </button>
             </div>
 
-            {/* Hover expansion portal */}
-            {(isHoveringLogs || isHidingLogs) &&
+            {/* Hover expansion portal — only in sidebar */}
+            {!compact &&
+              (isHoveringLogs || isHidingLogs) &&
               logContainerRef.current &&
               createPortal(
                 <LogHoverExpand

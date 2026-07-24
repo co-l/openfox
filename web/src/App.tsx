@@ -165,6 +165,7 @@ function App() {
             ...DISPLAY_SETTINGS_KEYS,
             SETTINGS_KEYS.DISPLAY_THEME,
             SETTINGS_KEYS.DISPLAY_USER_PRESETS,
+            SETTINGS_KEYS.DISPLAY_CUSTOM_CSS,
             SETTINGS_KEYS.KEYBINDINGS,
           ])
       })
@@ -234,6 +235,18 @@ function App() {
     const cleanup = initSystemThemeListener()
     return () => cleanup()
   }, [displaySettings[SETTINGS_KEYS.DISPLAY_THEME], displaySettings[SETTINGS_KEYS.DISPLAY_USER_PRESETS]])
+
+  // Inject custom CSS into a <style> tag
+  useEffect(() => {
+    const css = displaySettings[SETTINGS_KEYS.DISPLAY_CUSTOM_CSS] ?? ''
+    let styleTag = document.getElementById('custom-css') as HTMLStyleElement | null
+    if (!styleTag) {
+      styleTag = document.createElement('style')
+      styleTag.id = 'custom-css'
+      document.head.appendChild(styleTag)
+    }
+    styleTag.textContent = css
+  }, [displaySettings[SETTINGS_KEYS.DISPLAY_CUSTOM_CSS]])
 
   const [showChangelog, setShowChangelog] = useState(false)
 

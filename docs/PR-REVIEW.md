@@ -113,7 +113,11 @@ When the user says **"Merge it"**, the agent:
 # 6. Switch back to the review workspace
 workspace switch review-pr-<N>
 
-# 7. Commit fixes (if any were applied in Phase 3)
+# 7. ⚠️ CRITICAL: Commit fixes before pushing!
+#    Check for uncommitted changes first — if you skip this step, your
+#    fixes won't be included in the merge.
+git status --short
+#    If there are uncommitted changes:
 git add -A && git commit -m "review: <description>"   # timeout: 120000ms
 
 # 8. Push fixes to the PR branch
@@ -233,6 +237,14 @@ workspace delete review-pr-<N>
 ```
 
 ## Common Pitfalls
+
+### Uncommitted fixes lost on merge
+
+**Scenario:** You applied fixes in Phase 3, user tested in Phase 4, then said "merge it". You pushed and merged — but the fixes never made it in.
+
+**Root cause:** The fixes were never committed. `git push` only sends commits, not unstaged/uncommitted changes.
+
+**Prevention:** In Phase 5 step 7, always run `git status --short` before pushing. If it shows any changes, commit them first. The doc now has a ⚠️ marker at that step — treat it as a hard gate.
 
 ### `gh pr merge` GraphQL deprecation
 

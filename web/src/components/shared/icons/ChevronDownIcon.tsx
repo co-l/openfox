@@ -1,9 +1,10 @@
-interface ChevronDownIconProps {
+interface ChevronIconProps {
   className?: string
   rotate?: number
+  direction?: 'up' | 'down'
 }
 
-export function ChevronDownIcon({ className = 'w-3 h-3 text-text-muted', rotate }: ChevronDownIconProps) {
+function ChevronIcon({ className = 'w-3 h-3 text-text-muted', rotate, direction = 'down' }: ChevronIconProps) {
   return (
     <svg
       className={className}
@@ -13,7 +14,15 @@ export function ChevronDownIcon({ className = 'w-3 h-3 text-text-muted', rotate 
       strokeWidth={2}
       style={rotate !== undefined ? { transform: `rotate(${rotate}deg)` } : undefined}
     >
-      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+      <path strokeLinecap="round" strokeLinejoin="round" d={direction === 'up' ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'} />
     </svg>
   )
+}
+
+export function ChevronDownIcon(props: Omit<ChevronIconProps, 'direction'>) {
+  return <ChevronIcon direction="down" {...props} />
+}
+
+export function ChevronUpIcon(props: Omit<ChevronIconProps, 'direction'>) {
+  return <ChevronIcon direction="up" {...props} />
 }

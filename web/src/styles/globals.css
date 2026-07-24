@@ -16,54 +16,6 @@
   body {
     @apply bg-primary text-text-primary text-sm;
   }
-
-  /* Webkit scrollbars (Chrome, Safari, Edge) */
-  ::-webkit-scrollbar {
-    @apply w-2 h-2;
-  }
-
-  ::-webkit-scrollbar-track {
-    @apply bg-secondary;
-  }
-
-  ::-webkit-scrollbar-thumb {
-    @apply bg-bg-tertiary rounded;
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    @apply bg-text-muted;
-  }
-
-  /* Firefox scrollbars */
-  @supports (scrollbar-width: thin) {
-    /* Thin + hidden by default */
-    * {
-      scrollbar-width: thin;
-      scrollbar-color: transparent transparent;
-    }
-    /* Show thumb color on hover/focus (width stays constant — avoids Chrome repaint) */
-    *:hover,
-    *:focus-within {
-      scrollbar-color: rgb(var(--color-bg-tertiary) / 0.6) transparent;
-    }
-  }
-
-  /* Firefox only: widen scrollbar on hover for easier grabbing.
-     Chrome supports scrollbar-width too, but switching thin→auto triggers full repaint. */
-  @supports (-moz-appearance: none) {
-    *:hover,
-    *:focus-within {
-      scrollbar-width: auto;
-    }
-  }
-}
-
-@layer utilities {
-  /* Reserve scrollbar gutter so content doesn't shift when scrollbar appears/disappears.
-     Apply to primary content scroll containers (chat feed, sidebars, log viewers, etc.). */
-  .scrollbar-stable {
-    scrollbar-gutter: stable;
-  }
 }
 
 @layer components {

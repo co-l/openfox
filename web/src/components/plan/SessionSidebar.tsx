@@ -6,7 +6,6 @@ import { useSettingsStore, SETTINGS_KEYS } from '../../stores/settings'
 import { useSessionStore } from '../../stores/session'
 import { useUpdateStore } from '../../stores/update'
 import { authFetch } from '../../lib/api'
-import { buildWorkspaceUrl } from '../../lib/editor-link'
 import { formatTime, formatSpeed } from '../../lib/format-stats'
 import { formatMetadataKeyLabel } from '../../lib/metadata-keys'
 import { StatsModal } from './StatsModal'
@@ -15,11 +14,10 @@ import { MetadataModal } from '../shared/MetadataModal'
 import { CriteriaEditor } from './CriteriaEditor'
 import { DevServerFooter } from './DevServerFooter'
 import { BackgroundProcesses } from './BackgroundProcesses'
-import { BranchIcon, FolderIcon, ReloadIcon } from '../shared/icons'
+import { ReloadIcon } from '../shared/icons'
 import { AutoUpdateModal } from '../AutoUpdateModal'
-import { DiffViewer } from './DiffViewer'
-import { BranchModal } from './BranchModal'
-import { WorkspaceModal } from './WorkspaceModal'
+import { WorkspaceBranchSection } from './WorkspaceBranchSection'
+import { ContextPopover } from './ContextPopover'
 import type { Message } from '@shared/types.js'
 
 interface SessionSidebarProps {
@@ -30,8 +28,6 @@ interface SessionSidebarProps {
 export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
   const [showStatsModal, setShowStatsModal] = useState(false)
   const [showUpdateModal, setShowUpdateModal] = useState(false)
-  const [showBranchModal, setShowBranchModal] = useState(false)
-  const [showWorkspaceModal, setShowWorkspaceModal] = useState(false)
   const [activeMetadataKey, setActiveMetadataKey] = useState<string | null>(null)
 
   const stats = useSessionStats(messages)
@@ -51,6 +47,9 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Context info */}
+      <ContextPopover variant="sidebar" />
+
       {/* AI Stats at the top */}
       {stats && (
         <div className="mb-4">
@@ -76,10 +75,10 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
 
       {/* Metadata sections */}
       <div className="flex flex-col flex-1 overflow-y-auto scrollbar-stable">
-        <div className="mt-4">
+        <div>
           <button
             onClick={() => setActiveMetadataKey('criteria')}
-            className="w-full text-left cursor-pointer hover:bg-bg-tertiary rounded px-1 -mx-1 transition-colors"
+            className="w-full text-left cursor-pointer hover:[&_h3]:text-accent-primary transition-colors"
           >
             <MetadataSectionHeader entries={session?.metadataEntries?.['criteria'] ?? []} title="Acceptance Criteria" />
           </button>
@@ -98,7 +97,7 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
                   <div key={key} className="mt-6">
                     <button
                       onClick={() => setActiveMetadataKey(key)}
-                      className="w-full text-left cursor-pointer hover:bg-bg-tertiary rounded px-1 -mx-1 transition-colors"
+                      className="w-full text-left cursor-pointer hover:[&_h3]:text-accent-primary transition-colors"
                     >
                       <MetadataSectionHeader entries={all[key]!} title={formatMetadataKeyLabel(key)} />
                     </button>
@@ -122,50 +121,15 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
         </div>
       </div>
 
-      {/* Workspace & branch info — above separator. Only shown for git repos. */}
-      {branch !== null && (
-        <div className="mt-4 space-y-1.5">
-          <div className="flex items-center gap-2 text-sm">
-            {showEditorLink && workdir ? (
-              <a
-                href={buildWorkspaceUrl(workdir)}
-                className="flex items-center gap-2 min-w-0 flex-1 no-underline group"
-                title="Open workspace in VSCode"
-              >
-                <FolderIcon className="w-4 h-4 text-text-muted flex-shrink-0" />
-                <span className="truncate text-text-secondary group-hover:text-accent-primary transition-colors">
-                  {workspaceName ?? 'original'}
-                </span>
-              </a>
-            ) : (
-              <>
-                <FolderIcon className="w-4 h-4 text-text-muted flex-shrink-0" />
-                <span className="truncate text-text-secondary">{workspaceName ?? 'original'}</span>
-              </>
-            )}
-            <button
-              onClick={() => setShowWorkspaceModal(true)}
-              className="ml-auto px-2 py-0.5 text-xs rounded bg-bg-tertiary text-text-secondary hover:bg-bg-secondary transition-colors"
-            >
-              Edit
-            </button>
-          </div>
-          <div className="h-px bg-border" />
-          <div className="flex items-center gap-2 text-sm">
-            <BranchIcon />
-            <span className="truncate text-text-secondary">{branch}</span>
-            <button
-              onClick={() => setShowBranchModal(true)}
-              className="ml-auto px-2 py-0.5 text-xs rounded bg-bg-tertiary text-text-secondary hover:bg-bg-secondary transition-colors"
-            >
-              Edit
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Diff viewer — between branch and dev server */}
-      <DiffViewer />
+      {/* Workspace & branch info — only shown for git repos. */}
+      <WorkspaceBranchSection
+        workspaceName={workspaceName ?? 'original'}
+        branch={branch}
+        workdir={workdir}
+        showEditorLink={showEditorLink}
+        sessionId={session?.id ?? ''}
+        projectId={session?.projectId ?? ''}
+      />
 
       {/* Dev Server — below separator */}
       <DevServerFooter workdir={workdir} />
@@ -219,20 +183,6 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
         metadataKey={activeMetadataKey ?? ''}
         title={formatMetadataKeyLabel(activeMetadataKey ?? '')}
       />
-
-      {session && (
-        <>
-          <WorkspaceModal
-            isOpen={showWorkspaceModal}
-            onClose={() => setShowWorkspaceModal(false)}
-            projectId={session.projectId}
-            sessionId={session.id}
-            currentWorkspace={workspaceName}
-            currentBranch={branch ?? null}
-          />
-          <BranchModal isOpen={showBranchModal} onClose={() => setShowBranchModal(false)} sessionId={session.id} />
-        </>
-      )}
     </div>
   )
 }

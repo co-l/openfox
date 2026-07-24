@@ -73,4 +73,46 @@ describe('Modal', () => {
     expect(parentHandler).not.toHaveBeenCalled()
     root.unmount()
   })
+
+  it('should NOT close on Escape when an INPUT is focused', () => {
+    const onClose = vi.fn()
+    const root = createRoot(container)
+
+    flushSync(() => {
+      root.render(
+        <Modal isOpen onClose={onClose} closeOnEscape>
+          <input data-testid="modal-input" />
+        </Modal>,
+      )
+    })
+
+    const input = document.body.querySelector('[data-testid="modal-input"]') as HTMLInputElement
+    input.focus()
+    expect(document.activeElement).toBe(input)
+
+    container.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(onClose).not.toHaveBeenCalled()
+    root.unmount()
+  })
+
+  it('should NOT close on Escape when a TEXTAREA is focused', () => {
+    const onClose = vi.fn()
+    const root = createRoot(container)
+
+    flushSync(() => {
+      root.render(
+        <Modal isOpen onClose={onClose} closeOnEscape>
+          <textarea data-testid="modal-textarea" />
+        </Modal>,
+      )
+    })
+
+    const textarea = document.body.querySelector('[data-testid="modal-textarea"]') as HTMLTextAreaElement
+    textarea.focus()
+    expect(document.activeElement).toBe(textarea)
+
+    container.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(onClose).not.toHaveBeenCalled()
+    root.unmount()
+  })
 })
