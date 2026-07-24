@@ -1161,9 +1161,18 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       return res.status(400).json({ error: 'content or attachments is required' })
     }
 
+    // Always queue the message - QueueProcessor will handle it
+    // For running sessions, it waits; for idle sessions, it starts immediately
     sessionManager.queueMessage(sessionId, 'asap', content, attachments, messageKind)
 
-    res.json({ success: true, queueState: sessionManager.getQueueState(sessionId) })
+    // Only return queue state if there are actually queued messages waiting
+    // (i.e., session is running or there are multiple messages)
+    const queueState = sessionManager.getQueueState(sessionId)
+    if (session.isRunning || queueState.length > 1) {
+      res.json({ success: true, queueState })
+    } else {
+      res.json({ success: true })
+    }
   })
 
   // Warmup endpoint: prefills the LLM KV cache with system prompt + tools

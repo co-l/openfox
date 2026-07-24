@@ -11,6 +11,85 @@ import { getRuntimeConfig } from '../runtime-config.js'
 import { getGlobalConfigDir } from '../../cli/paths.js'
 import { logger } from '../utils/logger.js'
 
+export interface DiffLine {
+  type: 'unchanged' | 'added' | 'removed'
+  content: string
+}
+
+/**
+ * Compute unified diff between two texts.
+ * Returns array of diff lines with type markers.
+ */
+export function computeUnifiedDiff(oldText: string, newText: string): DiffLine[] {
+  // Handle empty strings - split by newline but filter out trailing empty string
+  const oldLines = oldText.length === 0 ? [] : oldText.split('\n')
+  const newLines = newText.length === 0 ? [] : newText.split('\n')
+  const result: DiffLine[] = []
+
+  // Quick check: if texts are identical, return all unchanged
+  if (oldText === newText) {
+    return oldLines.map((line) => ({ type: 'unchanged' as const, content: line }))
+  }
+
+  // Build LCS table using Map to avoid TypeScript indexing issues
+  const lcs = new Map<number, Map<number, number>>()
+  for (let i = 0; i <= oldLines.length; i++) {
+    lcs.set(i, new Map())
+    for (let j = 0; j <= newLines.length; j++) {
+      lcs.get(i)!.set(j, 0)
+    }
+  }
+
+  for (let i = 1; i <= oldLines.length; i++) {
+    for (let j = 1; j <= newLines.length; j++) {
+      const oldLine = oldLines[i - 1]
+      const newLine = newLines[j - 1]
+      if (oldLine === newLine) {
+        lcs.get(i)!.set(j, (lcs.get(i - 1)!.get(j - 1) ?? 0) + 1)
+      } else {
+        const up = lcs.get(i - 1)!.get(j) ?? 0
+        const left = lcs.get(i)!.get(j - 1) ?? 0
+        lcs.get(i)!.set(j, Math.max(up, left))
+      }
+    }
+  }
+
+  // Backtrack to find diff
+  let i = oldLines.length
+  let j = newLines.length
+
+  while (i > 0 || j > 0) {
+    const oldLine = oldLines[i - 1] ?? ''
+    const newLine = newLines[j - 1] ?? ''
+
+    if (i > 0 && j > 0 && oldLine === newLine) {
+      result.unshift({ type: 'unchanged', content: oldLine })
+      i--
+      j--
+    } else if (i > 0 && j > 0) {
+      const lcsIM1J = lcs.get(i - 1)?.get(j) ?? 0
+      const lcsIJM1 = lcs.get(i)?.get(j - 1) ?? 0
+
+      // Prefer removing old lines first, then adding new lines
+      if (lcsIM1J > lcsIJM1) {
+        result.unshift({ type: 'removed', content: oldLine })
+        i--
+      } else {
+        result.unshift({ type: 'added', content: newLine })
+        j--
+      }
+    } else if (i > 0) {
+      result.unshift({ type: 'removed', content: oldLine })
+      i--
+    } else {
+      result.unshift({ type: 'added', content: newLine })
+      j--
+    }
+  }
+
+  return result
+}
+
 export function computeDynamicContextHash(
   instructionContent: string,
   skills: SkillMetadata[],

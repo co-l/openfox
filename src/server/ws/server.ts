@@ -19,7 +19,7 @@ import { runChatTurn } from '../chat/orchestrator.js'
 
 import { runOrchestrator } from '../runner/index.js'
 import { appendCompactionPrompt } from '../context/compactor.js'
-import { computeSessionHash, applyDynamicContext } from '../chat/dynamic-context.js'
+import { computeSessionHash, applyDynamicContext, computeUnifiedDiff } from '../chat/dynamic-context.js'
 import { provideAnswer } from '../tools/index.js'
 import { logger } from '../utils/logger.js'
 import { devServerManager } from '../dev-server/manager.js'
@@ -1111,6 +1111,57 @@ async function handleClientMessage(
           send({ type: 'ack', payload: {}, id: message.id })
         }
       })()
+
+      break
+    }
+
+    case 'context.applyDynamic.preview': {
+      if (!client.activeSessionId) {
+        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
+        return
+      }
+
+      const sessionId = client.activeSessionId
+      const session = sessionManager.requireSession(sessionId)
+
+      try {
+        const { buildCachedPrompt } = await import('../chat/dynamic-context.js')
+        const allAgents = await import('../agents/registry.js')
+        const agentDef =
+          allAgents.findAgentById(session.mode, await allAgents.loadAllAgentsDefault()) ??
+          allAgents.findAgentById('planner', await allAgents.loadAllAgentsDefault())!
+        const { systemPrompt: newPrompt, hash: newHash } = await buildCachedPrompt(sessionManager, sessionId, agentDef)
+
+        const oldCached = sessionManager.getCachedPrompt(sessionId)
+        const oldPrompt = oldCached?.systemPrompt
+
+        // Compute unified diff
+        const diff = oldPrompt ? computeUnifiedDiff(oldPrompt, newPrompt) : []
+
+        send({
+          type: 'context.preview',
+          payload: {
+            oldPrompt,
+            newPrompt,
+            oldHash: oldCached?.hash,
+            newHash,
+            diff,
+          },
+          id: message.id,
+        })
+      } catch (error) {
+        logger.error('Failed to preview dynamic context', {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          sessionId,
+        })
+        send(
+          createErrorMessage(
+            'ERROR',
+            `Failed to preview: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            message.id,
+          ),
+        )
+      }
 
       break
     }

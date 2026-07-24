@@ -141,6 +141,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
     sessionsHasMore: true,
     sessionsPaginationLoading: false,
     pendingSessionCreate: false as boolean | string,
+    pendingUpdate: false,
 
     connect: async () => {
       const status = get().connectionStatus
@@ -778,6 +779,17 @@ export const useSessionStore = create<SessionState>((set, get) => {
 
     resetPendingSessionCreate: () => {
       set({ pendingSessionCreate: false as boolean | string })
+    },
+
+    queueUpdate: () => {
+      set({ pendingUpdate: true })
+    },
+
+    triggerPendingUpdate: () => {
+      const pending = get().pendingUpdate
+      if (!pending) return
+      set({ pendingUpdate: false })
+      wsClient.send('context.applyDynamic', {})
     },
 
     handleServerMessage: (message) => {

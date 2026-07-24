@@ -65,6 +65,7 @@ export interface SessionState {
   sessionsHasMore: boolean
   sessionsPaginationLoading: boolean
   pendingSessionCreate: boolean | string
+  pendingUpdate: boolean
   connect: () => Promise<void>
   reconnect: () => void
   disconnect: () => void
@@ -99,6 +100,8 @@ export interface SessionState {
   queueAsap: (content: string, attachments?: Attachment[], messageKind?: string) => void
   queueCompletion: (content: string, attachments?: Attachment[], messageKind?: string) => void
   cancelQueued: (queueId: string) => void
+  queueUpdate: () => void
+  triggerPendingUpdate: () => void
   clearError: () => void
   clearRestoredInput: () => void
   resetPendingSessionCreate: () => void

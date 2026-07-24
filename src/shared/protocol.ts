@@ -26,6 +26,7 @@ export type ClientMessageType =
   | 'context.compact' // Manually trigger context compaction
   | 'context.checkDynamic' // Check if dynamic context has changed and emit context.state if so
   | 'context.applyDynamic' // Apply dynamic context changes to cached system prompt
+  | 'context.applyDynamic.preview' // Preview diff before applying
   // Runner (auto-loop)
   | 'runner.launch' // Start the auto-loop runner (build → verify → done)
   // Path confirmation
@@ -113,6 +114,7 @@ export type ServerMessageType =
   | 'metadata.updated' // Criteria changed
   // Context events
   | 'context.state' // Context window state update
+  | 'context.preview' // Preview diff for dynamic context changes
   // Settings events
   | 'settings.value' // Setting value response
   // Provider events
@@ -370,6 +372,19 @@ export interface MetadataUpdatedPayload {
 export interface ContextStatePayload {
   context: ContextState
   subAgentId?: string
+}
+
+export interface DiffLine {
+  type: 'unchanged' | 'added' | 'removed'
+  content: string
+}
+
+export interface ContextPreviewPayload {
+  oldPrompt?: string
+  newPrompt: string
+  oldHash?: string
+  newHash: string
+  diff: DiffLine[]
 }
 
 // Provider payloads (server → client)

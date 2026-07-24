@@ -264,3 +264,83 @@ export const ReadFileView = memo(function ReadFileView({ result, metadata, fileP
     </div>
   )
 })
+
+// Unified diff viewer for system prompt changes and other text diffs
+// Shows removed lines first, then added lines at each change location
+import type { DiffLine as ProtocolDiffLine } from '@shared/protocol.js'
+
+interface SimpleDiffLineProps {
+  type: 'unchanged' | 'added' | 'removed'
+  content: string
+}
+
+function SimpleDiffLine({ type, content }: SimpleDiffLineProps) {
+  const bgClass = type === 'added' ? 'diff-added-bg' : type === 'removed' ? 'diff-removed-bg' : 'bg-transparent'
+  const prefix = type === 'added' ? '+' : type === 'removed' ? '-' : ' '
+
+  return (
+    <div className={`${bgClass} px-2`}>
+      <span className="select-none text-text-muted w-6 inline-block">{prefix}</span>
+      <span className="whitespace-pre-wrap break-words">{content || ' '}</span>
+    </div>
+  )
+}
+
+interface UnifiedDiffViewerProps {
+  diff: ProtocolDiffLine[]
+}
+
+/**
+ * Unified diff viewer that shows changes line-by-line with +/- markers.
+ * Groups removed lines before their corresponding added lines at each change location.
+ * Used for system prompt diff preview and other text-based diffs.
+ */
+export function UnifiedDiffViewer({ diff }: UnifiedDiffViewerProps) {
+  const changes: Array<{ type: 'removed' | 'added'; content: string }> = []
+
+  let i = 0
+  while (i < diff.length) {
+    const line = diff[i]
+    if (!line || line.type === 'unchanged') {
+      i++
+      continue
+    }
+
+    if (line.type === 'removed') {
+      while (i < diff.length) {
+        const nextLine = diff[i]
+        if (!nextLine || nextLine.type !== 'removed') break
+        changes.push({ type: 'removed', content: nextLine.content })
+        i++
+      }
+      while (i < diff.length) {
+        const nextLine = diff[i]
+        if (!nextLine || nextLine.type !== 'added') break
+        changes.push({ type: 'added', content: nextLine.content })
+        i++
+      }
+    } else if (line.type === 'added') {
+      while (i < diff.length) {
+        const nextLine = diff[i]
+        if (!nextLine || nextLine.type !== 'added') break
+        changes.push({ type: 'added', content: nextLine.content })
+        i++
+      }
+    }
+  }
+
+  if (changes.length === 0) {
+    return <div className="py-8 text-center text-text-muted">No changes detected.</div>
+  }
+
+  return (
+    <div>
+      <div className="px-2 py-1 text-xs font-semibold text-text-muted uppercase tracking-wide">Changes:</div>
+      <div className="font-mono text-xs leading-5">
+        {changes.map((change, idx) => (
+          <SimpleDiffLine key={idx} type={change.type} content={change.content} />
+        ))}
+      </div>
+    </div>
+  )
+}
