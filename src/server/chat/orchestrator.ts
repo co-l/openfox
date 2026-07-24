@@ -393,7 +393,7 @@ export async function runAgentTurn(
           toolChoice: input.toolChoice,
         })
       },
-      getToolRegistry: () => getToolRegistryForAgent(agentDef),
+      getToolRegistry: () => getToolRegistryForAgent(agentDef, options.sessionId),
       getConversationMessages: buildGetConversationMessages(options.sessionId, options.llmClient, append),
       injectAgentReminder: () => injectAgentReminder(options.sessionId, agentDef),
       ...(options.initialCompacting ? { initialCompacting: true } : {}),

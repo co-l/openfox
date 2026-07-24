@@ -194,14 +194,27 @@ export class McpManager {
   }
 
   getAllServers(): McpServerState[] {
-    return Array.from(this.servers.values()).map((e) => e.state)
+    return Array.from(this.servers.values())
+      .map((e) => e.state)
+      .sort((a, b) => a.name.localeCompare(b.name))
   }
 
-  getToolDefinitions(): LLMToolDefinition[] {
-    const defs: LLMToolDefinition[] = []
+  private *iterEnabledServers(override?: { disabledServers?: string[] }): Generator<ServerEntry> {
     for (const [, entry] of this.servers) {
+      if (override?.disabledServers?.includes(entry.state.name)) continue
+      const serverDisabled =
+        entry.config.disabled && (!override?.disabledServers || !override.disabledServers.includes(entry.state.name))
+      if (serverDisabled) continue
+      yield entry
+    }
+  }
+
+  getToolDefinitions(override?: { disabledServers?: string[]; disabledTools?: string[] }): LLMToolDefinition[] {
+    const defs: LLMToolDefinition[] = []
+    for (const entry of this.iterEnabledServers(override)) {
       for (const tool of entry.state.tools) {
         if (!tool.enabled) continue
+        if (override?.disabledTools?.includes(tool.name)) continue
         defs.push({
           type: 'function',
           function: {
@@ -266,9 +279,9 @@ export class McpManager {
     this.onServersChanged?.()
   }
 
-  getToolFingerprint(): string {
+  getToolFingerprint(override?: { disabledServers?: string[] }): string {
     const parts: string[] = []
-    for (const [, entry] of this.servers) {
+    for (const entry of this.iterEnabledServers(override)) {
       for (const tool of entry.state.tools) {
         if (tool.enabled) {
           parts.push(`${entry.state.name}:${tool.name}`)

@@ -35,6 +35,7 @@ import type { AgentType } from '../notifications'
 import type { SessionState } from './types'
 import { handleGlobalSoundEffects, resolveAgentType } from './sounds'
 import { getBuffer, scheduleStreamingFlush, cancelStreamingFlush } from './streamingBuffer'
+import { useMcpStore, type McpServerInfo } from '../mcp'
 
 const triggeredNewMessageSound = new Set<string>()
 
@@ -764,7 +765,13 @@ export function handleServerMessage(
     }
 
     case 'mcp.servers.changed': {
-      window.dispatchEvent(new CustomEvent('mcp-servers-changed'))
+      const payload = message.payload as { servers?: McpServerInfo[] }
+      if (payload?.servers) {
+        const sorted = [...payload.servers].sort((a, b) => a.name.localeCompare(b.name))
+        useMcpStore.getState().setServers(sorted)
+      } else {
+        window.dispatchEvent(new CustomEvent('mcp-servers-changed'))
+      }
       break
     }
 

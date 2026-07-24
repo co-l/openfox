@@ -17,12 +17,13 @@ export interface McpServerConfig {
   disabledTools?: string[]
   cachedTools?: CachedToolInfo[]
   timeout?: number
+  disabled?: boolean
 }
 
 export interface McpServerState {
   name: string
   config: McpServerConfig
-  status: 'connected' | 'disconnected' | 'error'
+  status: 'connected' | 'disconnected' | 'error' | 'disabled'
   tools: McpToolInfo[]
   estimatedTokens: number
   error?: string

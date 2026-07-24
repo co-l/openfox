@@ -9,6 +9,7 @@ export interface McpServerPatch {
   url?: string
   headers?: Record<string, string>
   timeout?: number
+  disabled?: boolean
 }
 
 export interface ApplyMcpServerUpdateOptions {
@@ -37,6 +38,7 @@ export function buildUpdatedServerConfig(
   const mergedHeaders =
     patch.headers !== undefined ? patch.headers : transportChanged ? undefined : existing.config.headers
   const mergedTimeout = patch.timeout !== undefined ? patch.timeout : existing.config.timeout
+  const mergedDisabled = patch.disabled !== undefined ? patch.disabled : existing.config.disabled
 
   if (patch.timeout !== undefined && (typeof patch.timeout !== 'number' || patch.timeout <= 0)) {
     return { serverCfg: {} as McpServerConfig, error: 'timeout must be a positive number' }
@@ -57,6 +59,7 @@ export function buildUpdatedServerConfig(
     ...(mergedUrl ? { url: mergedUrl } : {}),
     ...(mergedHeaders && Object.keys(mergedHeaders).length > 0 ? { headers: mergedHeaders } : {}),
     ...(mergedTimeout !== undefined ? { timeout: mergedTimeout } : {}),
+    ...(mergedDisabled !== undefined ? { disabled: mergedDisabled } : {}),
     ...(persistedCfg?.disabledTools && persistedCfg.disabledTools.length > 0
       ? { disabledTools: persistedCfg.disabledTools }
       : {}),

@@ -159,6 +159,12 @@ function runMigrations(db: Database.Database): void {
     db.exec(`ALTER TABLE projects ADD COLUMN workspace_root_dir TEXT`)
   }
 
+  // Migration: Add mcp_disabled_servers column to sessions table
+  if (!columnNames.includes('mcp_disabled_servers')) {
+    logger.info('Migrating sessions table: adding mcp_disabled_servers column')
+    db.exec(`ALTER TABLE sessions ADD COLUMN mcp_disabled_servers TEXT`)
+  }
+
   // Create events table for EventStore (single source of truth)
   // Note: EventStore creates this table with its own schema in initSchema()
   // We just ensure the index exists for the event_type column

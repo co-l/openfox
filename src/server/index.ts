@@ -25,6 +25,7 @@ import {
   setMcpConfigPath,
   setNotifyMcpServersChanged,
 } from './tools/mcp-config.js'
+import { getSessionDisabledServers, setSessionDisabledServers } from './mcp/session-overrides.js'
 import { createServerMessage } from '../shared/protocol.js'
 import { createContextStateMessage } from './ws/protocol.js'
 import { createWebSocketServer } from './ws/index.js'
@@ -685,6 +686,30 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
     // maxTokens is no longer passed - it comes from providerManager.getCurrentModelContext() at query time
     const session = sessionManager.createSession(projectId, title, providerId ?? null, model ?? null)
+
+    // Inherit MCP overrides from project's workspace config for new sessions
+    try {
+      const { loadWorkspaceConfig } = await import('./git/workspace-config.js')
+      const wsConfig = await loadWorkspaceConfig(project.workdir)
+      let disabledServers: string[] = []
+      if (wsConfig?.mcpOverrides) {
+        disabledServers = Object.entries(wsConfig.mcpOverrides)
+          .filter(([, override]) => override.disabled)
+          .map(([name]) => name)
+      } else {
+        // No project overrides — inherit from global config
+        disabledServers = mcpManager
+          .getAllServers()
+          .filter((s) => s.config.disabled)
+          .map((s) => s.name)
+      }
+      if (disabledServers.length > 0) {
+        const { setSessionDisabledServers } = await import('./mcp/session-overrides.js')
+        setSessionDisabledServers(session.id, disabledServers)
+      }
+    } catch {
+      // Non-critical — session works without MCP overrides
+    }
     wssExports.broadcastForProject(projectId, session.id, {
       type: 'session.created',
       sessionId: session.id,
@@ -1039,6 +1064,31 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const updatedSession = sessionManager.getSession(sessionId)
 
     res.json({ session: updatedSession })
+  })
+
+  // Session MCP server overrides (per-session)
+  app.get('/api/sessions/:id/mcp/overrides', async (req, res) => {
+    const sessionId = req.params.id
+    const session = sessionManager.getSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+    const disabledServers = getSessionDisabledServers(sessionId)
+    res.json({ disabledServers })
+  })
+
+  app.put('/api/sessions/:id/mcp/overrides', async (req, res) => {
+    const sessionId = req.params.id
+    const session = sessionManager.getSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+    const { disabledServers } = req.body as { disabledServers?: string[] }
+    if (!Array.isArray(disabledServers)) {
+      return res.status(400).json({ error: 'disabledServers must be an array of strings' })
+    }
+    setSessionDisabledServers(sessionId, disabledServers)
+    res.json({ disabledServers: getSessionDisabledServers(sessionId) })
   })
 
   // Rename session (REST)
@@ -2245,6 +2295,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         }
       }
 
+      const allServers = mcpManager.getAllServers()
+      wssExports.broadcastAll(createServerMessage('mcp.servers.changed', { servers: allServers }))
+
       res.status(201).json({ server })
     } catch (error) {
       res.status(400).json({ error: error instanceof Error ? error.message : String(error) })
@@ -2259,7 +2312,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
 
     const body = req.body as Record<string, unknown>
-    const { transport: rawTransport, command, args, env, url, headers, timeout } = body
+    const { transport: rawTransport, command, args, env, url, headers, timeout, disabled } = body
 
     if (rawTransport !== undefined && rawTransport !== 'stdio' && rawTransport !== 'http') {
       return res.status(400).json({ error: `Invalid transport '${String(rawTransport)}'. Must be 'stdio' or 'http'.` })
@@ -2294,6 +2347,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     if (timeout !== undefined && (typeof timeout !== 'number' || timeout <= 0)) {
       return res.status(400).json({ error: 'timeout must be a positive number' })
     }
+    if (disabled !== undefined && typeof disabled !== 'boolean') {
+      return res.status(400).json({ error: 'disabled must be a boolean' })
+    }
 
     try {
       const { loadGlobalConfig, saveGlobalConfig } = await import('../cli/config.js')
@@ -2313,6 +2369,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         ...(url !== undefined ? { url: url as string } : {}),
         ...(headers !== undefined ? { headers: headers as Record<string, string> } : {}),
         ...(timeout !== undefined ? { timeout: timeout as number } : {}),
+        ...(disabled !== undefined ? { disabled: disabled as boolean } : {}),
       }
 
       const { error: updateError } = await applyMcpServerUpdate({
@@ -2336,6 +2393,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       for (const s of sessions) {
         sessionManager.setDynamicContextChanged(s.id, true)
       }
+      wssExports.broadcastAll(createServerMessage('mcp.servers.changed', { servers: mcpManager.getAllServers() }))
       res.json({ server: mcpManager.getServer(name) })
     } catch (error) {
       res.status(400).json({ error: error instanceof Error ? error.message : String(error) })
@@ -2371,6 +2429,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     for (const s of sessions) {
       sessionManager.setDynamicContextChanged(s.id, true)
     }
+
+    wssExports.broadcastAll(createServerMessage('mcp.servers.changed', { servers: mcpManager.getAllServers() }))
 
     res.json({ success: true })
   })
@@ -2413,6 +2473,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       for (const s of sessions) {
         sessionManager.setDynamicContextChanged(s.id, true)
       }
+
+      wssExports.broadcastAll(createServerMessage('mcp.servers.changed', { servers: mcpManager.getAllServers() }))
 
       res.json({ success: true })
     } catch (error) {
@@ -2654,12 +2716,14 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     () => providerManager.getActiveProvider(),
     sessionManager,
     providerManager,
+    () => mcpManager.getAllServers(),
   )
   const wss = wssExports.wss
 
   // Wire MCP config tool to broadcast changes to all connected UIs
   setNotifyMcpServersChanged((sessionId: string) => {
-    wssExports.broadcastAll(createServerMessage('mcp.servers.changed', {}))
+    const servers = mcpManager.getAllServers()
+    wssExports.broadcastAll(createServerMessage('mcp.servers.changed', { servers }))
     const state = sessionManager.getContextState(sessionId)
     wssExports.broadcastForSession(sessionId, createContextStateMessage(state))
   })

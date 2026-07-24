@@ -138,6 +138,20 @@ describe('McpManager', () => {
       expect(server!.tools.find((t) => t.name === 'get_weather')!.enabled).toBe(true)
     })
 
+    it('should keep a disabled server connected', async () => {
+      await manager.addServer('disabled-server', {
+        transport: 'stdio',
+        command: 'node',
+        disabled: true,
+      })
+
+      const server = manager.getServer('disabled-server')
+      expect(server).toBeDefined()
+      expect(server!.status).toBe('connected')
+      expect(server!.config.disabled).toBe(true)
+      expect(server!.tools.length).toBeGreaterThan(0)
+    })
+
     it('should strip outputSchema from tool list responses to prevent AJV validation failure on broken $ref', async () => {
       await manager.addServer('test-server', {
         transport: 'stdio',
@@ -467,5 +481,51 @@ describe('McpManager token estimation', () => {
     const after = manager.getServer('test')!.estimatedTokens
 
     expect(after).toBeLessThan(before)
+  })
+
+  it('should not affect other servers when one server is disabled', async () => {
+    const manager = new McpManager()
+    await manager.addServer('alpha', { transport: 'stdio', command: 'node' })
+    await manager.addServer('beta', { transport: 'stdio', command: 'node' })
+
+    const alphaBefore = manager.getServer('alpha')!
+    const betaBefore = manager.getServer('beta')!
+    expect(alphaBefore.status).toBe('connected')
+    expect(betaBefore.status).toBe('connected')
+    expect(alphaBefore.tools.length).toBe(2)
+    expect(betaBefore.tools.length).toBe(2)
+
+    // Mark alpha as disabled — still connected, but filtered by getToolDefinitions
+    manager.removeServer('alpha')
+    await manager.addServer('alpha', { transport: 'stdio', command: 'node', disabled: true })
+
+    const alphaAfter = manager.getServer('alpha')!
+    const betaAfter = manager.getServer('beta')!
+
+    // alpha is still connected (disabled only affects visibility)
+    expect(alphaAfter.status).toBe('connected')
+    expect(alphaAfter.tools.length).toBe(2)
+    expect(alphaAfter.config.disabled).toBe(true)
+
+    // getToolDefinitions should filter alpha
+    const defs = manager.getToolDefinitions()
+    const alphaDefs = defs.filter((d) => d.function.name.startsWith('alpha_'))
+    expect(alphaDefs).toHaveLength(0)
+
+    // beta must be untouched
+    expect(betaAfter.status).toBe('connected')
+    expect(betaAfter.tools.length).toBe(2)
+
+    // Now re-enable alpha
+    manager.removeServer('alpha')
+    await manager.addServer('alpha', { transport: 'stdio', command: 'node' })
+
+    const alphaRe = manager.getServer('alpha')!
+    const betaRe = manager.getServer('beta')!
+
+    expect(alphaRe.status).toBe('connected')
+    expect(alphaRe.tools.length).toBe(2)
+    expect(betaRe.status).toBe('connected')
+    expect(betaRe.tools.length).toBe(2)
   })
 })

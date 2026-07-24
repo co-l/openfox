@@ -1,6 +1,7 @@
 import type { ToolResult } from '../../shared/types.js'
 import type { Tool, ToolRegistry, ToolContext } from './types.js'
 import type { AgentDefinition } from '../agents/types.js'
+import { getSessionDisabledServers } from '../mcp/session-overrides.js'
 import { readFileTool } from './read.js'
 import { writeFileTool } from './write.js'
 import { editFileTool } from './edit.js'
@@ -351,7 +352,7 @@ export function getToolRegistryForSubAgent(toolNames: string[]): ToolRegistry {
  *
  * Logs warnings for unknown tool names.
  */
-export function getToolRegistryForAgent(agentDef: AgentDefinition): ToolRegistry {
+export function getToolRegistryForAgent(agentDef: AgentDefinition, sessionId?: string): ToolRegistry {
   if (agentDef.metadata.subagent) {
     return getToolRegistryForSubAgent(agentDef.metadata.allowedTools)
   }
@@ -361,10 +362,21 @@ export function getToolRegistryForAgent(agentDef: AgentDefinition): ToolRegistry
   const allTools = getAllToolsMap()
   const tools: Tool[] = []
 
+  // Get session-level MCP disabled servers to filter out
+  const disabledMcpServers = sessionId ? new Set(getSessionDisabledServers(sessionId)) : new Set<string>()
+
   for (const [name, tool] of allTools.entries()) {
     // Exclude return_value from top-level agents
     if (name === 'return_value') {
       continue
+    }
+    // Filter out MCP tools disabled for this session
+    if (disabledMcpServers.size > 0) {
+      const underscoreIdx = name.indexOf('_')
+      if (underscoreIdx > 0) {
+        const serverName = name.slice(0, underscoreIdx)
+        if (disabledMcpServers.has(serverName)) continue
+      }
     }
     tools.push(tool)
   }

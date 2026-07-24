@@ -347,6 +347,7 @@ export function createWebSocketServer(
   getActiveProvider: (() => Provider | undefined) | undefined,
   sessionManager: SessionManager,
   providerManager?: ProviderManager,
+  getMcpServers?: () => import('../mcp/types.js').McpServerState[],
 ): WebSocketServerExports {
   const wss = new WebSocketServer({ server: httpServer })
   const clients = new Map<WebSocket, ClientConnection>()
@@ -782,6 +783,7 @@ export function createWebSocketServer(
           startTurnWithCompletionChain,
           cleanupAfterTurn,
           enqueueSend,
+          getMcpServers,
         )
       } catch (error) {
         logger.error('Error handling client message', { error, type: message.type })
@@ -871,6 +873,7 @@ async function handleClientMessage(
     setRunningOnEarlyReturn: boolean,
   ) => void,
   enqueueSendFn: (client: ClientConnection, data: string, seq: number) => void,
+  getMcpServers?: () => import('../mcp/types.js').McpServerState[],
 ): Promise<void> {
   const send = (msg: ServerMessage) => {
     if (ws.readyState === WebSocket.OPEN) {
@@ -963,11 +966,21 @@ async function handleClientMessage(
       sendContextState()
 
       // Re-detect dynamic context changes on load (survives server restart)
+      // Also send MCP server state once MCP is ready
       const cachedHash = sessionManager.getCachedPrompt(session.id)?.hash
-      if (cachedHash) {
-        ;(async () => {
-          try {
-            await mcpReadyPromise
+      ;(async () => {
+        try {
+          await mcpReadyPromise
+
+          // Send current MCP server state
+          if (getMcpServers) {
+            const servers = getMcpServers()
+            if (servers.length > 0) {
+              send(createServerMessage('mcp.servers.changed', { servers }))
+            }
+          }
+
+          if (cachedHash) {
             const currentHash = await computeSessionHash(sessionManager, session.id)
             if (currentHash !== cachedHash) {
               sessionManager.setDynamicContextChanged(session.id, true)
@@ -976,11 +989,11 @@ async function handleClientMessage(
               sessionManager.setDynamicContextChanged(session.id, false)
               sendContextState()
             }
-          } catch {
-            // Non-critical — banner just won't appear on reload
           }
-        })()
-      }
+        } catch {
+          // Non-critical — banners and MCP state just won't be sent
+        }
+      })()
       break
     }
 
