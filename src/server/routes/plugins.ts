@@ -3,7 +3,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, resolve, join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { readFile, readdir, rm, rename } from 'node:fs/promises'
-import { platform } from 'node:os'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { ProviderPluginRegistry } from '../../provider/index.js'
@@ -19,9 +18,11 @@ interface Logger {
   error: (message: string, context?: Record<string, unknown>) => void
 }
 
+import { openFolder } from '../utils/openFolder.js'
+
 const execFileP = promisify(execFile)
 
-async function openFolder(
+async function openFolderRoute(
   dir: string,
   res: {
     json: (data: unknown) => void
@@ -29,9 +30,7 @@ async function openFolder(
   },
 ): Promise<void> {
   try {
-    await execFileP('mkdir', ['-p', dir], { timeout: 5000 })
-    const cmd = platform() === 'darwin' ? 'open' : platform() === 'win32' ? 'explorer' : 'xdg-open'
-    await execFileP(cmd, [dir], { timeout: 5000 })
+    await openFolder(dir)
     res.json({ success: true })
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to open folder' })
@@ -209,14 +208,14 @@ export function createPluginRoutes(options: {
 
   router.get('/open-folder', async (_req, res) => {
     const pluginsDir = join(getGlobalConfigDir(config.mode ?? 'production'), 'plugins')
-    await openFolder(pluginsDir, res)
+    await openFolderRoute(pluginsDir, res)
   })
 
   router.get('/:name/open-folder', async (req, res) => {
     const name = req.params.name as string
     if (!/^[a-zA-Z0-9_-]+$/.test(name)) return res.status(400).json({ error: 'Invalid plugin name' })
     const targetDir = join(getGlobalConfigDir(config.mode ?? 'production'), 'plugins', name)
-    await openFolder(targetDir, res)
+    await openFolderRoute(targetDir, res)
   })
 
   router.delete('/:name', async (req, res) => {

@@ -1,5 +1,13 @@
 import { useState, useEffect } from 'react'
-import { MenuIcon, SettingsIcon, LogoutIcon, TerminalIcon, FullscreenIcon, FullscreenExitIcon } from '../shared/icons'
+import {
+  MenuIcon,
+  SettingsIcon,
+  LogoutIcon,
+  TerminalIcon,
+  FullscreenIcon,
+  FullscreenExitIcon,
+  FolderIcon,
+} from '../shared/icons'
 import { Link, useLocation } from 'wouter'
 import { useSessionStore } from '../../stores/session'
 import { useProjectStore } from '../../stores/project'
@@ -8,6 +16,7 @@ import { useTerminalStore } from '../../stores/terminal'
 import { useUpdateStore } from '../../stores/update'
 import { useKeybindings, useBinding } from '../../hooks/useKeybindings'
 import { formatKeybinding } from '../../lib/keybindings'
+import { authFetch } from '../../lib/api'
 import { GlobalSettingsModal } from '../settings/GlobalSettingsModal'
 import { TerminalDrawer } from '../terminal/TerminalDrawer'
 import { ProjectDropdown } from './ProjectDropdown'
@@ -155,6 +164,16 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
             title="Toggle terminal (double Ctrl)"
           >
             <TerminalIcon />
+          </button>
+        )}
+
+        {isProjectPage && project && (
+          <button
+            onClick={() => authFetch(`/api/projects/${project.id}/open-folder`).catch(() => {})}
+            className="p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
+            title="Open project folder"
+          >
+            <FolderIcon className="w-4 h-4" />
           </button>
         )}
 

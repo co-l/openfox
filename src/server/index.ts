@@ -372,6 +372,21 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     res.json({ project })
   })
 
+  app.get('/api/projects/:id/open-folder', async (req, res) => {
+    const { getProject } = await import('./db/projects.js')
+    const project = getProject(req.params.id)
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' })
+    }
+    try {
+      const { openFolder } = await import('./utils/openFolder.js')
+      await openFolder(project.workdir)
+      res.json({ success: true })
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to open folder' })
+    }
+  })
+
   app.put('/api/projects/:id', async (req, res) => {
     const { updateProject } = await import('./db/projects.js')
     const { name, customInstructions, dangerLevel } = req.body
