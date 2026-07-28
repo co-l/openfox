@@ -24,6 +24,7 @@ export function createMcpTools(mcpManager: McpManager): Tool[] {
       tools.push({
         name: prefixedName,
         definition,
+        mcpServer: server.name,
         execute: async (args: Record<string, unknown>, _context: ToolContext): Promise<ToolResult> => {
           const start = Date.now()
           const result = await mcpManager.callTool(server.name, mcpTool.name, args)

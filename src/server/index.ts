@@ -17,7 +17,7 @@ import { buildModelsUrl } from './llm/url-utils.js'
 
 import { createMockLLMClient } from './llm/mock.js'
 import { createProviderManager, parseDefaultModelSelection } from './provider-manager.js'
-import { createToolRegistry, setMcpTools } from './tools/index.js'
+import { createToolRegistry, setMcpTools, getBuiltInToolNames } from './tools/index.js'
 import { ALWAYS_ALLOWED, ALWAYS_ALLOWED_FOR_SUBAGENTS, TOP_LEVEL_ONLY_TOOLS } from './tools/tool-policy.js'
 import { McpManager, createMcpTools } from './mcp/index.js'
 import {
@@ -167,7 +167,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     logger.error('LLM initialization failed', { error: err instanceof Error ? err.message : String(err) }),
   )
 
-  const toolRegistry = createToolRegistry()
+  let toolRegistry = createToolRegistry()
 
   // Initialize MCP manager and connect to configured servers
   const mcpManager = new McpManager({
@@ -202,6 +202,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const mcpTools = createMcpTools(mcpManager)
     if (mcpTools.length > 0) {
       setMcpTools(mcpTools)
+      toolRegistry = createToolRegistry()
       logger.info('MCP tools registered', { count: mcpTools.length })
     }
     const { signalMcpReady } = await import('./ws/server.js')
@@ -291,11 +292,14 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   // Available tools with action metadata for granular permissions
   app.get('/api/tools', (_req, res) => {
+    const builtInNames = getBuiltInToolNames()
     const tools = toolRegistry.tools.map((t) => ({
       name: t.name,
       actions: t.permittedActions || [],
       alwaysAllowed: ALWAYS_ALLOWED.has(t.name) || ALWAYS_ALLOWED_FOR_SUBAGENTS.has(t.name),
       topLevelOnly: TOP_LEVEL_ONLY_TOOLS.has(t.name),
+      isMcp: !builtInNames.has(t.name),
+      mcpServer: t.mcpServer,
     }))
     res.json({ tools })
   })
@@ -2377,6 +2381,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const { setMcpTools } = await import('./tools/index.js')
     const mcpTools = createMcpTools(mcpManager)
     setMcpTools(mcpTools)
+    toolRegistry = createToolRegistry()
   }
 
   app.get('/api/mcp/servers', (_req, res) => {

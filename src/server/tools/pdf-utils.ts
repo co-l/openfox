@@ -1,5 +1,6 @@
 import { OUTPUT_LIMITS } from './types.js'
-import { getDocument, OPS } from 'pdfjs-dist/legacy/build/pdf.mjs'
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const { getDocument, OPS } = (await import('pdfjs-dist/legacy/build/pdf.mjs')) as any
 import { PNG } from 'pngjs'
 
 const PDF_HEADER = Buffer.from('%PDF')
@@ -184,7 +185,8 @@ export function encodeImageToDataUrl(imgData: RawImageData, maxDimension = 1024)
 }
 
 async function extractPageBlocks(
-  page: Awaited<ReturnType<Awaited<ReturnType<typeof getDocument>['promise']>['getPage']>>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  page: any,
   pageIndex: number,
   pageCount: number,
   imageCounter: { count: number; limitReached: boolean },
@@ -193,11 +195,13 @@ async function extractPageBlocks(
   const [textContent, opList] = await Promise.all([page.getTextContent(), page.getOperatorList()])
 
   const textItems = textContent.items.filter(
-    (item): item is Extract<(typeof textContent.items)[number], { str: string }> => 'str' in item,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (item: any): item is { str: string } => 'str' in item,
   )
 
   const textStr = textItems
-    .map((t) => t.str)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((t: any) => t.str)
     .join(' ')
     .trim()
 

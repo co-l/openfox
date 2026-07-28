@@ -61,7 +61,7 @@ function getBuiltInTools(): Tool[] {
   return _builtInTools
 }
 
-function getBuiltInToolNames(): Set<string> {
+export function getBuiltInToolNames(): Set<string> {
   if (BUILT_IN_TOOL_NAMES_CACHE.size === 0) {
     for (const t of getBuiltInTools()) {
       BUILT_IN_TOOL_NAMES_CACHE.add(t.name)

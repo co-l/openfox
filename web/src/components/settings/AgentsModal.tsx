@@ -93,8 +93,14 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
       authFetch('/api/tools')
         .then((r) => r.json())
         .then((d) => {
-          const tools: { name: string; actions: string[]; alwaysAllowed?: boolean; topLevelOnly?: boolean; isMcp?: boolean; mcpServer?: string }[] =
-            d.tools || []
+          const tools: {
+            name: string
+            actions: string[]
+            alwaysAllowed?: boolean
+            topLevelOnly?: boolean
+            isMcp?: boolean
+            mcpServer?: string
+          }[] = d.tools || []
           setAlwaysAllowedNames(new Set(tools.filter((t) => t.alwaysAllowed).map((t) => t.name)))
           setAvailableTools(tools.filter((t) => !t.alwaysAllowed))
         })

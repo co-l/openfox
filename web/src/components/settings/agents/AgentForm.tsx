@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import { FormField, ModalActions, ErrorBanner } from '../CRUDModal'
 import { DropdownMenu } from '../../shared/DropdownMenu'
 import { ModelPicker } from '../../shared/ModelPicker'
+import { Toggle } from '../../shared/Toggle'
 import { parseAllowedTools, serializeTools } from './tools'
 import type { Provider } from '../../../stores/config'
 
@@ -17,7 +19,7 @@ interface AgentFormProps {
   saving: boolean
   loadingModel?: boolean
   isReadOnly: boolean
-  availableTools: { name: string; actions: string[]; topLevelOnly?: boolean }[]
+  availableTools: { name: string; actions: string[]; topLevelOnly?: boolean; isMcp?: boolean; mcpServer?: string }[]
   providers: Provider[]
   onNameChange: (name: string) => void
   onIdChange: (id: string) => void
@@ -60,7 +62,27 @@ export function AgentForm({
   onDuplicate,
 }: AgentFormProps) {
   const granularTools = parseAllowedTools(formTools)
-  const filteredTools = availableTools.filter((t) => !(formSubagent && t.topLevelOnly))
+  const filteredTools = availableTools.filter((t) => !(formSubagent && t.topLevelOnly) && !t.isMcp)
+  const mcpTools = availableTools.filter((t) => t.isMcp && !(formSubagent && t.topLevelOnly))
+
+  const mcpGroups: Map<string, typeof mcpTools> = new Map()
+  for (const tool of mcpTools) {
+    const server = tool.mcpServer ?? tool.name
+    const group = mcpGroups.get(server) ?? []
+    group.push(tool)
+    mcpGroups.set(server, group)
+  }
+
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+
+  const toggleGroup = (server: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(server)) next.delete(server)
+      else next.add(server)
+      return next
+    })
+  }
 
   const toggleToolAction = (toolName: string, action: string) => {
     const newGranular = new Map(granularTools)
@@ -215,17 +237,13 @@ export function AgentForm({
                   trigger={
                     <button
                       className={`px-1.5 py-0.5 rounded text-xs font-mono transition-colors flex items-center gap-1 ${
-                        isSelected ? 'bg-accent-primary/25 text-accent-primary' : 'bg-bg-primary text-text-muted'
-                      }`}
+                        isSelected
+                          ? 'bg-accent-primary/25 text-accent-primary'
+                          : 'bg-bg-primary text-text-muted hover:text-text-secondary'
+                      } cursor-pointer`}
                     >
                       <span>{tool.name}</span>
-                      {hasActions && (
-                        <span
-                          className={`text-[10px] ${isSelected && selectedActions.size > 0 ? 'text-accent-primary' : 'text-text-muted'}`}
-                        >
-                          *
-                        </span>
-                      )}
+                      {selectedActions.size > 0 && <span className="text-[10px]">*</span>}
                     </button>
                   }
                   minWidth="160px"
@@ -265,6 +283,64 @@ export function AgentForm({
             })}
           </div>
         </div>
+
+        {mcpGroups.size > 0 && (
+          <div>
+            <label className="block text-xs text-text-secondary mb-1">
+              MCP Tools <span className="text-text-muted font-normal">— from connected MCP servers</span>
+            </label>
+            <div className="bg-bg-tertiary border border-border rounded overflow-hidden">
+              {Array.from(mcpGroups.entries()).map(([server, tools]) => {
+                const isExpanded = expandedGroups.has(server)
+                const selectedCount = tools.filter((t) => granularTools.has(t.name)).length
+                return (
+                  <div key={server} className="border-b border-border last:border-b-0">
+                    <button
+                      onClick={() => toggleGroup(server)}
+                      className="w-full flex items-center justify-between px-3 py-2 hover:bg-bg-primary/50 transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono text-text-primary">{server}</span>
+                        <span className="text-xs text-text-muted">
+                          ({selectedCount}/{tools.length})
+                        </span>
+                      </div>
+                      <span className="text-xs text-text-muted">{isExpanded ? '▲' : '▼'}</span>
+                    </button>
+                    {isExpanded && (
+                      <div className="border-t border-border px-2 py-1 space-y-0.5">
+                        {tools.map((tool) => {
+                          const isSelected = granularTools.has(tool.name)
+                          const shortName = tool.mcpServer
+                            ? tool.name.slice(tool.mcpServer.length + 1) || tool.name
+                            : tool.name
+                          return (
+                            <div
+                              key={tool.name}
+                              className="flex items-center justify-between py-1 px-1 rounded hover:bg-bg-primary/50 transition-colors"
+                            >
+                              <span
+                                className={`text-xs font-mono ${isSelected ? 'text-text-primary' : 'text-text-muted'}`}
+                              >
+                                {shortName}
+                              </span>
+                              <Toggle
+                                enabled={isSelected}
+                                onClick={() => !isReadOnly && toggleTool(tool.name)}
+                                disabled={isReadOnly}
+                                label={tool.name}
+                              />
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 min-h-[150px] border-t border-border pt-3 flex flex-col">
