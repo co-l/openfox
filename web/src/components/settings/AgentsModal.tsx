@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Modal } from '../shared/SelfContainedModal'
 import { useAgentsStore, type AgentFull } from '../../stores/agents'
+import { useConfigStore } from '../../stores/config'
 import { authFetch } from '../../lib/api'
 import { CRUDListHeader, useConfirmDialog, DestinationSelector } from './CRUDModal'
 import { AgentGroup } from './agents/AgentListItem'
@@ -31,6 +32,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
   const createAgent = useAgentsStore((state) => state.createAgent)
   const updateAgent = useAgentsStore((state) => state.updateAgent)
   const deleteAgentAction = useAgentsStore((state) => state.deleteAgent)
+  const providers = useConfigStore((state) => state.providers)
 
   const [view, setView] = useState<'list' | 'edit'>('list')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -43,6 +45,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
   const [formTools, setFormTools] = useState<string[]>([])
   const [formColor, setFormColor] = useState('#6b7280')
   const [formPrompt, setFormPrompt] = useState('')
+  const [formModel, setFormModel] = useState<string | undefined>(undefined)
   const [formDestination, setFormDestination] = useState<'project' | 'user'>('user')
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -262,6 +265,9 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
           saving={saving}
           isReadOnly={isReadOnly}
           availableTools={availableTools}
+          formModel={formModel}
+          providers={providers}
+          onModelChange={setFormModel}
           onNameChange={handleNameChange}
           onIdChange={setFormId}
           onDescriptionChange={setFormDescription}
