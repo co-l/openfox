@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useSessionStore } from '../../stores/session'
 import { ChevronDownIcon, CheckIcon } from '../shared/icons'
 import { useAgentsStore, getAgentColor } from '../../stores/agents'
@@ -11,8 +11,9 @@ export function AgentSelector() {
   const switchMode = useSessionStore((state) => state.switchMode)
   const defaults = useAgentsStore((state) => state.defaults)
   const userItems = useAgentsStore((state) => state.userItems)
+  const projectItems = useAgentsStore((state) => state.projectItems)
   const fetchAgents = useAgentsStore((state) => state.fetchAgents)
-  const agents = useMemo(() => [...defaults, ...userItems], [defaults, userItems])
+  const agents = [...defaults, ...userItems, ...projectItems]
   const [isOpen, setIsOpen] = useState(false)
   const [showManager, setShowManager] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
