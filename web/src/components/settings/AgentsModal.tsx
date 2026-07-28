@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Modal } from '../shared/SelfContainedModal'
 import { useAgentsStore, type AgentFull } from '../../stores/agents'
-import { useConfigStore } from '../../stores/config'
 import { authFetch } from '../../lib/api'
 import { CRUDListHeader, useConfirmDialog, DestinationSelector } from './CRUDModal'
 import { AgentGroup } from './agents/AgentListItem'
 import { AgentForm } from './agents/AgentForm'
-import { ModelPicker } from '../shared/ModelPicker'
 
 interface AgentsModalProps {
   isOpen: boolean
@@ -44,14 +42,10 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
   const [formSubagent, setFormSubagent] = useState(true)
   const [formTools, setFormTools] = useState<string[]>([])
   const [formColor, setFormColor] = useState('#6b7280')
-  const [formModel, setFormModel] = useState<string | undefined>(undefined)
   const [formPrompt, setFormPrompt] = useState('')
   const [formDestination, setFormDestination] = useState<'project' | 'user'>('user')
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
-  const [loadingModel, setLoadingModel] = useState(false)
-
-  const [modelModalAgentId, setModelModalAgentId] = useState<string | null>(null)
 
   const [availableTools, setAvailableTools] = useState<{ name: string; actions: string[]; topLevelOnly?: boolean }[]>(
     [],
@@ -68,19 +62,6 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
     setFormColor(agent.metadata.color ?? '#6b7280')
     setFormPrompt(agent.prompt)
     setFormError('')
-    setLoadingModel(true)
-    // Fetch model override
-    authFetch(`/api/agents/${agent.metadata.id}/model`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.providerId && data.model) {
-          setFormModel(`${data.providerId}/${data.model}`)
-        } else {
-          setFormModel(undefined)
-        }
-      })
-      .catch(() => setFormModel(undefined))
-      .finally(() => setLoadingModel(false))
   }
 
   const applyDuplicateFromContent = (content: AgentFull, id: string, setAsNew: boolean) => {
@@ -112,7 +93,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
       authFetch('/api/tools')
         .then((r) => r.json())
         .then((d) => {
-          const tools: { name: string; actions: string[]; alwaysAllowed?: boolean; topLevelOnly?: boolean }[] =
+          const tools: { name: string; actions: string[]; alwaysAllowed?: boolean; topLevelOnly?: boolean; isMcp?: boolean; mcpServer?: string }[] =
             d.tools || []
           setAlwaysAllowedNames(new Set(tools.filter((t) => t.alwaysAllowed).map((t) => t.name)))
           setAvailableTools(tools.filter((t) => !t.alwaysAllowed))
@@ -192,10 +173,6 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
     setView('edit')
   }
 
-  const handleEditBuiltInModel = (agentId: string) => {
-    setModelModalAgentId(agentId)
-  }
-
   const handleDelete = async (agentId: string) => {
     await deleteAgentAction(agentId)
   }
@@ -224,16 +201,12 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
 
     const result = editingId ? await updateAgent(editingId, agent) : await createAgent(agent, formDestination)
 
+    setSaving(false)
+
     if (!result.success) {
-      setSaving(false)
       setFormError(result.error ?? 'Failed to save agent.')
       return
     }
-
-    // Save model override separately
-    await saveAgentModelOverride(editingId ?? formId, formModel)
-
-    setSaving(false)
 
     if (initialEditId) onClose()
     else setView('list')
@@ -255,7 +228,6 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
     }
   }
 
-  const modelOverrides = useAgentsStore((state) => state.modelOverrides)
   const defaultSubAgents = defaults.filter((a) => a.subagent)
   const defaultTopLevelAgents = defaults.filter((a) => !a.subagent)
   const userSubAgents = userItems.filter((a) => a.subagent)
@@ -265,222 +237,106 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
 
   if (view === 'edit') {
     return (
-      <>
-        <Modal
-          isOpen={isOpen}
-          onClose={handleCancel}
-          title={isReadOnly ? `${formName}` : editingId ? 'Edit Agent' : 'New Agent'}
-          size="xl"
-        >
-          {!editingId && !isReadOnly && <DestinationSelector value={formDestination} onChange={setFormDestination} />}
-          <AgentForm
-            formName={formName}
-            formId={formId}
-            formDescription={formDescription}
-            formSubagent={formSubagent}
-            formTools={formTools}
-            formColor={formColor}
-            formModel={formModel}
-            formPrompt={formPrompt}
-            formError={formError}
-            saving={saving}
-            loadingModel={loadingModel}
-            isReadOnly={isReadOnly}
-            availableTools={availableTools}
-            providers={useConfigStore.getState().providers}
-            onNameChange={handleNameChange}
-            onIdChange={setFormId}
-            onDescriptionChange={setFormDescription}
-            onSubagentChange={(subagent) => {
-              setFormSubagent(subagent)
-              if (subagent) {
-                setFormTools((prev) => prev.filter((t) => !availableTools.find((at) => at.name === t)?.topLevelOnly))
-              }
-            }}
-            onToolsChange={setFormTools}
-            onColorChange={setFormColor}
-            onModelChange={setFormModel}
-            onPromptChange={setFormPrompt}
-            onSave={handleSave}
-            onCancel={handleCancel}
-            onDuplicate={() => {
-              setFormName(formName + ' (copy)')
-              setFormId(`${editingId}-copy-${Date.now()}`)
-              setEditingId(null)
-              setIsReadOnly(false)
-            }}
-          />
-        </Modal>
-        <BuiltInModelModal
-          agentId={modelModalAgentId}
-          onClose={() => setModelModalAgentId(null)}
-          onSaved={() => fetchAgents()}
+      <Modal
+        isOpen={isOpen}
+        onClose={handleCancel}
+        title={isReadOnly ? `${formName}` : editingId ? 'Edit Agent' : 'New Agent'}
+        size="xl"
+      >
+        {!editingId && !isReadOnly && <DestinationSelector value={formDestination} onChange={setFormDestination} />}
+        <AgentForm
+          formName={formName}
+          formId={formId}
+          formDescription={formDescription}
+          formSubagent={formSubagent}
+          formTools={formTools}
+          formColor={formColor}
+          formPrompt={formPrompt}
+          formError={formError}
+          saving={saving}
+          isReadOnly={isReadOnly}
+          availableTools={availableTools}
+          onNameChange={handleNameChange}
+          onIdChange={setFormId}
+          onDescriptionChange={setFormDescription}
+          onSubagentChange={(subagent) => {
+            setFormSubagent(subagent)
+            if (subagent) {
+              setFormTools((prev) => prev.filter((t) => !availableTools.find((at) => at.name === t)?.topLevelOnly))
+            }
+          }}
+          onToolsChange={setFormTools}
+          onColorChange={setFormColor}
+          onPromptChange={setFormPrompt}
+          onSave={handleSave}
+          onCancel={handleCancel}
+          onDuplicate={() => {
+            setFormName(formName + ' (copy)')
+            setFormId(`${editingId}-copy-${Date.now()}`)
+            setEditingId(null)
+            setIsReadOnly(false)
+          }}
         />
-      </>
+      </Modal>
     )
   }
 
   return (
-    <>
-      <Modal isOpen={isOpen} onClose={onClose} title="Agents" size="lg">
-        <CRUDListHeader
-          description="Agents define behavior, tools, and prompts for top-level modes and sub-agents."
-          onNew={handleNew}
-          loading={loading}
-          hasItems={defaults.length > 0 || userItems.length > 0 || projectItems.length > 0}
-        >
-          <div className="space-y-4">
-            {defaults.length > 0 && (
-              <AgentGroup
-                title="Built-in"
-                agents={defaultTopLevelAgents}
-                subagents={defaultSubAgents}
-                isBuiltIn={true}
-                alwaysAllowedNames={alwaysAllowedNames}
-                modelOverrides={modelOverrides}
-                onView={handleView}
-                onEdit={handleEditBuiltInModel}
-                onDuplicate={handleDuplicate}
-              />
-            )}
+    <Modal isOpen={isOpen} onClose={onClose} title="Agents" size="lg">
+      <CRUDListHeader
+        description="Agents define behavior, tools, and prompts for top-level modes and sub-agents."
+        onNew={handleNew}
+        loading={loading}
+        hasItems={defaults.length > 0 || userItems.length > 0 || projectItems.length > 0}
+      >
+        <div className="space-y-4">
+          {defaults.length > 0 && (
+            <AgentGroup
+              title="Built-in"
+              agents={defaultTopLevelAgents}
+              subagents={defaultSubAgents}
+              isBuiltIn={true}
+              alwaysAllowedNames={alwaysAllowedNames}
+              onView={handleView}
+              onDuplicate={handleDuplicate}
+            />
+          )}
 
-            {[
-              { title: 'Custom', agents: userTopLevelAgents, subagents: userSubAgents },
-              { title: 'Project', agents: projectTopLevelAgents, subagents: projectSubAgents },
-            ].map(
-              (section) =>
-                section.agents.length > 0 && (
-                  <AgentGroup
-                    key={section.title}
-                    title={section.title}
-                    agents={section.agents}
-                    subagents={section.subagents}
-                    isBuiltIn={false}
-                    alwaysAllowedNames={alwaysAllowedNames}
-                    modelOverrides={modelOverrides}
-                    isConfirmingDelete={(id) => isConfirming(id, 'delete')}
-                    onView={handleView}
-                    onDuplicate={handleDuplicate}
-                    onEdit={handleEdit}
-                    onDelete={(id) => {
-                      if (isConfirming(id, 'delete')) {
-                        handleDelete(id)
-                        clearConfirm()
-                      } else {
-                        requestDelete(id)
-                      }
-                    }}
-                    onCancelDelete={clearConfirm}
-                  />
-                ),
-            )}
-          </div>
-        </CRUDListHeader>
-      </Modal>
-      <BuiltInModelModal
-        agentId={modelModalAgentId}
-        onClose={() => setModelModalAgentId(null)}
-        onSaved={() => fetchAgents()}
-      />
-    </>
-  )
-}
-
-function parseModelOverride(value: string): { providerId: string; model: string } {
-  const slashIndex = value.indexOf('/')
-  return slashIndex > 0
-    ? { providerId: value.substring(0, slashIndex), model: value.substring(slashIndex + 1) }
-    : { providerId: value, model: value }
-}
-
-async function saveAgentModelOverride(agentId: string, modelOverride: string | undefined): Promise<void> {
-  if (modelOverride) {
-    const { providerId, model } = parseModelOverride(modelOverride)
-    await authFetch(`/api/agents/${agentId}/model`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ providerId, model }),
-    })
-  } else {
-    await authFetch(`/api/agents/${agentId}/model`, { method: 'DELETE' })
-  }
-}
-
-// Model-only modal for built-in agents — rendered outside the main component tree
-function BuiltInModelModal({
-  agentId,
-  onClose,
-  onSaved,
-}: {
-  agentId: string | null
-  onClose: () => void
-  onSaved: () => void
-}) {
-  const [value, setValue] = useState<string | undefined>(undefined)
-  const [loading, setLoading] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const defaults = useAgentsStore((s) => s.defaults)
-  const userItems = useAgentsStore((s) => s.userItems)
-  const projectItems = useAgentsStore((s) => s.projectItems)
-  const agents = [...defaults, ...userItems, ...projectItems]
-  const agent = agentId ? agents.find((a) => a.id === agentId) : undefined
-  const providers = useConfigStore((s) => s.providers)
-
-  useEffect(() => {
-    if (!agentId) return
-    setLoading(true)
-    authFetch(`/api/agents/${agentId}/model`)
-      .then((r) => r.json())
-      .then((data) => {
-        setValue(data.providerId && data.model ? `${data.providerId}/${data.model}` : undefined)
-      })
-      .catch(() => setValue(undefined))
-      .finally(() => setLoading(false))
-  }, [agentId])
-
-  const handleSave = async () => {
-    if (!agentId) return
-    setSaving(true)
-    setError(null)
-    try {
-      await saveAgentModelOverride(agentId, value)
-      onSaved()
-      onClose()
-    } catch {
-      setError('Failed to save. Please try again.')
-    }
-    setSaving(false)
-  }
-
-  return (
-    <Modal isOpen={!!agentId} onClose={onClose} title={`Model — ${agent?.name ?? agentId ?? ''}`} size="md">
-      <div className="space-y-4 p-2">
-        <p className="text-xs text-text-muted">
-          Choose which model to use when this agent is active. This overrides the session/global model.
-        </p>
-        {loading ? (
-          <div className="text-sm text-text-muted py-2">Loading...</div>
-        ) : (
-          <ModelPicker providers={providers} value={value} onChange={setValue} defaultLabel="Default (global model)" />
-        )}
-        {error && <p className="text-xs text-red-500">{error}</p>}
-        <div className="flex justify-end gap-2 pt-2">
-          <button
-            onClick={onClose}
-            className="px-4 py-1.5 text-sm text-text-muted hover:text-text-secondary transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-4 py-1.5 rounded bg-accent-primary/20 text-sm text-accent-primary font-medium hover:bg-accent-primary/30 disabled:opacity-50 transition-colors"
-          >
-            {saving ? 'Saving...' : 'Save'}
-          </button>
+          {[
+            {
+              title: 'Custom',
+              agents: userTopLevelAgents,
+              subagents: userSubAgents,
+            },
+            { title: 'Project', agents: projectTopLevelAgents, subagents: projectSubAgents },
+          ].map(
+            (section) =>
+              (section.agents.length > 0 || section.subagents.length > 0) && (
+                <AgentGroup
+                  key={section.title}
+                  title={section.title}
+                  agents={section.agents}
+                  subagents={section.subagents}
+                  isBuiltIn={false}
+                  alwaysAllowedNames={alwaysAllowedNames}
+                  isConfirmingDelete={(id) => isConfirming(id, 'delete')}
+                  onView={handleView}
+                  onDuplicate={handleDuplicate}
+                  onEdit={handleEdit}
+                  onDelete={(id) => {
+                    if (isConfirming(id, 'delete')) {
+                      handleDelete(id)
+                      clearConfirm()
+                    } else {
+                      requestDelete(id)
+                    }
+                  }}
+                  onCancelDelete={clearConfirm}
+                />
+              ),
+          )}
         </div>
-      </div>
+      </CRUDListHeader>
     </Modal>
   )
 }

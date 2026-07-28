@@ -69,6 +69,8 @@ export function AgentListItem({
 
 export function AgentGroup({
   title,
+  agentTitle = 'Agents',
+  subagentTitle = 'Sub-agents',
   agents,
   subagents,
   isBuiltIn,
@@ -82,6 +84,8 @@ export function AgentGroup({
   isConfirmingDelete,
 }: {
   title: string
+  agentTitle?: string
+  subagentTitle?: string
   agents: AgentInfo[]
   subagents: AgentInfo[]
   isBuiltIn: boolean
@@ -113,11 +117,14 @@ export function AgentGroup({
   return (
     <div>
       <h3 className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wide">{title}</h3>
+      {agents.length > 0 && (
+        <div className="text-xs text-text-muted uppercase tracking-wider mb-1.5">{agentTitle}</div>
+      )}
       <div className="space-y-2">
         {agents.map(renderAgentItem)}
         {subagents.length > 0 && (
           <div className="mt-3">
-            <div className="text-xs text-text-muted uppercase tracking-wider mb-1.5">Sub-agents</div>
+            <div className="text-xs text-text-muted uppercase tracking-wider mb-1.5">{subagentTitle}</div>
             <div className="space-y-2">{subagents.map(renderAgentItem)}</div>
           </div>
         )}

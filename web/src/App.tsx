@@ -168,6 +168,7 @@ function App() {
             SETTINGS_KEYS.DISPLAY_USER_PRESETS,
             SETTINGS_KEYS.DISPLAY_CUSTOM_CSS,
             SETTINGS_KEYS.KEYBINDINGS,
+            SETTINGS_KEYS.FEATURES_PER_SESSION_MCP,
           ])
         // Eagerly load MCP servers for the chat MCP indicator
         useMcpStore.getState().fetchServers()
