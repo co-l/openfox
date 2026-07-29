@@ -19,6 +19,7 @@ export const SETTINGS_KEYS = {
   DISPLAY_SHOW_CHANGELOG_ON_UPDATE: 'display.showChangelogOnUpdate',
   DISPLAY_MAX_VISIBLE_ITEMS: 'display.maxVisibleItems',
   DISPLAY_CUSTOM_CSS: 'display.customCss',
+  DISPLAY_TERMINAL_FONT: 'display.terminalFont',
   LLM_DYNAMIC_SYSTEM_PROMPT: 'llm.dynamicSystemPrompt',
   CACHE_WARMING: 'cache.warming',
   KEYBINDINGS: 'keybindings',
@@ -69,6 +70,7 @@ export const DISPLAY_SETTINGS_KEYS = [
   SETTINGS_KEYS.DISPLAY_SHOW_OPEN_IN_EDITOR,
   SETTINGS_KEYS.DISPLAY_SHOW_CHANGELOG_ON_UPDATE,
   SETTINGS_KEYS.DISPLAY_MAX_VISIBLE_ITEMS,
+  SETTINGS_KEYS.DISPLAY_TERMINAL_FONT,
 ] as const
 
 export function useDisplaySettings() {

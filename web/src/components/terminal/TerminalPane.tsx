@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { useTerminalStore } from '../../stores/terminal'
+import { useSettingsStore, SETTINGS_KEYS } from '../../stores/settings'
+import { DEFAULT_TERMINAL_FONT } from '../../lib/fonts'
 import { wsClient } from '../../lib/ws'
 import type { ServerMessage } from '@shared/protocol.js'
 import { XCloseSmallIcon } from '../shared/icons'
@@ -21,10 +23,15 @@ export function TerminalPane({ sessionId, onClose, onEscape, autoFocus }: Termin
 
   const writeSession = useTerminalStore((state) => state.writeSession)
   const resizeSession = useTerminalStore((state) => state.resizeSession)
+  const terminalFont = useSettingsStore((s) => s.settings[SETTINGS_KEYS.DISPLAY_TERMINAL_FONT] ?? DEFAULT_TERMINAL_FONT)
 
   useEffect(() => {
     sessionIdRef.current = sessionId
   }, [sessionId])
+
+  useEffect(() => {
+    useSettingsStore.getState().getSetting(SETTINGS_KEYS.DISPLAY_TERMINAL_FONT)
+  }, [])
 
   useEffect(() => {
     if (!onEscape) return
@@ -44,7 +51,7 @@ export function TerminalPane({ sessionId, onClose, onEscape, autoFocus }: Termin
     if (!terminalRef.current) return
 
     const term = new Terminal({
-      fontFamily: '"JetBrains Mono", monospace',
+      fontFamily: terminalFont,
       fontSize: 13,
       theme: {
         background: '#1a1a1a',
@@ -135,6 +142,18 @@ export function TerminalPane({ sessionId, onClose, onEscape, autoFocus }: Termin
       termRef.current = null
     }
   }, [sessionId, writeSession, resizeSession])
+
+  useEffect(() => {
+    const instance = termRef.current
+    if (!instance) return
+
+    instance.term.options.fontFamily = terminalFont
+    instance.fitAddon.fit()
+    const { cols, rows } = instance.term
+    if (cols > 0 && rows > 0) {
+      resizeSession(sessionIdRef.current, cols, rows)
+    }
+  }, [terminalFont, resizeSession])
 
   return (
     <div className="flex flex-col h-full bg-[#1a1a1a]">

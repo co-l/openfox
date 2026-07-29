@@ -1,7 +1,14 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { SETTINGS_KEYS } from '../../../stores/settings'
 import { useSettingsStoreState } from '../useSettingsStore'
 import { ThemeEditor } from '../ThemeEditor'
+import {
+  detectAvailableFonts,
+  extractPrimaryFamily,
+  toFontFamilyValue,
+  resolveDefaultFamily,
+  DEFAULT_TERMINAL_FONT,
+} from '../../../lib/fonts'
 
 function ThemePicker() {
   return <ThemeEditor />
@@ -152,6 +159,93 @@ export function DisplayTab() {
             className="w-20 px-2 py-1 text-sm text-text-primary bg-bg-tertiary border border-border rounded text-right"
           />
         </label>
+      </div>
+
+      <div className="border-t border-border pt-4">
+        <h3 className="text-sm font-medium text-text-primary mb-2">Terminal</h3>
+        <TerminalFontEditor />
+      </div>
+    </div>
+  )
+}
+
+const FONT_PREVIEW_TEXT = '~/project \ue0b0 git status \u2713 \u2717 \u2192 0123 iIlL1 |\u2500\u2524'
+
+function TerminalFontEditor() {
+  const { settings, getSetting, setSetting } = useSettingsStoreState()
+  const savedValue = settings[SETTINGS_KEYS.DISPLAY_TERMINAL_FONT] ?? DEFAULT_TERMINAL_FONT
+  const [localValue, setLocalValue] = useState(savedValue)
+
+  const availableFonts = useMemo(() => detectAvailableFonts(), [])
+  const resolvedDefault = useMemo(() => resolveDefaultFamily(), [])
+
+  useEffect(() => {
+    getSetting(SETTINGS_KEYS.DISPLAY_TERMINAL_FONT)
+  }, [getSetting])
+
+  useEffect(() => {
+    setLocalValue(savedValue)
+  }, [savedValue])
+
+  // The default is a fallback stack, so its first family may not be installed:
+  // show the one the browser actually resolves to instead of a phantom entry.
+  const isDefaultStack = savedValue === DEFAULT_TERMINAL_FONT
+  const primaryFamily = isDefaultStack ? resolvedDefault : extractPrimaryFamily(savedValue)
+  const isCustom = primaryFamily !== '' && !availableFonts.includes(primaryFamily)
+
+  const handleSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const family = e.target.value
+    if (!family) return
+    setSetting(SETTINGS_KEYS.DISPLAY_TERMINAL_FONT, toFontFamilyValue(family))
+  }
+
+  const saveCustom = () => {
+    setSetting(SETTINGS_KEYS.DISPLAY_TERMINAL_FONT, localValue.trim() || DEFAULT_TERMINAL_FONT)
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-text-muted">
+        Only monospace fonts detected on this machine are listed. Oh My Zsh themes need a Nerd Font for icons and
+        powerline separators to render correctly.
+      </p>
+
+      <select
+        value={isCustom ? '' : primaryFamily}
+        onChange={handleSelect}
+        className="w-full px-2 py-1.5 text-sm text-text-primary bg-bg-tertiary border border-border rounded focus:outline-none focus:ring-2 focus:ring-accent-primary/50 focus:border-accent-primary"
+      >
+        {isCustom && <option value="">{`Custom: ${primaryFamily}`}</option>}
+        {availableFonts.length === 0 && <option value="">No monospace font detected</option>}
+        {availableFonts.map((font) => (
+          <option key={font} value={font} style={{ fontFamily: `"${font}", monospace` }}>
+            {font}
+          </option>
+        ))}
+      </select>
+
+      <div
+        className="px-3 py-2 text-sm text-text-primary bg-bg-tertiary border border-border rounded overflow-x-auto whitespace-nowrap"
+        style={{ fontFamily: savedValue }}
+      >
+        {FONT_PREVIEW_TEXT}
+      </div>
+
+      <div>
+        <div className="text-xs text-text-muted mb-1">
+          Not listed? Enter a CSS font-family manually (e.g. &quot;My Font&quot;, monospace)
+        </div>
+        <input
+          type="text"
+          value={localValue}
+          onChange={(e) => setLocalValue(e.target.value)}
+          onBlur={saveCustom}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') saveCustom()
+          }}
+          className="w-full px-2 py-1 text-xs font-mono text-text-primary bg-bg-tertiary border border-border rounded focus:outline-none focus:ring-2 focus:ring-accent-primary/50 focus:border-accent-primary"
+          spellCheck={false}
+        />
       </div>
     </div>
   )
