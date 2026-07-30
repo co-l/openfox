@@ -6,6 +6,11 @@ export function computeOverrideIds<T extends { metadata: { id: string } }>(defau
   return userItems.filter((u) => defaults.some((d) => d.metadata.id === u.metadata.id)).map((u) => u.metadata.id)
 }
 
+export function resolveProjectDir(req: { query: Record<string, unknown> }, fallback?: string): string | undefined {
+  const workdir = req.query['workdir']
+  return typeof workdir === 'string' && workdir.trim() ? workdir : fallback
+}
+
 export interface LoadFunctions<T> {
   loadDefaults: () => Promise<T[]>
   loadUser: (configDir: string) => Promise<T[]>
@@ -64,7 +69,7 @@ export interface CrudRouteConfig<T> {
   getDefaultIds?: () => Promise<string[]>
   validateCreate?: (body: Record<string, unknown>) => string | null
   mapToResponse: (item: T) => { [key: string]: unknown }
-  extraGetData?: () => Promise<{ [key: string]: unknown }>
+  extraGetData?: (effectiveProjectDir?: string) => Promise<{ [key: string]: unknown }>
   extraRoutes?: (router: Router) => void
 }
 
@@ -75,15 +80,16 @@ export function createCrudRoutes<T extends { metadata: { id: string; name: strin
 ): Router {
   const router = Router()
 
-  router.get('/', async (_req, res) => {
+  router.get('/', async (req, res) => {
+    const effectiveProjectDir = resolveProjectDir(req, projectDir)
     const [defaults, userItems, projectItems] = await Promise.all([
       config.loadDefaults(),
       config.loadUser(configDir),
-      projectDir ? config.loadProject(projectDir) : [],
+      effectiveProjectDir ? config.loadProject(effectiveProjectDir) : [],
     ])
     const userOverrideIds = computeOverrideIds(defaults, userItems)
     const projectOverrideIds = computeOverrideIds(defaults, projectItems)
-    const extra = config.extraGetData ? await config.extraGetData() : {}
+    const extra = config.extraGetData ? await config.extraGetData(effectiveProjectDir) : {}
     res.json({
       defaults: defaults.map(config.mapToResponse),
       userItems: userItems.map(config.mapToResponse),
@@ -110,7 +116,8 @@ export function createCrudRoutes<T extends { metadata: { id: string; name: strin
 
   router.get('/:id', async (req, res) => {
     const { id } = req.params
-    const items = await config.loadAll(configDir, projectDir)
+    const effectiveProjectDir = resolveProjectDir(req, projectDir)
+    const items = await config.loadAll(configDir, effectiveProjectDir)
     const item = config.findById(id, items)
     if (!item) {
       return res.status(404).json({ error: 'Not found' })
@@ -127,15 +134,16 @@ export function createCrudRoutes<T extends { metadata: { id: string; name: strin
     }
     const id = String(meta['id'])
     const destination = (body['destination'] as 'project' | 'user') ?? 'user'
-    if (destination === 'project' && !projectDir) {
+    const effectiveProjectDir = resolveProjectDir(req, projectDir)
+    if (destination === 'project' && !effectiveProjectDir) {
       return res.status(400).json({ error: 'No project directory configured' })
     }
-    const exists = await config.exists(configDir, id, projectDir)
+    const exists = await config.exists(configDir, id, effectiveProjectDir)
     if (exists) {
       return res.status(409).json({ error: 'An item with this ID already exists' })
     }
     if (destination === 'project') {
-      await config.saveToProject(projectDir!, body as unknown as T)
+      await config.saveToProject(effectiveProjectDir!, body as unknown as T)
     } else {
       await config.save(configDir, body as unknown as T)
     }
@@ -144,7 +152,8 @@ export function createCrudRoutes<T extends { metadata: { id: string; name: strin
 
   router.put('/:id', async (req, res) => {
     const { id } = req.params
-    const items = await config.loadAll(configDir, projectDir)
+    const effectiveProjectDir = resolveProjectDir(req, projectDir)
+    const items = await config.loadAll(configDir, effectiveProjectDir)
     const existing = config.findById(id, items)
     if (!existing) {
       return res.status(404).json({ error: 'Not found' })
@@ -156,9 +165,9 @@ export function createCrudRoutes<T extends { metadata: { id: string; name: strin
       ...body,
       metadata: { ...existing.metadata, ...meta, id },
     } as unknown as T
-    const isProject = await isProjectItem(projectDir, config.dirName, id, config.ext)
+    const isProject = await isProjectItem(effectiveProjectDir, config.dirName, id, config.ext)
     if (isProject) {
-      await config.saveToProject(projectDir!, updated)
+      await config.saveToProject(effectiveProjectDir!, updated)
     } else {
       await config.save(configDir, updated)
     }
@@ -167,9 +176,10 @@ export function createCrudRoutes<T extends { metadata: { id: string; name: strin
 
   router.delete('/:id', async (req, res) => {
     const { id } = req.params
-    const isProject = await isProjectItem(projectDir, config.dirName, id, config.ext)
+    const effectiveProjectDir = resolveProjectDir(req, projectDir)
+    const isProject = await isProjectItem(effectiveProjectDir, config.dirName, id, config.ext)
     if (isProject) {
-      const result = await config.deleteProject(projectDir!, id)
+      const result = await config.deleteProject(effectiveProjectDir!, id)
       if (!result.success) {
         return res.status(500).json({ error: 'Failed to delete project item' })
       }
@@ -188,7 +198,8 @@ export function createCrudRoutes<T extends { metadata: { id: string; name: strin
 
   router.post('/:id/duplicate', async (req, res) => {
     const { id } = req.params
-    const items = await config.loadAll(configDir, projectDir)
+    const effectiveProjectDir = resolveProjectDir(req, projectDir)
+    const items = await config.loadAll(configDir, effectiveProjectDir)
     const source = config.findById(id, items)
     if (!source) {
       return res.status(404).json({ error: 'Not found' })
@@ -200,8 +211,8 @@ export function createCrudRoutes<T extends { metadata: { id: string; name: strin
     } as unknown as T
     const destination = (req.body as { destination?: 'project' | 'user' }).destination ?? 'user'
     if (destination === 'project') {
-      if (!projectDir) return res.status(400).json({ error: 'No project directory configured' })
-      await config.saveToProject(projectDir, duplicated)
+      if (!effectiveProjectDir) return res.status(400).json({ error: 'No project directory configured' })
+      await config.saveToProject(effectiveProjectDir, duplicated)
     } else {
       await config.save(configDir, duplicated)
     }

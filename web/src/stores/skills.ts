@@ -43,7 +43,9 @@ interface SkillsState {
   selectedDirectory: SelectedSkillDirectory | null
   diagnostics: string[]
   loading: boolean
-  fetchSkills: () => Promise<void>
+  workdir: string | null
+  setWorkdir: (workdir: string | null) => void
+  fetchSkills: (workdir?: string | null) => Promise<void>
   toggleSkill: (skillId: string) => Promise<void>
   fetchSkill: (skillId: string) => Promise<SkillFull | null>
   fetchDefaultContent: (skillId: string) => Promise<SkillFull | null>
@@ -74,6 +76,11 @@ async function mutateSkills(
   }
 }
 
+function skillsUrl(path: string, workdir?: string | null): string {
+  if (workdir) return `${path}?workdir=${encodeURIComponent(workdir)}`
+  return path
+}
+
 export const useSkillsStore = create<SkillsState>((set, get) => ({
   defaults: [],
   userItems: [],
@@ -82,11 +89,17 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
   selectedDirectory: null,
   diagnostics: [],
   loading: false,
+  workdir: null,
 
-  fetchSkills: async () => {
+  setWorkdir: (workdir) => {
+    set({ workdir })
+  },
+
+  fetchSkills: async (workdir?: string | null) => {
+    const wd = workdir ?? get().workdir
     set({ loading: true })
     try {
-      const res = await authFetch('/api/skills')
+      const res = await authFetch(skillsUrl('/api/skills', wd))
       const data = await res.json()
       set({
         defaults: data.defaults ?? [],
@@ -104,7 +117,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
 
   toggleSkill: async (skillId: string) => {
     try {
-      const res = await authFetch(`/api/skills/${skillId}/toggle`, { method: 'POST' })
+      const res = await authFetch(skillsUrl(`/api/skills/${skillId}/toggle`, get().workdir), { method: 'POST' })
       const data = await res.json()
       set((state) => ({
         defaults: state.defaults.map((s) => (s.id === skillId ? { ...s, enabled: data.enabled } : s)),
@@ -119,7 +132,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
 
   fetchSkill: async (skillId: string) => {
     try {
-      const res = await authFetch(`/api/skills/${skillId}`)
+      const res = await authFetch(skillsUrl(`/api/skills/${skillId}`, get().workdir))
       if (!res.ok) return null
       return (await res.json()) as SkillFull
     } catch {
@@ -138,7 +151,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
   },
 
   createSkill: async (skill: SkillFull, destination?: 'project' | 'user') => {
-    const result = await saveEntity('POST', '/api/skills', {
+    const result = await saveEntity('POST', skillsUrl('/api/skills', get().workdir), {
       ...skill,
       destination,
     } as unknown as Record<string, unknown>)
@@ -147,14 +160,18 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
   },
 
   updateSkill: async (id: string, skill: Partial<SkillFull>) => {
-    const result = await saveEntity('PUT', `/api/skills/${id}`, skill as unknown as Record<string, unknown>)
+    const result = await saveEntity(
+      'PUT',
+      skillsUrl(`/api/skills/${id}`, get().workdir),
+      skill as unknown as Record<string, unknown>,
+    )
     if (result.success) await get().fetchSkills()
     return result
   },
 
   deleteSkill: async (skillId: string) => {
     try {
-      const res = await authFetch(`/api/skills/${skillId}`, { method: 'DELETE' })
+      const res = await authFetch(skillsUrl(`/api/skills/${skillId}`, get().workdir), { method: 'DELETE' })
       const data = await res.json()
       if (res.ok) {
         set((state) => ({
@@ -169,7 +186,11 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
   },
 
   duplicateSkill: async (skillId: string, destination?: 'project' | 'user') => {
-    return duplicateEntity(`/api/skills/${skillId}/duplicate`, () => get().fetchSkills(), destination)
+    return duplicateEntity(
+      skillsUrl(`/api/skills/${skillId}/duplicate`, get().workdir),
+      () => get().fetchSkills(),
+      destination,
+    )
   },
 
   selectDirectory: async (path) => {

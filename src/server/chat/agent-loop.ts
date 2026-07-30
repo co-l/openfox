@@ -188,7 +188,7 @@ export async function runTopLevelAgentLoop(
       const session = sessionManager.requireSession(sessionId)
       const runtimeConfig = getRuntimeConfig()
       const configDir = getGlobalConfigDir(runtimeConfig.mode ?? 'production')
-      const skills = await getEnabledSkillMetadata(configDir, runtimeConfig.workdir)
+      const skills = await getEnabledSkillMetadata(configDir, session.workdir)
       const { content: instructionContent } = await getAllInstructions(session.workdir, session.projectId)
       const toolRegistry = config.getToolRegistry()
 
@@ -254,7 +254,7 @@ export async function runTopLevelAgentLoop(
 
     const runtimeConfig = getRuntimeConfig()
     const configDir = getGlobalConfigDir(runtimeConfig.mode ?? 'production')
-    const skills = await getEnabledSkillMetadata(configDir, runtimeConfig.workdir)
+    const skills = await getEnabledSkillMetadata(configDir, session.workdir)
     if (signal?.aborted) throw new Error('Aborted')
 
     const assembledRequest = await config.assembleRequest({

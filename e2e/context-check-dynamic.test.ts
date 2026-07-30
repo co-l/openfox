@@ -35,7 +35,9 @@ describe('context.checkDynamic', () => {
     // Clean up any skill files created during the test
     for (const skillId of createdSkillIds) {
       try {
-        await fetch(`${server.url}/api/skills/${skillId}`, { method: 'DELETE' })
+        await fetch(`${server.url}/api/skills/${skillId}?workdir=${encodeURIComponent(project.path)}`, {
+          method: 'DELETE',
+        })
       } catch {
         // Ignore cleanup errors
       }
@@ -78,7 +80,7 @@ describe('context.checkDynamic', () => {
 
     // Add a skill via the skills API (same payload as the UI: SkillFull + destination)
     const skillId = `test-skill-${Date.now()}`
-    const skillRes = await fetch(`${server.url}/api/skills`, {
+    const skillRes = await fetch(`${server.url}/api/skills?workdir=${encodeURIComponent(project.path)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

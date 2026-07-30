@@ -346,13 +346,12 @@ export async function runAgentTurn(
     injectAgentReminder(options.sessionId, agentDef)
   }
 
-  const { content: instructionContent } = await getAllInstructions(
-    options.sessionManager.requireSession(options.sessionId).workdir,
-    options.sessionManager.requireSession(options.sessionId).projectId,
-  )
+  const session = options.sessionManager.requireSession(options.sessionId)
+
+  const { content: instructionContent } = await getAllInstructions(session.workdir, session.projectId)
   const runtimeConfig = getRuntimeConfig()
   const configDir = getGlobalConfigDir(runtimeConfig.mode ?? 'production')
-  const skills = await getEnabledSkillMetadata(configDir, runtimeConfig.workdir)
+  const skills = await getEnabledSkillMetadata(configDir, session.workdir)
 
   return runTopLevelAgentLoop(
     {

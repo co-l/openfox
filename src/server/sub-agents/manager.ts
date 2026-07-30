@@ -266,7 +266,7 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
   const { content: instructionContent } = await getAllInstructions(effectiveWorkdir, session.projectId)
   const config = getRuntimeConfig()
   const configDir = getGlobalConfigDir(config.mode ?? 'production')
-  const skills = await getEnabledSkillMetadata(configDir, config.workdir)
+  const skills = await getEnabledSkillMetadata(configDir, effectiveWorkdir)
 
   const hasRunCommand = agentDef.metadata.allowedTools?.includes('run_command') ?? false
   const gitignoreSection = hasRunCommand ? await loadGitIgnoreRules(effectiveWorkdir) : ''

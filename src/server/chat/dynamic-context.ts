@@ -120,7 +120,7 @@ async function loadSessionContext(
   const { content: instructionContent } = await getAllInstructions(session.workdir, session.projectId)
   const runtimeConfig = getRuntimeConfig()
   const configDir = getGlobalConfigDir(runtimeConfig.mode ?? 'production')
-  const skills = await getEnabledSkillMetadata(configDir, runtimeConfig.workdir)
+  const skills = await getEnabledSkillMetadata(configDir, session.workdir)
   return { instructionContent: instructionContent ?? '', skills }
 }
 

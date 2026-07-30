@@ -20,7 +20,7 @@ export function formatSkillPrompt(skill: SkillDefinition): string {
   return `Skill package directory: ${skill.directory}\nResolve relative paths in these instructions from that directory.\n\n${skill.prompt}`
 }
 
-const handler: ToolHandler<LoadSkillArgs> = async (args, _context, helpers): Promise<ToolResult> => {
+const handler: ToolHandler<LoadSkillArgs> = async (args, context, helpers): Promise<ToolResult> => {
   const { skillId } = args
 
   if (!skillId) {
@@ -33,7 +33,7 @@ const handler: ToolHandler<LoadSkillArgs> = async (args, _context, helpers): Pro
 
   const config = getRuntimeConfig()
   const configDir = getGlobalConfigDir(config.mode ?? 'production')
-  const allSkills = await loadAllSkills(configDir, config.workdir)
+  const allSkills = await loadAllSkills(configDir, context.workdir)
   const skill = findSkillById(skillId, allSkills)
 
   if (!skill) {

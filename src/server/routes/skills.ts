@@ -26,7 +26,7 @@ import {
 import { installSkillPackage, SkillInstallError } from '../skills/installer.js'
 import { deleteSetting, getSetting, setSetting } from '../db/settings.js'
 import type { SkillDefinition } from '../skills/types.js'
-import { createCrudRoutes, validateNameIdPrompt, type CrudRouteConfig } from './crud-helpers.js'
+import { createCrudRoutes, validateNameIdPrompt, resolveProjectDir, type CrudRouteConfig } from './crud-helpers.js'
 
 const SKILL_DIRECTORIES_SETTING = 'skills.directories'
 const upload = multer({
@@ -108,8 +108,9 @@ function createConfig(configDir: string, projectDir?: string): CrudRouteConfig<S
     getDefaultIds: getDefaultSkillIds,
     validateCreate: validateSkillCreate,
     mapToResponse,
-    extraGetData: async () => {
-      const discovery = await loadAllSkillsWithDiagnostics(configDir, projectDir)
+    extraGetData: async (effectiveProjectDir?: string) => {
+      const projectDirParam = effectiveProjectDir ?? projectDir
+      const discovery = await loadAllSkillsWithDiagnostics(configDir, projectDirParam)
       const items = discovery.skills
       const configured = configuredDirectory()
       let selectedDirectory: {
@@ -186,7 +187,8 @@ export function createSkillRoutes(configDir: string, projectDir?: string): Route
   })
 
   router.post('/:id/toggle', async (req, res) => {
-    const skills = await loadAllSkills(configDir, projectDir)
+    const effectiveProjectDir = resolveProjectDir(req, projectDir)
+    const skills = await loadAllSkills(configDir, effectiveProjectDir)
     const existing = findSkillById(req.params['id']!, skills)
     if (!existing) return res.status(404).json({ error: 'Not found' })
     const enabled = !isSkillEnabled(existing.metadata.id)
@@ -195,7 +197,8 @@ export function createSkillRoutes(configDir: string, projectDir?: string): Route
   })
 
   router.put('/:id', async (req, res) => {
-    const skills = await loadAllSkills(configDir, projectDir)
+    const effectiveProjectDir = resolveProjectDir(req, projectDir)
+    const skills = await loadAllSkills(configDir, effectiveProjectDir)
     const existing = findSkillById(req.params['id']!, skills)
     if (!existing) return res.status(404).json({ error: 'Not found' })
     const updated = await updateOwnedSkill(existing, req.body as Partial<SkillDefinition>)
@@ -204,7 +207,8 @@ export function createSkillRoutes(configDir: string, projectDir?: string): Route
   })
 
   router.delete('/:id', async (req, res) => {
-    const skills = await loadAllSkills(configDir, projectDir)
+    const effectiveProjectDir = resolveProjectDir(req, projectDir)
+    const skills = await loadAllSkills(configDir, effectiveProjectDir)
     const existing = findSkillById(req.params['id']!, skills)
     if (!existing) return res.status(404).json({ error: 'Not found' })
     const result = await deleteOwnedSkill(existing)

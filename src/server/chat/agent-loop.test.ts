@@ -704,4 +704,51 @@ describe('maxTokens clamping', () => {
     expect(callArgs.skipClientReasoningEffort).toBeUndefined()
     expect(streamLLMPure).not.toHaveBeenCalled()
   })
+
+  it('passes session.workdir to getEnabledSkillMetadata instead of global workdir', async () => {
+    const sessionWorkdir = '/actual/project/dir'
+
+    mockSessionManager = {
+      requireSession: vi.fn().mockReturnValue({
+        workdir: sessionWorkdir,
+        projectId: 'test-project',
+        executionState: null,
+        criteria: [],
+        isRunning: false,
+      }),
+      getContextState: vi.fn().mockReturnValue({
+        currentTokens: 0,
+        maxTokens: 200000,
+        compactionCount: 0,
+        dangerZone: false,
+        canCompact: false,
+        dynamicContextChanged: false,
+      }),
+      getCurrentModelContext: vi.fn().mockReturnValue(200000),
+      getCurrentModelSettings: vi.fn().mockReturnValue({ maxTokens: 16384 }),
+      setCurrentContextSize: vi.fn(),
+      getDynamicContextChanged: vi.fn().mockReturnValue(false),
+      setDynamicContextChanged: vi.fn(),
+      getCachedPrompt: vi.fn().mockReturnValue(undefined),
+      setCachedPrompt: vi.fn(),
+      getLspManager: vi.fn(),
+      drainAsapMessages: vi.fn().mockReturnValue([]),
+      getCurrentWindowMessages: vi.fn().mockReturnValue([]),
+      updateMessage: vi.fn(),
+    } as any
+
+    const completeMock = vi.fn().mockResolvedValue({
+      id: 'warmup',
+      content: '',
+      finishReason: 'stop',
+      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+    })
+    mockLLMClient.complete = completeMock
+
+    vi.mocked(getEnabledSkillMetadata).mockClear()
+
+    await runTopLevelAgentLoop(makeConfig({ warmup: true }), mockTurnMetrics)
+
+    expect(getEnabledSkillMetadata).toHaveBeenCalledWith('/test/config', sessionWorkdir)
+  })
 })

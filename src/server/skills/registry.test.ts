@@ -375,6 +375,21 @@ Custom prompt.
     expect(result.skills.filter((skill) => skill.metadata.id === 'linked-skill')).toHaveLength(1)
     expect(result.diagnostics).toContain('Skill "linked-skill" reached through multiple paths')
   })
+
+  it('loads project-specific skills when projectDir differs from configDir', async () => {
+    const projectA = join(tempDir, 'project-a')
+    const projectB = join(tempDir, 'project-b')
+    await createProjectSkillFile(projectA, 'skill-a', 'Skill A', 'Only in project A.')
+    await createProjectSkillFile(projectB, 'skill-b', 'Skill B', 'Only in project B.')
+
+    const skillsA = await loadAllSkills(tempDir, projectA)
+    const skillsB = await loadAllSkills(tempDir, projectB)
+
+    expect(skillsA.some((s) => s.metadata.id === 'skill-a')).toBe(true)
+    expect(skillsA.some((s) => s.metadata.id === 'skill-b')).toBe(false)
+    expect(skillsB.some((s) => s.metadata.id === 'skill-b')).toBe(true)
+    expect(skillsB.some((s) => s.metadata.id === 'skill-a')).toBe(false)
+  })
 })
 
 describe('isSkillEnabled / setSkillEnabled', () => {

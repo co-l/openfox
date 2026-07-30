@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button } from '../shared/Button'
 import { useSkillsStore, type SkillFull, type SkillInfo } from '../../stores/skills'
+import { useSessionStore } from '../../stores/session/store'
 import { useConfirmDialog, FormField, ErrorBanner, DestinationSelector } from './CRUDModal'
 import { ItemsHeader } from '../shared/ItemsHeader'
 import { CRUDListHeader } from './CRUDListHeader'
@@ -30,6 +31,7 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
   const diagnostics = useSkillsStore((state) => state.diagnostics)
   const loading = useSkillsStore((state) => state.loading)
   const fetchSkills = useSkillsStore((state) => state.fetchSkills)
+  const setWorkdir = useSkillsStore((state) => state.setWorkdir)
   const fetchSkill = useSkillsStore((state) => state.fetchSkill)
   const fetchDefaultContent = useSkillsStore((state) => state.fetchDefaultContent)
   const createSkill = useSkillsStore((state) => state.createSkill)
@@ -39,6 +41,7 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
   const removeDirectory = useSkillsStore((state) => state.removeDirectory)
   const installSkill = useSkillsStore((state) => state.installSkill)
   const toggleSkill = useSkillsStore((state) => state.toggleSkill)
+  const currentSession = useSessionStore((state) => state.currentSession)
   const [pendingDelete, setPendingDelete] = useState<SkillInfo | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState('')
@@ -50,12 +53,14 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
 
   useEffect(() => {
     if (isOpen) {
-      fetchSkills()
+      const sessionWorkdir = currentSession?.workdir ?? currentSession?.workspace ?? null
+      setWorkdir(sessionWorkdir)
+      fetchSkills(sessionWorkdir)
       setView('list')
       setEditingId(null)
       clearConfirm()
     }
-  }, [isOpen, fetchSkills, clearConfirm])
+  }, [isOpen, fetchSkills, setWorkdir, clearConfirm, currentSession?.workdir, currentSession?.workspace])
 
   const setSkillFormData = (skill: SkillFull, readOnly: boolean, newId?: string, newName?: string) => {
     setFormData({
