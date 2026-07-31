@@ -165,12 +165,24 @@ export interface ProjectDeletedPayload {
   projectId: string
 }
 
+// Canonical structured shape for ask_user choice options. The server
+// normalizes every incoming shape (string[], {label, description},
+// {value, label, description}, mixed, malformed) into this exact form at the
+// ask_user boundary, so live and reload paths receive identical payloads.
+// `description` is optional because legacy LLMs (and pre-fix legacy persisted
+// events) sometimes emit only `value`/`label`.
+export interface ChoiceOption {
+  value: string
+  label: string
+  description?: string
+}
+
 // Session payloads
 export interface PendingQuestionPayload {
   callId: string
   question: string
   type: 'text' | 'confirm' | 'choice'
-  options: string[] | undefined
+  options: ChoiceOption[] | undefined
 }
 
 export interface SessionStatePayload {
@@ -340,7 +352,7 @@ export interface ChatAskUserPayload {
   callId: string
   question: string
   type: 'text' | 'confirm' | 'choice' | undefined
-  options: string[] | undefined
+  options: ChoiceOption[] | undefined
 }
 
 // Mode payloads

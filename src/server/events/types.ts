@@ -346,7 +346,7 @@ export type TurnEvent =
         callId: string
         question: string
         type: 'text' | 'confirm' | 'choice' | undefined
-        options: string[] | undefined
+        options: import('../../shared/protocol.js').ChoiceOption[] | undefined
       }
     }
   | {
@@ -476,7 +476,10 @@ export interface PendingUserInput {
   callId: string
   question: string
   type: 'text' | 'confirm' | 'choice' | undefined
-  options: string[] | undefined
+  // Canonical shape: server normalizes every incoming form to ChoiceOption[]
+  // at the ask_user boundary; fold-state must mirror that so reload parity
+  // is preserved end-to-end.
+  options: import('../../shared/protocol.js').ChoiceOption[] | undefined
 }
 
 export interface TaskStats {

@@ -8,7 +8,7 @@ import type {
   ContextState,
   Attachment,
 } from '@shared/types.js'
-import type { ServerMessage, QueuedMessage } from '@shared/protocol.js'
+import type { ServerMessage, QueuedMessage, ChoiceOption } from '@shared/protocol.js'
 import type { ConnectionStatus } from '../../lib/ws'
 
 export interface PendingPathConfirmation {
@@ -24,7 +24,7 @@ export interface PendingQuestion {
   callId: string
   question: string
   type: 'text' | 'confirm' | 'choice'
-  options: string[] | undefined
+  options: ChoiceOption[] | undefined
 }
 
 export interface StreamingBuffer {

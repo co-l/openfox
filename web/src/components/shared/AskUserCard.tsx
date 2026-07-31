@@ -1,9 +1,65 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import type { ToolCall } from '@shared/types.js'
+import type { ChoiceOption } from '@shared/protocol.js'
 import { useSessionStore, type PendingQuestion } from '../../stores/session'
 
 interface AskUserCardProps {
   toolCall: ToolCall
+}
+
+// Coerce whatever the LLM / legacy storage handed us into the canonical
+// `ChoiceOption[]` shape. The server-side ask_user boundary is the
+// authoritative source for fresh events; this guard exists ONLY for events
+// persisted by older builds (pre-fix) that still carry raw `string[]` or
+// `{label, description}[]` payloads in the database.
+//
+// Accepted input shapes (none of them leak raw through):
+//   - string[]                              → {value:s,label:s} per entry
+//   - string                                "A, B" (comma-split) → each as ChoiceOption
+//   - Array<{label, description?}>         → {value:label,label,description}
+//   - Array<{value, label, description?}>  → preserve all three fields
+//   - Mixed / malformed arrays              → filtered, never crashes
+// Returns `null` when nothing usable remains, so callers fall through to
+// free-text input.
+function normalizeChoiceOptions(raw: unknown): ChoiceOption[] | null {
+  if (raw == null) return null
+  if (typeof raw === 'string') {
+    const parts = raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+    return parts.length > 0 ? parts.map((label) => ({ value: label, label })) : null
+  }
+  if (!Array.isArray(raw)) return null
+
+  const out: ChoiceOption[] = []
+  for (const item of raw) {
+    if (typeof item === 'string') {
+      const trimmed = item.trim()
+      if (trimmed.length > 0) {
+        out.push({ value: trimmed, label: trimmed })
+      }
+      continue
+    }
+    if (item != null && typeof item === 'object') {
+      const obj = item as Record<string, unknown>
+      const labelRaw = obj['label']
+      if (typeof labelRaw === 'string' && labelRaw.trim().length > 0) {
+        const label = labelRaw.trim()
+        const valueRaw = obj['value']
+        const value = typeof valueRaw === 'string' && valueRaw.length > 0 ? valueRaw : label
+        const descRaw = obj['description']
+        const opt: ChoiceOption = { value, label }
+        if (typeof descRaw === 'string' && descRaw.length > 0) {
+          opt.description = descRaw
+        }
+        out.push(opt)
+      }
+      // Malformed objects (no string label) are silently dropped.
+    }
+    // Primitives other than string (numbers, booleans, null, undefined) are dropped.
+  }
+  return out.length > 0 ? out : null
 }
 
 export function AskUserCard({ toolCall }: AskUserCardProps) {
@@ -18,7 +74,12 @@ export function AskUserCard({ toolCall }: AskUserCardProps) {
   const question = (toolCall.arguments['question'] as string | undefined) ?? pendingQuestion?.question ?? ''
   const type =
     (toolCall.arguments['type'] as 'text' | 'confirm' | 'choice' | undefined) ?? pendingQuestion?.type ?? 'text'
-  const options = (toolCall.arguments['options'] as string[] | undefined) ?? pendingQuestion?.options ?? undefined
+  // LLM outputs sometimes arrive as `string[]`, sometimes as a string ("A, B"),
+  // sometimes as `[{label, description}]` objects (LLM quirk, see issue #31).
+  // We accept all three: coerce + drop malformed entries. We never render an
+  // object directly as a React child (that crashes React).
+  const rawOptions: unknown = (toolCall.arguments['options'] as unknown) ?? pendingQuestion?.options ?? undefined
+  const choiceOptions = normalizeChoiceOptions(rawOptions)
 
   const hasResult = toolCall.result !== undefined
   const isPending = pendingQuestion !== undefined && !hasResult
@@ -100,16 +161,19 @@ export function AskUserCard({ toolCall }: AskUserCardProps) {
                   Skip
                 </button>
               </div>
-            ) : type === 'choice' && Array.isArray(options) && options.length > 0 ? (
+            ) : type === 'choice' && choiceOptions !== null && choiceOptions.length > 0 ? (
               <>
                 <div className="flex flex-col gap-1.5">
-                  {options.map((option) => (
+                  {choiceOptions.map((opt) => (
                     <button
-                      key={option}
-                      onClick={() => handleOptionSelect(option)}
+                      key={opt.value}
+                      onClick={() => handleOptionSelect(opt.value)}
                       className={`${btnBase} text-left w-full bg-bg-tertiary hover:bg-accent-primary/20 text-text-primary border border-border hover:border-accent-primary/50`}
                     >
-                      {option}
+                      <span className="block font-medium">{opt.label}</span>
+                      {opt.description !== undefined && (
+                        <span className="block text-xs text-text-muted mt-0.5">{opt.description}</span>
+                      )}
                     </button>
                   ))}
                 </div>

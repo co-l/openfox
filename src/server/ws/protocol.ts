@@ -304,7 +304,7 @@ export function createChatAskUserMessage(
   callId: string,
   question: string,
   type?: 'text' | 'confirm' | 'choice',
-  options?: string[],
+  options?: import('../../shared/protocol.js').ChoiceOption[],
 ): ServerMessage<ChatAskUserPayload> {
   return createServerMessage('chat.ask_user', { callId, question, type, options })
 }
@@ -408,6 +408,7 @@ export function createQueueStateMessage(messages: QueuedMessage[]): ServerMessag
 
 import type { StoredEvent, TurnEvent } from '../events/types.js'
 import { toClientSession } from '../session/client-session.js'
+import { normalizeAskOptions } from '../tools/ask.js'
 
 /**
  * Convert a StoredEvent from EventStore to a ServerMessage for WebSocket.
@@ -573,7 +574,15 @@ export function storedEventToServerMessage(event: StoredEvent): ServerMessage | 
 
     case 'chat.ask_user': {
       const data = event.data as Extract<TurnEvent, { type: 'chat.ask_user' }>['data']
-      return createChatAskUserMessage(data.callId, data.question, data.type, data.options)
+      // Persisted events may carry any of three shapes:
+      //   - canonical `ChoiceOption[]`         (current server, post-fix)
+      //   - legacy `string[]`                  (pre-fix builds, no value/label)
+      //   - legacy `Array<{label, description}>` (pre-fix builds, lost value)
+      // normalizeAskOptions collapses all three into the canonical shape so
+      // clients receive identical payloads on the live path AND on reload
+      // (fold-state replay), preserving value/label/description end-to-end.
+      const opts = normalizeAskOptions(data.options)
+      return createChatAskUserMessage(data.callId, data.question, data.type, opts)
     }
 
     case 'pattern.retry': {

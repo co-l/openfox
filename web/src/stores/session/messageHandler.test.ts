@@ -391,3 +391,153 @@ describe('workflow.execution_changed handler', () => {
     expect(useSessionStore.getState().activeWorkflowExecution).toBe(existing)
   })
 })
+
+// ---------------------------------------------------------------------------
+// chat.ask_user handler — lossless ChoiceOption[] propagation
+// ---------------------------------------------------------------------------
+// The server normalizes ask_user options to ChoiceOption[] at the boundary
+// (see src/server/tools/ask.ts normalizeAskOptions) and the WS replay path
+// keeps that contract (see src/server/ws/protocol.ts storedEventToServerMessage).
+// The web handler must therefore trust the wire contract and forward the
+// payload as-is into PendingQuestion, never accidentally narrowing it back
+// to a string[]-shaped object.
+describe('chat.ask_user handler', () => {
+  beforeEach(() => {
+    wsSendMock.mockClear()
+    wsSubscribeMock.mockClear()
+    wsConnectMock.mockClear()
+    wsDisconnectMock.mockClear()
+    wsStatusMock.mockClear()
+    playNotificationMock.mockClear()
+    playAchievementMock.mockClear()
+    playInterventionMock.mockClear()
+    playWaitingForUserMock.mockClear()
+    playNewMessageMock.mockClear()
+    fetchMock.mockClear()
+  })
+
+  it('forwards canonical ChoiceOption[] into pendingQuestions without losing value/label/description', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState((state) => ({
+      ...state,
+      currentSession: { id: 'session-1', messages: [] } as any,
+    }))
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.ask_user',
+      sessionId: 'session-1',
+      payload: {
+        callId: 'call-1',
+        question: 'Pick:',
+        type: 'choice',
+        options: [
+          { value: 'yes-v', label: 'Oui', description: 'Accepter' },
+          { value: 'no-v', label: 'Non', description: 'Refuser' },
+        ],
+      },
+    } as any)
+
+    const state = useSessionStore.getState()
+    expect(state.pendingQuestions.length).toBe(1)
+    expect(state.pendingQuestions[0]).toEqual({
+      callId: 'call-1',
+      question: 'Pick:',
+      type: 'choice',
+      options: [
+        { value: 'yes-v', label: 'Oui', description: 'Accepter' },
+        { value: 'no-v', label: 'Non', description: 'Refuser' },
+      ],
+    })
+  })
+
+  it('forwards ChoiceOption[] without description (legacy live path)', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState((state) => ({
+      ...state,
+      currentSession: { id: 'session-1', messages: [] } as any,
+    }))
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.ask_user',
+      sessionId: 'session-1',
+      payload: {
+        callId: 'call-1',
+        question: 'Pick:',
+        type: 'choice',
+        options: [{ value: 'A', label: 'A' }, { value: 'B', label: 'B' }],
+      },
+    } as any)
+
+    const state = useSessionStore.getState()
+    expect(state.pendingQuestions.length).toBe(1)
+    expect(state.pendingQuestions[0]?.options).toEqual([
+      { value: 'A', label: 'A' },
+      { value: 'B', label: 'B' },
+    ])
+    // exactOptionalPropertyTypes: description must NOT be present (no
+    // `description: undefined` key sneaking into the forwarded object).
+    for (const opt of state.pendingQuestions[0]?.options ?? []) {
+      expect('description' in opt).toBe(false)
+    }
+  })
+
+  it('keeps undefined options when payload carries none (free-text fallback)', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState((state) => ({
+      ...state,
+      currentSession: { id: 'session-1', messages: [] } as any,
+    }))
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.ask_user',
+      sessionId: 'session-1',
+      payload: {
+        callId: 'call-1',
+        question: 'Type your answer:',
+        type: 'text',
+        options: undefined,
+      },
+    } as any)
+
+    const state = useSessionStore.getState()
+    expect(state.pendingQuestions.length).toBe(1)
+    expect(state.pendingQuestions[0]?.options).toBeUndefined()
+    expect(state.pendingQuestions[0]?.type).toBe('text')
+  })
+
+  it('replaces existing pendingQuestion with the same callId (no duplicates)', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState((state) => ({
+      ...state,
+      currentSession: { id: 'session-1', messages: [] } as any,
+      pendingQuestions: [
+        {
+          callId: 'call-1',
+          question: 'old',
+          type: 'text',
+          options: undefined,
+        },
+      ],
+    }))
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.ask_user',
+      sessionId: 'session-1',
+      payload: {
+        callId: 'call-1',
+        question: 'new',
+        type: 'choice',
+        options: [{ value: 'A', label: 'A' }],
+      },
+    } as any)
+
+    const state = useSessionStore.getState()
+    expect(state.pendingQuestions.length).toBe(1)
+    expect(state.pendingQuestions[0]?.question).toBe('new')
+    expect(state.pendingQuestions[0]?.type).toBe('choice')
+  })
+})

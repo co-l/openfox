@@ -316,7 +316,7 @@ export function foldSessionState(
           callId: string
           question: string
           type?: 'text' | 'confirm' | 'choice'
-          options?: string[]
+          options?: import('../../shared/protocol.js').ChoiceOption[]
         }
         pendingUserInput = { callId: data.callId, question: data.question, type: data.type, options: data.options }
         break

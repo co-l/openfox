@@ -5,6 +5,7 @@ import type {
   GitDiffFile,
   SessionListPayload,
   SessionRunningPayload,
+  ChatAskUserPayload,
   ChatDeltaPayload,
   ChatThinkingPayload,
   ChatToolPreparingPayload,
@@ -32,7 +33,7 @@ import { useDevServerStore } from '../dev-server'
 import { useBackgroundProcessesStore } from '../background-processes'
 import { playNewMessage } from '../../lib/sound'
 import type { AgentType } from '../notifications'
-import type { SessionState } from './types'
+import type { SessionState, PendingQuestion } from './types'
 import { handleGlobalSoundEffects, resolveAgentType } from './sounds'
 import { getBuffer, scheduleStreamingFlush, cancelStreamingFlush } from './streamingBuffer'
 import { useMcpStore, type McpServerInfo } from '../mcp'
@@ -637,13 +638,13 @@ export function handleServerMessage(
         markBackgroundSessionUnread()
         return
       }
-      const payload = message.payload as {
-        callId: string
-        question: string
-        type?: 'text' | 'confirm' | 'choice'
-        options?: string[]
-      }
-      const newQuestion = {
+      // Server normalizes to ChoiceOption[] at the ask_user boundary and
+      // persists/relays that exact shape — see ChatAskUserPayload in
+      // shared/protocol.ts and normalizeAskOptions in src/server/tools/ask.ts.
+      // This handler trusts the wire contract and forwards the options as-is
+      // into PendingQuestion so reload parity is preserved end-to-end.
+      const payload = message.payload as ChatAskUserPayload
+      const newQuestion: PendingQuestion = {
         callId: payload.callId,
         question: payload.question,
         type: payload.type ?? 'text',

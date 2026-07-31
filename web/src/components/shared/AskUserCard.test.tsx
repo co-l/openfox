@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { flushSync } from 'react-dom'
 import { fireEvent } from '@testing-library/react'
 import type { ToolCall } from '@shared/types.js'
+import type { ChoiceOption } from '@shared/protocol.js'
 import { AskUserCard } from './AskUserCard'
 import { useSessionStore } from '../../stores/session'
 
@@ -77,7 +78,14 @@ describe('AskUserCard', () => {
 
   it('renders choice chips and custom input for choice type', () => {
     useSessionStore.setState({
-      pendingQuestions: [{ callId: 'call-1', question: 'Pick:', type: 'choice', options: ['A', 'B'] }],
+      pendingQuestions: [
+        {
+          callId: 'call-1',
+          question: 'Pick:',
+          type: 'choice',
+          options: ['A', 'B'] as unknown as ChoiceOption[],
+        },
+      ],
     })
     const tc = makeToolCall({ arguments: { question: 'Pick:' } })
     const container = render(<AskUserCard toolCall={tc} />)
@@ -110,6 +118,166 @@ describe('AskUserCard', () => {
     const container = render(<AskUserCard toolCall={tc} />)
     expect(container.textContent).toContain('Send')
     expect(container.textContent).toContain('Skip')
+  })
+
+  it('renders choice buttons when options contains {label, description} objects (LLM quirk)', () => {
+    // Regression for crash React #31: some LLMs emit options as objects with
+    // {label, description} instead of plain strings. AskUserCard must coerce
+    // them to a renderable label and still emit a scalar value when clicked.
+    useSessionStore.setState({
+      pendingQuestions: [
+        {
+          callId: 'call-1',
+          question: 'Pick:',
+          type: 'choice',
+          options: [
+            { label: 'Continuer', description: 'Reprendre le flux principal' },
+            { label: 'Annuler', description: 'Stopper ici' },
+          ] as unknown as ChoiceOption[],
+        },
+      ],
+    })
+    const tc = makeToolCall({
+      arguments: {
+        question: 'Pick:',
+        type: 'choice',
+        options: [
+          { label: 'Continuer', description: 'Reprendre le flux principal' },
+          { label: 'Annuler', description: 'Stopper ici' },
+        ],
+      },
+    })
+    const container = render(<AskUserCard toolCall={tc} />)
+    // Both labels should be rendered, never the raw object.
+    expect(container.textContent).toContain('Continuer')
+    expect(container.textContent).toContain('Annuler')
+    // Should not have the React "[object Object]" fallback or any nested object dump.
+    expect(container.textContent).not.toContain('[object Object]')
+    expect(container.textContent).not.toContain('description:')
+  })
+
+  it('submits the label string (not the object) when an object option is clicked', () => {
+    const answerQuestion = vi.fn()
+    useSessionStore.setState({
+      pendingQuestions: [
+        {
+          callId: 'call-1',
+          question: 'Pick:',
+          type: 'choice',
+          options: [{ label: 'Continuer', description: 'desc' }] as unknown as ChoiceOption[],
+        },
+      ],
+      answerQuestion,
+    })
+    const tc = makeToolCall({
+      arguments: {
+        question: 'Pick:',
+        type: 'choice',
+        options: [{ label: 'Continuer', description: 'desc' }],
+      },
+    })
+    const container = render(<AskUserCard toolCall={tc} />)
+    const buttons = container.querySelectorAll('button')
+    // First button is the structured option, click it.
+    const target = Array.from(buttons).find((b) => b.textContent?.includes('Continuer'))
+    expect(target).toBeDefined()
+    fireEvent.click(target!)
+    // answerQuestion must be called with a stable SCALAR value (string), never the object.
+    expect(answerQuestion).toHaveBeenCalledTimes(1)
+    const [, value] = answerQuestion.mock.calls[0]!
+    expect(typeof value).toBe('string')
+    expect(value).toBe('Continuer')
+  })
+
+  it('falls back safely when an option is malformed (neither string nor object)', () => {
+    useSessionStore.setState({
+      pendingQuestions: [
+        {
+          callId: 'call-1',
+          question: 'Pick:',
+          type: 'choice',
+          options: [null, undefined, 42, { label: 'OK' }] as unknown as ChoiceOption[],
+        },
+      ],
+    })
+    const tc = makeToolCall({
+      arguments: {
+        question: 'Pick:',
+        type: 'choice',
+        options: [null, undefined, 42, { label: 'OK' }],
+      },
+    })
+    const container = render(<AskUserCard toolCall={tc} />)
+    // Malformed entries should be filtered out, only the well-formed option rendered.
+    expect(container.textContent).toContain('OK')
+    // No raw object dump, no numeric cast-to-string pollution.
+    expect(container.textContent).not.toContain('label:')
+    expect(container.textContent).not.toContain('[object Object]')
+  })
+
+  it('shows structured options description as a subtitle below the label', () => {
+    useSessionStore.setState({
+      pendingQuestions: [
+        {
+          callId: 'call-1',
+          question: 'Pick:',
+          type: 'choice',
+          options: [{ label: 'Continuer', description: 'Reprendre' }] as unknown as ChoiceOption[],
+        },
+      ],
+    })
+    const tc = makeToolCall({
+      arguments: {
+        question: 'Pick:',
+        type: 'choice',
+        options: [{ label: 'Continuer', description: 'Reprendre' }],
+      },
+    })
+    const container = render(<AskUserCard toolCall={tc} />)
+    // Description must be rendered as a separate, well-located element below the label.
+    expect(container.textContent).toContain('Continuer')
+    expect(container.textContent).toContain('Reprendre')
+  })
+
+  it('persistence rehydration: toolCall.arguments holds {label,description} without a pendingQuestion entry', () => {
+    // Models a session reload where the persisted toolCall carries structured
+    // options in its arguments but no live pendingQuestion (e.g. server already
+    // resolved the question, or the client re-rendered after a navigation).
+    // The component must still render without crashing.
+    const tc = makeToolCall({
+      arguments: {
+        question: 'Pick:',
+        type: 'choice',
+        options: [{ label: 'Continuer', description: 'Reprendre' }],
+      },
+    })
+    useSessionStore.setState({ pendingQuestions: [] })
+    const container = render(<AskUserCard toolCall={tc} />)
+    // No pending question → input area hidden, but question text must render.
+    expect(container.textContent).toContain('Pick:')
+    expect(container.textContent).not.toContain('[object Object]')
+  })
+
+  it('persistence rehydration: pendingQuestion carries object options restored from session.state', () => {
+    // Mirrors session.test.ts > restores pendingQuestions from session.state on load:
+    // the payload coming from the server may contain structured options.
+    useSessionStore.setState({
+      pendingQuestions: [
+        {
+          callId: 'call-1',
+          question: 'Pick:',
+          type: 'choice',
+          options: [{ label: 'Continuer', description: 'desc' }] as unknown as ChoiceOption[],
+        },
+      ],
+    })
+    const tc = makeToolCall({
+      arguments: { question: 'Pick:' }, // arguments may NOT carry options after restore
+    })
+    const container = render(<AskUserCard toolCall={tc} />)
+    expect(container.textContent).toContain('Continuer')
+    expect(container.textContent).toContain('desc')
+    expect(container.textContent).not.toContain('[object Object]')
   })
 
   it('submits answer on Enter', () => {

@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
+import type { ChoiceOption } from '../src/shared/protocol.js'
 import {
   createTestClient,
   createTestProject,
@@ -348,14 +349,20 @@ describe('Ask User Tool', () => {
         content: 'Please ask me to choose an option for the project setup.',
       })
 
-      const askUserEvent = await client.waitFor('chat.ask_user', (payload: { type?: string; options?: string[] }) => {
-        return payload.type === 'choice' && Array.isArray(payload.options) && payload.options.length > 0
-      })
+      const askUserEvent = await client.waitFor(
+        'chat.ask_user',
+        (payload: { type?: string; options?: ChoiceOption[] }) => {
+          return payload.type === 'choice' && Array.isArray(payload.options) && payload.options.length > 0
+        },
+      )
 
       expect((askUserEvent.payload as { type: string }).type).toBe('choice')
-      const options = (askUserEvent.payload as { options: string[] }).options
-      expect(options).toContain('Option A')
-      expect(options).toContain('Option B')
+      const options = (askUserEvent.payload as { options: ChoiceOption[] }).options
+      expect(options).toEqual([
+        { value: 'Option A', label: 'Option A', description: undefined },
+        { value: 'Option B', label: 'Option B', description: undefined },
+        { value: 'Option C', label: 'Option C', description: undefined },
+      ])
 
       const callId = (askUserEvent.payload as { callId: string }).callId
       await client.send('ask.answer', { callId, answer: 'Option A' })

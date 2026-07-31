@@ -29,6 +29,7 @@ import {
   storedEventToServerMessage,
 } from './protocol.js'
 import type { StoredEvent } from '../events/types.js'
+import type { ChoiceOption } from '../../shared/protocol.js'
 
 describe('ws/protocol', () => {
   describe('parseClientMessage', () => {
@@ -133,10 +134,15 @@ describe('ws/protocol', () => {
     })
 
     it('creates chat.ask_user message with type and options', () => {
-      const message = createChatAskUserMessage('call-1', 'Pick one?', 'choice', ['A', 'B', 'C'])
+      const options = [
+        { value: 'A', label: 'A' },
+        { value: 'B', label: 'B' },
+        { value: 'C', label: 'C' },
+      ]
+      const message = createChatAskUserMessage('call-1', 'Pick one?', 'choice', options)
       expect(message).toEqual({
         type: 'chat.ask_user',
-        payload: { callId: 'call-1', question: 'Pick one?', type: 'choice', options: ['A', 'B', 'C'] },
+        payload: { callId: 'call-1', question: 'Pick one?', type: 'choice', options },
       })
     })
 
@@ -150,7 +156,12 @@ describe('ws/protocol', () => {
 
     it('includes pendingQuestions in session state payload', () => {
       const pendingQ = [
-        { callId: 'pq-1', question: 'Proceed?', type: 'confirm' as const, options: undefined as string[] | undefined },
+        {
+          callId: 'pq-1',
+          question: 'Proceed?',
+          type: 'confirm' as const,
+          options: undefined as { value: string; label: string; description?: string }[] | undefined,
+        },
       ]
       const message = createSessionStateMessage(session, [], [], pendingQ)
       expect(message.payload).toHaveProperty('pendingQuestions')
@@ -828,6 +839,133 @@ describe('ws/protocol', () => {
           },
         },
       })
+    })
+
+    // -----------------------------------------------------------------------
+    // chat.ask_user — live/reload parity for legacy persisted payloads
+    // -----------------------------------------------------------------------
+    // Persisted events written by older builds may carry any of three shapes:
+    //   - canonical ChoiceOption[]            (post-fix current server)
+    //   - legacy string[]                     (older builds, no description)
+    //   - legacy Array<{label, description}>  (older builds, lost value/description)
+    // storedEventToServerMessage must normalize all three into ChoiceOption[]
+    // so clients see the same payload on the live chat.ask_user path and on
+    // reload (fold-state replay). Regression coverage for the lossless fix.
+    it('replays canonical ChoiceOption[] verbatim (post-fix)', () => {
+      const event: StoredEvent = {
+        ...baseEvent,
+        type: 'chat.ask_user',
+        data: {
+          callId: 'call-1',
+          question: 'Pick:',
+          type: 'choice',
+          options: [
+            { value: 'yes-v', label: 'Oui', description: 'Accepter' },
+            { value: 'no-v', label: 'Non', description: 'Refuser' },
+          ],
+        },
+      }
+      const result = storedEventToServerMessage(event)
+      expect(result).toEqual({
+        type: 'chat.ask_user',
+        payload: {
+          callId: 'call-1',
+          question: 'Pick:',
+          type: 'choice',
+          options: [
+            { value: 'yes-v', label: 'Oui', description: 'Accepter' },
+            { value: 'no-v', label: 'Non', description: 'Refuser' },
+          ],
+        },
+      })
+    })
+
+    it('replays legacy string[] into canonical {value,label} (pre-fix reload)', () => {
+      // Pre-fix builds persisted `options: string[]` directly. The reload
+      // path must rebuild the canonical shape (value === label, no
+      // description) so the AskUserCard receives ChoiceOption[].
+      const event: StoredEvent = {
+        ...baseEvent,
+        type: 'chat.ask_user',
+        data: {
+          callId: 'call-1',
+          question: 'Pick:',
+          type: 'choice',
+          // Pre-fix shape: cast through unknown to model a stale persisted event.
+          options: ['A', 'B', 'C'] as unknown as ChoiceOption[],
+        },
+      }
+      const result = storedEventToServerMessage(event)
+      expect(result).toEqual({
+        type: 'chat.ask_user',
+        payload: {
+          callId: 'call-1',
+          question: 'Pick:',
+          type: 'choice',
+          options: [
+            { value: 'A', label: 'A' },
+            { value: 'B', label: 'B' },
+            { value: 'C', label: 'C' },
+          ],
+        },
+      })
+    })
+
+    it('replays legacy {label,description} into canonical {value,label,description} (pre-fix reload)', () => {
+      // Pre-fix structured builds (commit d9a3bd5) persisted the
+      // {label,description} shape directly. The reload path must rebuild the
+      // canonical ChoiceOption[] (with value === label and description kept).
+      const event: StoredEvent = {
+        ...baseEvent,
+        type: 'chat.ask_user',
+        data: {
+          callId: 'call-1',
+          question: 'Pick:',
+          type: 'choice',
+          options: [
+            { label: 'Continuer', description: 'Reprendre le flux principal' },
+            { label: 'Annuler', description: 'Stopper ici' },
+          ] as unknown as ChoiceOption[],
+        },
+      }
+      const result = storedEventToServerMessage(event)
+      expect(result).toEqual({
+        type: 'chat.ask_user',
+        payload: {
+          callId: 'call-1',
+          question: 'Pick:',
+          type: 'choice',
+          options: [
+            { value: 'Continuer', label: 'Continuer', description: 'Reprendre le flux principal' },
+            { value: 'Annuler', label: 'Annuler', description: 'Stopper ici' },
+          ],
+        },
+      })
+    })
+
+    it('replay payload type matches live createChatAskUserMessage (live/reload parity)', () => {
+      // Round-trip invariant: when the LLM emits structured options, the
+      // ask_user boundary stores the canonical shape and fold-state replay
+      // must emit exactly the same wire payload the live chat.ask_user path
+      // would emit. This is the contract that keeps the UI from diverging
+      // between fresh sessions and sessions reloaded after a restart.
+      const structured = [
+        { value: 'yes-v', label: 'Oui', description: 'Accepter' },
+        { value: 'no-v', label: 'Non', description: 'Refuser' },
+      ]
+      const live = createChatAskUserMessage('call-1', 'Pick:', 'choice', structured)
+
+      const event: StoredEvent = {
+        ...baseEvent,
+        type: 'chat.ask_user',
+        data: { callId: 'call-1', question: 'Pick:', type: 'choice', options: structured },
+      }
+      const replayed = storedEventToServerMessage(event)
+
+      // Strip seq/sessionId/timestamp from the replayed message — those are
+      // envelope fields, not payload. The payload shape itself must match.
+      expect(replayed?.type).toBe(live.type)
+      expect(replayed?.payload).toEqual(live.payload)
     })
   })
 })
