@@ -26,6 +26,7 @@ const sudoOptionsWithValue = new Set([
   '--user',
 ])
 const envOptionsWithValue = new Set(['-C', '--chdir', '-S', '--split-string', '-u', '--unset'])
+const sshpassOptionsWithValue = new Set(['-p', '-f', '-d'])
 
 function executableName(token: string): string {
   return token.split(/[\\/]/).pop() ?? token
@@ -349,6 +350,41 @@ function detectSegment(tokens: string[], depth = 0): RemoteProtocol | null {
   if (initialExecutable === 'sudo') {
     index = skipOptions(tokens, index + 1, sudoOptionsWithValue)
     return detectSegment(tokens.slice(index), depth + 1)
+  }
+
+  if (initialExecutable === 'sshpass') {
+    index = skipOptions(tokens, index + 1, sshpassOptionsWithValue)
+    return detectSegment(tokens.slice(index), depth + 1)
+  }
+
+  if (initialExecutable === 'nix') {
+    const subcommand = tokens[index + 1]
+    if (subcommand === 'shell' || subcommand === 'develop') {
+      for (let cmdIndex = index + 2; cmdIndex < tokens.length; cmdIndex += 1) {
+        if (tokens[cmdIndex] === '-c' || tokens[cmdIndex] === '--command') {
+          return detectSegment(tokens.slice(cmdIndex + 1), depth + 1)
+        }
+      }
+      return null
+    }
+    if (subcommand === 'run') {
+      for (let sepIndex = index + 2; sepIndex < tokens.length; sepIndex += 1) {
+        if (tokens[sepIndex] === '--') {
+          for (let pkgIndex = index + 2; pkgIndex < sepIndex; pkgIndex += 1) {
+            const pkg = tokens[pkgIndex]!
+            const hashIdx = pkg.indexOf('#')
+            if (hashIdx !== -1) {
+              const pkgName = executableName(pkg.slice(hashIdx + 1).split('@')[0]!)
+              const protocol = remoteExecutables[pkgName.toLowerCase()]
+              if (protocol) return protocol
+            }
+          }
+          return null
+        }
+      }
+      return null
+    }
+    return null
   }
 
   const executable = initialExecutable
