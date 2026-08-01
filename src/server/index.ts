@@ -2728,6 +2728,17 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     await applyMcpOAuthResult(name)
   }
 
+  /**
+   * Tokens are only ever stored for a server that is, right now, an http server with OAuth turned on.
+   * Checking at completion time and not only at start time matters: the server can be reconfigured
+   * while an authorization is pending, and the pending state alone would still match.
+   */
+  function oauthEnabledServerUrl(name: string): string | undefined {
+    const server = mcpManager.getServer(name)
+    if (!server || server.config.transport !== 'http' || !server.config.oauth) return undefined
+    return server.config.url
+  }
+
   app.post('/api/mcp/servers/:name/oauth/start', async (req, res) => {
     const { name } = req.params
     const server = mcpManager.getServer(name)
@@ -2770,6 +2781,10 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     if (!pending) {
       return res.status(400).type('html').send(oauthCallbackPage('No pending authorization matches this callback.'))
     }
+    const pendingUrl = oauthEnabledServerUrl(pending.name)
+    if (!pendingUrl || pendingUrl !== pending.entry.serverUrl) {
+      return res.status(400).type('html').send(oauthCallbackPage('This server is no longer configured for OAuth.'))
+    }
     try {
       await completeMcpOAuth(pending.name, pending.entry.serverUrl, code)
       res.type('html').send(oauthCallbackPage('Authorization complete. You can close this tab and go back to OpenFox.'))
@@ -2786,8 +2801,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     if (!server) {
       return res.status(404).json({ error: `MCP server '${name}' not found` })
     }
-    if (!server.config.url) {
-      return res.status(400).json({ error: 'OAuth is only available for http transport' })
+    const serverUrl = oauthEnabledServerUrl(name)
+    if (!serverUrl) {
+      return res.status(400).json({ error: `MCP server '${name}' is not configured for OAuth` })
     }
     if (typeof response !== 'string' || !response.trim()) {
       return res.status(400).json({ error: 'response is required' })
@@ -2798,12 +2814,12 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
     // Never optional: the state is what ties this code to the authorization OpenFox actually started.
     const { readMcpOAuthEntry } = await import('./mcp/oauth-store.js')
-    const entry = await readMcpOAuthEntry(name, server.config.url)
+    const entry = await readMcpOAuthEntry(name, serverUrl)
     if (!entry?.state || entry.state !== parsed.state) {
       return res.status(400).json({ error: 'This callback does not match the pending authorization' })
     }
     try {
-      await completeMcpOAuth(name, server.config.url, parsed.code)
+      await completeMcpOAuth(name, serverUrl, parsed.code)
       res.json({ server: mcpManager.getServer(name) })
     } catch (error) {
       res.status(400).json({ error: error instanceof Error ? error.message : String(error) })

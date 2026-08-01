@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest'
-import { chmod, mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -155,6 +155,36 @@ describe('oauth-store', () => {
 
       expect(await readMcpOAuthEntry('srv', SERVER_URL)).toBeUndefined()
       expect(await findMcpOAuthEntryByState('state-xyz')).toBeNull()
+    })
+
+    it('ignores malformed entries instead of throwing, and still reads the sound ones', async () => {
+      // Valid JSON, but entries that no code path of ours could have written. Scanning by state
+      // walks every entry, so a single bad one used to take the whole callback route down.
+      const sound = { serverUrl: SERVER_URL, state: 'state-xyz' }
+      await writeFile(
+        storePath,
+        JSON.stringify({ version: 1, servers: { broken: null, alsoBroken: 'nope', srv: sound } }),
+        'utf-8',
+      )
+
+      expect(await readMcpOAuthEntry('broken', SERVER_URL)).toBeUndefined()
+      expect(await readMcpOAuthEntry('srv', SERVER_URL)).toEqual(sound)
+      expect(await findMcpOAuthEntryByState('state-xyz')).toEqual({ name: 'srv', entry: sound })
+    })
+
+    it('leaves the dropped entries out of the file as soon as anything else is written', async () => {
+      // Reading filters, and the next write persists that filtered view. Worth pinning down, because
+      // it means one bad entry disappears for good the first time an unrelated server is touched.
+      await writeFile(
+        storePath,
+        JSON.stringify({ version: 1, servers: { broken: null, srv: { serverUrl: SERVER_URL } } }),
+        'utf-8',
+      )
+
+      await saveMcpOAuthState('srv', SERVER_URL, 'state-xyz')
+
+      const onDisk = JSON.parse(await readFile(storePath, 'utf-8')) as { servers: Record<string, unknown> }
+      expect(Object.keys(onDisk.servers)).toEqual(['srv'])
     })
   })
 })

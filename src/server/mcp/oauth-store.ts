@@ -55,7 +55,21 @@ async function readStore(): Promise<McpOAuthStore> {
     const parsed = JSON.parse(raw) as Partial<McpOAuthStore>
     const servers = parsed.servers
     if (!servers || typeof servers !== 'object') throw new Error('no servers object')
-    return { version: 1, servers }
+    // Valid JSON is not a valid store. A hand edited or half written entry must be dropped here,
+    // otherwise every reader has to defend itself against a shape that should never have been saved.
+    // Said out loud, because the next write persists this filtered view and the entry is then gone.
+    const kept: Record<string, McpOAuthEntry> = {}
+    for (const [name, entry] of Object.entries(servers)) {
+      if (entry && typeof entry === 'object' && typeof (entry as McpOAuthEntry).serverUrl === 'string') {
+        kept[name] = entry as McpOAuthEntry
+      } else {
+        logger.warn('Dropping an unreadable MCP OAuth entry, this server will have to authorize again', {
+          path,
+          server: name,
+        })
+      }
+    }
+    return { version: 1, servers: kept }
   } catch {
     // Worth shouting about: the next write would otherwise quietly replace everything that was there.
     logger.error('The MCP OAuth store is unreadable, stored authorizations will be ignored', { path })
