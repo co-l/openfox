@@ -62,6 +62,12 @@ vi.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
   }),
 }))
 
+/** Options object the mocked StreamableHTTPClientTransport was last constructed with. */
+async function lastHttpTransportOptions(): Promise<any> {
+  const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js')
+  return vi.mocked(StreamableHTTPClientTransport).mock.calls.at(-1)![1]
+}
+
 describe('McpManager', () => {
   let manager: McpManager
 
@@ -201,6 +207,69 @@ describe('McpManager', () => {
       const nonToolMessage = { jsonrpc: '2.0', id: 2, result: { serverInfo: { name: 'test' } } }
       wrappedHandler(nonToolMessage)
       expect(sdkHandler).toHaveBeenCalledWith(nonToolMessage)
+    })
+  })
+
+  describe('addServer oauth', () => {
+    it('should pass an authProvider to the transport when oauth is enabled', async () => {
+      await manager.addServer('oauth-server', {
+        transport: 'http',
+        url: 'https://mcp.example.com/mcp',
+        oauth: true,
+      })
+
+      const opts = await lastHttpTransportOptions()
+      expect(opts.authProvider).toBeDefined()
+    })
+
+    it('should not add an authProvider or touch headers when oauth is unset (back-compat)', async () => {
+      const headers = { 'X-API-Key': 'secret123' }
+      await manager.addServer('plain-server', {
+        transport: 'http',
+        url: 'https://mcp.example.com/mcp',
+        headers,
+      })
+
+      const opts = await lastHttpTransportOptions()
+      expect(opts).not.toHaveProperty('authProvider')
+      expect(opts.requestInit?.headers).toEqual(headers)
+    })
+
+    it('should strip an Authorization header when oauth is enabled, keeping other headers', async () => {
+      await manager.addServer('oauth-headers', {
+        transport: 'http',
+        url: 'https://mcp.example.com/mcp',
+        oauth: true,
+        headers: { Authorization: 'Bearer static-token', 'X-Other': 'kept' },
+      })
+
+      const opts = await lastHttpTransportOptions()
+      expect(opts.requestInit?.headers).toEqual({ 'X-Other': 'kept' })
+    })
+
+    it('should strip a lowercase authorization header too (case-insensitive filter)', async () => {
+      await manager.addServer('oauth-headers-lowercase', {
+        transport: 'http',
+        url: 'https://mcp.example.com/mcp',
+        oauth: true,
+        headers: { authorization: 'Bearer static-token', 'X-Other': 'kept' },
+      })
+
+      const opts = await lastHttpTransportOptions()
+      expect(opts.requestInit?.headers).toEqual({ 'X-Other': 'kept' })
+    })
+
+    it('should keep a static Authorization header when oauth is explicitly disabled', async () => {
+      const headers = { Authorization: 'Bearer static-token' }
+      await manager.addServer('oauth-disabled', {
+        transport: 'http',
+        url: 'https://mcp.example.com/mcp',
+        oauth: false,
+        headers,
+      })
+
+      const opts = await lastHttpTransportOptions()
+      expect(opts.requestInit?.headers).toEqual(headers)
     })
   })
 

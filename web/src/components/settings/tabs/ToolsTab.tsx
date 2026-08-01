@@ -34,6 +34,7 @@ interface McpFormData {
   env: string
   url: string
   headers: string
+  oauth: boolean
   timeout: string
 }
 
@@ -118,6 +119,21 @@ function McpServerFormFields({ formData, onChange }: McpServerFormFieldsProps) {
               rows={3}
             />
           </div>
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={formData.oauth}
+              onChange={(e) => onChange({ ...formData, oauth: e.target.checked })}
+              className="mt-0.5"
+            />
+            <span className="text-xs text-text-secondary">
+              Authorize with OAuth
+              <span className="block text-text-muted">
+                For servers that require a sign in rather than a static credential. Expand the server afterwards to
+                authorize.
+              </span>
+            </span>
+          </label>
         </>
       )}
       <FormField
@@ -127,6 +143,106 @@ function McpServerFormFields({ formData, onChange }: McpServerFormFieldsProps) {
         placeholder="optional, e.g. 30"
       />
     </>
+  )
+}
+
+interface McpOAuthPanelProps {
+  serverName: string
+  onChanged: () => void
+}
+
+const MCP_OAUTH_BUTTON_CLASS =
+  'px-2 py-1 rounded text-xs font-medium text-text-muted hover:text-text-primary hover:bg-bg-primary transition-colors disabled:opacity-50'
+
+function McpOAuthPanel({ serverName, onChanged }: McpOAuthPanelProps) {
+  const [busy, setBusy] = useState(false)
+  const [redirectUri, setRedirectUri] = useState('')
+  const [pasted, setPasted] = useState('')
+  const [error, setError] = useState('')
+
+  const endpoint = `/api/mcp/servers/${encodeURIComponent(serverName)}/oauth`
+
+  const call = async (run: () => Promise<void>) => {
+    setBusy(true)
+    setError('')
+    try {
+      await run()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const postJson = async (path: string, body?: unknown) => {
+    const res = await authFetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error ?? 'Request failed')
+    return data
+  }
+
+  const handleStart = () =>
+    call(async () => {
+      const data = await postJson(`${endpoint}/start`)
+      if (data.status !== 'redirect') {
+        onChanged()
+        return
+      }
+      setRedirectUri(data.redirectUri ?? '')
+      window.open(data.authorizationUrl, '_blank', 'noopener,noreferrer')
+    })
+
+  const handleComplete = () =>
+    call(async () => {
+      await postJson(`${endpoint}/complete`, { response: pasted })
+      setPasted('')
+      setRedirectUri('')
+      onChanged()
+    })
+
+  const handleForget = () =>
+    call(async () => {
+      const res = await authFetch(endpoint, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Could not clear the stored credentials')
+      onChanged()
+    })
+
+  return (
+    <div className="space-y-1.5 py-1">
+      <div className="flex items-center gap-1">
+        <button onClick={handleStart} disabled={busy} className={MCP_OAUTH_BUTTON_CLASS}>
+          Authorize
+        </button>
+        <button onClick={handleForget} disabled={busy} className={MCP_OAUTH_BUTTON_CLASS}>
+          Forget credentials
+        </button>
+      </div>
+      {redirectUri && (
+        <div className="space-y-1">
+          <div className="text-xs text-text-muted">
+            A tab opened for you to sign in. If it ends up on a page that will not load, copy the whole address from it
+            and paste it below.
+          </div>
+          <div className="text-xs text-text-muted font-mono break-all">{redirectUri}</div>
+          <div className="flex items-center gap-1">
+            <input
+              value={pasted}
+              onChange={(e) => setPasted(e.target.value)}
+              placeholder="paste the callback URL"
+              className="flex-1 px-2 py-1 bg-bg-tertiary border border-border rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-accent-primary"
+            />
+            <button onClick={handleComplete} disabled={busy || !pasted} className={MCP_OAUTH_BUTTON_CLASS}>
+              Finish
+            </button>
+          </div>
+        </div>
+      )}
+      {error && <div className="text-xs text-accent-error">{error}</div>}
+    </div>
   )
 }
 
@@ -147,6 +263,7 @@ interface McpServerState {
     env?: Record<string, string>
     url?: string
     headers?: Record<string, string>
+    oauth?: boolean
     timeout?: number
     disabled?: boolean
   }
@@ -305,6 +422,7 @@ export function ToolsTab() {
     env: '',
     url: '',
     headers: '',
+    oauth: false,
     timeout: '',
   })
   const [formError, setFormError] = useState('')
@@ -369,6 +487,7 @@ export function ToolsTab() {
     } else {
       body.url = formData.url
       body.headers = parseKeyValueLines(formData.headers)
+      body.oauth = formData.oauth
     }
     if (formData.timeout) {
       const parsed = parseFloat(formData.timeout)
@@ -387,6 +506,7 @@ export function ToolsTab() {
     env: '',
     url: '',
     headers: '',
+    oauth: false,
     timeout: '',
   }
 
@@ -440,6 +560,7 @@ export function ToolsTab() {
             .map(([k, v]) => `${k}=${v}`)
             .join('\n')
         : '',
+      oauth: server.config.oauth ?? false,
       timeout: server.config.timeout !== undefined ? String(server.config.timeout) : '',
     })
     setFormError('')
@@ -836,6 +957,9 @@ export function ToolsTab() {
                 }
                 statusDot={mcpStatusDot(server.status)}
                 statusColor={mcpStatusColor(server.status)}
+                authPanel={
+                  server.config.oauth ? <McpOAuthPanel serverName={server.name} onChanged={loadServers} /> : null
+                }
                 actions={
                   <>
                     {errorEl}

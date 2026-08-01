@@ -6,6 +6,18 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import type { McpServerConfig, McpServerState, McpToolInfo, McpManagerOptions, CachedToolInfo } from './types.js'
 import type { LLMToolDefinition } from '../llm/types.js'
 import { logger } from '../utils/logger.js'
+import { McpOAuthProvider } from './oauth-provider.js'
+
+/**
+ * The SDK merges requestInit headers after the ones it derives from the auth provider, so a static
+ * Authorization header would silently shadow the OAuth token and every request would look unauthorized.
+ */
+function withoutAuthorizationHeader(headers: Record<string, string> | undefined): Record<string, string> | undefined {
+  if (!headers) return undefined
+  const kept = Object.entries(headers).filter(([key]) => key.trim().toLowerCase() !== 'authorization')
+  if (kept.length === Object.keys(headers).length) return headers
+  return Object.fromEntries(kept)
+}
 
 /** Rough token estimate: ~4 chars per token for JSON-serialized tool definitions */
 export function estimateToolTokens(
@@ -75,8 +87,12 @@ export class McpManager {
       } else if (entry.config.transport === 'http') {
         if (!entry.config.url) throw new Error('url is required for http transport')
         const httpOpts: StreamableHTTPClientTransportOptions = {}
-        if (entry.config.headers) {
-          httpOpts.requestInit = { headers: entry.config.headers }
+        const headers = entry.config.oauth ? withoutAuthorizationHeader(entry.config.headers) : entry.config.headers
+        if (headers) {
+          httpOpts.requestInit = { headers }
+        }
+        if (entry.config.oauth) {
+          httpOpts.authProvider = new McpOAuthProvider(name, entry.config.url)
         }
         transport = new StreamableHTTPClientTransport(new URL(entry.config.url), httpOpts) as unknown as Transport
       } else {

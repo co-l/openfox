@@ -8,6 +8,7 @@ export interface McpServerPatch {
   env?: Record<string, string>
   url?: string
   headers?: Record<string, string>
+  oauth?: boolean
   timeout?: number
   disabled?: boolean
 }
@@ -37,6 +38,7 @@ export function buildUpdatedServerConfig(
   const mergedUrl = patch.url !== undefined ? patch.url : transportChanged ? undefined : existing.config.url
   const mergedHeaders =
     patch.headers !== undefined ? patch.headers : transportChanged ? undefined : existing.config.headers
+  const mergedOauth = patch.oauth !== undefined ? patch.oauth : transportChanged ? undefined : existing.config.oauth
   const mergedTimeout = patch.timeout !== undefined ? patch.timeout : existing.config.timeout
   const mergedDisabled = patch.disabled !== undefined ? patch.disabled : existing.config.disabled
 
@@ -58,6 +60,7 @@ export function buildUpdatedServerConfig(
     ...(mergedEnv && Object.keys(mergedEnv).length > 0 ? { env: mergedEnv } : {}),
     ...(mergedUrl ? { url: mergedUrl } : {}),
     ...(mergedHeaders && Object.keys(mergedHeaders).length > 0 ? { headers: mergedHeaders } : {}),
+    ...(mergedOauth ? { oauth: mergedOauth } : {}),
     ...(mergedTimeout !== undefined ? { timeout: mergedTimeout } : {}),
     ...(mergedDisabled !== undefined ? { disabled: mergedDisabled } : {}),
     ...(persistedCfg?.disabledTools && persistedCfg.disabledTools.length > 0

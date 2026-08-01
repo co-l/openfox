@@ -22,6 +22,7 @@ interface McpServerCardProps {
   statusDot: string
   statusColor: string
   actions?: React.ReactNode
+  authPanel?: React.ReactNode
 }
 
 export function McpServerCard({
@@ -35,6 +36,7 @@ export function McpServerCard({
   statusDot,
   statusColor,
   actions,
+  authPanel,
 }: McpServerCardProps) {
   const [expandedDescs, setExpandedDescs] = useState<Set<string>>(new Set())
   const name = server.name
@@ -63,6 +65,7 @@ export function McpServerCard({
             </div>
           )}
           {server.config.url && <div className="text-xs text-text-muted font-mono">{server.config.url}</div>}
+          {authPanel}
           {tools.length === 0 ? (
             <div className="text-xs text-text-muted">No tools available</div>
           ) : (

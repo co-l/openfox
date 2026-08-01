@@ -139,6 +139,7 @@ _Vision Fallback — Image processing configuration_
 | `OPENFOX_LLM_IDLE_TIMEOUT`           | `300000`                   | LLM stream idle timeout in ms                                   |
 | `OPENFOX_PORT`                       | `10369`                    | Server listen port                                              |
 | `OPENFOX_HOST`                       | `127.0.0.1`                | Server bind host                                                |
+| `OPENFOX_PUBLIC_URL`                 | —                          | Public origin used to build the MCP OAuth redirect URI          |
 | `OPENFOX_WORKDIR`                    | `cwd`                      | Working directory                                               |
 | `OPENFOX_DB_PATH`                    | `./openfox.db`             | SQLite database path                                            |
 | `OPENFOX_LOG_LEVEL`                  | `info`                     | Log level: `debug`, `info`, `warn`, `error`                     |

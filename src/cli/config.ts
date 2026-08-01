@@ -127,6 +127,7 @@ const mcpServerSchema = z.object({
   env: z.record(z.string(), z.string()).optional(),
   url: z.string().optional(),
   headers: z.record(z.string(), z.string()).optional(),
+  oauth: z.boolean().optional(),
   disabledTools: z.array(z.string()).optional(),
   cachedTools: z.array(cachedToolSchema).optional(),
   timeout: z.number().positive().optional(),

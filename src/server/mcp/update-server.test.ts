@@ -36,6 +36,15 @@ vi.mock('@modelcontextprotocol/sdk/client/stdio.js', () => ({
   }),
 }))
 
+vi.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
+  StreamableHTTPClientTransport: vi.fn(function () {
+    return {
+      start: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+    }
+  }),
+}))
+
 const defaultCfg: McpServerConfig = { transport: 'stdio', command: 'node' }
 
 describe('applyMcpServerUpdate server isolation', () => {
@@ -136,5 +145,73 @@ describe('applyMcpServerUpdate server isolation', () => {
     expect(alpha.tools).toHaveLength(2)
     expect(beta.status).toBe('connected')
     expect(beta.tools).toHaveLength(2)
+  })
+})
+
+describe('applyMcpServerUpdate oauth patch semantics', () => {
+  let manager: McpManager
+  let savedCfg: McpServerConfig | undefined
+  const save = vi.fn(async (cfg: McpServerConfig) => {
+    savedCfg = cfg
+  })
+  const oauthHttpCfg: McpServerConfig = { transport: 'http', url: 'https://mcp.example.com/mcp', oauth: true }
+
+  beforeEach(async () => {
+    savedCfg = undefined
+    manager = new McpManager()
+    await manager.addServer('srv', oauthHttpCfg)
+  })
+
+  it('keeps oauth: true when the patch does not mention oauth', async () => {
+    const existing = manager.getServer('srv')!
+
+    const { serverCfg, error } = await applyMcpServerUpdate({
+      name: 'srv',
+      patch: { timeout: 30 },
+      existing,
+      persistedCfg: oauthHttpCfg,
+      mcpManager: manager,
+      save,
+    })
+
+    expect(error).toBeUndefined()
+    expect(serverCfg.oauth).toBe(true)
+    expect(savedCfg?.oauth).toBe(true)
+  })
+
+  it('drops the oauth key entirely when the patch sets oauth: false (absent = disabled)', async () => {
+    const existing = manager.getServer('srv')!
+
+    const { serverCfg, error } = await applyMcpServerUpdate({
+      name: 'srv',
+      patch: { oauth: false },
+      existing,
+      persistedCfg: oauthHttpCfg,
+      mcpManager: manager,
+      save,
+    })
+
+    expect(error).toBeUndefined()
+    expect(serverCfg).not.toHaveProperty('oauth')
+    expect(savedCfg).not.toHaveProperty('oauth')
+  })
+
+  it('drops oauth, like url and headers, when switching transport from http to stdio', async () => {
+    const existing = manager.getServer('srv')!
+
+    const { serverCfg, error } = await applyMcpServerUpdate({
+      name: 'srv',
+      patch: { transport: 'stdio', command: 'node' },
+      existing,
+      persistedCfg: oauthHttpCfg,
+      mcpManager: manager,
+      save,
+    })
+
+    expect(error).toBeUndefined()
+    expect(serverCfg).not.toHaveProperty('oauth')
+    expect(serverCfg).not.toHaveProperty('url')
+    expect(serverCfg).not.toHaveProperty('headers')
+    expect(savedCfg).not.toHaveProperty('oauth')
   })
 })

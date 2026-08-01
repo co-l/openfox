@@ -14,6 +14,8 @@ export interface McpServerConfig {
   env?: Record<string, string>
   url?: string
   headers?: Record<string, string>
+  /** Authorize against the server with OAuth instead of a static credential. HTTP transport only. */
+  oauth?: boolean
   disabledTools?: string[]
   cachedTools?: CachedToolInfo[]
   timeout?: number

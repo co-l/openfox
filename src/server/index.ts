@@ -27,6 +27,8 @@ import {
   setNotifyMcpServersChanged,
 } from './tools/mcp-config.js'
 import { getSessionDisabledServers, setSessionDisabledServers } from './mcp/session-overrides.js'
+import { setMcpOAuthStoreMode, setMcpOAuthStorePath } from './mcp/oauth-store.js'
+import { setMcpOAuthServerPort } from './mcp/oauth-provider.js'
 import { createServerMessage } from '../shared/protocol.js'
 import { createContextStateMessage } from './ws/protocol.js'
 import { createWebSocketServer } from './ws/index.js'
@@ -191,6 +193,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   setMcpManagerForTools(mcpManager)
   setMcpConfigMode(config.mode ?? 'production')
   setMcpConfigPath(config.globalConfigPath)
+  setMcpOAuthStoreMode(config.mode ?? 'production')
+  // OAuth credentials live next to the config they belong to, never inside it.
+  setMcpOAuthStorePath(config.globalConfigPath ? join(dirname(config.globalConfigPath), 'mcp-auth.json') : undefined)
   const mcpServers = (config.mcpServers ?? {}) as Record<string, import('./mcp/types.js').McpServerConfig>
   Promise.all(
     Object.entries(mcpServers).map(([name, serverConfig]) =>
@@ -219,7 +224,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   // Auth middleware for all /api routes (except /api/health and /api/auth/login)
   const authMiddleware = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const path = req.path
-    const publicPaths = ['/health', '/auth', '/auth/login', '/auto-update/check', '/changelog']
+    // The MCP OAuth callback is a redirect from an authorization server, so it cannot carry a session
+    // token. It is guarded instead by the single use state it has to present.
+    const publicPaths = ['/health', '/auth', '/auth/login', '/auto-update/check', '/changelog', '/mcp/oauth/callback']
     if (publicPaths.includes(path)) {
       return next()
     }
@@ -2466,7 +2473,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   })
 
   app.post('/api/mcp/servers', async (req, res) => {
-    const { name, transport, command, args, env, url, headers, timeout } = req.body as {
+    const { name, transport, command, args, env, url, headers, oauth, timeout } = req.body as {
       name?: string
       transport?: string
       command?: string
@@ -2474,6 +2481,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       env?: Record<string, string>
       url?: string
       headers?: Record<string, string>
+      oauth?: boolean
       timeout?: number
     }
     if (!name) {
@@ -2485,6 +2493,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     if (timeout !== undefined && (typeof timeout !== 'number' || timeout <= 0)) {
       return res.status(400).json({ error: 'timeout must be a positive number' })
     }
+    if (oauth !== undefined && typeof oauth !== 'boolean') {
+      return res.status(400).json({ error: 'oauth must be a boolean' })
+    }
     try {
       const resolvedTransport: 'stdio' | 'http' = transport === 'http' ? 'http' : 'stdio'
       const serverCfg: import('./mcp/types.js').McpServerConfig = {
@@ -2494,6 +2505,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         ...(env && Object.keys(env).length > 0 ? { env } : {}),
         ...(url ? { url } : {}),
         ...(headers && Object.keys(headers).length > 0 ? { headers } : {}),
+        ...(oauth ? { oauth: true } : {}),
         ...(timeout !== undefined ? { timeout } : {}),
       }
       await mcpManager.addServer(name, serverCfg)
@@ -2539,7 +2551,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
 
     const body = req.body as Record<string, unknown>
-    const { transport: rawTransport, command, args, env, url, headers, timeout, disabled } = body
+    const { transport: rawTransport, command, args, env, url, headers, oauth, timeout, disabled } = body
 
     if (rawTransport !== undefined && rawTransport !== 'stdio' && rawTransport !== 'http') {
       return res.status(400).json({ error: `Invalid transport '${String(rawTransport)}'. Must be 'stdio' or 'http'.` })
@@ -2577,6 +2589,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     if (disabled !== undefined && typeof disabled !== 'boolean') {
       return res.status(400).json({ error: 'disabled must be a boolean' })
     }
+    if (oauth !== undefined && typeof oauth !== 'boolean') {
+      return res.status(400).json({ error: 'oauth must be a boolean' })
+    }
 
     try {
       const { loadGlobalConfig, saveGlobalConfig } = await import('../cli/config.js')
@@ -2595,6 +2610,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         ...(env !== undefined ? { env: env as Record<string, string> } : {}),
         ...(url !== undefined ? { url: url as string } : {}),
         ...(headers !== undefined ? { headers: headers as Record<string, string> } : {}),
+        ...(oauth !== undefined ? { oauth: oauth as boolean } : {}),
         ...(timeout !== undefined ? { timeout: timeout as number } : {}),
         ...(disabled !== undefined ? { disabled: disabled as boolean } : {}),
       }
@@ -2635,6 +2651,10 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
     mcpManager.removeServer(name)
 
+    // Removing a server means dropping what it was authorized with, not leaving it behind on disk.
+    const { clearMcpOAuthEntry } = await import('./mcp/oauth-store.js')
+    await clearMcpOAuthEntry(name)
+
     // Persist to global config
     const { loadGlobalConfig, saveGlobalConfig } = await import('../cli/config.js')
     const globalConfig = await loadGlobalConfig(config.mode ?? 'production', config.globalConfigPath)
@@ -2659,6 +2679,145 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
     wssExports.broadcastAll(createServerMessage('mcp.servers.changed', { servers: mcpManager.getAllServers() }))
 
+    res.json({ success: true })
+  })
+
+  /** Rendered on the OAuth callback. The message is always one of ours, never anything the caller sent. */
+  function oauthCallbackPage(message: string): string {
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>OpenFox</title></head><body style="font-family:system-ui;padding:2rem"><p>${message}</p></body></html>`
+  }
+
+  /** Accepts the whole callback URL or just its query string. Anything else yields no state and is refused. */
+  function parseOAuthResponse(value: string): { code?: string; state?: string } {
+    let params: URLSearchParams | null
+    try {
+      params = new URL(value).searchParams
+    } catch {
+      params = value.includes('code=') ? new URLSearchParams(value.replace(/^\?/, '')) : null
+    }
+    if (!params) return { code: value }
+    const code = params.get('code')
+    const state = params.get('state')
+    return { ...(code ? { code } : {}), ...(state ? { state } : {}) }
+  }
+
+  async function applyMcpOAuthResult(name: string): Promise<void> {
+    await mcpManager.connectServer(name)
+    await rebuildMcpTools()
+    for (const s of sessionManager.listSessions()) {
+      sessionManager.setDynamicContextChanged(s.id, true)
+    }
+    wssExports.broadcastAll(createServerMessage('mcp.servers.changed', { servers: mcpManager.getAllServers() }))
+  }
+
+  async function completeMcpOAuth(name: string, serverUrl: string, code: string): Promise<void> {
+    const { auth } = await import('@modelcontextprotocol/sdk/client/auth.js')
+    const { McpOAuthProvider } = await import('./mcp/oauth-provider.js')
+    const { clearMcpOAuthAuthorizationState } = await import('./mcp/oauth-store.js')
+    const provider = new McpOAuthProvider(name, serverUrl)
+    try {
+      const result = await auth(provider, { serverUrl, authorizationCode: code })
+      if (result !== 'AUTHORIZED') {
+        throw new Error('The authorization server did not return a usable grant')
+      }
+    } catch (error) {
+      // The code is spent whatever happened, so the state and the verifier must not outlive the attempt.
+      await clearMcpOAuthAuthorizationState(name, serverUrl)
+      throw error
+    }
+    await applyMcpOAuthResult(name)
+  }
+
+  app.post('/api/mcp/servers/:name/oauth/start', async (req, res) => {
+    const { name } = req.params
+    const server = mcpManager.getServer(name)
+    if (!server) {
+      return res.status(404).json({ error: `MCP server '${name}' not found` })
+    }
+    if (server.config.transport !== 'http' || !server.config.url) {
+      return res.status(400).json({ error: 'OAuth is only available for http transport' })
+    }
+    if (!server.config.oauth) {
+      return res.status(400).json({ error: `MCP server '${name}' is not configured for OAuth` })
+    }
+    try {
+      const { auth } = await import('@modelcontextprotocol/sdk/client/auth.js')
+      const { McpOAuthProvider } = await import('./mcp/oauth-provider.js')
+      const provider = new McpOAuthProvider(name, server.config.url)
+      const result = await auth(provider, { serverUrl: server.config.url })
+      if (result === 'AUTHORIZED') {
+        await applyMcpOAuthResult(name)
+        return res.json({ status: 'authorized' })
+      }
+      const authorizationUrl = provider.pendingAuthorizationUrl
+      if (!authorizationUrl) {
+        return res.status(400).json({ error: 'The server did not produce an authorization URL' })
+      }
+      res.json({ status: 'redirect', authorizationUrl: authorizationUrl.toString(), redirectUri: provider.redirectUrl })
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  app.get('/api/mcp/oauth/callback', async (req, res) => {
+    const code = typeof req.query['code'] === 'string' ? req.query['code'] : ''
+    const state = typeof req.query['state'] === 'string' ? req.query['state'] : ''
+    if (!code || !state) {
+      return res.status(400).type('html').send(oauthCallbackPage('Missing authorization code or state.'))
+    }
+    const { findMcpOAuthEntryByState } = await import('./mcp/oauth-store.js')
+    const pending = await findMcpOAuthEntryByState(state)
+    if (!pending) {
+      return res.status(400).type('html').send(oauthCallbackPage('No pending authorization matches this callback.'))
+    }
+    try {
+      await completeMcpOAuth(pending.name, pending.entry.serverUrl, code)
+      res.type('html').send(oauthCallbackPage('Authorization complete. You can close this tab and go back to OpenFox.'))
+    } catch (error) {
+      logger.error('MCP OAuth callback failed', { error: error instanceof Error ? error.message : String(error) })
+      res.status(400).type('html').send(oauthCallbackPage('Authorization failed. See the OpenFox logs for details.'))
+    }
+  })
+
+  app.post('/api/mcp/servers/:name/oauth/complete', async (req, res) => {
+    const { name } = req.params
+    const { response } = req.body as { response?: string }
+    const server = mcpManager.getServer(name)
+    if (!server) {
+      return res.status(404).json({ error: `MCP server '${name}' not found` })
+    }
+    if (!server.config.url) {
+      return res.status(400).json({ error: 'OAuth is only available for http transport' })
+    }
+    if (typeof response !== 'string' || !response.trim()) {
+      return res.status(400).json({ error: 'response is required' })
+    }
+    const parsed = parseOAuthResponse(response.trim())
+    if (!parsed.code || !parsed.state) {
+      return res.status(400).json({ error: 'Paste the whole callback URL, both code and state are needed' })
+    }
+    // Never optional: the state is what ties this code to the authorization OpenFox actually started.
+    const { readMcpOAuthEntry } = await import('./mcp/oauth-store.js')
+    const entry = await readMcpOAuthEntry(name, server.config.url)
+    if (!entry?.state || entry.state !== parsed.state) {
+      return res.status(400).json({ error: 'This callback does not match the pending authorization' })
+    }
+    try {
+      await completeMcpOAuth(name, server.config.url, parsed.code)
+      res.json({ server: mcpManager.getServer(name) })
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  app.delete('/api/mcp/servers/:name/oauth', async (req, res) => {
+    const { name } = req.params
+    if (!mcpManager.getServer(name)) {
+      return res.status(404).json({ error: `MCP server '${name}' not found` })
+    }
+    const { clearMcpOAuthEntry } = await import('./mcp/oauth-store.js')
+    await clearMcpOAuthEntry(name)
+    await applyMcpOAuthResult(name)
     res.json({ success: true })
   })
 
@@ -3001,6 +3160,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         httpServer.listen(listenPort, host, () => {
           const addr = httpServer.address()
           const actualPort = typeof addr === 'object' && addr ? addr.port : listenPort
+          setMcpOAuthServerPort(actualPort)
           const client = getLLMClient()
           logger.info(`OpenFox server running at http://${host}:${actualPort}`)
           logger.info(`WebSocket available at ws://${host}:${actualPort}/ws`)
