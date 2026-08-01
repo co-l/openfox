@@ -203,7 +203,7 @@ describe('Full Attachment Flow Integration', () => {
           messageId: 'msg-1',
           role: 'user',
           content: 'What is in this image?',
-          attachments: [testAttachment],
+          attachments: [{ ...testAttachment, description: 'A test image description' }],
           contextWindowId: 'window-1',
         },
       },
@@ -224,6 +224,10 @@ describe('Full Attachment Flow Integration', () => {
     expect(content).toHaveLength(2)
     expect(content[0]).toEqual({ type: 'text', text: 'What is in this image?' })
     expect(content[1]?.type).toBe('text')
-    expect((content[1] as { text: string }).text).toContain('[Image: test.png]')
+    const text = (content[1] as { text: string }).text
+    expect(text).toContain('[Image: test.png]')
+    expect(text).toContain('<image_description>')
+    expect(text).toContain('A test image description')
+    expect(text).toContain('</image_description>')
   })
 })

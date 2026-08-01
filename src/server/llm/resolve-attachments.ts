@@ -7,6 +7,16 @@ import { decodeDataUrl } from '../utils/data-url.js'
 
 export type ContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
 
+export function formatVisionFallbackDescription(filename: string | undefined, description: string): string {
+  return [
+    `[Image: ${filename || 'image'}]`,
+    `You cannot see this image directly — a separate vision model produced the description below:`,
+    `<image_description>`,
+    description,
+    `</image_description>`,
+  ].join('\n')
+}
+
 const pdfBlockCache = new Map<string, ContentPart[]>()
 
 export function clearPdfBlockCache(): void {
@@ -82,7 +92,7 @@ async function resolveAttachmentToText(attachment: Attachment, supportsVision: b
   }
 
   if (attachment.description) {
-    return `[Image: ${attachment.filename || 'image'} - description: ${attachment.description}]`
+    return formatVisionFallbackDescription(attachment.filename, attachment.description)
   }
 
   return `[Image: ${attachment.filename || 'image'}] (vision not supported, cannot describe)`

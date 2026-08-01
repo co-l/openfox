@@ -48,13 +48,13 @@ interface OpenAIChatResponse {
   }>
 }
 
-const IMAGE_PROMPT = `Describe this image in detail. Focus on:
-- What the image shows (UI, diagram, photo, etc.)
-- Any text visible in the image
-- Layout and visual structure
-- Key elements and their relationships
+const IMAGE_PROMPT = `Describe this image thoroughly and accurately. Include:
+- What the image shows (UI, diagram, photo, illustration, etc.)
+- All visible text, transcribed verbatim — every label, heading, number, and value
+- Spatial layout: where elements are positioned and how they relate
+- Colors, visual hierarchy, and any distinctive visual features
 
-Provide a concise but comprehensive description.`
+Be exhaustive rather than concise. Prioritize precision — if there are numbers, lists, or structured data, capture them completely. If the image contains a table or grid, reproduce it as a markdown table with exact values.`
 
 function buildPrompt(context?: string): string {
   return context ? `${IMAGE_PROMPT}\n\nContext: ${context}` : IMAGE_PROMPT
