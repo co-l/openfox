@@ -77,6 +77,10 @@ async function getDirInfo(targetPath: string): Promise<DirInfo> {
 }
 
 export async function checkPermissions(targetPath: string) {
+  if (process.platform === 'win32') {
+    // Unix group/sudo-based permission management does not apply on Windows
+    return { success: false, error: 'Automatic permission management is not supported on Windows', status: 501 }
+  }
   try {
     const info = await getDirInfo(targetPath)
     return {
@@ -96,6 +100,14 @@ export async function checkPermissions(targetPath: string) {
 }
 
 export async function fixPermissions(targetPath: string, action: string) {
+  if (process.platform === 'win32') {
+    return {
+      success: false,
+      sudoAvailable: false,
+      error: 'Automatic permission fixes are not supported on Windows',
+      status: 501,
+    }
+  }
   try {
     const info = await getDirInfo(targetPath)
 

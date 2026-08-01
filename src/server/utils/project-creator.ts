@@ -91,9 +91,10 @@ export async function createDirectoryWithGit(projectName: string, workdir: strin
       const exitCode = (gitErr as { status?: number }).status ?? (gitErr as { exitCode?: number }).exitCode
       const isPermission = errMsg.includes('Permission denied') || exitCode === 128
 
-      // Try via sudo -u $USER if permission denied (process may not have correct groups)
+      // Try via sudo -u $USER if permission denied (process may not have correct groups).
+      // No sudo/id on Windows — skip straight to the error.
       let sudoSuccess = false
-      if (isPermission) {
+      if (isPermission && process.platform !== 'win32') {
         try {
           const currentUser = execSync('id -un', { encoding: 'utf-8', windowsHide: true }).trim()
           execSync(`sudo -u ${currentUser} git init`, {
