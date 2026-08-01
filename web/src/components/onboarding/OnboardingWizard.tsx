@@ -18,6 +18,7 @@ interface OnboardingData {
     timeout: number
     backend?: 'ollama' | 'openai'
     providerModelRef?: string
+    apiKey?: string
   }
 }
 
@@ -48,6 +49,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
       timeout: number
       backend?: 'ollama' | 'openai'
       providerModelRef?: string
+      apiKey?: string
     }
   }) {
     setSaving(true)

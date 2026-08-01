@@ -19,6 +19,7 @@ interface VisionStepProps {
       timeout: number
       backend?: 'ollama' | 'openai'
       providerModelRef?: string
+      apiKey?: string
     }
   }) => void
 }
@@ -27,6 +28,7 @@ export function VisionStep({ onNext }: VisionStepProps) {
   const [enabled, setEnabled] = useState(false)
   const [url, setUrl] = useState('http://localhost:11434')
   const [model, setModel] = useState('qwen3.5:0.8b')
+  const [apiKey, setApiKey] = useState('')
   const [backend, setBackend] = useState<'ollama' | 'openai'>('ollama')
   const [providers, setProviders] = useState<Provider[]>([])
   const [selectedRef, setSelectedRef] = useState<string>('')
@@ -43,6 +45,7 @@ export function VisionStep({ onNext }: VisionStepProps) {
           } else {
             setUrl(data.visionFallback.url ?? 'http://localhost:11434')
             setModel(data.visionFallback.model ?? 'qwen3.5:0.8b')
+            setApiKey(data.visionFallback.apiKey ?? '')
             if (data.visionFallback.backend) {
               setBackend(data.visionFallback.backend)
             }
@@ -84,6 +87,7 @@ export function VisionStep({ onNext }: VisionStepProps) {
           timeout: 120,
           backend,
           providerModelRef: '',
+          apiKey: backend === 'openai' ? apiKey : '',
         },
       })
     }
@@ -139,10 +143,11 @@ export function VisionStep({ onNext }: VisionStepProps) {
         <VisionModelConfigSection
           {...{ enabled, hasOptions, selectedRef, visionModelOptions }}
           onProviderModelSelect={handleProviderModelSelect}
-          {...{ backend, url, model }}
+          {...{ backend, url, model, apiKey }}
           onBackendChange={handleBackendChange}
           onUrlChange={setUrl}
           onModelChange={setModel}
+          onApiKeyChange={setApiKey}
           noOptionsMessage={noVisionMsg}
         />
 

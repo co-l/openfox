@@ -62,18 +62,22 @@ export interface ManualVisionConfigProps {
   backend: 'ollama' | 'openai'
   url: string
   model: string
+  apiKey: string
   onBackendChange: (backend: 'ollama' | 'openai') => void
   onUrlChange: (url: string) => void
   onModelChange: (model: string) => void
+  onApiKeyChange: (apiKey: string) => void
 }
 
 export function ManualVisionConfig({
   backend,
   url,
   model,
+  apiKey,
   onBackendChange,
   onUrlChange,
   onModelChange,
+  onApiKeyChange,
 }: ManualVisionConfigProps) {
   return (
     <div className="space-y-4">
@@ -110,6 +114,19 @@ export function ManualVisionConfig({
           className="w-full px-4 py-2 bg-bg-secondary border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-primary"
         />
       </div>
+
+      {backend === 'openai' && (
+        <div>
+          <label className="block text-sm text-text-secondary mb-1">API key (optional)</label>
+          <input
+            type="password"
+            value={apiKey}
+            onChange={(e) => onApiKeyChange(e.target.value)}
+            placeholder="Leave empty for a local server that needs no auth"
+            className="w-full px-4 py-2 bg-bg-secondary border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-primary"
+          />
+        </div>
+      )}
     </div>
   )
 }
@@ -147,18 +164,12 @@ export function useProviderModelSelectHandler(
   }
 }
 
-export interface VisionModelConfigSectionProps {
+export interface VisionModelConfigSectionProps extends ManualVisionConfigProps {
   enabled: boolean
   hasOptions: boolean
   selectedRef: string
   visionModelOptions: VisionModelOption[]
   onProviderModelSelect: (ref: string) => void
-  backend: 'ollama' | 'openai'
-  url: string
-  model: string
-  onBackendChange: (backend: 'ollama' | 'openai') => void
-  onUrlChange: (url: string) => void
-  onModelChange: (model: string) => void
   noOptionsMessage: string
   children?: ReactNode
 }
@@ -169,14 +180,9 @@ export function VisionModelConfigSection({
   selectedRef,
   visionModelOptions,
   onProviderModelSelect,
-  backend,
-  url,
-  model,
-  onBackendChange,
-  onUrlChange,
-  onModelChange,
   noOptionsMessage,
   children,
+  ...manualConfig
 }: VisionModelConfigSectionProps) {
   if (!enabled) return null
 
@@ -191,14 +197,7 @@ export function VisionModelConfigSection({
         <p className="text-sm text-text-muted italic">{noOptionsMessage}</p>
       )}
 
-      <ManualVisionConfig
-        backend={backend}
-        url={url}
-        model={model}
-        onBackendChange={onBackendChange}
-        onUrlChange={onUrlChange}
-        onModelChange={onModelChange}
-      />
+      <ManualVisionConfig {...manualConfig} />
 
       {children}
     </div>

@@ -2107,6 +2107,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         timeout?: number
         backend?: VisionBackend
         providerModelRef?: string
+        apiKey?: string
       }
     }
 
@@ -2146,6 +2147,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       timeout: z.number().positive().optional(),
       backend: z.enum(['ollama', 'openai']).optional(),
       providerModelRef: z.string().optional(),
+      apiKey: z.string().optional(),
     })
 
     const parsed = visionFallbackUpdateSchema.safeParse(req.body)
@@ -2197,6 +2199,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       backend: z.enum(['ollama', 'openai']).optional(),
       providerModelRef: z.string().optional(),
       timeout: z.number().positive().optional(),
+      apiKey: z.string().optional(),
     })
 
     const parsed = testSchema.safeParse(req.body)

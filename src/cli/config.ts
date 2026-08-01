@@ -110,6 +110,7 @@ const visionFallbackSchema = z.object({
   timeout: z.number().default(120),
   backend: z.enum(['ollama', 'openai']).default('ollama'),
   providerModelRef: z.string().optional(),
+  apiKey: z.string().optional(),
 })
 
 const cachedToolSchema = z.object({
@@ -251,6 +252,7 @@ export function resolveVisionFallback(
       model: fallback.model,
       timeout: (fallback.timeout ?? 120) * 1000,
       backend: fallback.backend ?? 'ollama',
+      ...(fallback.apiKey ? { apiKey: fallback.apiKey } : {}),
     }
   }
 

@@ -499,6 +499,41 @@ describe('resolveVisionFallback', () => {
     expect(result!.apiKey).toBeUndefined()
   })
 
+  it('passes the api key through when the manual config sets one', () => {
+    const config = makeConfig({
+      visionFallback: {
+        enabled: true,
+        url: 'https://api.openai.com/v1',
+        model: 'gpt-4o-mini',
+        timeout: 120,
+        backend: 'openai' as const,
+        apiKey: 'sk-manual-key',
+      },
+    })
+    const result = resolveVisionFallback(config)
+    expect(result).toBeDefined()
+    expect(result!.baseUrl).toBe('https://api.openai.com/v1')
+    expect(result!.backend).toBe('openai')
+    expect(result!.apiKey).toBe('sk-manual-key')
+  })
+
+  it('keeps using the provider key when providerModelRef resolves', () => {
+    const config = makeConfig({
+      visionFallback: {
+        enabled: true,
+        providerModelRef: 'vision-provider/gpt-4o-vision',
+        url: 'https://api.openai.com/v1',
+        model: 'gpt-4o-mini',
+        timeout: 120,
+        backend: 'openai' as const,
+        apiKey: 'sk-manual-key',
+      },
+    })
+    const result = resolveVisionFallback(config)
+    expect(result).toBeDefined()
+    expect(result!.apiKey).toBe('sk-test-key-123')
+  })
+
   it('handles provider-not-found gracefully by falling back to legacy', () => {
     const config = makeConfig({
       visionFallback: {
