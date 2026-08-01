@@ -219,6 +219,24 @@ describe('CRUD', () => {
     }
   })
 
+  it('should delete a user override without deleting the built-in command', async () => {
+    const defaults = await loadDefaultCommands()
+    const defaultCommand = defaults[0]
+    if (!defaultCommand) return
+
+    await saveCommand(tempDir, {
+      metadata: { ...defaultCommand.metadata, name: 'Customized Command' },
+      prompt: 'Customized prompt.',
+    })
+
+    const result = await deleteCommand(tempDir, defaultCommand.metadata.id)
+    expect(result.success).toBe(true)
+
+    const commands = await loadAllCommands(tempDir)
+    const restoredDefault = commands.find((command) => command.metadata.id === defaultCommand.metadata.id)
+    expect(restoredDefault).toEqual(defaultCommand)
+  })
+
   it('should return false when deleting non-existent command', async () => {
     const result = await deleteCommand(tempDir, 'nonexistent')
     expect(result.success).toBe(false)

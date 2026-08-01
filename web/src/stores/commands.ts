@@ -87,6 +87,7 @@ export const useCommandsStore = create<CommandsState>((set, get) => ({
       if (res.ok) {
         set((state) => ({
           userItems: state.userItems.filter((c) => c.id !== commandId),
+          projectItems: state.projectItems.filter((c) => c.id !== commandId),
         }))
         return { success: true }
       }

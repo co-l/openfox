@@ -129,15 +129,14 @@ export async function deleteCommand(
   configDir: string,
   commandId: string,
 ): Promise<{ success: boolean; reason?: string }> {
-  const isDefault = await isDefaultCommand(commandId)
-  if (isDefault) {
-    return { success: false, reason: 'Cannot delete built-in defaults' }
-  }
   const filePath = join(getCommandsDir(configDir), `${commandId}${COMMAND_EXTENSION}`)
   try {
     await unlink(filePath)
     return { success: true }
   } catch {
+    if (await isDefaultCommand(commandId)) {
+      return { success: false, reason: 'Cannot delete built-in defaults' }
+    }
     return { success: false }
   }
 }
