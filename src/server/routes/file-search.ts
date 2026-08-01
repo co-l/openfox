@@ -38,8 +38,8 @@ interface FileSuggestion {
 }
 
 async function searchFiles(query: string, workdir: string): Promise<FileSuggestion[]> {
-  if (query.endsWith('/')) {
-    return listDirectoryContents(query, workdir)
+  if (/[\\/]$/.test(query)) {
+    return listDirectoryContents(query.replace(/\\/g, '/'), workdir)
   }
 
   const entries = await fg(['**/*'], {
