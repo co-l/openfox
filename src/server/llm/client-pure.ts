@@ -17,7 +17,11 @@ import type { Attachment } from '../../shared/types.js'
 import type { ModelProfile } from './profiles.js'
 import type { BackendCapabilities } from './backend.js'
 import { TEXT_MIME_PREFIXES, TEXT_MIME_EXACT } from '../../shared/constants.js'
-import { extractPdfFromDataUrl, extractPdfBlocksFromDataUrl } from './resolve-attachments.js'
+import {
+  extractPdfFromDataUrl,
+  extractPdfBlocksFromDataUrl,
+  formatVisionFallbackDescription,
+} from './resolve-attachments.js'
 
 import type { ContentPart } from './resolve-attachments.js'
 export { resolveAttachmentsInMessages } from './resolve-attachments.js'
@@ -148,9 +152,7 @@ async function convertAttachment(attachment: Attachment, modelSupportsVision: bo
   }
 
   if (attachment.description) {
-    return [
-      { type: 'text', text: `[Image: ${attachment.filename || 'image'} - description: ${attachment.description}]` },
-    ]
+    return [{ type: 'text', text: formatVisionFallbackDescription(attachment.filename, attachment.description) }]
   }
 
   return [{ type: 'text', text: `[Image: ${attachment.filename || 'image'}] (vision not supported, cannot describe)` }]

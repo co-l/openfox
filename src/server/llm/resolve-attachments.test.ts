@@ -89,6 +89,31 @@ describe('resolveAttachmentsInMessages', () => {
     expect(result[0]?.attachments).toEqual([])
   })
 
+  it('wraps vision description in delimited block when vision not supported', async () => {
+    const messages: LLMMessage[] = [
+      {
+        role: 'user',
+        content: 'look at this',
+        attachments: [
+          {
+            id: 'i4',
+            filename: 'photo.png',
+            mimeType: 'image/png',
+            size: 500,
+            data: 'data:image/png;base64,abc',
+            description: 'A red car on a highway',
+          },
+        ],
+      },
+    ]
+    const result = await resolveAttachmentsInMessages(messages, false)
+    expect(result[0]?.content).toContain('[Image: photo.png]')
+    expect(result[0]?.content).toContain('<image_description>')
+    expect(result[0]?.content).toContain('A red car on a highway')
+    expect(result[0]?.content).toContain('</image_description>')
+    expect(result[0]?.attachments).toEqual([])
+  })
+
   it('keeps PDF attachments intact when vision is supported', async () => {
     const pdfBuffer = makeSimplePdfBuffer()
     const data = `data:application/pdf;base64,${pdfBuffer.toString('base64')}`
