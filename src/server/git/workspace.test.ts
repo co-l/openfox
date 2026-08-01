@@ -365,61 +365,34 @@ describe('isGitRepository', () => {
 })
 
 describe('deleteWorkspace', () => {
-  it('uses execFileSync instead of execSync for safe deletion', async () => {
+  it('deletes via fs.rm without spawning any process', async () => {
     vi.mocked(stat).mockResolvedValue({ isDirectory: () => true } as any)
 
     await deleteWorkspace(PROJECT_NAME, 'test-ws', CWD)
 
-    expect(execFileSync).toHaveBeenCalledWith('rm', ['-rf', expect.stringContaining('test-ws')], expect.any(Object))
-    expect(execSync).not.toHaveBeenCalled()
-  })
-
-  it('falls back to fs.rm when execFileSync fails', async () => {
-    vi.mocked(stat).mockResolvedValue({ isDirectory: () => true } as any)
-    vi.mocked(execFileSync).mockImplementation(() => {
-      throw new Error('Simulated rm failure')
+    expect(rm).toHaveBeenCalledWith(expect.stringContaining('test-ws'), {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
     })
-
-    await deleteWorkspace(PROJECT_NAME, 'test-ws', CWD)
-
-    expect(rm).toHaveBeenCalledWith(expect.stringContaining('test-ws'), { recursive: true, force: true })
+    expect(execSync).not.toHaveBeenCalled()
+    expect(execFileSync).not.toHaveBeenCalled()
   })
 
-  it('does not create files when workspace name contains shell injection - semicolon', async () => {
-    const maliciousName = 'test; touch ~/.malicious_semicolon'
+  it.each([
+    ['semicolon', 'test; touch ~/.malicious_semicolon'],
+    ['backticks', '`touch ~/.malicious_backtick`'],
+    ['dollar sign', '$HOME/test'],
+    ['command substitution', '$(touch ~/.malicious_substitution)'],
+  ])('does not shell-interpret workspace name - %s', async (_label, maliciousName) => {
     vi.mocked(stat).mockResolvedValue({ isDirectory: () => true } as any)
 
-    // execFileSync passes args directly, no shell interpretation
+    // fs.rm takes the path as plain data — shell metacharacters are inert
     await deleteWorkspace(PROJECT_NAME, maliciousName, CWD)
 
-    expect(execFileSync).toHaveBeenCalledWith('rm', ['-rf', expect.stringContaining(maliciousName)], expect.any(Object))
-  })
-
-  it('does not create files when workspace name contains shell injection - backticks', async () => {
-    const maliciousName = '`touch ~/.malicious_backtick`'
-    vi.mocked(stat).mockResolvedValue({ isDirectory: () => true } as any)
-
-    await deleteWorkspace(PROJECT_NAME, maliciousName, CWD)
-
-    expect(execFileSync).toHaveBeenCalledWith('rm', ['-rf', expect.stringContaining(maliciousName)], expect.any(Object))
-  })
-
-  it('does not create files when workspace name contains shell injection - dollar sign', async () => {
-    const maliciousName = '$HOME/test'
-    vi.mocked(stat).mockResolvedValue({ isDirectory: () => true } as any)
-
-    await deleteWorkspace(PROJECT_NAME, maliciousName, CWD)
-
-    expect(execFileSync).toHaveBeenCalledWith('rm', ['-rf', expect.stringContaining(maliciousName)], expect.any(Object))
-  })
-
-  it('does not create files when workspace name contains shell injection - command substitution', async () => {
-    const maliciousName = '$(touch ~/.malicious_substitution)'
-    vi.mocked(stat).mockResolvedValue({ isDirectory: () => true } as any)
-
-    await deleteWorkspace(PROJECT_NAME, maliciousName, CWD)
-
-    expect(execFileSync).toHaveBeenCalledWith('rm', ['-rf', expect.stringContaining(maliciousName)], expect.any(Object))
+    expect(rm).toHaveBeenCalledTimes(1)
+    expect(execSync).not.toHaveBeenCalled()
+    expect(execFileSync).not.toHaveBeenCalled()
   })
 
   it('throws error when workspace does not exist', async () => {
