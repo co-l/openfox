@@ -29,6 +29,7 @@ import {
   updateSessionDangerLevel,
   updateSessionRunning,
   updateSessionCachedPrompt,
+  clearSessionCachedPrompt,
   updateSessionWorkdir,
   updateSessionBranch,
   updateSessionMessageCount,
@@ -1295,6 +1296,18 @@ export class SessionManager {
     this.resetWarmup(sessionId)
   }
 
+  /**
+   * Invalidate the cached system prompt so the next LLM call rebuilds against
+   * the current workdir/branch. Called after any authoritative workspace or
+   * branch mutation so same-turn continuations and the next user turn do not
+   * keep seeing the previous workspace in the system prompt.
+   */
+  clearCachedPrompt(sessionId: string): void {
+    clearSessionCachedPrompt(sessionId)
+    this.resetWarmup(sessionId)
+    this.setDynamicContextChanged(sessionId, true)
+  }
+
   getCachedPrompt(
     sessionId: string,
   ): { systemPrompt: string; tools: import('../llm/types.js').LLMToolDefinition[]; hash: string } | undefined {
@@ -1527,6 +1540,12 @@ export class SessionManager {
       const wsDirForBranch = await getWorkspacesDir(project.name, project.workdir)
       const effectiveWorkdir = target === 'original' ? project.workdir : resolve(wsDirForBranch, target)
       const actualBranch = await getGitBranch(effectiveWorkdir)
+
+      // Issue #190: the workdir/branch just changed, so any previously cached
+      // system prompt is now stale. Clear it so the next LLM call (same-turn
+      // continuation or next user turn) rebuilds against the new authoritative
+      // state instead of serving the old prompt.
+      this.clearCachedPrompt(sessionId)
 
       if (actualBranch) {
         updateSessionBranch(sessionId, actualBranch)

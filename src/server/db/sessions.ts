@@ -14,8 +14,7 @@ function getProjectDangerLevel(projectId: string): DangerLevel {
   try {
     const db = getDatabase()
     const row = db.prepare('SELECT danger_level FROM projects WHERE id = ?').get(projectId) as
-      | { danger_level: string | null }
-      | undefined
+      { danger_level: string | null } | undefined
     return (row?.danger_level as DangerLevel) ?? 'normal'
   } catch {
     return 'normal'
@@ -235,6 +234,17 @@ export function updateSessionCachedPrompt(
   ).run(systemPrompt, JSON.stringify(tools), hash, now, id)
 }
 
+export function clearSessionCachedPrompt(id: string): void {
+  const db = getDatabase()
+  const now = new Date().toISOString()
+
+  db.prepare(
+    `
+    UPDATE sessions SET cached_system_prompt = NULL, cached_tools = NULL, cached_hash = NULL, updated_at = ? WHERE id = ?
+  `,
+  ).run(now, id)
+}
+
 export function getSessionCachedPrompt(id: string): {
   systemPrompt: string
   tools: import('../llm/types.js').LLMToolDefinition[]
@@ -248,8 +258,7 @@ export function getSessionCachedPrompt(id: string): {
   `,
     )
     .get(id) as
-    | { cached_system_prompt: string | null; cached_tools: string | null; cached_hash: string | null }
-    | undefined
+    { cached_system_prompt: string | null; cached_tools: string | null; cached_hash: string | null } | undefined
 
   if (!row || !row.cached_system_prompt || !row.cached_tools || !row.cached_hash) {
     return null
@@ -282,8 +291,7 @@ export function getSessionMessageCount(id: string): number {
   try {
     const db = getDatabase()
     const row = db.prepare(`SELECT message_count FROM sessions WHERE id = ?`).get(id) as
-      | { message_count: number }
-      | undefined
+      { message_count: number } | undefined
     return row?.message_count ?? 0
   } catch {
     // Database not initialized (test scenarios) - return 0
