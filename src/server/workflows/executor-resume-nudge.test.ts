@@ -125,6 +125,12 @@ function createMockOptions(extra?: Partial<OrchestratorOptions>): OrchestratorOp
       resumeWorkflow: vi.fn(),
       getActiveWorkflowExecution: vi.fn(() => null),
       cancelWorkflow: vi.fn(),
+      assertExecutionGitContext: vi.fn(async () => ({
+        ok: true as const,
+        workdir: '/tmp/test',
+        expectedBranch: null,
+        actualBranch: null,
+      })),
     } as any,
     sessionId: 'test-session',
     llmClient: { getModel: () => 'test-model' } as any,

@@ -288,6 +288,58 @@ export async function executeWorkflow(
 
   logger.debug('Workflow executor starting', { sessionId, workflow: workflow.metadata.id })
 
+  // Resolve the workflow execution id up-front so we can block it on early
+  // failures (git-context drift, start condition) even on resume. On fresh
+  // starts it stays undefined until the marker is emitted below.
+  let executionId: string | undefined
+  if (isResume) {
+    const activeExec = sessionManager.getActiveWorkflowExecution(sessionId)
+    if (activeExec) {
+      executionId = activeExec.id
+    }
+  }
+
+  // Issue #183: early gate on git context drift. Before any agent step, any
+  // shell step, or any file write, refuse to start a write workflow when the
+  // session branch and the actual git branch on the effective workdir differ.
+  // We do NOT auto-checkout — we surface the discrepancy and block.
+  const ctxCheck = await sessionManager.assertExecutionGitContext(sessionId)
+  if (!ctxCheck.ok) {
+    logger.warn('Workflow blocked: git context drift detected', {
+      sessionId,
+      workflow: workflow.metadata.id,
+      workdir: ctxCheck.workdir,
+      expectedBranch: ctxCheck.expectedBranch,
+      actualBranch: ctxCheck.actualBranch,
+    })
+    emitWorkflowMessage(
+      eventStore,
+      sessionId,
+      `Runner blocked: ${ctxCheck.reason}`,
+      getCurrentWindowMessageOptions(sessionId),
+      onMessage,
+    )
+    if (executionId) {
+      sessionManager.blockWorkflow(
+        sessionId,
+        executionId,
+        workflow.metadata.id,
+        workflow.metadata.name,
+        workflow.metadata.color,
+      )
+    }
+    sessionManager.setPhase(sessionId, 'blocked')
+    return {
+      finalAction: {
+        type: 'BLOCKED',
+        reason: ctxCheck.reason,
+        blockedCriteria: [],
+      },
+      iterations: 0,
+      totalTime: (performance.now() - startTime) / 1000,
+    }
+  }
+
   // Evaluate start condition if present
   if (workflow.startCondition && workflow.startCondition.type !== 'always') {
     const session = sessionManager.requireSession(sessionId)
@@ -311,7 +363,6 @@ export async function executeWorkflow(
   }
 
   // Emit workflow-started marker into the feed (skip on resume)
-  let executionId: string | undefined
   if (!isResume) {
     const startMsgId = crypto.randomUUID()
     const startWindowOpts = getCurrentWindowMessageOptions(sessionId)
@@ -340,12 +391,6 @@ export async function executeWorkflow(
       workflow.metadata.color,
       options.params ?? {},
     )
-  } else {
-    // On resume, get the existing execution ID from the session
-    const activeExec = sessionManager.getActiveWorkflowExecution(sessionId)
-    if (activeExec) {
-      executionId = activeExec.id
-    }
   }
 
   // Inject user-provided message on resume too (e.g. after abort, user types guidance)

@@ -212,6 +212,49 @@ export class SessionManager {
     return { workdir: effectiveWorkdir, branch }
   }
 
+  /**
+   * Verify the session's effective workdir is on the branch the session was
+   * bound to. Used as an early gate by write workflows (Dev & Verify) so we
+   * never write files against the wrong tree when the session branch and the
+   * actual git branch have diverged (#183).
+   *
+   * - Non-git projects (neither side has a branch) are always considered OK.
+   * - If only one side has a branch, we do NOT block — a session without an
+   *   explicit branch expectation is allowed to operate without drift checks.
+   * - If BOTH sides have a branch and they differ, we block with a reason that
+   *   includes the workdir, expected branch, and actual branch.
+   */
+  async assertExecutionGitContext(sessionId: string): Promise<
+    | { ok: true; workdir: string; actualBranch: string | null; expectedBranch: string | null }
+    | {
+        ok: false
+        reason: string
+        workdir: string
+        expectedBranch: string | null
+        actualBranch: string | null
+      }
+  > {
+    const session = this.requireSession(sessionId)
+    const expectedBranch = session.branch ?? null
+    const { workdir, branch: actualBranch } = await this.getActualBranchPair(sessionId)
+
+    if (!expectedBranch || !actualBranch || expectedBranch === actualBranch) {
+      return { ok: true, workdir, actualBranch, expectedBranch }
+    }
+
+    return {
+      ok: false,
+      reason:
+        `Git context mismatch before Dev & Verify: session branch is '${expectedBranch}' ` +
+        `but workdir '${workdir}' is actually on '${actualBranch}'. ` +
+        `Refusing to write — no agent was run, no checkout was performed. ` +
+        `Use the workspace tool to switch to branch '${expectedBranch}' (or update the session branch) and retry.`,
+      workdir,
+      expectedBranch,
+      actualBranch,
+    }
+  }
+
   // ============================================================================
   // Session Lifecycle
   // ============================================================================

@@ -116,6 +116,12 @@ describe('executeWorkflow mode changes', () => {
       resumeWorkflow: vi.fn(),
       getActiveWorkflowExecution: vi.fn(() => null),
       cancelWorkflow: vi.fn(),
+      assertExecutionGitContext: vi.fn(async () => ({
+        ok: true as const,
+        workdir: '/tmp/test',
+        expectedBranch: null,
+        actualBranch: null,
+      })),
     }
 
     options = {
