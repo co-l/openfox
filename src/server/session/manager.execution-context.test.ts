@@ -64,8 +64,16 @@ const mockProviderManager = {
 import { loadConfig } from '../config.js'
 import { closeDatabase, getDatabase, initDatabase } from '../db/index.js'
 import { createProject } from '../db/projects.js'
+import { updateSessionBranch } from '../db/sessions.js'
 import { initEventStore } from '../events/index.js'
 import { SessionManager } from './manager.js'
+
+async function setSessionBranch(manager: SessionManager, sessionId: string, branch: string) {
+  updateSessionBranch(sessionId, branch)
+  // Force the manager to reload from DB so session.branch reflects the write
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  expect(manager.getSession(sessionId)?.branch).toBe(branch)
+}
 
 describe('SessionManager.switchWorkspace – execution context integrity (issue #190)', () => {
   let workdir: string
@@ -149,5 +157,79 @@ describe('SessionManager.switchWorkspace – execution context integrity (issue 
     const cached = manager.getCachedPrompt(session.id)
     expect(cached).toBeDefined()
     expect(cached?.hash).toBe('stable-hash')
+  })
+
+  // ==========================================================================
+  // Issue #183 — assertExecutionGitContext fail-closed semantics
+  // ==========================================================================
+
+  describe('assertExecutionGitContext fail-closed semantics', () => {
+    it('blocks (fail-closed) when expected branch is set but actual branch is null (detached HEAD / unresolvable)', async () => {
+      // Session says feat-x, git cannot resolve a branch (e.g. detached HEAD,
+      // broken repository, .git missing inside the workdir). We refuse to
+      // run — the agent must not start on the wrong tree.
+      const session = manager.createSession(projectId, 'Ctx-fc-1', undefined, undefined, '/ws/openfox/feat-x')
+      await setSessionBranch(manager, session.id, 'feat-x')
+      mockGetGitBranch.mockResolvedValue(null)
+
+      const result = await manager.assertExecutionGitContext(session.id)
+
+      expect(result.ok).toBe(false)
+      if (result.ok === false) {
+        expect(result.expectedBranch).toBe('feat-x')
+        expect(result.actualBranch).toBeNull()
+        expect(result.workdir).toBe('/ws/openfox/feat-x')
+        expect(result.reason).toContain('/ws/openfox/feat-x')
+        expect(result.reason).toContain('feat-x')
+        expect(result.reason).toMatch(/unavailable|unknown|cannot|no branch/i)
+        expect(result.reason).toMatch(/no agent|no checkout|no file/i)
+      }
+    })
+
+    it('allows (non-git or unbound) when expected branch is null and actual branch is null', async () => {
+      const session = manager.createSession(projectId, 'Ctx-fc-2')
+      mockGetGitBranch.mockResolvedValue(null)
+
+      const result = await manager.assertExecutionGitContext(session.id)
+
+      expect(result.ok).toBe(true)
+    })
+
+    it('allows (no expectation) when expected branch is null but actual branch is defined', async () => {
+      const session = manager.createSession(projectId, 'Ctx-fc-3')
+      mockGetGitBranch.mockResolvedValue('main')
+
+      const result = await manager.assertExecutionGitContext(session.id)
+
+      expect(result.ok).toBe(true)
+      if (result.ok) {
+        expect(result.actualBranch).toBe('main')
+        expect(result.expectedBranch).toBeNull()
+      }
+    })
+
+    it('allows when expected and actual branch match', async () => {
+      const session = manager.createSession(projectId, 'Ctx-fc-4', undefined, undefined, '/ws/openfox/feat-x')
+      await setSessionBranch(manager, session.id, 'feat-x')
+      mockGetGitBranch.mockResolvedValue('feat-x')
+
+      const result = await manager.assertExecutionGitContext(session.id)
+
+      expect(result.ok).toBe(true)
+    })
+
+    it('blocks when expected and actual branch differ', async () => {
+      const session = manager.createSession(projectId, 'Ctx-fc-5', undefined, undefined, '/ws/openfox/feat-x')
+      await setSessionBranch(manager, session.id, 'feat-x')
+      mockGetGitBranch.mockResolvedValue('main')
+
+      const result = await manager.assertExecutionGitContext(session.id)
+
+      expect(result.ok).toBe(false)
+      if (result.ok === false) {
+        expect(result.expectedBranch).toBe('feat-x')
+        expect(result.actualBranch).toBe('main')
+      }
+    })
   })
 })

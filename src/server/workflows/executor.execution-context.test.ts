@@ -224,6 +224,39 @@ describe('executeWorkflow – execution context integrity', () => {
     expect(startWorkflow).not.toHaveBeenCalled()
   })
 
+  it('blocks fail-closed when expected branch is set but actual branch is unresolvable', async () => {
+    // Detached HEAD / broken workdir: actualBranch is null even though
+    // session.branch is set. We must block — the agent must not run.
+    mockSessionManager.requireSession.mockReturnValue({
+      workdir: '/tmp/project',
+      workspace: '/ws/feat',
+      branch: 'feat-x',
+      messages: [],
+      metadataEntries: {},
+    })
+    mockSessionManager.assertExecutionGitContext.mockResolvedValue({
+      ok: false,
+      reason:
+        "Cannot verify Git context for workdir '/ws/feat': expected branch 'feat-x' but the actual branch is unavailable. " +
+        "Refusing to write — no agent was run, no checkout was performed.",
+      workdir: '/ws/feat',
+      expectedBranch: 'feat-x',
+      actualBranch: null,
+    })
+
+    const result = await executeWorkflow(workflow, options)
+
+    expect(result.finalAction.type).toBe('BLOCKED')
+    if (result.finalAction.type === 'BLOCKED') {
+      expect(result.finalAction.reason).toMatch(/unavailable/i)
+      expect(result.finalAction.reason).toContain('feat-x')
+      expect(result.finalAction.reason).toMatch(/no agent|no checkout|no file/i)
+    }
+    expect(runAgentTurnMock).not.toHaveBeenCalled()
+    expect(startWorkflow).not.toHaveBeenCalled()
+    expect(completeWorkflow).not.toHaveBeenCalled()
+  })
+
   it('proceeds with the first agent step when actual branch matches session branch', async () => {
     // Healthy state: session.branch === actualBranch
     mockSessionManager.requireSession.mockReturnValue({

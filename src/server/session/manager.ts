@@ -219,11 +219,16 @@ export class SessionManager {
    * never write files against the wrong tree when the session branch and the
    * actual git branch have diverged (#183).
    *
-   * - Non-git projects (neither side has a branch) are always considered OK.
-   * - If only one side has a branch, we do NOT block — a session without an
-   *   explicit branch expectation is allowed to operate without drift checks.
-   * - If BOTH sides have a branch and they differ, we block with a reason that
-   *   includes the workdir, expected branch, and actual branch.
+   * Decision matrix (fail-closed):
+   *   - expectedBranch null                 → ok, regardless of actualBranch.
+   *   - expectedBranch set, actualBranch set, equal    → ok.
+   *   - expectedBranch set, actualBranch set, differ   → BLOCKED.
+   *   - expectedBranch set, actualBranch null          → BLOCKED (we cannot
+   *     verify the workdir is on the right branch — detached HEAD, broken
+   *     repository, missing .git, etc.).
+   *
+   * Returning `{ ok: true }` for a session that has a branch expectation but
+   * no resolvable actual branch would be fail-open and is forbidden.
    */
   async assertExecutionGitContext(sessionId: string): Promise<
     | { ok: true; workdir: string; actualBranch: string | null; expectedBranch: string | null }
@@ -239,10 +244,32 @@ export class SessionManager {
     const expectedBranch = session.branch ?? null
     const { workdir, branch: actualBranch } = await this.getActualBranchPair(sessionId)
 
-    if (!expectedBranch || !actualBranch || expectedBranch === actualBranch) {
+    // No expectation → always allowed (covers non-git projects and unbound sessions).
+    if (!expectedBranch) {
       return { ok: true, workdir, actualBranch, expectedBranch }
     }
 
+    // Expectation set + matching actual branch → allowed.
+    if (actualBranch && expectedBranch === actualBranch) {
+      return { ok: true, workdir, actualBranch, expectedBranch }
+    }
+
+    // Expectation set + actual branch unresolved → fail closed.
+    if (!actualBranch) {
+      return {
+        ok: false,
+        reason:
+          `Cannot verify Git context for workdir '${workdir}': expected branch '${expectedBranch}' ` +
+          `but the actual branch is unavailable (detached HEAD, missing .git, or unreadable repository). ` +
+          `Refusing to write — no agent was run, no checkout was performed. ` +
+          `Use the workspace tool to switch to branch '${expectedBranch}' (or repair the workdir) and retry.`,
+        workdir,
+        expectedBranch,
+        actualBranch: null,
+      }
+    }
+
+    // Expectation set + actual branch differs → fail closed.
     return {
       ok: false,
       reason:
