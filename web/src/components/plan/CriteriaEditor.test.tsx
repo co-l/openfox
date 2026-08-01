@@ -1,12 +1,16 @@
 // @vitest-environment happy-dom
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CriteriaEditor } from './CriteriaEditor'
 import { authFetch } from '../../lib/api'
 
 vi.mock('../../lib/api', () => ({
   authFetch: vi.fn(() => Promise.resolve(new Response(null, { status: 200 }))),
+}))
+
+vi.mock('../shared/Modal', () => ({
+  Modal: () => null,
 }))
 
 vi.mock('../../stores/agents', () => ({
@@ -111,5 +115,28 @@ describe('CriteriaEditor', () => {
 
     expect(screen.getByText('[3] New one')).toBeInTheDocument()
     expect(screen.getByText('[4] New two')).toBeInTheDocument()
+  })
+
+  it('shows the clear-all confirmation inside the footer for a long criteria list', () => {
+    render(
+      <CriteriaEditor
+        sessionId="session-1"
+        entries={Array.from({ length: 16 }, (_, index) => ({
+          id: String(index),
+          description: `Criterion ${index}`,
+          status: 'pending',
+        }))}
+      />,
+    )
+
+    const clearButton = screen.getByRole('button', { name: 'Clear all' })
+    const footer = clearButton.parentElement
+    expect(footer).not.toBeNull()
+
+    fireEvent.click(clearButton)
+
+    expect(within(footer!).getByText('Clear all criteria?')).toBeInTheDocument()
+    expect(within(footer!).getByRole('button', { name: 'Yes' })).toBeInTheDocument()
+    expect(within(footer!).getByRole('button', { name: 'No' })).toBeInTheDocument()
   })
 })

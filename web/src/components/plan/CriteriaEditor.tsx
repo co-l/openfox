@@ -293,31 +293,10 @@ export function CriteriaEditor({ entries, sessionId }: CriteriaEditorProps) {
             Add
           </button>
         )}
-        {criteria.length > 0 && (
-          <button
-            onClick={() => setClearConfirm(true)}
-            className="flex items-center gap-1 text-xs text-text-muted hover:text-accent-error transition-colors ml-auto cursor-pointer"
-            title="Clear all criteria"
-          >
-            <TrashIcon className="w-3 h-3" />
-            Clear all
-          </button>
-        )}
-        <button
-          onClick={() => setShowInfo(true)}
-          className="flex items-center gap-1 text-xs text-text-muted hover:text-accent-primary transition-colors cursor-pointer"
-          title="About criteria"
-        >
-          <InfoIcon className="w-3 h-3" />
-        </button>
-      </div>
-
-      {/* Clear all confirmation */}
-      {clearConfirm && (
-        <div className="px-1.5 py-1 border-t border-border bg-secondary">
-          <div className="flex items-center gap-2 justify-between">
-            <span className="text-xs text-accent-error">Clear all criteria?</span>
-            <div className="flex items-center gap-2">
+        {criteria.length > 0 &&
+          (clearConfirm ? (
+            <div className="flex items-center gap-2 ml-auto">
+              <span className="text-xs text-accent-error">Clear all criteria?</span>
               <button
                 onClick={handleClearAll}
                 className="text-xs text-accent-error hover:text-accent-error/70 transition-colors cursor-pointer"
@@ -331,9 +310,24 @@ export function CriteriaEditor({ entries, sessionId }: CriteriaEditorProps) {
                 No
               </button>
             </div>
-          </div>
-        </div>
-      )}
+          ) : (
+            <button
+              onClick={() => setClearConfirm(true)}
+              className="flex items-center gap-1 text-xs text-text-muted hover:text-accent-error transition-colors ml-auto cursor-pointer"
+              title="Clear all criteria"
+            >
+              <TrashIcon className="w-3 h-3" />
+              Clear all
+            </button>
+          ))}
+        <button
+          onClick={() => setShowInfo(true)}
+          className="flex items-center gap-1 text-xs text-text-muted hover:text-accent-primary transition-colors cursor-pointer"
+          title="About criteria"
+        >
+          <InfoIcon className="w-3 h-3" />
+        </button>
+      </div>
 
       {/* Info modal */}
       <Modal isOpen={showInfo} onClose={() => setShowInfo(false)} title="About Acceptance Criteria" size="md">
