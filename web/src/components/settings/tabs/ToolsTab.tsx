@@ -698,6 +698,12 @@ export function ToolsTab() {
             }
           />
         </div>
+        {shells.length > 0 && settings[SETTINGS_KEYS.TOOLS_USE_RTK] === 'true' && currentShell !== 'gitbash' && (
+          <p className="text-xs text-accent-warning mt-1">
+            RTK only rewrites Unix-style commands — with this shell it will rarely apply and can break some commands.
+            Git Bash is recommended.
+          </p>
+        )}
       </div>
 
       <hr className="border-border" />

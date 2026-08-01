@@ -180,3 +180,79 @@ describe('ToolsTab MCP server toggle isolation', () => {
     expect(JSON.parse((putCalls[0]![1] as Record<string, string>).body as string)).toEqual({ disabled: true })
   })
 })
+
+describe('ToolsTab RTK shell hint (Windows)', () => {
+  const HINT_PATTERN = /RTK only rewrites Unix-style commands/
+
+  const mockFetchWithShells = async (shells: { id: string; label: string; available: boolean }[]) => {
+    const { authFetch } = await import('../../../lib/api')
+    const mockFn = authFetch as ReturnType<typeof vi.fn>
+    mockFn.mockImplementation(async (url: string) => ({
+      ok: true,
+      json: async () => {
+        if (url === '/api/tools/shells') return { shells }
+        if (url === '/api/tools/rtk-check') return { available: true }
+        return { servers: [] }
+      },
+    }))
+  }
+
+  const WINDOWS_SHELLS = [
+    { id: 'cmd', label: 'cmd.exe', available: true },
+    { id: 'powershell', label: 'PowerShell', available: true },
+    { id: 'gitbash', label: 'Git Bash', available: true },
+  ]
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+  afterEach(() => {
+    cleanup()
+    delete mockSettings['tools.useRtk']
+    delete mockSettings['tools.shell']
+  })
+
+  it('shows the hint when RTK is enabled with cmd.exe', async () => {
+    await mockFetchWithShells(WINDOWS_SHELLS)
+    mockSettings['tools.useRtk'] = 'true'
+    mockSettings['tools.shell'] = 'cmd'
+    render(<ToolsTab />)
+    await screen.findByText('cmd.exe')
+    expect(screen.getByText(HINT_PATTERN)).toBeDefined()
+  })
+
+  it('shows the hint when RTK is enabled with PowerShell', async () => {
+    await mockFetchWithShells(WINDOWS_SHELLS)
+    mockSettings['tools.useRtk'] = 'true'
+    mockSettings['tools.shell'] = 'powershell'
+    render(<ToolsTab />)
+    await screen.findByText('Git Bash')
+    expect(screen.getByText(HINT_PATTERN)).toBeDefined()
+  })
+
+  it('hides the hint when the selected shell is Git Bash', async () => {
+    await mockFetchWithShells(WINDOWS_SHELLS)
+    mockSettings['tools.useRtk'] = 'true'
+    mockSettings['tools.shell'] = 'gitbash'
+    render(<ToolsTab />)
+    await screen.findByText('cmd.exe')
+    expect(screen.queryByText(HINT_PATTERN)).toBeNull()
+  })
+
+  it('hides the hint when RTK is disabled', async () => {
+    await mockFetchWithShells(WINDOWS_SHELLS)
+    mockSettings['tools.useRtk'] = 'false'
+    mockSettings['tools.shell'] = 'cmd'
+    render(<ToolsTab />)
+    await screen.findByText('cmd.exe')
+    expect(screen.queryByText(HINT_PATTERN)).toBeNull()
+  })
+
+  it('hides the hint on non-Windows platforms (no shells)', async () => {
+    await mockFetchWithShells([])
+    mockSettings['tools.useRtk'] = 'true'
+    render(<ToolsTab />)
+    await screen.findByText('Enable RTK auto-rewrite')
+    expect(screen.queryByText(HINT_PATTERN)).toBeNull()
+  })
+})
