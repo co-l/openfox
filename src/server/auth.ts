@@ -1,5 +1,5 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
-import { join, dirname } from 'node:path'
+import { join, dirname, basename } from 'node:path'
 import { createHash, privateDecrypt, createPublicKey } from 'node:crypto'
 import { getRuntimeConfig } from './runtime-config.js'
 import type { Mode } from '../cli/main.js'
@@ -11,7 +11,7 @@ function getAuthConfigPath(): string {
 
   if (mode === 'test') {
     const cwd = process.cwd()
-    const base = cwd.endsWith('/e2e') ? cwd : join(cwd, 'e2e')
+    const base = basename(cwd) === 'e2e' ? cwd : join(cwd, 'e2e')
     const testAuthPath = join(base, '.openfox-test', 'auth.json')
     return testAuthPath
   }
