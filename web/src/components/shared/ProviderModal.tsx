@@ -484,9 +484,12 @@ export function ProviderModal({
   const [providerPresets, setProviderPresets] = useState<ProviderPreset[]>([])
   const [devicePageOpened, setDevicePageOpened] = useState(false)
   const [codeCopied, setCodeCopied] = useState(false)
+  const [manualModelId, setManualModelId] = useState('')
+  const [manualModelError, setManualModelError] = useState<string | null>(null)
   const codeCopiedTimerRef = useRef<number | null>(null)
   const draftProviderSaved = useRef(false)
   const urlInputRef = useRef<HTMLInputElement>(null)
+  const manualModelInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (formStep === 1 && isOpen) {
@@ -534,6 +537,50 @@ export function ProviderModal({
     return models.filter((m) => terms.every((t) => m.id.toLowerCase().includes(t)))
   }
 
+  function addManualModel() {
+    const trimmed = manualModelId.trim()
+    if (!trimmed) {
+      setManualModelError('Enter a model name')
+      return
+    }
+
+    // Detect duplicates against existing models, normalizing the same way the
+    // server does (lowercase, ignore -_:. and whitespace) so "my-model" and
+    // "my_model" are treated as the same model.
+    const normalize = (s: string) => s.toLowerCase().replace(/[-_\s:.]+/g, '')
+    const normalized = normalize(trimmed)
+    const existing = models.find((m) => normalize(m.id) === normalized)
+    if (existing) {
+      // Already present: just select it instead of duplicating.
+      selectModel(existing)
+      setManualModelError(`"${existing.id}" is already in the list`)
+      setManualModelId('')
+      if (!formAuthAdapter && autoConfigState.progress[existing.id] !== 'probing') {
+        runAutoConfig(existing.id)
+      }
+      return
+    }
+
+    const newModel: ModelInfo = {
+      id: trimmed,
+      contextWindow: 200000,
+    }
+    setModels((prev) => [...prev, newModel])
+    setSelectedModelIds((current) => new Set(current).add(newModel.id))
+    setModelConfigs((current) => ({
+      ...current,
+      [newModel.id]: {
+        contextWindow: newModel.contextWindow,
+        thinkingEnabled: true,
+      },
+    }))
+    setExpandedModelId(newModel.id)
+    setManualModelId('')
+    setManualModelError(null)
+    // The user has resolved the discovery failure on their own.
+    setFetchError(null)
+  }
+
   // Reset state when modal opens
   useEffect(() => {
     if (isOpen) {
@@ -555,6 +602,8 @@ export function ProviderModal({
       setDeviceChallenge(null)
       setDevicePageOpened(false)
       setCodeCopied(false)
+      setManualModelId('')
+      setManualModelError(null)
 
       if (editProvider?.models?.length) {
         const configs: Record<string, ModelConfig> = {}
@@ -882,6 +931,8 @@ export function ProviderModal({
     setRawModalData(null)
     setSelectedModelIds(new Set())
     setSearchQuery('')
+    setManualModelId('')
+    setManualModelError(null)
   }
 
   function handleClose() {
@@ -1220,7 +1271,57 @@ export function ProviderModal({
                   >
                     Edit URL
                   </button>
+                  {!formAuthAdapter && (
+                    <button
+                      onClick={() => manualModelInputRef.current?.focus()}
+                      className="text-xs text-accent-primary hover:underline"
+                    >
+                      Add model manually
+                    </button>
+                  )}
                 </div>
+              </div>
+            )}
+
+            {/* Add model manually — always available in step 2 so providers that
+                don't expose a /models endpoint (e.g. Cline) can be configured. */}
+            {formBackend && (!formAuthAdapter || providerAuthState === 'connected') && (
+              <div>
+                <h4 className="text-sm font-medium text-text-primary mb-1">Add model manually</h4>
+                <p className="text-xs text-text-muted mb-2">
+                  {fetchError
+                    ? "Can't discover models automatically? Enter the model name to use:"
+                    : 'Enter a model name manually if it does not appear in the list above:'}
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    ref={manualModelInputRef}
+                    type="text"
+                    value={manualModelId}
+                    onChange={(e) => {
+                      setManualModelId(e.target.value)
+                      if (manualModelError) setManualModelError(null)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        addManualModel()
+                      }
+                    }}
+                    placeholder="model-name"
+                    data-testid="provider-modal-manual-model-input"
+                    className="flex-1 px-3 py-1.5 bg-bg-primary border border-border rounded-lg text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-primary"
+                  />
+                  <button
+                    type="button"
+                    onClick={addManualModel}
+                    data-testid="provider-modal-manual-model-add"
+                    className="px-3 py-1.5 bg-accent-primary text-text-primary rounded-lg text-sm font-medium hover:bg-accent-primary/90 transition-colors"
+                  >
+                    Add
+                  </button>
+                </div>
+                {manualModelError && <p className="text-xs text-red-500 mt-1">{manualModelError}</p>}
               </div>
             )}
 

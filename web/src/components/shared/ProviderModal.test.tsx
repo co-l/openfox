@@ -55,8 +55,9 @@ describe('ProviderModal - thinkingLevel persistence', () => {
       setTimeout(resolve, 200)
     })
 
-    // Find the reasoning effort input (shows 'max' as default)
-    const effortInput = container.querySelector('input[type="text"]') as HTMLInputElement | null
+    // Find the reasoning effort input (free-text variant; the select variant is
+    // matched via the same aria-label in other tests)
+    const effortInput = container.querySelector('input[aria-label="Reasoning effort"]') as HTMLInputElement | null
 
     if (thinkingLevel !== undefined && effortInput) {
       // React controlled components listen to 'input' event with native setter
@@ -354,6 +355,107 @@ describe('ProviderModal - thinkingLevel persistence', () => {
         selected: true,
       }),
     )
+  })
+
+  it('adds a manually-entered model to the save payload when discovery returns no models', async () => {
+    // Simulate a provider (e.g. Cline) that does not expose a /models endpoint.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/api/providers/models')) {
+          return new Response(JSON.stringify({ error: 'No models found at http://localhost:8000/v1/models' }), {
+            status: 404,
+          })
+        }
+        return new Response(JSON.stringify({}), { status: 200 })
+      }),
+    )
+
+    await new Promise<void>((resolve) => {
+      root.render(
+        <ProviderModal
+          isOpen={true}
+          onClose={vi.fn()}
+          onSave={onSaveMock as (provider: ProviderFormData) => void}
+          initialStep={2}
+          editProvider={{
+            id: 'no-models-provider',
+            name: 'No Models Provider',
+            url: 'http://localhost:8000/v1',
+            backend: 'openai',
+            models: [],
+          }}
+        />,
+      )
+      setTimeout(resolve, 300)
+    })
+
+    // The manual model input is available even though discovery failed.
+    const manualInput = container.querySelector('[data-testid="provider-modal-manual-model-input"]') as HTMLInputElement
+    expect(manualInput).toBeTruthy()
+
+    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+    nativeInputValueSetter?.call(manualInput, 'my-cline-model')
+    manualInput.dispatchEvent(new Event('input', { bubbles: true }))
+
+    const addButton = container.querySelector(
+      '[data-testid="provider-modal-manual-model-add"]',
+    ) as HTMLButtonElement | null
+    addButton?.click()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    const saveButton = container.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
+    saveButton?.click()
+
+    expect(onSaveMock).toHaveBeenCalledTimes(1)
+    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
+    const savedModel = savedData.models.find((m) => m.id === 'my-cline-model')
+    expect(savedModel).toBeDefined()
+    expect(savedModel?.selected).toBe(true)
+    expect(savedModel?.contextWindow).toBe(200000)
+  })
+
+  it('rejects a duplicate manual model id and selects the existing one', async () => {
+    await new Promise<void>((resolve) => {
+      root.render(
+        <ProviderModal
+          isOpen={true}
+          onClose={vi.fn()}
+          onSave={onSaveMock as (provider: ProviderFormData) => void}
+          initialStep={2}
+          editProvider={{
+            id: 'dup-provider',
+            name: 'Dup Provider',
+            url: 'http://localhost:8000/v1',
+            backend: 'vllm',
+            models: [{ id: 'existing-model', contextWindow: 200000 }],
+          }}
+        />,
+      )
+      setTimeout(resolve, 200)
+    })
+
+    const manualInput = container.querySelector('[data-testid="provider-modal-manual-model-input"]') as HTMLInputElement
+    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+    nativeInputValueSetter?.call(manualInput, 'existing-model')
+    manualInput.dispatchEvent(new Event('input', { bubbles: true }))
+
+    const addButton = container.querySelector(
+      '[data-testid="provider-modal-manual-model-add"]',
+    ) as HTMLButtonElement | null
+    addButton?.click()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    // An error message is shown and the duplicate was not added.
+    expect(container.textContent).toContain('already in the list')
+
+    const saveButton = container.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
+    saveButton?.click()
+
+    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
+    // Only the original model is present — no duplicate.
+    expect(savedData.models.filter((m) => m.id === 'existing-model')).toHaveLength(1)
   })
 
   it.each([
