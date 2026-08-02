@@ -1,6 +1,8 @@
 import { ScrollArea } from '../shared/ScrollArea'
+import { ResizeHandle } from '../shared/ResizeHandle'
 import type { ReactNode } from 'react'
 import { useSessionStore } from '../../stores/session'
+import { useResizable } from '../../hooks/useResizable'
 import { SessionSidebar } from '../plan/SessionSidebar'
 import type { Message } from '@shared/types.js'
 
@@ -19,6 +21,13 @@ export function SessionLayout({
 }: SessionLayoutProps) {
   const session = useSessionStore((state) => state.currentSession)
 
+  const { width: rightSidebarWidth, handleMouseDown: handleResizeMouseDown } = useResizable({
+    initialWidth: 320,
+    minWidth: 240,
+    maxWidth: 600,
+    direction: 'right',
+  })
+
   return (
     <div className="relative h-full overflow-hidden">
       {/* Backdrop - mobile only, when sidebar is open */}
@@ -32,7 +41,11 @@ export function SessionLayout({
 
         {/* Session Sidebar - mobile: fixed overlay, desktop: flex item */}
         {criteriaSidebarOpen ? (
-          <aside className="hidden md:block w-[320px] shrink-0 border-l border-border bg-secondary">
+          <aside
+            className="hidden md:block shrink-0 border-l border-border bg-secondary relative"
+            style={{ width: rightSidebarWidth }}
+          >
+            <ResizeHandle side="left" onMouseDown={handleResizeMouseDown} />
             <ScrollArea className="h-full p-4">
               <SessionSidebar messages={messages} workdir={session?.workspace ?? session?.workdir} />
             </ScrollArea>

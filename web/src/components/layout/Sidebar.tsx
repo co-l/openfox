@@ -15,6 +15,8 @@ import { EllipsisIcon, SpinIcon, StopIcon, SearchIcon, XCloseIcon } from '../sha
 import { groupSessionsByDate, formatDateHeader, formatTime } from '../../lib/format-date.js'
 import { fuzzyMatch, highlightMatches } from '../../lib/modal-utils.js'
 import { useBinding, useKeybindings } from '../../hooks/useKeybindings.js'
+import { useResizable } from '../../hooks/useResizable'
+import { ResizeHandle } from '../shared/ResizeHandle'
 
 interface SidebarProps {
   projectId: string
@@ -47,6 +49,13 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
   const [focusedIndex, setFocusedIndex] = useState(-1)
   const searchRef = useRef<HTMLInputElement>(null)
   const sessionListRef = useRef<HTMLDivElement>(null)
+
+  const { width: sidebarWidth, handleMouseDown: handleResizeMouseDown } = useResizable({
+    initialWidth: 300,
+    minWidth: 200,
+    maxWidth: 600,
+    direction: 'left',
+  })
 
   const wasAutoOpenedRef = useRef(false)
 
@@ -368,7 +377,7 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
         return (
           <aside
             className={`
-            ${isOpen ? 'md:w-[300px] md:shrink-0' : 'md:w-0 md:shrink-0 md:overflow-hidden md:border-r-0'}
+            ${isOpen ? 'md:w-[var(--sidebar-w)] md:shrink-0' : 'md:w-0 md:shrink-0 md:overflow-hidden md:border-r-0'}
             md:relative md:h-auto md:translate-x-0
 
             fixed z-50 h-[calc(100vh-32px)]
@@ -376,8 +385,10 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
             transition-transform duration-300 ease-in-out
             ${isOpen ? 'translate-x-0' : '-translate-x-full'}
           `}
+            style={{ '--sidebar-w': `${sidebarWidth}px` } as React.CSSProperties}
           >
             {sidebarContent}
+            {isOpen && <ResizeHandle side="right" onMouseDown={handleResizeMouseDown} className="hidden md:block" />}
           </aside>
         )
       })()}
