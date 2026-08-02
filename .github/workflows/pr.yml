@@ -25,6 +25,7 @@ jobs:
           node-version: '24'
           cache: 'npm'
       - run: npm ci
+      - run: cd web && npm ci
       - run: npm run typecheck
 
   duplicate:
@@ -48,6 +49,7 @@ jobs:
           node-version: '24'
           cache: 'npm'
       - run: npm ci
+      - run: cd web && npm ci
       - run: npm test
 
   ai-disclosure:
