@@ -1638,9 +1638,15 @@ export class SessionManager {
     })()
 
     this.switchLocks.set(sessionId, lockPromise)
-    lockPromise.finally(() => {
-      if (this.switchLocks.get(sessionId) === lockPromise) this.switchLocks.delete(sessionId)
-    })
+    // The .finally() chain returns a new promise that propagates the original
+    // rejection. Attach .catch() so the cleanup never surfaces as an unhandled
+    // rejection when lockPromise rejects — the caller already observes the
+    // rejection via the returned promise.
+    lockPromise
+      .finally(() => {
+        if (this.switchLocks.get(sessionId) === lockPromise) this.switchLocks.delete(sessionId)
+      })
+      .catch(() => {})
 
     return lockPromise
   }

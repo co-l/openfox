@@ -206,3 +206,65 @@ describe('buildSubAgentsSection', () => {
     expect(buildSubAgentsSection([])).toBe('')
   })
 })
+
+// ============================================================================
+// Static-prompt contract that keeps the cached system prompt reusable across
+// workspace/branch mutations: the prompt may carry a stale "Working directory"
+// line, so it must (a) acknowledge the directory can change, (b) defer to a
+// later <system-reminder>, and (c) qualify <system-reminder> as authoritative.
+// ============================================================================
+
+describe('buildBasePrompt: working-directory change acknowledgement and <system-reminder> override', () => {
+  it('acknowledges the working directory may change during a session', () => {
+    const prompt = buildBasePrompt('/old/workdir')
+    // Phrase must clearly talk about the working directory AND its ability to change.
+    expect(prompt).toMatch(/working directory[^.\n]*\b(may|can)\b[^.\n]*change/i)
+  })
+
+  it('instructs the model to trust a later <system-reminder> over the static Working directory line', () => {
+    const prompt = buildBasePrompt('/old/workdir')
+    // Must not just mention <system-reminder> — must tell the model to trust it.
+    // Use a strict regex that captures the override semantics.
+    expect(prompt).toMatch(/<system-reminder>[^]*?trust[^]*?(workspace|that value|over this)/i)
+  })
+
+  it('qualifies <system-reminder> as authoritative operational constraints', () => {
+    const prompt = buildBasePrompt('/old/workdir')
+    expect(prompt).toContain('authoritative')
+    expect(prompt).toContain('operational constraints')
+  })
+
+  it('preserves the static "Working directory:" line so the cache key is stable', () => {
+    const prompt = buildBasePrompt('/old/workdir')
+    expect(prompt).toContain('Working directory: /old/workdir')
+  })
+})
+
+describe('static-prompt contract is preserved across top-level and sub-agent builders', () => {
+  it('buildTopLevelSystemPrompt preserves the full contract', () => {
+    const prompt = buildTopLevelSystemPrompt('/old/workdir', undefined, undefined, [mockVerifier])
+    expect(prompt).toContain('Working directory: /old/workdir')
+    expect(prompt).toMatch(/working directory[^.\n]*\b(may|can)\b[^.\n]*change/i)
+    expect(prompt).toMatch(/<system-reminder>[^]*?trust[^]*?(workspace|that value|over this)/i)
+    expect(prompt).toContain('authoritative')
+    expect(prompt).toContain('operational constraints')
+  })
+
+  it('buildSubAgentSystemPrompt preserves the full contract', () => {
+    const prompt = buildSubAgentSystemPrompt('/old/workdir', mockVerifier)
+    expect(prompt).toContain('Working directory: /old/workdir')
+    expect(prompt).toMatch(/working directory[^.\n]*\b(may|can)\b[^.\n]*change/i)
+    expect(prompt).toMatch(/<system-reminder>[^]*?trust[^]*?(workspace|that value|over this)/i)
+    expect(prompt).toContain('authoritative')
+    expect(prompt).toContain('operational constraints')
+    // Sub-agent body is appended on top — the base contract must remain.
+    expect(prompt).toContain('Verify each criterion carefully.')
+  })
+
+  it('buildAgentReminder wraps the agent body in <system-reminder>…</system-reminder>', () => {
+    const reminder = buildAgentReminder(mockPlanner)
+    expect(reminder.startsWith('<system-reminder>')).toBe(true)
+    expect(reminder.endsWith('</system-reminder>')).toBe(true)
+    expect(reminder).toContain('Plan mode ACTIVE')
+  })
+})

@@ -12,6 +12,13 @@ import { getPlatformShell } from '../utils/platform.js'
  * Core system prompt shared by ALL agents (top-level and sub-agents).
  * Contains: environment, core behavior, tone, guardrails, skills.
  * Does NOT contain: agent-specific instructions, sub-agents list.
+ *
+ * Contract (pinned by src/server/chat/prompts.test.ts — buildBasePrompt +
+ * preserved-across-builders): the cached system prompt is sacred. Workspace
+ * and branch mutations do NOT invalidate it. The static "Working directory"
+ * line below may be stale; the model is told to trust a later <system-reminder>
+ * over it. The MODE CONTROL <system-reminder> qualifier below is also pinned.
+ * Do not inject additional documentary text into the returned string.
  */
 export function buildBasePrompt(
   workdir: string,
