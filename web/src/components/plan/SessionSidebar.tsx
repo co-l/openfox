@@ -7,6 +7,7 @@ import { useSettingsStore, SETTINGS_KEYS } from '../../stores/settings'
 import { useSessionStore } from '../../stores/session'
 import { useUpdateStore } from '../../stores/update'
 import { authFetch } from '../../lib/api'
+import { pathBasename } from '../../lib/path'
 import { formatTime, formatSpeed } from '../../lib/format-stats'
 import { formatMetadataKeyLabel } from '../../lib/metadata-keys'
 import { StatsModal } from './StatsModal'
@@ -36,7 +37,7 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
   const version = useConfigStore((state) => state.version)
   const session = useSessionStore((state) => state.currentSession)
 
-  const workspaceName = session?.workspace ? (session.workspace.split('/').pop() ?? null) : null
+  const workspaceName = pathBasename(session?.workspace ?? '') || null
 
   const showEditorLink = useSettingsStore((s) => s.settings[SETTINGS_KEYS.DISPLAY_SHOW_OPEN_IN_EDITOR]) === 'true'
 

@@ -1,6 +1,7 @@
 import { createHighlighter, type Highlighter, bundledLanguages } from 'shiki'
 import type { ShikiTransformer } from 'shiki'
 import { useThemeStore } from '../stores/theme'
+import { pathBasename } from './path'
 
 let highlighter: Highlighter | null = null
 let highlighterPromise: Promise<Highlighter> | null = null
@@ -217,7 +218,7 @@ const extensionToLanguage: Record<string, string> = {
 export function getLanguageFromPath(filePath?: string): string {
   if (!filePath) return 'text'
 
-  const fileName = filePath.split('/').pop() ?? ''
+  const fileName = pathBasename(filePath)
 
   const lowerName = fileName.toLowerCase()
   if (lowerName === 'dockerfile') return 'docker'

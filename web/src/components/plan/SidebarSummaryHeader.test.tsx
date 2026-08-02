@@ -266,6 +266,22 @@ describe('SidebarSummaryHeader', () => {
     expect(html).toContain('original')
   })
 
+  it('shows only the basename for a Windows workspace path', () => {
+    mockSessionStore.mockReturnValue({
+      currentSession: {
+        id: 's1',
+        projectId: 'p1',
+        metadataEntries: mockMetadataEntries(),
+        workspace: 'C:\\Users\\me\\projects\\my-app',
+        workdir: 'C:\\Users\\me\\projects\\my-app',
+      },
+    })
+
+    const html = renderToStaticMarkup(<SidebarSummaryHeader visible={true} />)
+    expect(html).toContain('my-app')
+    expect(html).not.toContain('C:\\Users\\me\\projects\\my-app')
+  })
+
   it('shows nothing when diff is empty', () => {
     mockUseGitStatus.mockReturnValue({
       branch: 'main',

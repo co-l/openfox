@@ -10,6 +10,7 @@ import { ProgressBar } from '../shared/ProgressBar'
 import { MetadataSectionHeader } from '../shared/MetadataEntries'
 import { MetadataStatusIcon, statusOrder } from '../shared/MetadataStatusIcon'
 import { CriteriaEditor } from './CriteriaEditor'
+import { pathBasename } from '../../lib/path'
 import { DevServerFooter } from './DevServerFooter'
 import { DevServerConfigModal } from './DevServerConfigModal'
 import { DynamicContextPreviewModal } from './DynamicContextPreviewModal'
@@ -201,7 +202,7 @@ export function SidebarSummaryHeader({ visible }: SidebarSummaryHeaderProps) {
   const showEditorLink = useSettingsStore((s) => s.settings[SETTINGS_KEYS.DISPLAY_SHOW_OPEN_IN_EDITOR]) === 'true'
   if (!visible || !session) return null
 
-  const workspaceName = session.workspace ? (session.workspace.split('/').pop() ?? 'original') : 'original'
+  const workspaceName = pathBasename(session.workspace ?? '') || 'original'
   const workdir = session.workspace ?? session.workdir
 
   /* ---- Metadata ---- */

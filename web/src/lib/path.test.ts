@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { pathBasename, pathBreadcrumbs } from './path'
+import { pathBasename, pathBreadcrumbs, truncateMiddle } from './path'
 
 describe('pathBasename', () => {
   it('returns the last segment of a Unix path', () => {
@@ -45,5 +45,27 @@ describe('pathBreadcrumbs', () => {
 
   it('returns no crumbs for an empty path', () => {
     expect(pathBreadcrumbs('')).toEqual([])
+  })
+})
+
+describe('truncateMiddle', () => {
+  it('returns short paths unchanged', () => {
+    expect(truncateMiddle('/home/user/app')).toBe('/home/user/app')
+  })
+
+  it('truncates long Unix paths keeping first and last segments', () => {
+    const out = truncateMiddle('/home/user/very-long-middle-segment/project')
+    expect(out).toContain('...')
+    expect(out.startsWith('/home/')).toBe(true)
+    expect(out.endsWith('/project')).toBe(true)
+    expect(out.length).toBeLessThan('/home/user/very-long-middle-segment/project'.length)
+  })
+
+  it('truncates long Windows paths keeping first and last segments', () => {
+    const out = truncateMiddle('C:\\Users\\me\\very-long-middle-segment\\project')
+    expect(out).toContain('...')
+    expect(out.startsWith('C:\\Users\\')).toBe(true)
+    expect(out.endsWith('\\project')).toBe(true)
+    expect(out.length).toBeLessThan('C:\\Users\\me\\very-long-middle-segment\\project'.length)
   })
 })

@@ -99,4 +99,22 @@ describe('SessionSidebar — git repo guards', () => {
 
     expect(html).not.toContain('Edit')
   })
+
+  it('shows only the basename for a Windows workspace path', () => {
+    mockUseGitStatus.mockReturnValue({ branch: 'main', diff: { files: [], loading: false, error: null } })
+    mockSessionStore.mockReturnValue({
+      currentSession: {
+        id: 's1',
+        projectId: 'p1',
+        metadataEntries: {},
+        workspace: 'C:\\Users\\me\\projects\\my-app',
+        workdir: 'C:\\Users\\me\\projects\\my-app',
+      },
+    })
+
+    const html = renderToStaticMarkup(<SessionSidebar messages={[]} />)
+
+    expect(html).toContain('my-app')
+    expect(html).not.toContain('C:\\Users\\me\\projects\\my-app')
+  })
 })

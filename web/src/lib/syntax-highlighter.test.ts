@@ -140,4 +140,15 @@ describe('syntax-highlighter', () => {
       expect(theme).toBe('monokai')
     })
   })
+
+  describe('getLanguageFromPath', () => {
+    it('detects extension-less names on Unix and Windows paths', async () => {
+      const mod = await import('./syntax-highlighter')
+
+      expect(mod.getLanguageFromPath('/home/me/app/Dockerfile')).toBe('docker')
+      expect(mod.getLanguageFromPath('C:\\Users\\me\\app\\Dockerfile')).toBe('docker')
+      expect(mod.getLanguageFromPath('C:\\Users\\me\\app\\CMakeLists.txt')).toBe('cmake')
+      expect(mod.getLanguageFromPath('C:\\Users\\me\\app\\main.rs')).toBe('rust')
+    })
+  })
 })
