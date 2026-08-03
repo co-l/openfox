@@ -50,6 +50,19 @@ jobs:
       - run: npm ci
       - run: npm test
 
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+
   ai-disclosure:
     runs-on: ubuntu-latest
     steps:
