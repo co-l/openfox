@@ -21,7 +21,15 @@ import {
   registerPathConfirmation,
   requestPathAccess,
   extractGitNoVerify,
+  extractDangerousPatterns,
 } from './path-security.js'
+
+// Default to a Unix shell so the existing suite (which assumes POSIX path
+// extraction) is undisturbed. Individual Git Bash tests override this mock.
+vi.mock('../utils/platform.js', () => ({
+  getPlatformShell: vi.fn(() => ({ command: '/bin/sh', args: ['-c'] })),
+}))
+import { getPlatformShell } from '../utils/platform.js'
 
 // Test fixtures directory - use a unique subdir that's NOT in /tmp's allowed root
 // We create workdir INSIDE /tmp but treat sibling tests specially
@@ -43,6 +51,20 @@ const REAL_PLATFORM = process.platform
 function mockPlatform(platform: NodeJS.Platform): void {
   Object.defineProperty(process, 'platform', { value: platform, configurable: true })
 }
+
+const UNIX_SHELL = { command: '/bin/sh', args: ['-c'] }
+const GIT_BASH_SHELL = { command: 'C:\\Program Files\\Git\\bin\\bash.exe', args: ['-c'] }
+const CMD_SHELL = { command: 'cmd.exe', args: ['/c'] }
+
+/** Pin the active shell, which gates posix path extraction independently of the platform. */
+function mockShell(shell: { command: string; args: string[] }): void {
+  vi.mocked(getPlatformShell).mockReturnValue(shell)
+}
+
+afterEach(() => {
+  mockPlatform(REAL_PLATFORM)
+  mockShell(UNIX_SHELL)
+})
 
 /**
  * Canonicalize like the implementation's safeRealpath: realpath when the path
@@ -1790,10 +1812,7 @@ describe('path-security', () => {
 describe('extractAbsolutePathsFromCommand on Windows (cmd.exe shell)', () => {
   beforeEach(() => {
     mockPlatform('win32')
-  })
-
-  afterEach(() => {
-    mockPlatform(REAL_PLATFORM)
+    mockShell(CMD_SHELL)
   })
 
   it('treats /tokens as cmd switches, not paths', () => {
@@ -1834,5 +1853,135 @@ describe('extractAbsolutePathsFromCommand on Windows (cmd.exe shell)', () => {
   it('still expands tilde paths', () => {
     const paths = extractAbsolutePathsFromCommand('cat ~/file.txt')
     expect(paths).toContain(join(homedir(), 'file.txt'))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Windows path-security bundle B2: Git Bash extraction, dangerous commands,
+// and Windows device names. Mocking process.platform + the active shell.
+// ---------------------------------------------------------------------------
+
+describe('extractAbsolutePathsFromCommand under Git Bash (win32)', () => {
+  beforeEach(() => {
+    mockPlatform('win32')
+    mockShell(GIT_BASH_SHELL)
+  })
+
+  it('extracts a posix absolute path under Git Bash (the corrected bypass)', () => {
+    expect(extractAbsolutePathsFromCommand('cat /etc/passwd')).toEqual(['/etc/passwd'])
+  })
+
+  it('translates MSYS /c/Users/... into a real Windows drive path', () => {
+    expect(extractAbsolutePathsFromCommand('cat /c/Users/victim/.ssh/id_rsa')).toEqual([
+      'C:\\Users\\victim\\.ssh\\id_rsa',
+    ])
+  })
+
+  it('extracts a quoted posix path under Git Bash', () => {
+    const paths = extractAbsolutePathsFromCommand('cat "/etc/shadow"')
+    expect(paths).toContain('/etc/shadow')
+  })
+
+  it('still extracts drive-letter paths under Git Bash', () => {
+    expect(extractAbsolutePathsFromCommand('type C:\\secrets\\creds.txt')).toEqual(['C:\\secrets\\creds.txt'])
+  })
+
+  it('does not extract /tokens when the active shell is cmd.exe', () => {
+    mockShell(CMD_SHELL)
+    expect(extractAbsolutePathsFromCommand('cat /etc/passwd')).toEqual([])
+  })
+})
+
+describe('extractDangerousPatterns — Windows equivalents', () => {
+  it('flags recursive directory removal', () => {
+    expect(extractDangerousPatterns('rd /s /q C:\\projet').length).toBeGreaterThan(0)
+  })
+
+  it('flags recursive force delete of files', () => {
+    expect(extractDangerousPatterns('del /f /s /q *.log').length).toBeGreaterThan(0)
+  })
+
+  it('flags drive formatting', () => {
+    expect(extractDangerousPatterns('format D:').length).toBeGreaterThan(0)
+  })
+
+  it('flags drive formatting with leading switches', () => {
+    expect(extractDangerousPatterns('format /q D:').length).toBeGreaterThan(0)
+    expect(extractDangerousPatterns('format /fs:NTFS D:').length).toBeGreaterThan(0)
+  })
+
+  it('flags PowerShell recursive force delete', () => {
+    expect(extractDangerousPatterns('Remove-Item -Recurse -Force C:\\x').length).toBeGreaterThan(0)
+  })
+
+  it('flags PowerShell recursive force delete with reversed flag order', () => {
+    expect(extractDangerousPatterns('Remove-Item -Force -Recurse C:\\x').length).toBeGreaterThan(0)
+  })
+
+  it('flags privilege escalation (runas)', () => {
+    expect(extractDangerousPatterns('runas /user:Administrator cmd').length).toBeGreaterThan(0)
+  })
+
+  it('flags granting Everyone full control via icacls', () => {
+    expect(extractDangerousPatterns('icacls C:\\x /grant Everyone:F').length).toBeGreaterThan(0)
+  })
+
+  it('flags diskpart (raw disk operations)', () => {
+    expect(extractDangerousPatterns('diskpart /s script.txt').length).toBeGreaterThan(0)
+  })
+
+  // Anti-false-positives: these must NOT trigger a confirmation.
+  it('does not flag `npm run format`', () => {
+    expect(extractDangerousPatterns('npm run format')).toEqual([])
+  })
+
+  it('does not flag `git format-patch`', () => {
+    expect(extractDangerousPatterns('git format-patch -1')).toEqual([])
+  })
+
+  it('does not flag a format script run against a drive path', () => {
+    expect(extractDangerousPatterns('npm run format -- C:\\src\\x.ts')).toEqual([])
+    expect(extractDangerousPatterns('npm run format:fix > C:\\tmp\\log.txt')).toEqual([])
+  })
+
+  it('does not flag a non-recursive del', () => {
+    expect(extractDangerousPatterns('del build.log')).toEqual([])
+  })
+
+  it('does not flag a non-recursive Remove-Item', () => {
+    expect(extractDangerousPatterns('Remove-Item file.txt')).toEqual([])
+  })
+
+  it('does not flag the word "formatting" in prose', () => {
+    expect(extractDangerousPatterns('echo formatting')).toEqual([])
+  })
+
+  // Unix non-regression: the existing Unix patterns must still fire.
+  it('still flags sudo (Unix non-regression)', () => {
+    expect(extractDangerousPatterns('sudo apt install x').length).toBeGreaterThan(0)
+  })
+
+  it('still flags `rm -rf ~/data` (Unix non-regression)', () => {
+    expect(extractDangerousPatterns('rm -rf ~/data').length).toBeGreaterThan(0)
+  })
+})
+
+describe('extractAbsolutePathsFromCommand — Windows device names', () => {
+  beforeEach(() => {
+    mockPlatform('win32')
+  })
+
+  afterEach(() => {
+    mockPlatform(REAL_PLATFORM)
+  })
+
+  it('treats C:\\NUL as a safe device under cmd.exe', () => {
+    const paths = extractAbsolutePathsFromCommand('dir C:\\projects > C:\\NUL')
+    expect(paths).toEqual(['C:\\projects'])
+  })
+
+  it('still treats /dev/null as safe on Unix', () => {
+    mockPlatform(REAL_PLATFORM === 'win32' ? ('linux' as NodeJS.Platform) : REAL_PLATFORM)
+    expect(extractAbsolutePathsFromCommand('cat /dev/null')).toEqual([])
   })
 })
