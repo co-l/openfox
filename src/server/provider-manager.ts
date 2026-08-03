@@ -105,9 +105,10 @@ export async function fetchModelsWithContext(
     logger.info('LM Studio native endpoint unavailable, falling back to /v1/models')
   }
 
-  // OpenCode Go has models at /zen/v1/models not /zen/go/v1/models
-  const isOpenCodeGo = baseUrl.includes('opencode.ai/zen/go')
-  const url = isOpenCodeGo ? buildModelsUrl(baseUrl.replace('/zen/go', '/zen')) : buildModelsUrl(baseUrl)
+  // OpenCode Go exposes its models at https://opencode.ai/zen/go/v1/models
+  // (see https://opencode.ai/docs/go/) — the standard buildModelsUrl already
+  // produces the correct URL, so no rewrite to the Zen API (/zen/v1) is needed.
+  const url = buildModelsUrl(baseUrl)
 
   logger.info('Fetching models via /v1/models', { url })
   const models = await fetchModelsFromBackend(url, apiKey)

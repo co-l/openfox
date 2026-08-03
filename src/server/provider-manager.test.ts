@@ -433,7 +433,7 @@ describe('ProviderManager - Model Selection', () => {
       expect(result).toEqual({ success: false, error: 'No models returned from backend' })
     })
 
-    it('uses alternate endpoint for OpenCode Go', async () => {
+    it('fetches OpenCode Go models from /zen/go/v1/models', async () => {
       const opencodeProvider: Provider = {
         id: 'provider-opencode',
         name: 'OpenCode Go',
@@ -460,7 +460,7 @@ describe('ProviderManager - Model Selection', () => {
 
       expect(result.success).toBe(true)
       expect(mockFetch).toHaveBeenCalledWith(
-        'https://opencode.ai/zen/v1/models',
+        'https://opencode.ai/zen/go/v1/models',
         expect.objectContaining({
           headers: expect.objectContaining({ Authorization: 'Bearer test-key' }),
         }),
