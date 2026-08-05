@@ -172,6 +172,16 @@ describe('loadConfig with workspace fallback', () => {
     expect(readFile).toHaveBeenCalledTimes(2)
   })
 
+  it('falls back to project root for a backslash workspace path (Windows)', async () => {
+    vi.mocked(readFile)
+      .mockRejectedValueOnce(new Error('ENOENT'))
+      .mockResolvedValueOnce(JSON.stringify({ command: 'npm run dev', url: 'http://localhost:5173' }))
+
+    const config = await devServerManager.loadConfig('C:\\Users\\me\\AppData\\Local\\openfox\\workspaces\\my-feature')
+    expect(config).toMatchObject({ command: 'npm run dev', url: 'http://localhost:5173' })
+    expect(readFile).toHaveBeenCalledTimes(2)
+  })
+
   it('returns null when neither path has config', async () => {
     vi.mocked(readFile).mockRejectedValue(new Error('ENOENT'))
     const config = await devServerManager.loadConfig('/some/project/workspaces/my-feature')

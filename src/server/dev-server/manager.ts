@@ -185,7 +185,7 @@ class DevServerManager {
 
   /**
    * Load dev server config from workdir.
-   * If not found and the path looks like a workspace (contains /workspaces/),
+   * If not found and the path looks like a workspace (contains a /workspaces/ segment),
    * falls back to the parent project root.
    */
   async loadConfig(workdir: string): Promise<DevServerConfig | null> {
@@ -210,7 +210,8 @@ class DevServerManager {
     if (config) return config
 
     // Auto-detect workspace paths: <global-data-dir>/workspaces/<project>/<name>
-    const wsIdx = workdir.indexOf('/workspaces/')
+    // Either separator: Windows workspace paths use backslashes.
+    const wsIdx = workdir.search(/[\\/]workspaces[\\/]/)
     if (wsIdx !== -1) {
       const projectRoot = workdir.slice(0, wsIdx)
       if (projectRoot !== workdir) {
