@@ -64,7 +64,9 @@ describe('file tracking integration', () => {
 
   afterEach(async () => {
     closeDatabase()
-    await rm(testDir, { recursive: true, force: true })
+    // Windows keeps the directory in "pending delete" after the files are
+    // unlinked, so rmdir returns EBUSY; fs.rm does not retry unless asked.
+    await rm(testDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
   })
 
   describe('write_file requires read first', () => {
