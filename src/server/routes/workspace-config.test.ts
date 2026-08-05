@@ -57,6 +57,9 @@ beforeEach(() => {
   mockProjectRecords.clear()
 })
 
+const IS_WIN32 = process.platform === 'win32'
+const IS_DARWIN = process.platform === 'darwin'
+
 interface ValidateResponse {
   exists: boolean
   resolvedPath: string
@@ -209,7 +212,9 @@ describe('POST /api/workspace/config/validate', () => {
     expect(body.error).toMatch(/Cannot use paths under/i)
   })
 
-  it('returns 400 for non-writable existing directory', async () => {
+  // POSIX-only: chmod is a no-op on directories under win32, so the non-writable
+  // state this asserts cannot be produced there.
+  it.skipIf(IS_WIN32)('returns 400 for non-writable existing directory', async () => {
     const restrictedPath = join(testDir, 'restricted')
     await mkdir(restrictedPath, { recursive: true })
     // Remove write permissions to simulate non-writable directory
@@ -344,9 +349,13 @@ describe('POST /api/workspace/config/validate', () => {
       expect(body.workspaces).toEqual([])
     })
 
-    it('detects default global dir orphans when projectName provided', async () => {
-      const origXdg = process.env['XDG_DATA_HOME']
-      process.env['XDG_DATA_HOME'] = testDir
+    // getGlobalDataDir() reads a different env var per platform (src/cli/paths.ts):
+    // XDG_DATA_HOME on Linux, LOCALAPPDATA on Windows. macOS derives the path from
+    // the home directory with no env override, so it cannot be redirected here.
+    it.skipIf(IS_DARWIN)('detects default global dir orphans when projectName provided', async () => {
+      const dataDirEnv = IS_WIN32 ? 'LOCALAPPDATA' : 'XDG_DATA_HOME'
+      const origXdg = process.env[dataDirEnv]
+      process.env[dataDirEnv] = testDir
       try {
         const defaultDir = join(testDir, 'openfox', 'workspaces', 'my-project')
         const ws1 = join(defaultDir, 'fix-bug')
@@ -371,8 +380,8 @@ describe('POST /api/workspace/config/validate', () => {
         expect(body.workspaces!.length).toBe(1)
         expect(body.workspaces![0]!.name).toBe('fix-bug')
       } finally {
-        if (origXdg !== undefined) process.env['XDG_DATA_HOME'] = origXdg
-        else delete process.env['XDG_DATA_HOME']
+        if (origXdg !== undefined) process.env[dataDirEnv] = origXdg
+        else delete process.env[dataDirEnv]
       }
     })
 
@@ -480,7 +489,8 @@ describe('POST /api/workspace/config (existing endpoint)', () => {
     expect(body.error).toMatch(/Cannot use paths under/i)
   })
 
-  it('rejects non-writable existing directory', async () => {
+  // POSIX-only: see the matching /validate test above.
+  it.skipIf(IS_WIN32)('rejects non-writable existing directory', async () => {
     const restrictedPath = join(testDir, 'restricted-save')
     await mkdir(restrictedPath, { recursive: true })
     const { chmod } = await import('node:fs/promises')

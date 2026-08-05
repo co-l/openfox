@@ -1971,6 +1971,13 @@ describe('extractDangerousPatterns — Windows equivalents', () => {
 })
 
 describe('extractDangerousPatterns — Unix scope', () => {
+  // Without this pin the block runs on the host platform, so it only asserts
+  // "Unix scope" when the host happens to be Unix. The module-level afterEach
+  // restores the real platform.
+  beforeEach(() => {
+    mockPlatform('linux')
+  })
+
   it('does not flag Windows commands on Unix', () => {
     expect(extractDangerousPatterns('rd /s /q C:\\projet')).toEqual([])
     expect(extractDangerousPatterns('format D:')).toEqual([])

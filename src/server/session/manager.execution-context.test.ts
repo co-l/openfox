@@ -15,7 +15,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, rm } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 
 const {
@@ -693,7 +693,9 @@ describe('SessionManager.switchWorkspace – execution context integrity (issue 
         expect(workspaceReminders.length).toBeGreaterThan(0)
         const reminder = workspaceReminders[workspaceReminders.length - 1]!
         expect(reminder.content).toContain('feature-x')
-        expect(reminder.content).toContain('/tmp/openfox-workspaces/feature-x')
+        // switchWorkspace resolves the path (manager.ts), so the reminder carries
+        // the native form — on Windows that is a backslash path with a drive.
+        expect(reminder.content).toContain(resolve('/tmp/openfox-workspaces', 'feature-x'))
         expect(reminder.content).toMatch(/branch\s+"feat-x"/)
         expect(reminder.content).not.toContain('requested-branch')
 

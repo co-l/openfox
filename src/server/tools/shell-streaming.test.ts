@@ -5,6 +5,8 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+const IS_WIN32 = process.platform === 'win32'
+
 describe('shell tool streaming', () => {
   let tempDir: string
   let context: ToolContext
@@ -330,7 +332,11 @@ for i in a b c d e f g h i j; do echo "$i"; done
       expect(result.output).toContain('second')
     })
 
-    it('keeps every section when multiple ;-separated commands have their own tails', async () => {
+    // POSIX-only: `;` is not a statement separator in cmd.exe, so tail receives
+    // a literal "-2;" argument and rejects it ("option used in invalid context").
+    // The behaviour under test is stripTailPipe's handling of `;`, which is a
+    // POSIX shell construct.
+    it.skipIf(IS_WIN32)('keeps every section when multiple ;-separated commands have their own tails', async () => {
       const result = await runCommandTool.execute(
         {
           command: 'printf "a1\\na2\\na3\\na4\\na5\\n" | tail -2; echo "===MID==="; printf "b1\\nb2\\nb3\\n" | tail -1',

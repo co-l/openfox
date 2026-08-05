@@ -26,6 +26,7 @@ const SKIP_HIGHLIGHT_THRESHOLD = 5000
 const markdownRenderCache = new Map<string, React.ReactNode>()
 const MARKDOWN_CACHE_MAX = 100
 const MARKDOWN_CACHE_MAX_BYTES = 20 * 1024 * 1024
+let markdownCacheMaxBytes = MARKDOWN_CACHE_MAX_BYTES
 let markdownCacheBytes = 0
 
 // Exposed for tests: verifies the byte-bounded eviction without parsing tens
@@ -34,10 +35,17 @@ export function getMarkdownCacheBytesForTest(): number {
   return markdownCacheBytes
 }
 
+// Exposed for tests: shrinking the budget is what lets the eviction be proven
+// with a few hundred KB instead of the 24MB the real budget would demand.
+// Call with no argument to restore the production value.
+export function setMarkdownCacheMaxBytesForTest(bytes = MARKDOWN_CACHE_MAX_BYTES): void {
+  markdownCacheMaxBytes = bytes
+}
+
 function cacheMarkdown(key: string, node: React.ReactNode): React.ReactNode {
   markdownRenderCache.set(key, node)
   markdownCacheBytes += key.length
-  while (markdownRenderCache.size > MARKDOWN_CACHE_MAX || markdownCacheBytes > MARKDOWN_CACHE_MAX_BYTES) {
+  while (markdownRenderCache.size > MARKDOWN_CACHE_MAX || markdownCacheBytes > markdownCacheMaxBytes) {
     const firstKey = markdownRenderCache.keys().next().value
     if (firstKey === undefined) break
     markdownRenderCache.delete(firstKey)

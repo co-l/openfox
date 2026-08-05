@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { resolve } from 'node:path'
+import { resolve, sep } from 'node:path'
 
 import {
   getGitBranch,
@@ -414,8 +414,11 @@ describe('deleteWorkspace', () => {
     // fs.rm takes the path as plain data — shell metacharacters are inert
     await deleteWorkspace(PROJECT_NAME, maliciousName, CWD)
 
+    // deleteWorkspace runs the name through resolve(), which rewrites "/" to the
+    // native separator; the metacharacters themselves must survive untouched.
+    const inertName = maliciousName.split('/').join(sep)
     expect(rm).toHaveBeenCalledTimes(1)
-    expect(rm).toHaveBeenCalledWith(expect.stringContaining(maliciousName), {
+    expect(rm).toHaveBeenCalledWith(expect.stringContaining(inertName), {
       recursive: true,
       force: true,
       maxRetries: 3,

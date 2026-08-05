@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect } from 'vitest'
-import { Markdown, getMarkdownCacheBytesForTest } from './Markdown'
+import { Markdown, getMarkdownCacheBytesForTest, setMarkdownCacheMaxBytesForTest } from './Markdown'
 import { renderToString } from 'react-dom/server'
 
 describe('Markdown', () => {
@@ -170,20 +170,28 @@ describe('Markdown', () => {
     })
 
     it('evicts large cached entries so the byte budget is not exceeded', () => {
-      // ~30 entries of ~800KB each would blow past the 20MB budget — the
-      // byte-bounded eviction must kick in. Keep the payloads small enough
-      // that the parse itself stays fast for CI.
-      const big = `# Heading\n\n${'x'.repeat(800_000)}`
-      for (let i = 0; i < 30; i++) {
-        renderToString(<Markdown content={`${big} ${i}`} />)
+      // Shrink the budget instead of feeding it 24MB: eviction behaves the same
+      // at any threshold, and the content must stay markdown (the plain-text
+      // fast path never reaches the cache, so plain filler would prove nothing).
+      const budget = 200_000
+      setMarkdownCacheMaxBytesForTest(budget)
+      try {
+        // 30 x ~20KB = ~600KB of keys, well past the shrunk budget.
+        const big = `# Heading\n\n${'x'.repeat(20_000)}`
+        for (let i = 0; i < 30; i++) {
+          renderToString(<Markdown content={`${big} ${i}`} />)
+        }
+        // Bounded, and actually filled — a zero here would mean the renders
+        // bypassed the cache and the assertion above proved nothing.
+        expect(getMarkdownCacheBytesForTest()).toBeGreaterThan(0)
+        expect(getMarkdownCacheBytesForTest()).toBeLessThanOrEqual(budget)
+        // And the cache still works for fresh content
+        const html = renderToString(<Markdown content={`${big} fresh`} />)
+        expect(html).toContain('Heading')
+      } finally {
+        setMarkdownCacheMaxBytesForTest()
       }
-      // The byte budget caps total key bytes — verify it stayed bounded
-      // (30 × ~800KB = 24MB would exceed 20MB without eviction).
-      expect(getMarkdownCacheBytesForTest()).toBeLessThanOrEqual(20 * 1024 * 1024)
-      // And the cache still works for fresh content
-      const html = renderToString(<Markdown content={`${big} fresh`} />)
-      expect(html).toContain('Heading')
-    }, 30_000)
+    })
   })
 
   describe('markdown edge cases (full parser routing)', () => {

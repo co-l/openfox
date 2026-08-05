@@ -80,9 +80,10 @@ describe('createTool', () => {
     await tool.execute({ path: 'src/file.ts' }, mockContext)
     expect(resolvedPath).toBe(resolve('/test/workdir', 'src/file.ts'))
 
-    // Absolute path
+    // Absolute path: bypasses the workdir. Resolved rather than compared
+    // literally because on Windows an absolute POSIX path gains the cwd drive.
     await tool.execute({ path: '/absolute/path.ts' }, mockContext)
-    expect(resolvedPath).toBe('/absolute/path.ts')
+    expect(resolvedPath).toBe(resolve('/absolute/path.ts'))
   })
 
   it('provides success helper', async () => {
