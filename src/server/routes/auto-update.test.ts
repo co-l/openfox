@@ -33,7 +33,9 @@ describe('Auto Update Routes', () => {
     mockSpawn.mockReset()
     // Default: npm view returns a version, openfox update succeeds
     mockSpawn.mockImplementation((cmd: unknown, args: unknown) => {
-      if (cmd === 'npm' && Array.isArray(args) && args[0] === 'view') {
+      // auto-update.ts spawns npm as a shell string on win32 (npm.cmd there,
+      // CVE-2024-27980) and as argv elsewhere — match both.
+      if (cmd === 'npm view openfox version' || (cmd === 'npm' && Array.isArray(args) && args[0] === 'view')) {
         return makeMockChild({ stdout: '1.2.3\n' })
       }
       // git fetch returns nothing
