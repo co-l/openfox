@@ -189,6 +189,26 @@ describe('ProjectSettingsModal — rootDir validation (Criterion 0 & 1)', () => 
     )
   })
 
+  it('leaves the form usable after a successful rootDir save', async () => {
+    // validate is the only authFetch call on this path — persisting goes through the stores
+    mockAuthFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ exists: true, workspaces: [] }) })
+
+    const user = userEvent.setup()
+    mockStoreState.config = { rootDir: '/old/path', setup: [] }
+
+    render(<ProjectSettingsModal isOpen={true} onClose={vi.fn()} project={defaultProject} />)
+
+    const input = screen.getByPlaceholderText('/absolute/or/relative/path')
+    await user.clear(input)
+    await user.type(input, '/new/path')
+    await user.click(screen.getByTestId('save-btn'))
+
+    // The saving flag must be cleared on the success path too — the modal stays
+    // mounted after closing, so a stuck flag disables every field for good.
+    expect((input as HTMLInputElement).disabled).toBe(false)
+    expect((screen.getByTestId('cancel-btn') as HTMLButtonElement).disabled).toBe(false)
+  })
+
   it('shows confirmation modal when rootDir does not exist', async () => {
     mockAuthFetch.mockImplementation(async (url: string) => {
       if (url.includes('/api/workspace/config/validate')) {

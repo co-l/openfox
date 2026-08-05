@@ -228,7 +228,6 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         setSaveError(data?.error ?? 'Failed to validate workspace root directory')
-        setSaving(false)
         return
       }
 
@@ -236,14 +235,12 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
 
       if (!data.exists) {
         setResolvedPath(data.resolvedPath)
-        setSaving(false)
         setShowCreateDirModal(true)
         return
       }
 
       if (data.workspaces && data.workspaces.length > 0) {
         setPendingWorkspaces(data.workspaces)
-        setSaving(false)
         setShowMigrationWarning(true)
         return
       }
@@ -252,6 +249,7 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
       await persistSettings()
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Failed to validate settings')
+    } finally {
       setSaving(false)
     }
   }
