@@ -8,7 +8,7 @@ import { getProjectByWorkdir, updateProject } from '../db/projects.js'
 import { setSessionDisabledServers } from '../mcp/session-overrides.js'
 import { logger } from '../utils/logger.js'
 import type { WorkspaceConfig } from '../../shared/workspace.js'
-import { getRootDirBlockReason } from '../../shared/workspace.js'
+import { formatRootDir, getRootDirBlockReason, suggestRootDirChild } from '../../shared/workspace.js'
 import type { SessionManager } from '../session/manager.js'
 
 async function isWritable(path: string): Promise<boolean> {
@@ -103,7 +103,7 @@ export function createWorkspaceConfigRoutes(sessionManager: SessionManager): Rou
       const trimmed = rootDir.trim()
       if (trimmed) {
         const resolvedPath = resolveRootDir(trimmed, workdir)
-        const displayPath = resolvedPath.replace(/\/+$/, '') || '/'
+        const displayPath = formatRootDir(resolvedPath)
         const blockReason = getRootDirBlockReason(resolvedPath)
         if (blockReason === 'exact') {
           return res
@@ -169,11 +169,11 @@ export function createWorkspaceConfigRoutes(sessionManager: SessionManager): Rou
     }
 
     const resolvedPath = resolveRootDir(rootDir, workdir)
-    const displayPath = resolvedPath.replace(/\/+$/, '') || '/'
+    const displayPath = formatRootDir(resolvedPath)
 
     const blockReason = getRootDirBlockReason(resolvedPath)
     if (blockReason === 'exact') {
-      const suggestion = typeof projectName === 'string' ? `${displayPath}/${projectName}` : undefined
+      const suggestion = typeof projectName === 'string' ? suggestRootDirChild(resolvedPath, projectName) : undefined
       return res.status(400).json({
         error: suggestion
           ? `Cannot use "${displayPath}" directly as workspace root. Use a subdirectory like "${suggestion}" instead.`

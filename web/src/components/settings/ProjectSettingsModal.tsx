@@ -9,7 +9,7 @@ import { useMcpStore } from '../../stores/mcp'
 import { mcpStatusColor, mcpStatusDot } from '../../lib/mcp-utils'
 import { wsClient } from '../../lib/ws'
 import { authFetch } from '../../lib/api'
-import { getRootDirBlockReason } from '@shared/workspace.js'
+import { formatRootDir, getRootDirBlockReason, suggestRootDirChild } from '@shared/workspace.js'
 
 interface ProjectSettingsModalProps {
   isOpen: boolean
@@ -185,9 +185,9 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
     if (trimmedRootDir) {
       const blockReason = getRootDirBlockReason(trimmedRootDir)
       if (blockReason === 'exact') {
-        const displayPath = trimmedRootDir.replace(/\/+$/, '') || '/'
+        const displayPath = formatRootDir(trimmedRootDir)
         setSaveError(
-          `Cannot use "${displayPath}" directly as workspace root. Use a subdirectory like "${displayPath}/${project.name}" instead.`,
+          `Cannot use "${displayPath}" directly as workspace root. Use a subdirectory like "${suggestRootDirChild(trimmedRootDir, project.name)}" instead.`,
         )
         return
       }
