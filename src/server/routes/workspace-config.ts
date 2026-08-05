@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { stat, mkdir, readdir, access } from 'node:fs/promises'
 import { constants } from 'node:fs'
-import { resolve, isAbsolute, join } from 'node:path'
+import { resolve, isAbsolute, join, win32 } from 'node:path'
 import { loadWorkspaceConfig, saveWorkspaceConfig } from '../git/workspace-config.js'
 import { getGlobalDataDir } from '../git/workspace.js'
 import { getProjectByWorkdir, updateProject } from '../db/projects.js'
@@ -22,6 +22,18 @@ async function isWritable(path: string): Promise<boolean> {
 
 function resolveRootDir(rootDir: string, workdir: string): string {
   return isAbsolute(rootDir) ? rootDir : resolve(workdir, rootDir)
+}
+
+/**
+ * Compare two resolved directory paths. On Windows separators are interchangeable
+ * and the filesystem is case-insensitive, so `C:\Foo\` and `c:/foo` are the same
+ * directory — comparing them raw makes an unchanged rootDir look like a move and
+ * triggers a phantom orphan scan.
+ */
+function isSameDir(a: string, b: string): boolean {
+  if (process.platform !== 'win32') return a.replace(/\/+$/, '') === b.replace(/\/+$/, '')
+  const normalize = (p: string): string => win32.normalize(p).replace(/\\+$/, '').toLowerCase()
+  return normalize(a) === normalize(b)
 }
 
 async function checkDirExists(path: string): Promise<boolean> {
@@ -202,12 +214,12 @@ export function createWorkspaceConfigRoutes(sessionManager: SessionManager): Rou
       const project = getProjectByWorkdir(workdir)
       const previousRootDir = project?.workspaceRootDir ? resolveRootDir(project.workspaceRootDir, workdir) : null
 
-      if (previousRootDir && previousRootDir !== resolvedPath) {
+      if (previousRootDir && !isSameDir(previousRootDir, resolvedPath)) {
         const orphans = await findOrphanedWorkspaces(previousRootDir)
         workspaces.push(...orphans)
       } else if (!previousRootDir && projectName && typeof projectName === 'string') {
         const defaultDir = join(getGlobalDataDir(), 'workspaces', projectName)
-        if (defaultDir !== resolvedPath) {
+        if (!isSameDir(defaultDir, resolvedPath)) {
           const orphans = await findOrphanedWorkspaces(defaultDir)
           workspaces.push(...orphans)
         }

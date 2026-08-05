@@ -284,6 +284,52 @@ describe('POST /api/workspace/config/validate', () => {
       expect(body.workspaces).toEqual([])
     })
 
+    /** Saves rootDir as the project's current one, with a git workspace inside it. */
+    async function saveRootDirWithWorkspace(rootDir: string): Promise<void> {
+      await mkdir(join(rootDir, 'fix-bug', '.git'), { recursive: true })
+      const saveRes = await fetch(`${baseUrl}/api/workspace/config?workdir=${encodeURIComponent(testDir)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rootDir }),
+      })
+      expect(saveRes.status).toBe(200)
+    }
+
+    it('treats a trailing separator as the same rootDir', async () => {
+      const rootDir = join(testDir, 'trailing-workspaces')
+      await saveRootDirWithWorkspace(rootDir)
+
+      const res = await fetch(`${baseUrl}/api/workspace/config/validate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rootDir: `${rootDir}/`, workdir: testDir }),
+      })
+
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as ValidateResponse
+      expect(body.workspaces).toEqual([])
+    })
+
+    // Windows only: paths there are case-insensitive and separators interchangeable,
+    // so the same directory spelled differently must not read as a workspace move.
+    it.skipIf(process.platform !== 'win32')(
+      'treats case and separator differences as the same rootDir on Windows',
+      async () => {
+        const rootDir = join(testDir, 'case-workspaces')
+        await saveRootDirWithWorkspace(rootDir)
+
+        const res = await fetch(`${baseUrl}/api/workspace/config/validate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rootDir: rootDir.toUpperCase().replace(/\\/g, '/'), workdir: testDir }),
+        })
+
+        expect(res.status).toBe(200)
+        const body = (await res.json()) as ValidateResponse
+        expect(body.workspaces).toEqual([])
+      },
+    )
+
     it('returns empty workspaces list when config has no previous rootDir', async () => {
       const newRootDir = join(testDir, 'fresh-workspaces')
 
