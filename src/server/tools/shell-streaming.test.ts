@@ -28,7 +28,9 @@ describe('shell tool streaming', () => {
   })
 
   afterEach(async () => {
-    await rm(tempDir, { recursive: true, force: true })
+    // Windows keeps the directory in "pending delete" after the files are
+    // unlinked, so rmdir returns EBUSY; fs.rm does not retry unless asked.
+    await rm(tempDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
   })
 
   it('calls onProgress for each stdout chunk', async () => {
