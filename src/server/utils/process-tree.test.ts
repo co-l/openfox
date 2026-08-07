@@ -12,6 +12,22 @@ function isAlive(pid: number): boolean {
   }
 }
 
+/**
+ * Termination is not synchronous — `taskkill /f /t` in particular returns before
+ * Windows has finished reaping the tree, and the close event trails the exit — so
+ * a fixed sleep before asserting is a race that loses under parallel test load.
+ * Poll instead; on timeout we fall through and let the assertion do the reporting.
+ */
+async function waitFor(condition: () => boolean, timeoutMs = 10_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline && !condition()) await sleep(50)
+}
+
+const allDead =
+  (...pids: number[]) =>
+  () =>
+    !pids.some(isAlive)
+
 /** Collect all descendant PIDs via ps (Unix) or CIM (Windows, where ps does not exist) */
 async function getDescendants(rootPid: number): Promise<number[]> {
   const [cmd, args] =
@@ -74,7 +90,7 @@ describe('terminateProcessTree', () => {
     expect(isAlive(proc.pid!)).toBe(true)
 
     await terminateProcessTree(proc)
-    await sleep(100)
+    await waitFor(allDead(proc.pid!))
 
     expect(isAlive(proc.pid!)).toBe(false)
   })
@@ -95,7 +111,7 @@ describe('terminateProcessTree', () => {
 
     // Terminate the tree
     await terminateProcessTree(proc)
-    await sleep(300)
+    await waitFor(allDead(proc.pid!, ...descendants))
 
     // All should be dead now
     expect(isAlive(proc.pid!)).toBe(false)
@@ -137,7 +153,7 @@ describe('terminateProcessTree', () => {
     })
 
     await terminateProcessTree(proc)
-    await sleep(300)
+    await waitFor(() => closed && !isAlive(proc.pid!))
 
     expect(closed).toBe(true)
     expect(isAlive(proc.pid!)).toBe(false)
@@ -156,7 +172,7 @@ describe('terminateProcessTree', () => {
     expect(descendants.length).toBeGreaterThanOrEqual(1)
 
     await terminateProcessTree(proc, { immediate: true })
-    await sleep(300)
+    await waitFor(allDead(proc.pid!, ...descendants))
 
     expect(isAlive(proc.pid!)).toBe(false)
     for (const pid of descendants) {
@@ -186,7 +202,7 @@ describe('terminateProcessTree', () => {
     })
 
     await terminateProcessTree(proc)
-    await sleep(300)
+    await waitFor(() => closed && allDead(proc.pid!, ...descendants)())
 
     expect(closed).toBe(true)
     expect(isAlive(proc.pid!)).toBe(false)
