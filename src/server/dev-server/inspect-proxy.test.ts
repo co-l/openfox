@@ -471,6 +471,33 @@ describe('InspectProxy', () => {
     })
   })
 
+  describe('Port allocation', () => {
+    it('keeps the proxy port below 65536 when devServerPort + 1000 would overflow', async () => {
+      const targetPort = await createMockTarget((_req, res) => {
+        res.writeHead(200, { 'Content-Type': 'text/plain' })
+        res.end('ok')
+      })
+
+      // 65000 + 1000 exceeds the valid port range; net.listen() beyond 65535
+      // throws a synchronous RangeError, so an unbounded scan crashes here
+      // instead of binding. Ephemeral ports land in 49152-65535 on Windows,
+      // so any listen(0)-derived devServerPort above 64535 hits this in the wild.
+      const { port, cleanup } = await startInspectProxy(
+        `http://127.0.0.1:${targetPort}`,
+        mockSessionManager as any,
+        65000,
+      )
+      try {
+        expect(port).toBeLessThanOrEqual(65535)
+        const result = await httpGet('127.0.0.1', port, '/')
+        expect(result.status).toBe(200)
+        expect(result.body).toBe('ok')
+      } finally {
+        cleanup()
+      }
+    })
+  })
+
   describe('Error handling', () => {
     it('handles target server that closes connection prematurely', async () => {
       const targetPort = await createMockTarget((_req, res) => {

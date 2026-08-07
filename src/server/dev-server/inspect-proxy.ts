@@ -36,11 +36,17 @@ interface ProxyInstance {
 const proxyPool = new Map<string, ProxyInstance>()
 let nextOffset = 0
 
+const PORT_SCAN_RANGE = 200
+
 async function getAvailablePort(proxyBase: number): Promise<number> {
-  for (let port = proxyBase; port < proxyBase + 200; port++) {
+  // net.listen() beyond 65535 throws a synchronous RangeError that tryBind's
+  // 'error' listener cannot catch, so keep the whole scan range below the
+  // limit (the same bound findFreePort applies in manager.ts).
+  const base = Math.min(proxyBase, 65535 - PORT_SCAN_RANGE)
+  for (let port = base; port < base + PORT_SCAN_RANGE; port++) {
     if (await tryBind(port)) return port
   }
-  return proxyBase + (nextOffset++ % 200)
+  return base + (nextOffset++ % PORT_SCAN_RANGE)
 }
 
 function tryBind(port: number): Promise<boolean> {
