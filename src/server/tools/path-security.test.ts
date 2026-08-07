@@ -278,15 +278,21 @@ describe('path-security', () => {
       })
 
       it('denies chain of symlinks eventually escaping sandbox', async () => {
-        // Create chain: workdir/link1 -> workdir/link2 -> /etc/passwd
+        // Chain: workdir/link1 -> workdir/link2 -> the node binary. The final
+        // target must exist on every platform: a Unix literal like /etc/passwd
+        // leaves the whole chain dangling on Windows, and the broken-symlink
+        // fallback in isPathWithinSandbox follows only one readlink hop — the
+        // resolution stops at link2, inside the sandbox, and the verdict flips
+        // to allowed.
+        const escapeTarget = process.execPath
         const link2Path = join(WORKDIR, 'link2')
-        await symlink('/etc/passwd', link2Path)
+        await symlink(escapeTarget, link2Path)
         const link1Path = join(WORKDIR, 'link1')
         await symlink(link2Path, link1Path)
 
         const result = await isPathWithinSandbox(link1Path, WORKDIR)
         expect(result.allowed).toBe(false)
-        expect(result.resolvedPath).toBe(CANONICAL_PASSWD)
+        expect(result.resolvedPath).toBe(normalize(await realpath(escapeTarget)))
       })
 
       it('handles broken symlinks gracefully', async () => {
