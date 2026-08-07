@@ -1,0 +1,5 @@
+# Check every text file out with LF, whatever core.autocrlf says. Prettier is
+# configured with the default endOfLine "lf", so on a Windows clone using the
+# git-for-windows default (core.autocrlf=true) `npm run format` would otherwise
+# flag every file in the repo and the pre-commit hook could never pass.
+* text=auto eol=lf
