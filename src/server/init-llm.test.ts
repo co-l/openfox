@@ -53,10 +53,13 @@ describe('initLLM - model auto-detect respects defaultModelSelection', () => {
     return createServerHandle(config)
   }
 
+  // Each case needs its own config, so the server boot cannot be shared the way
+  // test-params.test.ts shares it. Booting one takes ~1.5s alone but 12-15s under
+  // full-suite parallel load on Windows, which sits right on the 15s testTimeout.
   it('overrides model with auto-detected when no defaultModelSelection is set', async () => {
     const handle = await createServer(testConfig())
     expect(handle.ctx.llmClient.getModel()).toBe('auto-detected-minimax-m3')
-  })
+  }, 30_000)
 
   it('preserves configured model when defaultModelSelection is set', async () => {
     const provider = makeProvider('test-provider', 'deepseek-v4-flash')
@@ -67,5 +70,5 @@ describe('initLLM - model auto-detect respects defaultModelSelection', () => {
       }),
     )
     expect(handle.ctx.llmClient.getModel()).toBe('deepseek-v4-flash')
-  })
+  }, 30_000)
 })
