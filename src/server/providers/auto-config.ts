@@ -4,6 +4,7 @@
  */
 
 import { logger } from '../utils/logger.js'
+import { findLmStudioModel } from './lmstudio.js'
 import { ensureVersionPrefix } from '../llm/url-utils.js'
 
 // ============================================================================
@@ -167,25 +168,11 @@ async function detectLmstudioInfo(baseUrl: string, modelId: string): Promise<Mod
   const response = await fetch(nativeUrl, { signal: AbortSignal.timeout(5000) })
   if (!response.ok) throw new Error(`HTTP ${response.status}`)
 
-  const data = (await response.json()) as Array<{
-    key?: string
-    id?: string
-    max_context_length?: number
-    loaded_instances?: Array<{
-      config?: { context_length?: number }
-    }>
-    capabilities?: { vision?: boolean }
-  }>
-
-  const model = data.find((m) => (m.key ?? m.id) === modelId)
+  const model = findLmStudioModel(await response.json(), modelId)
   if (!model) throw new Error(`Model ${modelId} not found in LM Studio`)
 
-  const loadedContext = model.loaded_instances?.[0]?.config?.context_length
-  const ctxLen = loadedContext ?? model.max_context_length
-  const supportsVision = model.capabilities?.vision ?? false
-
-  if (ctxLen) {
-    return { contextWindow: ctxLen, source: 'backend', supportsVision }
+  if (model.contextWindow) {
+    return { contextWindow: model.contextWindow, source: 'backend', supportsVision: model.supportsVision }
   }
   throw new Error('No context_length in LM Studio response')
 }
