@@ -17,6 +17,8 @@ export interface ModelProbeResult {
   supportsVision: boolean
   thinkingConfig: Record<string, unknown> | null
   nonThinkingConfig: Record<string, unknown> | null
+  /** Set to false when the provider rejects reasoning in assistant history. */
+  sendReasoningInMessages?: boolean
 }
 
 export interface AutoConfigInput {
@@ -281,6 +283,38 @@ async function probeCombos(
   return null
 }
 
+async function probeReasoningInMessages(
+  baseUrl: string,
+  apiKey: string | undefined,
+  model: string,
+): Promise<boolean | undefined> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+
+  try {
+    const response = await fetch(`${ensureVersionPrefix(baseUrl)}/chat/completions`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'user', content: 'say hi in one word' },
+          { role: 'assistant', content: 'hi', reasoning: 'probe' },
+          { role: 'user', content: 'say hi in one word' },
+        ],
+        max_tokens: 1,
+      }),
+      signal: AbortSignal.timeout(15_000),
+    })
+
+    return response.ok
+  } catch {
+    // A transport failure is inconclusive; do not disable a provider setting
+    // based on an unavailable endpoint.
+    return undefined
+  }
+}
+
 // ============================================================================
 // Main entry point
 // ============================================================================
@@ -305,6 +339,10 @@ export async function autoConfig(input: AutoConfigInput): Promise<AutoConfigOutp
       probeCombos(baseUrl, apiKey, model.id, NON_THINKING_COMBOS),
     ])
 
+    const sendReasoningInMessages = thinkingConfig
+      ? await probeReasoningInMessages(baseUrl, apiKey, model.id)
+      : undefined
+
     results.push({
       id: model.id,
       contextWindow,
@@ -312,6 +350,7 @@ export async function autoConfig(input: AutoConfigInput): Promise<AutoConfigOutp
       supportsVision,
       thinkingConfig,
       nonThinkingConfig,
+      ...(sendReasoningInMessages !== undefined ? { sendReasoningInMessages } : {}),
     })
   }
 

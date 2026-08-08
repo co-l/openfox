@@ -5,7 +5,8 @@
  * winning combo for each backend based on actual observed behavior.
  */
 
-import { describe, it, expect } from 'vitest'
+import { afterEach, describe, it, expect, vi } from 'vitest'
+import { autoConfig } from './auto-config.js'
 
 /**
  * Simulated probe results based on real data collected from each backend.
@@ -195,5 +196,53 @@ describe('Context window detection', () => {
     it('returns undefined for unknown models', () => {
       expect(KNOWN['unknown-model']).toBeUndefined()
     })
+  })
+})
+
+describe('Reasoning message compatibility', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('disables reasoning messages when the API rejects assistant reasoning', async () => {
+    const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { messages?: Array<Record<string, unknown>> }
+      if (body.messages?.some((message) => message['reasoning'] === 'probe')) {
+        return new Response(JSON.stringify({ error: 'reasoning is not allowed' }), { status: 422 })
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'hi' } }] }), { status: 200 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await autoConfig({
+      url: 'https://provider.example/v1',
+      backend: 'unknown',
+      models: [{ id: 'deepseek-v4-flash' }],
+    })
+
+    expect(result.models[0]?.sendReasoningInMessages).toBe(false)
+    expect(
+      fetchMock.mock.calls.some(([, init]) => {
+        const body = JSON.parse(String(init?.body)) as { messages?: Array<Record<string, unknown>> }
+        return body.messages?.some((message) => message['reasoning'] === 'probe')
+      }),
+    ).toBe(true)
+  })
+
+  it('leaves reasoning messages unchanged when probing cannot reach the API', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('network unavailable')
+      }),
+    )
+
+    const result = await autoConfig({
+      url: 'https://provider.example/v1',
+      backend: 'unknown',
+      models: [{ id: 'deepseek-v4-flash' }],
+    })
+
+    expect(result.models[0]?.sendReasoningInMessages).toBeUndefined()
   })
 })

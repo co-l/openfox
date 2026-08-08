@@ -522,4 +522,57 @@ describe('ProviderModal - thinkingLevel persistence', () => {
     expect(savedData.authAdapter).toBeUndefined()
     expect(savedData.transportAdapter).toBeUndefined()
   })
+
+  it('disables reasoning messages when auto-config detects a rejected history field', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/api/providers/auto-config')) {
+          return new Response(
+            JSON.stringify({
+              models: [
+                {
+                  id: 'test-model',
+                  contextWindow: 200000,
+                  supportsVision: false,
+                  thinkingConfig: { reasoning_effort: 'high' },
+                  nonThinkingConfig: null,
+                  sendReasoningInMessages: false,
+                },
+              ],
+            }),
+            { status: 200 },
+          )
+        }
+        return new Response(JSON.stringify({ presets: [] }), { status: 200 })
+      }),
+    )
+
+    await new Promise<void>((resolve) => {
+      root.render(
+        <ProviderModal
+          isOpen={true}
+          onClose={vi.fn()}
+          onSave={onSaveMock as (provider: ProviderFormData) => void}
+          initialStep={2}
+          editProvider={makeEditProvider()}
+          editModelId="test-model"
+        />,
+      )
+      setTimeout(resolve, 200)
+    })
+
+    const autoConfigButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Auto-config',
+    ) as HTMLButtonElement | undefined
+    autoConfigButton?.click()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    const saveButton = container.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
+    saveButton?.click()
+
+    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
+    expect(savedData.sendReasoningInMessages).toBe(false)
+  })
 })

@@ -844,6 +844,7 @@ export function ProviderModal({
           supportsVision: boolean
           thinkingConfig: Record<string, unknown> | null
           nonThinkingConfig: Record<string, unknown> | null
+          sendReasoningInMessages?: boolean
         }>
       }
       for (const m of data.models) {
@@ -860,6 +861,9 @@ export function ProviderModal({
         if (m.nonThinkingConfig) {
           config.nonThinkingEnabled = true
           config.nonThinkingQueryParams = JSON.stringify(m.nonThinkingConfig)
+        }
+        if (m.sendReasoningInMessages === false) {
+          setSendReasoningInMessages(false)
         }
         updateModelConfig(m.id, config)
         setAutoConfigState((prev) => ({
