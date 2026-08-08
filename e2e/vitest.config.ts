@@ -14,10 +14,10 @@ export default defineConfig({
     testTimeout: 15_000 * CI_MULTIPLIER,
     hookTimeout: 10_000 * CI_MULTIPLIER,
 
-    // Run tests in parallel with fork pool
-    // Each test file gets its own in-process server on a dynamic port
+    // Each test file starts a full server. Parallel startups contend for enough
+    // CPU and memory to exceed the hook timeout on supported developer machines.
     pool: 'forks',
-    maxWorkers: process.env['CI'] === 'true' ? 1 : 12, // CI runners are resource-constrained
+    maxWorkers: 1,
 
     // No global setup - each test file manages its own server
     // globalSetup: './setup.ts',  // REMOVED - using in-process servers

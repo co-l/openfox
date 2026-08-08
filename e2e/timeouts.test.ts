@@ -11,6 +11,10 @@ describe('E2E timeouts', () => {
     expect(config.test?.testTimeout).toBe(15_000 * CI_MULTIPLIER)
   })
 
+  it('runs server-backed test files sequentially', () => {
+    expect(config.test?.maxWorkers).toBe(1)
+  })
+
   it('keeps websocket waits within the per-test budget', () => {
     const budget = 8_000 * CI_MULTIPLIER
     expect(DEFAULT_WAIT_TIMEOUT_MS).toBeLessThanOrEqual(budget)
