@@ -122,6 +122,9 @@ export class SessionManager {
   private dynamicContextChangedStore = new Map<string, boolean>()
   private debugDumpStore = new Map<string, { cachedPrompt: string; cachedTools: string[]; liveTools: string[] }>()
   private warmedUpSessions = new Set<string>()
+  // Sessions already warned about an unresolvable provider — getContextState runs on every
+  // turn, and the warning is only worth one line per session.
+  private unknownProviderWarned = new Set<string>()
   private switchLocks = new Map<string, Promise<unknown>>()
   private workspaceCreationLocks = new Map<string, Promise<void>>()
 
@@ -431,6 +434,7 @@ export class SessionManager {
 
     // Clean up warmup state
     this.warmedUpSessions.delete(id)
+    this.unknownProviderWarned.delete(id)
 
     // Delete session from DB
     dbDeleteSession(id)
@@ -573,6 +577,8 @@ export class SessionManager {
     logger.debug('Setting session provider', { sessionId, providerId, providerModel })
 
     updateSessionProvider(sessionId, providerId, providerModel)
+    // The pin changed, so a later unresolvable one is worth warning about again.
+    this.unknownProviderWarned.delete(sessionId)
 
     const updatedSession = this.requireSession(sessionId)
     this.emit({ type: 'session_updated', session: updatedSession })
@@ -1370,6 +1376,15 @@ export class SessionManager {
         }
         maxTokens = modelConfig?.contextWindow ?? providerManager.getCurrentModelContext()
       } else {
+        // The pinned provider is gone: the context window below is the global one, not the
+        // one this session was configured with, so the reported budget is a guess.
+        if (!this.unknownProviderWarned.has(sessionId)) {
+          this.unknownProviderWarned.add(sessionId)
+          logger.warn('Session references an unknown provider, falling back to the global context window', {
+            sessionId,
+            providerId: session.providerId,
+          })
+        }
         maxTokens = providerManager.getCurrentModelContext()
       }
     } else {
