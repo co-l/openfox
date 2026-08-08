@@ -211,18 +211,11 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
         })
 
         const { params: streamingParams } = createParams
-        const stream = httpClient.createChatCompletionStream(streamingParams, {
-          signal: request.signal,
-        })
 
-        let fullContent = ''
-        let fullThinking = ''
-        const toolCalls: Map<number, { id: string; name: string; arguments: string }> = new Map()
-        let finishReason: LLMCompletionResponse['finishReason'] = 'stop'
-        let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
-        let responseId = ''
-
-        // Idle timeout tracking
+        // Idle timeout tracking. Set up BEFORE the stream, because the stream has to be given a
+        // signal the timeout can pull: aborting a controller nothing listens to only sets a flag,
+        // and the check inside the loop below runs when a chunk arrives — which, in the case this
+        // guards, is precisely what has stopped happening.
         let lastChunkTime = Date.now()
         const idleTimeoutController = new AbortController()
 
@@ -235,13 +228,33 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
           }
         }, 100) // Check every 100ms
 
+        // The stream is torn down by EITHER the caller's abort or the idle timeout. Without the
+        // second, a provider that opens a stream and then goes silent holds the turn open for ever:
+        // `for await` waits on a chunk that never comes, so the turn never ends, `isRunning` is
+        // never cleared, and the session looks busy with nothing generating.
+        const streamSignal = request.signal
+          ? AbortSignal.any([request.signal, idleTimeoutController.signal])
+          : idleTimeoutController.signal
+
+        const stream = httpClient.createChatCompletionStream(streamingParams, {
+          signal: streamSignal,
+        })
+
+        let fullContent = ''
+        let fullThinking = ''
+        const toolCalls: Map<number, { id: string; name: string; arguments: string }> = new Map()
+        let finishReason: LLMCompletionResponse['finishReason'] = 'stop'
+        let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
+        let responseId = ''
+
         // Clear timer immediately if external abort fires (e.g. pattern match)
         const onAbort = () => clearInterval(idleTimer)
         request.signal?.addEventListener('abort', onAbort, { once: true })
 
         try {
           for await (const chunk of stream) {
-            // Check if idle timeout was triggered
+            // A chunk that arrives after the timer fired: the abort above may not have torn the
+            // stream down yet, so the timeout is still reported rather than the chunk accepted.
             if (idleTimeoutController.signal.aborted) {
               throw new Error(`LLM stream idle timeout: no chunks received for ${idleTimeout}ms`)
             }
@@ -334,6 +347,14 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
               }
             }
           }
+        } catch (error) {
+          // The stream was torn down by the idle timeout rather than by the caller. Report it as
+          // the timeout it is: an abort raised here would otherwise be indistinguishable from a
+          // user pressing stop, which callers treat as a clean cancellation rather than a failure.
+          if (idleTimeoutController.signal.aborted && !request.signal?.aborted) {
+            throw new Error(`LLM stream idle timeout: no chunks received for ${idleTimeout}ms`)
+          }
+          throw error
         } finally {
           clearInterval(idleTimer)
           request.signal?.removeEventListener('abort', onAbort)
