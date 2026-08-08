@@ -37,20 +37,35 @@ interface AgentsState {
   projectItems: AgentInfo[]
   modelOverrides: Record<string, string>
   loading: boolean
-  fetchAgents: () => Promise<void>
-  fetchAgent: (agentId: string) => Promise<AgentFull | null>
+  fetchAgents: (workdir?: string) => Promise<void>
+  fetchAgent: (agentId: string, workdir?: string) => Promise<AgentFull | null>
   fetchDefaultContent: (agentId: string) => Promise<AgentFull | null>
-  createAgent: (agent: AgentFull, destination?: 'project' | 'user') => Promise<{ success: boolean; error?: string }>
-  updateAgent: (id: string, agent: Partial<AgentFull>) => Promise<{ success: boolean; error?: string }>
-  deleteAgent: (agentId: string) => Promise<{ success: boolean; error?: string; reason?: string }>
-  duplicateAgent: (agentId: string, destination?: 'project' | 'user') => Promise<{ success: boolean; error?: string }>
+  createAgent: (
+    agent: AgentFull,
+    destination?: 'project' | 'user',
+    workdir?: string,
+  ) => Promise<{ success: boolean; error?: string }>
+  updateAgent: (
+    id: string,
+    agent: Partial<AgentFull>,
+    workdir?: string,
+  ) => Promise<{ success: boolean; error?: string }>
+  deleteAgent: (agentId: string, workdir?: string) => Promise<{ success: boolean; error?: string; reason?: string }>
+  duplicateAgent: (
+    agentId: string,
+    destination?: 'project' | 'user',
+    workdir?: string,
+  ) => Promise<{ success: boolean; error?: string }>
 }
 
+const agentsUrl = (path: string, workdir?: string): string =>
+  workdir ? `${path}?workdir=${encodeURIComponent(workdir)}` : path
+
 export const useAgentsStore = create<AgentsState>((set) => {
-  const fetchAgents = async () => {
+  const fetchAgents = async (workdir?: string) => {
     set({ loading: true } as Record<string, unknown>)
     try {
-      const res = await authFetch('/api/agents')
+      const res = await authFetch(agentsUrl('/api/agents', workdir))
       const data = await res.json()
       set({
         defaults: data.defaults ?? [],
@@ -73,9 +88,9 @@ export const useAgentsStore = create<AgentsState>((set) => {
 
     fetchAgents,
 
-    fetchAgent: async (agentId: string) => {
+    fetchAgent: async (agentId: string, workdir?: string) => {
       try {
-        const res = await authFetch(`/api/agents/${agentId}`)
+        const res = await authFetch(agentsUrl(`/api/agents/${agentId}`, workdir))
         if (!res.ok) return null
         return (await res.json()) as AgentFull
       } catch {
@@ -93,24 +108,28 @@ export const useAgentsStore = create<AgentsState>((set) => {
       }
     },
 
-    createAgent: async (agent: AgentFull, destination?: 'project' | 'user') => {
-      const result = await saveEntity('POST', '/api/agents', {
+    createAgent: async (agent: AgentFull, destination?: 'project' | 'user', workdir?: string) => {
+      const result = await saveEntity('POST', agentsUrl('/api/agents', workdir), {
         ...agent,
         destination,
       } as unknown as Record<string, unknown>)
-      if (result.success) await fetchAgents()
+      if (result.success) await fetchAgents(workdir)
       return result
     },
 
-    updateAgent: async (id: string, agent: Partial<AgentFull>) => {
-      const result = await saveEntity('PUT', `/api/agents/${id}`, agent as unknown as Record<string, unknown>)
-      if (result.success) await fetchAgents()
+    updateAgent: async (id: string, agent: Partial<AgentFull>, workdir?: string) => {
+      const result = await saveEntity(
+        'PUT',
+        agentsUrl(`/api/agents/${id}`, workdir),
+        agent as unknown as Record<string, unknown>,
+      )
+      if (result.success) await fetchAgents(workdir)
       return result
     },
 
-    deleteAgent: async (agentId: string) => {
+    deleteAgent: async (agentId: string, workdir?: string) => {
       try {
-        const res = await authFetch(`/api/agents/${agentId}`, { method: 'DELETE' })
+        const res = await authFetch(agentsUrl(`/api/agents/${agentId}`, workdir), { method: 'DELETE' })
         const data = await res.json()
         if (res.ok) {
           set((state) => ({
@@ -125,8 +144,12 @@ export const useAgentsStore = create<AgentsState>((set) => {
       }
     },
 
-    duplicateAgent: async (agentId: string, destination?: 'project' | 'user') => {
-      return duplicateEntity(`/api/agents/${agentId}/duplicate`, fetchAgents, destination)
+    duplicateAgent: async (agentId: string, destination?: 'project' | 'user', workdir?: string) => {
+      return duplicateEntity(
+        agentsUrl(`/api/agents/${agentId}/duplicate`, workdir),
+        () => fetchAgents(workdir),
+        destination,
+      )
     },
   }
 })

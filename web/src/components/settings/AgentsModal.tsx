@@ -13,6 +13,8 @@ interface AgentsModalProps {
   isOpen: boolean
   onClose: () => void
   initialEditId?: string | null
+  /** Project root workdir this modal was opened from — scopes project agents shown and saved. */
+  projectDir?: string
 }
 
 function toSlug(name: string): string {
@@ -23,7 +25,7 @@ function toSlug(name: string): string {
   return slug ? `custom-${slug}` : ''
 }
 
-export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps) {
+export function AgentsModal({ isOpen, onClose, initialEditId, projectDir }: AgentsModalProps) {
   const defaults = useAgentsStore((state) => state.defaults)
   const userItems = useAgentsStore((state) => state.userItems)
   const projectItems = useAgentsStore((state) => state.projectItems)
@@ -109,7 +111,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
 
   useEffect(() => {
     if (isOpen) {
-      fetchAgents()
+      fetchAgents(projectDir)
       authFetch('/api/tools')
         .then((r) => r.json())
         .then((d) => {
@@ -131,7 +133,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
             applyDuplicateFromContent(content, initialEditId, true)
           })
         } else {
-          fetchAgent(initialEditId).then((agent) => {
+          fetchAgent(initialEditId, projectDir).then((agent) => {
             if (!agent) return
             populateFormFromAgent(agent)
             setEditingId(initialEditId)
@@ -145,7 +147,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
         setIsReadOnly(false)
       }
     }
-  }, [isOpen, fetchAgents, fetchAgent, fetchDefaultContent, initialEditId])
+  }, [isOpen, fetchAgents, fetchAgent, fetchDefaultContent, initialEditId, projectDir])
 
   const handleView = async (agentId: string) => {
     const isDefault = defaults.some((d) => d.id === agentId)
@@ -154,7 +156,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
       if (!content) return
       applyViewFromContent(content, agentId)
     } else {
-      const agent = await fetchAgent(agentId)
+      const agent = await fetchAgent(agentId, projectDir)
       if (!agent) return
       applyViewFromContent(agent, agentId)
     }
@@ -163,7 +165,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
   const handleDuplicate = async (agentId: string) => {
     let content = await fetchDefaultContent(agentId)
     if (!content) {
-      content = await fetchAgent(agentId)
+      content = await fetchAgent(agentId, projectDir)
     }
     if (!content) return
     applyDuplicateFromContent(content, agentId, true)
@@ -185,7 +187,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
   }
 
   const handleEdit = async (agentId: string) => {
-    const agent = await fetchAgent(agentId)
+    const agent = await fetchAgent(agentId, projectDir)
     if (!agent) return
     populateFormFromAgent(agent)
     setEditingId(agentId)
@@ -198,7 +200,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
   }
 
   const handleDelete = async (agentId: string) => {
-    await deleteAgentAction(agentId)
+    await deleteAgentAction(agentId, projectDir)
   }
 
   const handleSave = async () => {
@@ -223,7 +225,9 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
       prompt: formPrompt,
     }
 
-    const result = editingId ? await updateAgent(editingId, agent) : await createAgent(agent, formDestination)
+    const result = editingId
+      ? await updateAgent(editingId, agent, projectDir)
+      : await createAgent(agent, formDestination, projectDir)
 
     if (!result.success) {
       setSaving(false)
@@ -235,7 +239,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
     await saveAgentModelOverride(editingId ?? formId, formModel)
 
     // Re-fetch agents so the list reflects the updated model override badge
-    await fetchAgents()
+    await fetchAgents(projectDir)
 
     // Propagate to current session if this agent is active
     const agentId = editingId ?? formId
@@ -340,7 +344,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
         <BuiltInModelModal
           agentId={modelModalAgentId}
           onClose={() => setModelModalAgentId(null)}
-          onSaved={() => fetchAgents()}
+          onSaved={() => fetchAgents(projectDir)}
         />
       </>
     )
@@ -416,7 +420,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
       <BuiltInModelModal
         agentId={modelModalAgentId}
         onClose={() => setModelModalAgentId(null)}
-        onSaved={() => fetchAgents()}
+        onSaved={() => fetchAgents(projectDir)}
       />
     </>
   )

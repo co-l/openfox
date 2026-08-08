@@ -8,6 +8,7 @@ import { useClickOutside } from '../../hooks/useClickOutside'
 import { formatKeybinding } from '../../lib/keybindings'
 export function AgentSelector() {
   const currentMode = useSessionStore((state) => state.currentSession?.mode)
+  const currentWorkdir = useSessionStore((state) => state.currentSession?.workdir)
   const switchMode = useSessionStore((state) => state.switchMode)
   const defaults = useAgentsStore((state) => state.defaults)
   const userItems = useAgentsStore((state) => state.userItems)
@@ -20,8 +21,8 @@ export function AgentSelector() {
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    fetchAgents()
-  }, [fetchAgents])
+    fetchAgents(currentWorkdir)
+  }, [fetchAgents, currentWorkdir])
 
   // Close dropdown when clicking outside
   useClickOutside(dropdownRef, () => setIsOpen(false))
@@ -108,6 +109,7 @@ export function AgentSelector() {
           setEditId(null)
         }}
         initialEditId={editId}
+        projectDir={currentWorkdir}
       />
     </div>
   )
