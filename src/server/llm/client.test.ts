@@ -317,7 +317,9 @@ describe('llm client', () => {
         stream: true,
         chat_template_kwargs: { enable_thinking: false },
       }),
-      { signal: undefined },
+      // The stream always carries a signal now, even with no caller abort: it is what the idle
+      // timeout pulls to tear a silent stream down.
+      { signal: expect.any(AbortSignal) },
     )
     // Should NOT have reasoning_effort in the params
     const callArgs = httpClientCreateStreamMock.mock.calls[0]?.[0] as Record<string, unknown> | undefined
@@ -593,6 +595,62 @@ describe('llm client', () => {
       { type: 'text_delta', content: 'second chunk' },
       { type: 'error', error: expect.stringContaining('idle timeout') },
     ])
+  })
+
+  it('tears the stream down when it goes silent and never yields a chunk', async () => {
+    // The production hang this guards: a provider opens a stream, sends nothing, and never closes
+    // it. The idle check inside the read loop cannot fire, because it runs per chunk — so unless the
+    // timeout can ABORT the stream, `for await` waits for ever and the turn never ends.
+    let sawSignal: AbortSignal | undefined
+    httpClientCreateStreamMock.mockImplementationOnce((_params: unknown, options: { signal?: AbortSignal }) => {
+      sawSignal = options?.signal
+      // Models a real SDK stream: yields nothing, and rejects only when its signal is pulled.
+      return (async function* () {
+        await new Promise<never>((_resolve, reject) => {
+          options?.signal?.addEventListener('abort', () => reject(new Error('Request was aborted.')), { once: true })
+        })
+        yield createChunk({}) // unreachable — present so the generator is typed as yielding
+      })()
+    })
+
+    const client = createLLMClient(createConfig({ idleTimeout: 150 }), 'vllm')
+    const events = [] as Array<Record<string, unknown>>
+
+    for await (const event of client.stream({ messages: [{ role: 'user', content: 'hello' }] })) {
+      events.push(event as Record<string, unknown>)
+    }
+
+    expect(sawSignal, 'the stream is given a signal the idle timeout can pull').toBeDefined()
+    expect(events).toEqual([{ type: 'error', error: expect.stringContaining('idle timeout') }])
+  })
+
+  it('reports a caller abort as an abort, not as an idle timeout', async () => {
+    // The two teardowns must stay distinguishable: a user pressing stop is a clean cancellation,
+    // and a provider going silent is a failure.
+    const caller = new AbortController()
+    httpClientCreateStreamMock.mockImplementationOnce((_params: unknown, options: { signal?: AbortSignal }) => {
+      return (async function* () {
+        await new Promise<never>((_resolve, reject) => {
+          options?.signal?.addEventListener('abort', () => reject(new Error('Request was aborted.')), { once: true })
+        })
+        yield createChunk({})
+      })()
+    })
+
+    const client = createLLMClient(createConfig({ idleTimeout: 60_000 }), 'vllm')
+    const events = [] as Array<Record<string, unknown>>
+    setTimeout(() => caller.abort(), 50)
+
+    for await (const event of client.stream({
+      messages: [{ role: 'user', content: 'hello' }],
+      signal: caller.signal,
+    })) {
+      events.push(event as Record<string, unknown>)
+    }
+
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({ type: 'error' })
+    expect(String(events[0]?.['error'])).not.toContain('idle timeout')
   })
 
   it('streams reasoning_content when reasoningEffort is set', async () => {
