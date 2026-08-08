@@ -361,12 +361,9 @@ function App() {
 
   if (!isReadonly && connectionStatus !== 'connected' && !showPasswordModal && !hasToken) {
     return (
-      <>
-        <PasswordModal isOpen={true} isRetry={passwordModalRetry} onSubmit={submitPassword} onCancel={cancelPassword} />
-        <div className="h-screen flex items-center justify-center">
-          <SpinnerWithText text="Connecting to server..." />
-        </div>
-      </>
+      <div className="h-screen flex items-center justify-center">
+        <SpinnerWithText text="Connecting to server..." />
+      </div>
     )
   }
 
