@@ -3,6 +3,7 @@ import type { ProviderRegistry } from './providers/plugins/registry.js'
 import { createTransportLLMClient } from './providers/adapters/transport-client.js'
 import { createLLMClient, clearModelCache, getModelProfile, type LLMClientWithModel } from './llm/index.js'
 import { logger } from './utils/logger.js'
+import { parseLmStudioModels } from './providers/lmstudio.js'
 import { ensureVersionPrefix, stripVersionPrefix, buildModelsUrl } from './llm/url-utils.js'
 import './llm/proxy.js'
 
@@ -219,24 +220,7 @@ async function fetchLmStudioModelsWithContext(baseUrl: string, _apiKey?: string)
       return []
     }
 
-    const raw = (await response.json()) as Record<string, unknown>
-    // Handle bare array [...], { data: [...] }, or { models: [...] } formats
-    const rawArray = Array.isArray(raw)
-      ? raw
-      : Array.isArray((raw as { models?: unknown }).models)
-        ? (raw as { models: unknown[] }).models
-        : Array.isArray((raw as { data?: unknown }).data)
-          ? (raw as { data: unknown[] }).data
-          : []
-    const modelList = rawArray as Array<{
-      key?: string
-      id?: string
-      max_context_length?: number
-      loaded_instances?: Array<{
-        id?: string
-        config?: { context_length?: number }
-      }>
-    }>
+    const modelList = parseLmStudioModels(await response.json())
 
     if (modelList.length === 0) {
       logger.info('LM Studio native endpoint returned no models', { url: nativeUrl })
@@ -246,23 +230,11 @@ async function fetchLmStudioModelsWithContext(baseUrl: string, _apiKey?: string)
     logger.info('LM Studio native models found', { count: modelList.length })
 
     return modelList.map((model) => {
-      const modelId = model.key ?? model.id ?? ''
-      // Prefer loaded instance context, fall back to max context
-      const loadedContext = model.loaded_instances?.[0]?.config?.context_length
-      const maxContext = model.max_context_length
-      const contextWindow = loadedContext ?? maxContext ?? 200000
-
-      logger.info('LM Studio model detected', {
-        modelId,
-        loadedContext,
-        maxContext,
-        contextWindow,
-      })
-
+      logger.info('LM Studio model detected', { modelId: model.id, contextWindow: model.contextWindow })
       return {
-        id: modelId,
-        contextWindow,
-        source: loadedContext || maxContext ? 'backend' : ('default' as const),
+        id: model.id,
+        contextWindow: model.contextWindow ?? 200000,
+        source: model.contextWindow ? 'backend' : ('default' as const),
       }
     })
   } catch (error) {
