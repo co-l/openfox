@@ -146,6 +146,9 @@ export class SessionManager {
   private announcedPromptHashStore = new Map<string, string>()
   private announcedToolFingerprintStore = new Map<string, string>()
   private warmedUpSessions = new Set<string>()
+  // Sessions already warned about an unresolvable provider — getContextState runs on every
+  // turn, and the warning is only worth one line per session.
+  private unknownProviderWarned = new Set<string>()
   private switchLocks = new Map<string, Promise<unknown>>()
   private workspaceCreationLocks = new Map<string, Promise<void>>()
 
@@ -708,6 +711,7 @@ export class SessionManager {
     this.warmedUpSessions.delete(id)
     this.announcedPromptHashStore.delete(id)
     this.announcedToolFingerprintStore.delete(id)
+    this.unknownProviderWarned.delete(id)
 
     // Delete session from DB
     dbDeleteSession(id)
@@ -865,6 +869,8 @@ export class SessionManager {
     if (providerId === null || providerManual === true) {
       this.clearSessionPinnedEffort(sessionId)
     }
+    // The pin changed, so a later unresolvable one is worth warning about again.
+    this.unknownProviderWarned.delete(sessionId)
 
     const updatedSession = this.requireSession(sessionId)
     this.emit({ type: 'session_updated', session: updatedSession })
@@ -1751,10 +1757,24 @@ export class SessionManager {
 
     // Get maxTokens from the session's effective model if resolvable, otherwise use global
     const { providerId, model } = this.resolveEffectiveProviderModel(sessionId)
-    const maxTokens =
-      providerId && model
-        ? (this.resolveModelContext(providerId, model) ?? providerManager.getCurrentModelContext())
-        : providerManager.getCurrentModelContext()
+    let maxTokens = providerManager.getCurrentModelContext()
+    if (providerId && model) {
+      const resolved = this.resolveModelContext(providerId, model)
+      if (resolved !== undefined) {
+        maxTokens = resolved
+      } else {
+        // The pinned provider/model is gone: the context window below is the
+        // global one, not the one this session was configured with, so the
+        // reported budget is a guess.
+        if (!this.unknownProviderWarned.has(sessionId)) {
+          this.unknownProviderWarned.add(sessionId)
+          logger.warn('Session references an unknown provider, falling back to the global context window', {
+            sessionId,
+            providerId,
+          })
+        }
+      }
+    }
 
     const state = getSessionState(sessionId, maxTokens)
     const dynamicContextChanged = this.getDynamicContextChanged(sessionId)

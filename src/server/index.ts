@@ -40,6 +40,7 @@ import { createServerMessage } from '../shared/protocol.js'
 import { createContextStateMessage } from './ws/protocol.js'
 import { createWebSocketServer } from './ws/index.js'
 import { SessionManager } from './session/manager.js'
+import { clearSessionsForDeletedProvider, reconcileSessionProviders } from './session/provider-reconcile.js'
 import { toClientSession } from './session/client-session.js'
 import { setRuntimeConfig } from './runtime-config.js'
 import { createSkillRoutes } from './routes/skills.js'
@@ -146,6 +147,13 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   // Create Provider Manager (handles LLM client lifecycle)
   const providerManager = createProviderManager(config, { adapters: providerAdapters })
+
+  // Repair sessions still pinned to a provider that is gone (deleted before the delete
+  // cascade existed, or dropped from a hand-edited config).
+  const repairedSessions = reconcileSessionProviders(providerManager.getProviders().map((p) => p.id))
+  if (repairedSessions > 0) {
+    logger.warn('Cleared unknown provider from sessions', { sessions: repairedSessions })
+  }
 
   // Create SessionManager instance (not singleton!)
   const sessionManager = new SessionManager(providerManager)
@@ -2594,6 +2602,12 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
     providerManager.setProviders(updatedConfig.providers, updatedConfig.defaultModelSelection ?? undefined)
     config.defaultModelSelection = updatedConfig.defaultModelSelection
+
+    // Sessions pinned to this provider would keep an id that no longer resolves.
+    const clearedSessions = clearSessionsForDeletedProvider(id)
+    if (clearedSessions > 0) {
+      logger.info('Cleared provider from sessions of deleted provider', { providerId: id, sessions: clearedSessions })
+    }
 
     res.json({ success: true })
   })
