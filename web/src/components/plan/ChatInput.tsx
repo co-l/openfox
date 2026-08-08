@@ -501,11 +501,9 @@ export function ChatInput({
 
   return (
     <div className="relative">
-      {isRunning && (
-        <div className="absolute -top-8 left-2 @md:left-4 z-10">
-          <RunningIndicator />
-        </div>
-      )}
+      <div className="absolute -top-8 left-2 @md:left-4 z-10">
+        <RunningIndicator />
+      </div>
       <div
         className={`absolute -top-8 right-2 @md:right-4 z-10 flex items-center gap-2 border${!isAutoScrollActive ? ' rounded backdrop-blur-xl saturate-150 border-border' : ' border-transparent'}`}
       >

@@ -1,0 +1,91 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`SessionStatus JSON contract (snapshot) > matches snapshot for state=blocked 1`] = `
+{
+  "lastActivityAt": "2024-01-02T00:00:00.000Z",
+  "links": {
+    "ui": "/?sessionId=session-1",
+  },
+  "phase": "blocked",
+  "schemaVersion": 1,
+  "sessionId": "session-1",
+  "state": "blocked",
+  "waitingForUser": false,
+  "workflowStep": null,
+}
+`;
+
+exports[`SessionStatus JSON contract (snapshot) > matches snapshot for state=completed 1`] = `
+{
+  "lastActivityAt": "2024-01-02T00:00:00.000Z",
+  "links": {
+    "ui": "/?sessionId=session-1",
+  },
+  "phase": "done",
+  "schemaVersion": 1,
+  "sessionId": "session-1",
+  "state": "completed",
+  "waitingForUser": false,
+  "workflowStep": null,
+}
+`;
+
+exports[`SessionStatus JSON contract (snapshot) > matches snapshot for state=null 1`] = `
+{
+  "lastActivityAt": "2024-01-02T00:00:00.000Z",
+  "links": {
+    "ui": "/?sessionId=session-1",
+  },
+  "phase": "plan",
+  "schemaVersion": 1,
+  "sessionId": "session-1",
+  "state": null,
+  "waitingForUser": false,
+  "workflowStep": null,
+}
+`;
+
+exports[`SessionStatus JSON contract (snapshot) > matches snapshot for state=running 1`] = `
+{
+  "lastActivityAt": "2024-01-02T00:00:00.000Z",
+  "links": {
+    "ui": "/?sessionId=session-1",
+  },
+  "phase": "build",
+  "schemaVersion": 1,
+  "sessionId": "session-1",
+  "state": "running",
+  "waitingForUser": false,
+  "workflowStep": "Implement feature",
+}
+`;
+
+exports[`SessionStatus JSON contract (snapshot) > matches snapshot for state=waiting (pendingQuestions) 1`] = `
+{
+  "lastActivityAt": "2024-01-02T00:00:00.000Z",
+  "links": {
+    "ui": "/?sessionId=session-1",
+  },
+  "phase": "build",
+  "schemaVersion": 1,
+  "sessionId": "session-1",
+  "state": "waiting",
+  "waitingForUser": true,
+  "workflowStep": null,
+}
+`;
+
+exports[`SessionStatus JSON contract (snapshot) > matches snapshot for state=waiting (phase=waiting) 1`] = `
+{
+  "lastActivityAt": "2024-01-02T00:00:00.000Z",
+  "links": {
+    "ui": "/?sessionId=session-1",
+  },
+  "phase": "waiting",
+  "schemaVersion": 1,
+  "sessionId": "session-1",
+  "state": "waiting",
+  "waitingForUser": false,
+  "workflowStep": null,
+}
+`;

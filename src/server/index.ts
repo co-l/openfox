@@ -935,6 +935,44 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     })
   })
 
+  // Lightweight read-only status projection for issue #2.
+  // Derives state from SessionManager + EventStore; does not load the conversation.
+  app.get('/api/sessions/:id/status', async (req, res) => {
+    const { projectSessionStatus } = await import('./routes/session-status.js')
+    const { getPendingQuestionsForSession } = await import('./tools/index.js')
+    const { getEventStore, combineEventsWithSnapshot } = await import('./events/index.js')
+    const { foldPendingConfirmations } = await import('./events/folding.js')
+
+    const sessionId = req.params['id'] as string
+    if (!sessionId) {
+      return res.status(400).json({ error: 'Session id is required' })
+    }
+
+    const session = sessionManager.getSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+
+    const activeWorkflowExecution = sessionManager.getActiveWorkflowExecution(sessionId)
+    const activeWorkflowStepName = activeWorkflowExecution?.currentStepName ?? null
+
+    const pendingQuestions = getPendingQuestionsForSession(sessionId)
+
+    const eventStore = getEventStore()
+    const { snapshot, events: eventsSinceSnapshot } = eventStore.getEventsSinceSnapshot(sessionId)
+    const events = combineEventsWithSnapshot(sessionId, snapshot, eventsSinceSnapshot)
+    const pendingConfirmations = foldPendingConfirmations(events)
+
+    const status = projectSessionStatus({
+      session,
+      pendingQuestionsCount: pendingQuestions.length,
+      pendingConfirmationsCount: pendingConfirmations.length,
+      activeWorkflowStepName,
+    })
+
+    res.json(status)
+  })
+
   app.delete('/api/sessions/:id', async (req, res) => {
     const sessionId = req.params['id'] as string
     const session = sessionManager.getSession(sessionId)
