@@ -1,0 +1,20 @@
+{
+  "TCP": {
+    "443": { "HTTPS": true }
+  },
+  "Web": {
+    "node.tailnet.ts.net:443": {
+      "Handlers": { "/": { "Proxy": "http://127.0.0.1:10369" } }
+    }
+  },
+  "Foreground": {
+    "f326d7c5f68a8f3f": {
+      "TCP": { "8443": { "HTTPS": true } },
+      "Web": {
+        "node.tailnet.ts.net:8443": {
+          "Handlers": { "/": { "Proxy": "http://127.0.0.1:10469" } }
+        }
+      }
+    }
+  }
+}
