@@ -30,13 +30,14 @@ import {
 } from './stream-pure.js'
 import { createAssemblyResult } from './request-context.js'
 import type { RequestContextMessage } from './request-context.js'
-import { buildCachedPrompt, computeDynamicContextHash, getToolFingerprint } from './dynamic-context.js'
+import {
+  buildCachedPrompt,
+  computeDynamicContextHash,
+  getToolFingerprint,
+  loadSessionContext,
+} from './dynamic-context.js'
 import { runTopLevelAgentLoop } from './agent-loop.js'
 import { loadAllAgentsDefault, findAgentById, resolveDefaultAgentId } from '../agents/registry.js'
-import { getAllInstructions } from '../context/instructions.js'
-import { getEnabledSkillMetadata } from '../skills/registry.js'
-import { getRuntimeConfig } from '../runtime-config.js'
-import { getGlobalConfigDir } from '../../cli/paths.js'
 import { logger } from '../utils/logger.js'
 import type { RetryPatternConfig } from './auto-patterns.js'
 import { getConversationMessages, processEventsForConversation } from './conversation-history.js'
@@ -189,11 +190,20 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
           ? 'sensitive files that may contain secrets'
           : error.reason === 'both'
             ? 'files outside the project and sensitive files'
-            : 'files outside the project directory'
+            : error.reason === 'rule_denied'
+              ? 'paths/commands blocked by a permission rule'
+              : error.reason === 'rule_ask'
+                ? 'paths/commands requiring confirmation per a permission rule'
+                : error.reason === 'git_no_verify'
+                  ? 'git commands with --no-verify'
+                  : error.reason === 'dangerous_command'
+                    ? 'potentially dangerous commands'
+                    : 'files outside the project directory'
+      const errorPrefix = error.reason === 'rule_denied' ? 'Blocked' : 'User denied access to'
       eventStore.append(sessionId, {
         type: 'chat.error',
         data: {
-          error: `User denied access to ${reasonText}.`,
+          error: `${errorPrefix} ${reasonText}.`,
           recoverable: false,
         },
       })
@@ -352,12 +362,10 @@ export async function runAgentTurn(
     injectAgentReminder(options.sessionId, agentDef)
   }
 
-  const session = options.sessionManager.requireSession(options.sessionId)
-
-  const { content: instructionContent } = await getAllInstructions(session.workdir, session.projectId)
-  const runtimeConfig = getRuntimeConfig()
-  const configDir = getGlobalConfigDir(runtimeConfig.mode ?? 'production')
-  const skills = await getEnabledSkillMetadata(configDir, options.sessionManager.getProjectWorkdir(options.sessionId))
+  const { instructionContent, skills, permissionRules } = await loadSessionContext(
+    options.sessionManager,
+    options.sessionId,
+  )
 
   return runTopLevelAgentLoop(
     {
@@ -376,10 +384,11 @@ export async function runAgentTurn(
         if (cached) {
           const toolFingerprint = getToolFingerprint(cached.tools)
           const currentHash = computeDynamicContextHash(
-            instructionContent ?? '',
+            instructionContent,
             skills,
             toolFingerprint,
             agentLlmClient.getModel(),
+            permissionRules,
           )
           if (cached.hash !== currentHash) {
             logger.debug('assembleRequest: hash mismatch', {

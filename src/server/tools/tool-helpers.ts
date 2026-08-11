@@ -228,6 +228,7 @@ export function createTool<TArgs>(name: string, definition: LLMToolDefinition, h
               context.dangerLevel,
               command,
               context.isSubAgent,
+              context.permissionRules,
             )
           }
         },

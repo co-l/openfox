@@ -42,6 +42,7 @@ import { loadAllAgentsDefault, getTopLevelAgents } from './agents/registry.js'
 import { createWorkflowRoutes } from './routes/workflows.js'
 import { createDevServerRoutes } from './routes/dev-server.js'
 import { createWorkspaceConfigRoutes } from './routes/workspace-config.js'
+import { createPermissionsRoutes } from './routes/permissions.js'
 import { createTerminalRoutes } from './routes/terminals.js'
 import { WorkspaceInUseError } from './utils/errors.js'
 import { createDirectoryRoutes } from './routes/directories.js'
@@ -748,7 +749,14 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         tool: string
         paths: string[]
         workdir: string
-        reason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify'
+        reason:
+          | 'outside_workdir'
+          | 'sensitive_file'
+          | 'both'
+          | 'dangerous_command'
+          | 'git_no_verify'
+          | 'rule_denied'
+          | 'rule_ask'
       }>
     > = {}
     for (const s of sessions) {
@@ -2983,6 +2991,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   app.use('/api/workflows', createWorkflowRoutes(configDir, config, projectDir))
   app.use('/api/dev-server', createDevServerRoutes())
   app.use('/api/workspace', createWorkspaceConfigRoutes(sessionManager))
+  app.use('/api/permissions', createPermissionsRoutes(configDir))
   app.use('/api/terminals', createTerminalRoutes())
   app.use(
     '/api/auto-update',

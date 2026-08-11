@@ -1,6 +1,7 @@
 import { basename } from 'node:path'
 import type { SkillMetadata } from '../skills/types.js'
 import type { AgentDefinition } from '../agents/types.js'
+import type { PermissionRule } from '../permissions/schema.js'
 import { computeEffectiveTools } from '../tools/tool-policy.js'
 import { getPlatformShell } from '../utils/platform.js'
 
@@ -183,6 +184,24 @@ To call a sub-agent, use the call_sub_agent tool with:
 // ============================================================================
 
 /**
+ * Build the permissions section for the system prompt.
+ * Returns empty string when no rules — preserves cache hash stability.
+ * The section lists rules so the LLM knows what is allowed/denied/asked
+ * without having to discover it by trial and error.
+ */
+export function buildPermissionsSection(rules?: PermissionRule[]): string {
+  if (!rules || rules.length === 0) return ''
+
+  const lines = rules.map((r) => {
+    const pattern = r.pattern ? ` \`${r.pattern}\`` : ' (all calls)'
+    const desc = r.description ? ` — ${r.description}` : ''
+    return `- ${r.effect} ${r.tool}${pattern}${desc}`
+  })
+
+  return `\n\n## PERMISSIONS\n\nThe following permission rules are enforced deterministically by OpenFox (not by you). Actions matching a DENY rule will be blocked; ALLOW skips confirmation; ASK always prompts.\n\n${lines.join('\n')}\n`
+}
+
+/**
  * System prompt for top-level agents (planner, builder, custom).
  * Identical for all top-level agents to preserve KV cache.
  * Agent-specific behavior comes from the runtime reminder.
@@ -193,10 +212,12 @@ export function buildTopLevelSystemPrompt(
   skills?: SkillMetadata[],
   subAgentDefs?: AgentDefinition[],
   modelName?: string,
+  permissionRules?: PermissionRule[],
 ): string {
   const base = buildBasePrompt(workdir, customInstructions, skills, modelName)
   const subAgents = subAgentDefs ? buildSubAgentsSection(subAgentDefs) : ''
-  return base + subAgents
+  const permissions = buildPermissionsSection(permissionRules)
+  return base + subAgents + permissions
 }
 
 /**

@@ -9,6 +9,7 @@ import { AdvancedTab } from './tabs/AdvancedTab'
 import { KeybindingsTab } from './tabs/KeybindingsTab'
 import { ToolsTab } from './tabs/ToolsTab'
 import { PluginsTab } from './tabs/PluginsTab'
+import { PermissionsTab } from './tabs/PermissionsTab'
 import { useUpdateStore } from '../../stores/update'
 import { wsClient } from '../../lib/ws'
 
@@ -17,7 +18,16 @@ interface GlobalSettingsModalProps {
   onClose: () => void
 }
 
-type Tab = 'instructions' | 'skills' | 'plugins' | 'notifications' | 'display' | 'keybindings' | 'advanced' | 'tools'
+type Tab =
+  | 'instructions'
+  | 'skills'
+  | 'plugins'
+  | 'notifications'
+  | 'display'
+  | 'keybindings'
+  | 'advanced'
+  | 'tools'
+  | 'permissions'
 
 export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProps) {
   const [activeTab, setActiveTab] = useState<Tab>('instructions')
@@ -47,6 +57,7 @@ export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProp
             onClick={() => setActiveTab('instructions')}
           />
           <TabButton label="Tools" active={activeTab === 'tools'} onClick={() => setActiveTab('tools')} />
+          <TabButton label="Rules" active={activeTab === 'permissions'} onClick={() => setActiveTab('permissions')} />
           <TabButton label="Skills" active={activeTab === 'skills'} onClick={() => setActiveTab('skills')} />
           <TabButton label="Plugins" active={activeTab === 'plugins'} onClick={() => setActiveTab('plugins')} />
           <TabButton
@@ -77,6 +88,7 @@ export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProp
           {activeTab === 'display' && <DisplayTab />}
           {activeTab === 'keybindings' && <KeybindingsTab />}
           {activeTab === 'tools' && <ToolsTab />}
+          {activeTab === 'permissions' && <PermissionsTab />}
           {activeTab === 'advanced' && <AdvancedTab onClose={onClose} />}
         </ScrollArea>
       </div>

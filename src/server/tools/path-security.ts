@@ -5,6 +5,8 @@ import type { ServerMessage } from '../../shared/protocol.js'
 import { createChatPathConfirmationMessage } from '../ws/protocol.js'
 import { getEventStore } from '../events/index.js'
 import { getPlatformShell } from '../utils/platform.js'
+import type { PermissionRule } from '../permissions/schema.js'
+import { evaluateRules } from '../permissions/rules.js'
 
 // ===========================================================================
 // Constants
@@ -885,32 +887,19 @@ export async function requestPathAccess(
   dangerLevel?: string,
   command?: string,
   isSubAgent?: boolean,
+  rules?: PermissionRule[],
 ): Promise<void> {
-  // Sub-agent shortcut: skip all confirmation dialogs since they don't render
-  // properly in the small sub-agent window. Fail closed in normal mode;
-  // auto-approve everything in dangerous mode.
-  if (isSubAgent) {
-    const result = await checkPathsAccess(paths, workdir, sessionId)
-    if (!result.needsConfirmation) return
-
-    if (dangerLevel === 'dangerous') {
-      const allPaths = [...new Set([...result.deniedPaths, ...result.sensitivePaths])]
-      addAllowedPaths(sessionId, allPaths)
-      return
-    }
-
-    const allPaths = [...new Set([...result.deniedPaths, ...result.sensitivePaths])]
-    const hasDenied = result.deniedPaths.length > 0
-    const hasSensitive = result.sensitivePaths.length > 0
-    const reason: PathDenialReason =
-      hasDenied && hasSensitive ? 'both' : hasDenied ? 'outside_workdir' : 'sensitive_file'
-    throw new PathAccessDeniedError(allPaths, tool, reason)
-  }
-
   // Helper to emit path.confirmation_pending event
   const emitPendingEvent = (
     confirmationPaths: string[],
-    confirmationReason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify',
+    confirmationReason:
+      | 'outside_workdir'
+      | 'sensitive_file'
+      | 'both'
+      | 'dangerous_command'
+      | 'git_no_verify'
+      | 'rule_denied'
+      | 'rule_ask',
   ) => {
     try {
       const eventStore = getEventStore()
@@ -923,9 +912,11 @@ export async function requestPathAccess(
     }
   }
 
-  // Check for git --no-verify - ALWAYS requires confirmation, even in dangerous mode
-  // This ensures the user is aware the agent is bypassing hooks/pre-commit checks
-  if (command && extractGitNoVerify(command)) {
+  // git --no-verify ALWAYS requires confirmation, even in dangerous mode and
+  // even when an ALLOW permission rule matches. This is a hardcoded safety
+  // guard that permission rules cannot override. Skipped for sub-agents (they
+  // don't render confirmation dialogs — handled by the sub-agent shortcut below).
+  if (!isSubAgent && command && extractGitNoVerify(command)) {
     emitPendingEvent([workdir], 'git_no_verify')
     const confirmationPromise = registerPathConfirmation(callId, [workdir], sessionId, tool, workdir, 'git_no_verify')
     onEvent(createChatPathConfirmationMessage(callId, tool, ['git --no-verify detected'], workdir, 'git_no_verify'))
@@ -940,8 +931,10 @@ export async function requestPathAccess(
     }
   }
 
-  // Check for dangerous commands that need confirmation even without path access
-  if (dangerLevel !== 'dangerous' && command) {
+  // Dangerous command patterns ALWAYS require confirmation in normal mode,
+  // even when an ALLOW permission rule matches. Permission rules cannot
+  // override these hardcoded safety guards. Skipped for sub-agents.
+  if (!isSubAgent && dangerLevel !== 'dangerous' && command) {
     const dangerousPatterns = extractDangerousPatterns(command)
     if (dangerousPatterns.length > 0) {
       emitPendingEvent([workdir], 'dangerous_command')
@@ -961,6 +954,66 @@ export async function requestPathAccess(
         throw new PathAccessDeniedError(dangerousPatterns, tool, 'dangerous_command')
       }
     }
+  }
+
+  // Permission rules evaluation: DENY > ALLOW > ASK across ALL targets in the
+  // call (command + paths). We scan all targets for DENY first, then ALLOW,
+  // then ASK — so a DENY on any target always wins over an ALLOW on another.
+  if (rules && rules.length > 0) {
+    const allTargets: string[] = [...paths]
+    if (command) allTargets.unshift(command)
+
+    // Phase 1: DENY — if ANY target matches DENY, throw immediately
+    for (const target of allTargets) {
+      const effect = evaluateRules(rules, tool, target)
+      if (effect === 'DENY') {
+        throw new PathAccessDeniedError([target], tool, 'rule_denied', `Permission rule DENY blocked: "${target}"`)
+      }
+    }
+
+    // Phase 2: ALLOW — if ANY target matches ALLOW, skip sandbox/sensitive checks
+    const hasAllow = allTargets.some((t) => evaluateRules(rules, tool, t) === 'ALLOW')
+    if (hasAllow) return
+
+    // Phase 3: ASK — if ANY target matches ASK, prompt (top-level only).
+    // Sub-agents can't render dialogs: fail closed in normal mode so the ASK
+    // rule is respected instead of being silently bypassed by the sub-agent
+    // shortcut below. In dangerous mode, ASK is skipped (same as top-level).
+    const askTargets = allTargets.filter((t) => evaluateRules(rules, tool, t) === 'ASK')
+    if (askTargets.length > 0 && dangerLevel !== 'dangerous') {
+      if (isSubAgent) {
+        throw new PathAccessDeniedError(askTargets, tool, 'rule_ask')
+      }
+      emitPendingEvent(askTargets, 'rule_ask')
+      const confirmationPromise = registerPathConfirmation(callId, askTargets, sessionId, tool, workdir, 'rule_ask')
+      onEvent(createChatPathConfirmationMessage(callId, tool, askTargets, workdir, 'rule_ask'))
+      const approved = await confirmationPromise
+      if (!approved) {
+        throw new PathAccessDeniedError(askTargets, tool, 'rule_ask')
+      }
+      return
+    }
+  }
+
+  // Sub-agent shortcut: skip all confirmation dialogs since they don't render
+  // properly in the small sub-agent window. Fail closed in normal mode;
+  // auto-approve everything in dangerous mode.
+  if (isSubAgent) {
+    const result = await checkPathsAccess(paths, workdir, sessionId)
+    if (!result.needsConfirmation) return
+
+    if (dangerLevel === 'dangerous') {
+      const allPaths = [...new Set([...result.deniedPaths, ...result.sensitivePaths])]
+      addAllowedPaths(sessionId, allPaths)
+      return
+    }
+
+    const allPaths = [...new Set([...result.deniedPaths, ...result.sensitivePaths])]
+    const hasDenied = result.deniedPaths.length > 0
+    const hasSensitive = result.sensitivePaths.length > 0
+    const reason: PathDenialReason =
+      hasDenied && hasSensitive ? 'both' : hasDenied ? 'outside_workdir' : 'sensitive_file'
+    throw new PathAccessDeniedError(allPaths, tool, reason)
   }
 
   // Check which paths need confirmation
@@ -1021,7 +1074,8 @@ export async function requestPathAccess(
 // Error Classes
 // ===========================================================================
 
-export type PathDenialReason = 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify'
+export type PathDenialReason =
+  'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify' | 'rule_denied' | 'rule_ask'
 
 /**
  * Error thrown when user denies path access.
@@ -1041,7 +1095,11 @@ export class PathAccessDeniedError extends Error {
           ? 'paths outside workdir and sensitive files'
           : reason === 'git_no_verify'
             ? 'git commands with --no-verify'
-            : 'paths outside workdir'
+            : reason === 'rule_denied'
+              ? 'paths/commands blocked by a permission rule'
+              : reason === 'rule_ask'
+                ? 'paths/commands requiring confirmation per a permission rule'
+                : 'paths outside workdir'
     super(customMessage ?? `User denied access to ${reasonText}: ${paths.join(', ')}`)
     this.name = 'PathAccessDeniedError'
   }
@@ -1061,7 +1119,8 @@ const pendingConfirmations = new Map<
     sessionId: string
     tool: string
     workdir: string
-    reason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify'
+    reason:
+      'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify' | 'rule_denied' | 'rule_ask'
   }
 >()
 
@@ -1075,7 +1134,8 @@ export function registerPathConfirmation(
   sessionId: string,
   tool: string,
   workdir: string,
-  reason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify',
+  reason:
+    'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify' | 'rule_denied' | 'rule_ask',
 ): Promise<boolean> {
   return new Promise((resolve, reject) => {
     pendingConfirmations.set(callId, { resolve, reject, paths, sessionId, tool, workdir, reason })
@@ -1198,7 +1258,8 @@ export function getPendingConfirmationsBySession(): Record<
     tool: string
     paths: string[]
     workdir: string
-    reason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify'
+    reason:
+      'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify' | 'rule_denied' | 'rule_ask'
   }>
 > {
   const bySession: Record<
@@ -1208,7 +1269,14 @@ export function getPendingConfirmationsBySession(): Record<
       tool: string
       paths: string[]
       workdir: string
-      reason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify'
+      reason:
+        | 'outside_workdir'
+        | 'sensitive_file'
+        | 'both'
+        | 'dangerous_command'
+        | 'git_no_verify'
+        | 'rule_denied'
+        | 'rule_ask'
     }>
   > = {}
   for (const [_callId, pending] of pendingConfirmations.entries()) {

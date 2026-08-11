@@ -213,7 +213,8 @@ export interface PendingPathConfirmationPayload {
   tool: string
   paths: string[]
   workdir: string
-  reason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify'
+  reason:
+    'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify' | 'rule_denied' | 'rule_ask'
 }
 
 export interface SessionListPayload {
@@ -341,7 +342,7 @@ export interface ChatStepRetryPayload {
 
 // Path confirmation payloads
 export type PathConfirmationReason =
-  'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify'
+  'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify' | 'rule_denied' | 'rule_ask'
 
 export interface ChatPathConfirmationPayload {
   callId: string

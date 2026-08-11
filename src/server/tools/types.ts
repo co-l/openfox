@@ -6,6 +6,7 @@ import type { LspManagerInterface } from '../lsp/types.js'
 import type { SessionManager } from '../session/manager.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { ProviderManager } from '../provider-manager.js'
+import type { PermissionRule } from '../permissions/schema.js'
 
 export interface ToolContext {
   workdir: string
@@ -23,6 +24,7 @@ export interface ToolContext {
   permittedActions?: Record<string, string[]> | undefined // Map of tool name -> allowed actions (e.g., { criterion: ['pass', 'fail'] })
   toolCallId?: string // ID of the tool call being executed (for matching confirmations)
   agentTimeout?: number // User-configured max tool timeout from config.agent.toolTimeout
+  permissionRules?: PermissionRule[] // Merged permission rules (global + project) evaluated before sandbox checks
 }
 
 export interface Tool {

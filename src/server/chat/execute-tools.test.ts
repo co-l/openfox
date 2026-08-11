@@ -4,6 +4,7 @@ import type { TurnMetrics } from './stream-pure.js'
 import type { ToolRegistry } from '../tools/types.js'
 import type { TurnEvent } from '../events/types.js'
 import { executeTools, transformSubAgentAliases } from './execute-tools.js'
+import { PathAccessDeniedError } from '../tools/path-security.js'
 
 vi.mock('../agents/registry.js', () => ({
   loadAllAgentsDefault: vi.fn(),
@@ -468,5 +469,45 @@ describe('executeTools', () => {
 
     expect(result.returnValueContent).toBe('my result')
     expect(result.returnValueResult).toBe('completed')
+  })
+
+  it('shows rule_denied message for PathAccessDeniedError with rule_denied reason', async () => {
+    const append = vi.fn()
+    mockToolRegistry.execute = vi
+      .fn()
+      .mockRejectedValue(
+        new PathAccessDeniedError(
+          ['/home/tony/perso/littlehands'],
+          'read_file',
+          'rule_denied',
+          'Permission rule DENY blocked: "/home/tony/perso/littlehands"',
+        ),
+      )
+
+    const toolCalls: ToolCall[] = [
+      { id: 'call-1', name: 'read_file', arguments: { path: '/home/tony/perso/littlehands' } },
+    ]
+
+    const result = await executeTools('msg-1', toolCalls, makeCtx(), append)
+
+    expect(result.toolMessages).toHaveLength(1)
+    expect(result.toolMessages[0]?.content).toContain('Blocked')
+    expect(result.toolMessages[0]?.content).toContain('blocked by a permission rule')
+    expect(result.toolMessages[0]?.content).not.toContain('User denied access')
+  })
+
+  it('shows outside_workdir message for PathAccessDeniedError with outside_workdir reason', async () => {
+    const append = vi.fn()
+    mockToolRegistry.execute = vi
+      .fn()
+      .mockRejectedValue(new PathAccessDeniedError(['/etc/passwd'], 'read_file', 'outside_workdir'))
+
+    const toolCalls: ToolCall[] = [{ id: 'call-1', name: 'read_file', arguments: { path: '/etc/passwd' } }]
+
+    const result = await executeTools('msg-1', toolCalls, makeCtx(), append)
+
+    expect(result.toolMessages).toHaveLength(1)
+    expect(result.toolMessages[0]?.content).toContain('Access denied to')
+    expect(result.toolMessages[0]?.content).toContain('outside the project directory')
   })
 })

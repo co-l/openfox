@@ -891,7 +891,8 @@ describe('chat orchestrator', () => {
       data: {
         result: {
           success: false,
-          error: 'User denied access to /etc/passwd. If you need this file, explain why and ask for permission.',
+          error:
+            'Access denied to /etc/passwd (outside the project directory). If you need this file, explain why and ask the user for permission.',
         },
       },
     })

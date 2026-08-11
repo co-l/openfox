@@ -9,6 +9,7 @@ import type { StatsIdentity } from '../../shared/types.js'
 import type { ProviderManager } from '../provider-manager.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { DangerLevel } from '../../shared/types.js'
+import type { PermissionRule } from '../permissions/schema.js'
 import { createToolProgressHandler } from './tool-streaming.js'
 import { createToolCallEvent, createToolResultEvent, createChatDoneEvent } from './stream-pure.js'
 import { PathAccessDeniedError, AskUserInterrupt } from '../tools/index.js'
@@ -24,6 +25,7 @@ export interface ToolBatchContext {
   workdir: string
   dangerLevel?: DangerLevel
   isSubAgent?: boolean
+  permissionRules?: PermissionRule[]
   turnMetrics: TurnMetrics
   signal?: AbortSignal | undefined
   onMessage?: ((msg: ServerMessage) => void) | undefined
@@ -116,9 +118,20 @@ export async function executeTools(
     startTime: number,
   ): Promise<ToolResult> => {
     if (error instanceof PathAccessDeniedError) {
+      const reasonText =
+        error.reason === 'rule_denied'
+          ? 'blocked by a permission rule'
+          : error.reason === 'rule_ask'
+            ? 'requiring confirmation per a permission rule'
+            : error.reason === 'git_no_verify'
+              ? 'git commands with --no-verify'
+              : error.reason === 'dangerous_command'
+                ? 'potentially dangerous commands'
+                : 'outside the project directory'
+      const prefix = error.reason === 'rule_denied' ? 'Blocked' : 'Access denied to'
       return {
         success: false,
-        error: `User denied access to ${error.paths.join(', ')}. If you need this file, explain why and ask for permission.`,
+        error: `${prefix} ${error.paths.join(', ')} (${reasonText}). If you need this file, explain why and ask the user for permission.`,
         durationMs: Date.now() - startTime,
         truncated: false,
       }
@@ -215,6 +228,9 @@ export async function executeTools(
     }
     if (ctx.providerManager) {
       toolContext.providerManager = ctx.providerManager
+    }
+    if (ctx.permissionRules && ctx.permissionRules.length > 0) {
+      toolContext.permissionRules = ctx.permissionRules
     }
 
     const startTime = Date.now()

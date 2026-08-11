@@ -231,7 +231,9 @@ export const MessageList = memo(function MessageList({
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <div className="text-text-tool-error text-sm font-medium">{error.code}</div>
-                    <div className="text-text-tool-error/80 text-xs mt-0.5">{error.message}</div>
+                    <div className="text-text-tool-error/80 text-xs mt-0.5 break-words overflow-hidden">
+                      {error.message}
+                    </div>
                   </div>
                   <CloseButton
                     onClick={clearError}

@@ -30,6 +30,7 @@ import { getAllInstructions } from '../context/instructions.js'
 import { getEnabledSkillMetadata } from '../skills/registry.js'
 import { getRuntimeConfig } from '../runtime-config.js'
 import { getGlobalConfigDir } from '../../cli/paths.js'
+import { loadMergedRules } from '../permissions/registry.js'
 import { createChatMessageUpdatedMessage, createChatDoneMessage } from '../ws/protocol.js'
 import { executeTools, type ToolBatchContext } from './execute-tools.js'
 import { loadAllAgentsDefault, getSubAgents } from '../agents/registry.js'
@@ -525,6 +526,10 @@ ${COMPACTION_PROMPT}`,
           batchContext.providerManager = config.providerManager
         }
         batchContext.agentTimeout = getRuntimeConfig().agent.toolTimeout
+        const permissionRules = await loadMergedRules(configDir, sessionManager.getEffectiveWorkdir(sessionId))
+        if (permissionRules.length > 0) {
+          batchContext.permissionRules = permissionRules
+        }
         const batchResult = await executeTools(assistantMsgId, result.toolCalls, batchContext, append)
         if (batchResult.stepDoneCalled) {
           emitDoneAndBreak(

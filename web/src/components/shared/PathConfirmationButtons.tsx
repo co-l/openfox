@@ -32,6 +32,11 @@ function getReasonMessage(reason: PendingPathConfirmation['reason']): {
         title: 'Git --no-verify',
         description: 'Bypassing git hooks/pre-commit checks',
       }
+    case 'rule_ask':
+      return {
+        title: 'Permission Rule Confirmation',
+        description: 'A permission rule requires confirmation for this action',
+      }
     case 'outside_workdir':
     default:
       return {
