@@ -267,9 +267,9 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
 
             if (chunk.usage) {
               usage = {
-                promptTokens: chunk.usage.prompt_tokens,
-                completionTokens: chunk.usage.completion_tokens,
-                totalTokens: chunk.usage.total_tokens,
+                promptTokens: chunk.usage.prompt_tokens ?? usage.promptTokens,
+                completionTokens: chunk.usage.completion_tokens ?? usage.completionTokens,
+                totalTokens: chunk.usage.total_tokens ?? usage.totalTokens,
               }
             }
 

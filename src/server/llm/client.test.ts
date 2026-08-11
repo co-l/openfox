@@ -340,6 +340,71 @@ describe('llm client', () => {
     ])
   })
 
+  it('normalizes null usage values in streaming responses', async () => {
+    httpClientCreateStreamMock.mockReturnValueOnce(
+      (async function* () {
+        yield createChunk({
+          choices: [{ delta: { content: 'answer' }, finish_reason: 'stop' }],
+          usage: {
+            prompt_tokens: null,
+            completion_tokens: null,
+            total_tokens: null,
+          },
+        })
+      })(),
+    )
+
+    const client = createLLMClient(createConfig(), 'vllm')
+    const events = []
+
+    for await (const event of client.stream({ messages: [{ role: 'user', content: 'hello' }] })) {
+      events.push(event)
+    }
+
+    expect(events.at(-1)).toMatchObject({
+      type: 'done',
+      response: {
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      },
+    })
+  })
+
+  it('retains valid streaming usage when later fields are null or missing', async () => {
+    httpClientCreateStreamMock.mockReturnValueOnce(
+      (async function* () {
+        yield createChunk({
+          choices: [],
+          usage: {
+            prompt_tokens: 11,
+            completion_tokens: 6,
+            total_tokens: 17,
+          },
+        })
+        yield createChunk({
+          choices: [{ delta: { content: 'answer' }, finish_reason: 'stop' }],
+          usage: {
+            prompt_tokens: null,
+            total_tokens: null,
+          },
+        })
+      })(),
+    )
+
+    const client = createLLMClient(createConfig(), 'vllm')
+    const events = []
+
+    for await (const event of client.stream({ messages: [{ role: 'user', content: 'hello' }] })) {
+      events.push(event)
+    }
+
+    expect(events.at(-1)).toMatchObject({
+      type: 'done',
+      response: {
+        usage: { promptTokens: 11, completionTokens: 6, totalTokens: 17 },
+      },
+    })
+  })
+
   it('streams reasoning_content as thinking_delta', async () => {
     httpClientCreateStreamMock.mockReturnValueOnce(
       (async function* () {
