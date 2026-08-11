@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
+import { fileURLToPath } from 'node:url'
 import { projectSessionStatus } from './session-status.js'
 import { buildContextMessagesFromEventHistory } from '../events/folding.js'
 import type { ToolCallWithResult, StoredEvent, TurnEvent, SessionSnapshot } from '../events/types.js'
@@ -152,9 +153,7 @@ describe('session status projection — KV-cache invariant (Cache Impact: No)', 
     // import any of the modules that participate in the LLM request path.
     const forbidden = ['src/server/llm', 'src/server/context', 'src/server/skills', 'src/server/warmup']
     const fs = await import('fs/promises')
-    const path = await import('path')
-    const fileUrl = new URL('./session-status.ts', import.meta.url)
-    const source = await fs.readFile(path.resolve(fileUrl.pathname), 'utf8')
+    const source = await fs.readFile(fileURLToPath(new URL('./session-status.ts', import.meta.url)), 'utf8')
     for (const needle of forbidden) {
       expect(source).not.toContain(needle)
     }
