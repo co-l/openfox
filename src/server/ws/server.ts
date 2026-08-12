@@ -612,7 +612,7 @@ export function createWebSocketServer(
     )
   })
 
-  devServerManager.onStateChange((workdir, state, errorMessage, url, inspectProxyPort) => {
+  devServerManager.onStateChange((workdir, state, errorMessage, url, inspectProxyPort, tailscalePreview) => {
     broadcastAll(
       createServerMessage('devServer.state', {
         workdir,
@@ -620,6 +620,7 @@ export function createWebSocketServer(
         errorMessage,
         url,
         inspectProxyPort,
+        tailscalePreview,
       }),
     )
   })

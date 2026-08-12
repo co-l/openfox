@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import type { DevServerConfig, DevServerState, DevServerStatus } from '@shared/dev-server.js'
+import type { DevServerConfig, DevServerState, DevServerStatus, TailscalePreview } from '@shared/dev-server.js'
+import { idlePreview } from '@shared/dev-server.js'
 import type { ServerMessage, DevServerOutputPayload, DevServerStatePayload } from '@shared/protocol.js'
 import { authFetch } from '../lib/api'
 import { createLogBuffer } from './utils'
@@ -196,6 +197,7 @@ export const useDevServerStore = create<DevServerStore>()((set, get) => {
         case 'devServer.state': {
           const payload = message.payload as DevServerStatePayload
           if (payload.workdir !== workdir) return
+          const preview: TailscalePreview = payload.tailscalePreview ?? idlePreview()
           set((state) => ({
             status: state.status
               ? {
@@ -204,6 +206,7 @@ export const useDevServerStore = create<DevServerStore>()((set, get) => {
                   errorMessage: payload.errorMessage,
                   ...(payload.url !== undefined ? { url: payload.url } : {}),
                   ...(payload.inspectProxyPort !== undefined ? { inspectProxyPort: payload.inspectProxyPort } : {}),
+                  tailscalePreview: preview,
                 }
               : {
                   state: payload.state as DevServerState,
@@ -212,6 +215,7 @@ export const useDevServerStore = create<DevServerStore>()((set, get) => {
                   config: null,
                   errorMessage: payload.errorMessage,
                   inspectProxyPort: payload.inspectProxyPort ?? null,
+                  tailscalePreview: preview,
                 },
           }))
           break

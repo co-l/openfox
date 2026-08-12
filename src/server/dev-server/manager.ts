@@ -5,9 +5,12 @@ import net from 'node:net'
 import { terminateProcessTree } from '../utils/process-tree.js'
 import { logger } from '../utils/logger.js'
 import { spawnShell } from '../utils/shell.js'
-import type { DevServerConfig, DevServerState, DevServerStatus } from '../../shared/dev-server.js'
+import type { DevServerConfig, DevServerState, DevServerStatus, TailscalePreview } from '../../shared/dev-server.js'
+import { idlePreview } from '../../shared/dev-server.js'
 import { startInspectProxy } from './inspect-proxy.js'
 import type { SessionManager } from '../session/manager.js'
+import { tailscalePreviewManager } from './tailscale-preview.js'
+import { isTailscaleAvailable } from './tailscale-preview.js'
 
 const MAX_LOG_LINES = 2000
 const MAX_LOG_BYTES = 100_000
@@ -44,6 +47,7 @@ export type StateListener = (
   errorMessage: string | undefined,
   url: string | null,
   inspectProxyPort: number | null,
+  tailscalePreview: TailscalePreview,
 ) => void
 
 interface LogEntry {
@@ -65,6 +69,7 @@ interface DevServerInstance {
   exited: boolean
   inspectProxyPort: number | null
   proxyCleanup: (() => void) | null
+  tailscalePreview: TailscalePreview
 }
 
 function createInstance(): DevServerInstance {
@@ -81,6 +86,7 @@ function createInstance(): DevServerInstance {
     exited: true,
     inspectProxyPort: null,
     proxyCleanup: null,
+    tailscalePreview: idlePreview(),
   }
 }
 
@@ -132,8 +138,9 @@ class DevServerManager {
     const instance = this.getInstance(workdir)
     const url = instance.resolvedUrl ?? instance.config?.url ?? null
     const inspectProxyPort = instance.inspectProxyPort
+    const tailscalePreview = instance.tailscalePreview
     for (const listener of this.stateListeners) {
-      listener(resolved, state, errorMessage, url, inspectProxyPort)
+      listener(resolved, state, errorMessage, url, inspectProxyPort, tailscalePreview)
     }
   }
 
@@ -200,6 +207,7 @@ class DevServerManager {
           url: parsed.url,
           hotReload: parsed.hotReload ?? false,
           disableInspect: parsed.disableInspect ?? false,
+          tailscaleExpose: parsed.tailscaleExpose === true,
         }
       } catch {
         return null
@@ -313,6 +321,11 @@ class DevServerManager {
     proc.on('close', (code) => {
       instance.exited = true
       instance.process = null
+      // Crash path: drop any active Tailscale preview (non-blocking).
+      if (instance.tailscalePreview.status !== 'idle') {
+        void tailscalePreviewManager.stop(workdir)
+        instance.tailscalePreview = idlePreview()
+      }
       if (code !== 0 && code !== null) {
         const recentLogs = instance.logs.slice(-10).join('')
         const errorMessage = `Process exited with code ${code}\n${recentLogs}`.trim()
@@ -339,11 +352,25 @@ class DevServerManager {
     this.emitStateChange(workdir, 'running', undefined)
     logger.info('Dev server started', { workdir, command: resolvedCommand, port: assignedPort })
 
+    // Auto-launch the Tailscale preview if the project's config requests it.
+    // Fire-and-forget: startTailscalePreview absorbs its own errors (catch →
+    // status='error'), so this cannot become an unhandled rejection. The dev
+    // server is fully usable regardless of the Tailscale outcome.
+    if (config.tailscaleExpose === true && instance.assignedPort !== null) {
+      void this.startTailscalePreview(workdir)
+    }
+
     return this.getStatus(workdir)
   }
 
   async stop(workdir: string): Promise<DevServerStatus> {
     const instance = this.getInstance(workdir)
+
+    // Drop any active Tailscale preview BEFORE killing the dev server.
+    if (instance.tailscalePreview.status !== 'idle') {
+      await tailscalePreviewManager.stop(workdir)
+      instance.tailscalePreview = idlePreview()
+    }
 
     if (instance.process && !instance.exited) {
       await terminateProcessTree(instance.process, { exited: () => instance.exited })
@@ -396,6 +423,7 @@ class DevServerManager {
       config: instance.config,
       errorMessage: instance.errorMessage,
       inspectProxyPort: instance.inspectProxyPort,
+      tailscalePreview: instance.tailscalePreview,
     }
   }
 
@@ -428,9 +456,75 @@ class DevServerManager {
   }
 
   async stopAll(): Promise<void> {
+    await tailscalePreviewManager.stopAll()
     const stops = Array.from(this.instances.keys()).map((workdir) => this.stop(workdir))
     await Promise.allSettled(stops)
     this.instances.clear()
+  }
+
+  async startTailscalePreview(workdir: string): Promise<DevServerStatus> {
+    const instance = this.getInstance(workdir)
+
+    if (instance.state !== 'running') {
+      instance.tailscalePreview = {
+        status: 'error',
+        error: 'Dev server is not running',
+      }
+      this.emitStateChange(workdir, instance.state, instance.errorMessage)
+      return this.getStatus(workdir)
+    }
+
+    if (instance.assignedPort === null) {
+      instance.tailscalePreview = {
+        status: 'error',
+        error: 'Dev server has no assigned port',
+      }
+      this.emitStateChange(workdir, instance.state, instance.errorMessage)
+      return this.getStatus(workdir)
+    }
+
+    if (instance.tailscalePreview.status === 'starting' || instance.tailscalePreview.status === 'active') {
+      // Idempotent: a preview is already in flight — return current state without overwriting it.
+      return this.getStatus(workdir)
+    }
+
+    // Precheck: surface a clear "Tailscale not available" message before attempting to spawn.
+    const availability = await isTailscaleAvailable()
+    if (!availability.available) {
+      instance.tailscalePreview = {
+        status: 'error',
+        error: availability.reason ?? 'Tailscale is not available',
+      }
+      this.emitStateChange(workdir, instance.state, instance.errorMessage)
+      return this.getStatus(workdir)
+    }
+
+    instance.tailscalePreview = { status: 'starting' }
+    this.emitStateChange(workdir, instance.state, instance.errorMessage)
+
+    try {
+      const result = await tailscalePreviewManager.start(workdir, instance.assignedPort)
+      instance.tailscalePreview = { status: 'active', url: result.url }
+      this.emitStateChange(workdir, instance.state, instance.errorMessage)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      instance.tailscalePreview = { status: 'error', error: message }
+      this.emitStateChange(workdir, instance.state, instance.errorMessage)
+      logger.warn('Tailscale preview failed to start', { workdir, error: message })
+    }
+
+    return this.getStatus(workdir)
+  }
+
+  async stopTailscalePreview(workdir: string): Promise<DevServerStatus> {
+    const instance = this.getInstance(workdir)
+    if (instance.tailscalePreview.status === 'idle') {
+      return this.getStatus(workdir)
+    }
+    await tailscalePreviewManager.stop(workdir)
+    instance.tailscalePreview = idlePreview()
+    this.emitStateChange(workdir, instance.state, instance.errorMessage)
+    return this.getStatus(workdir)
   }
 }
 

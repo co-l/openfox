@@ -450,6 +450,7 @@ export interface DevServerStatePayload {
   errorMessage?: string
   url?: string | null
   inspectProxyPort?: number | null
+  tailscalePreview?: import('./dev-server.js').TailscalePreview
 }
 
 // Background process payloads

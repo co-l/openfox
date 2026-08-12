@@ -15,6 +15,7 @@ export function DevServerConfigModal({ isOpen, onClose }: DevServerConfigModalPr
   const [url, setUrl] = useState('')
   const [hotReload, setHotReload] = useState(false)
   const [disableInspect, setDisableInspect] = useState(false)
+  const [tailscaleExpose, setTailscaleExpose] = useState(false)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -23,13 +24,20 @@ export function DevServerConfigModal({ isOpen, onClose }: DevServerConfigModalPr
       setUrl(config?.url ?? '')
       setHotReload(config?.hotReload ?? false)
       setDisableInspect(config?.disableInspect ?? false)
+      setTailscaleExpose(config?.tailscaleExpose ?? false)
     }
   }, [isOpen, config])
 
   const handleSave = async () => {
     if (!command.trim() || !url.trim()) return
     setSaving(true)
-    await saveConfig({ command: command.trim(), url: url.trim(), hotReload, disableInspect })
+    await saveConfig({
+      command: command.trim(),
+      url: url.trim(),
+      hotReload,
+      disableInspect,
+      tailscaleExpose,
+    })
     setSaving(false)
     onClose()
   }
@@ -82,6 +90,19 @@ export function DevServerConfigModal({ isOpen, onClose }: DevServerConfigModalPr
           />
           <label htmlFor="disableInspect" className="text-xs text-text-secondary">
             Disable inspect feedback
+          </label>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="tailscaleExpose"
+            checked={tailscaleExpose}
+            onChange={(e) => setTailscaleExpose(e.target.checked)}
+            className="rounded border-border bg-bg-tertiary"
+          />
+          <label htmlFor="tailscaleExpose" className="text-xs text-text-secondary">
+            Expose via Tailscale
           </label>
         </div>
 
