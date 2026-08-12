@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect, useCallback, type Dispatch, type SetStateAction } from 'react'
-import { useSessionStore, useIsRunning } from '../../stores/session'
+import { useSessionStore, useIsRunning, useQueuedMessages } from '../../stores/session'
+import { useScopedPaneState } from '../../stores/session/session-scope'
 import { useWorkflowsStore, selectAllWorkflows } from '../../stores/workflows'
 import { useCommandsStore } from '../../stores/commands'
 import { authFetch } from '../../lib/api'
 import { parseSlashCommand, extractTemplateParams } from '../../lib/parse-slash-command'
+import { insertSuggestionAtCursor, focusTextareaAt, resolveSlashParamIds } from '../../lib/composer-utils'
 import { resolveWorkflowForLaunch } from '../../lib/workflow-scope'
 import { dedupById } from '../../lib/modal-utils'
 import type { WorkflowLaunchScope } from '@shared/types.js'
@@ -35,6 +37,9 @@ import {
 } from '../shared/AtMentionAutocomplete'
 import { SlashAutocomplete, type SlashAutocompleteHandle, type SlashSuggestion } from '../shared/SlashAutocomplete'
 
+const COMPOSER_MIN_HEIGHT = 24
+const COMPOSER_MAX_HEIGHT = 200
+
 interface ChatInputProps {
   input: string
   setInput: (value: string) => void
@@ -45,7 +50,7 @@ interface ChatInputProps {
   errorMessage: string | null
   setErrorMessage: (msg: string | null) => void
   scrollToBottom?: () => void
-  sessionId: string | undefined
+  sessionId: string | null | undefined
   showHistory: boolean
   history: PromptHistoryItem[]
   selectedIndex: number
@@ -101,45 +106,47 @@ export function ChatInput({
   const autocompleteRef = useRef<AtMentionAutocompleteHandle>(null)
   const slashAutocompleteRef = useRef<SlashAutocompleteHandle>(null)
 
-  const isRunning = useIsRunning()
+  const isRunning = useIsRunning(sessionId)
   const stopGeneration = useSessionStore((state) => state.stopGeneration)
   const cancelQueued = useSessionStore((state) => state.cancelQueued)
-  const queuedMessages = useSessionStore((state) => state.queuedMessages)
-  const restoredInput = useSessionStore((state) => state.restoredInput)
+  const queuedMessages = useQueuedMessages(sessionId)
+  const restoredInput = useScopedPaneState(
+    sessionId,
+    (pane) => pane.restoredInput ?? null,
+    (state) => state.restoredInput,
+    null,
+  )
   const clearRestoredInput = useSessionStore((state) => state.clearRestoredInput)
-  const workdir = useSessionStore((state) => state.currentSession?.workdir)
-  const currentSession = useSessionStore((state) => state.currentSession)
+  const workdir = useScopedPaneState(
+    sessionId,
+    (pane) => pane.session?.workdir ?? undefined,
+    (state) => state.currentSession?.workdir,
+    undefined,
+  )
+  const currentSession = useScopedPaneState(
+    sessionId,
+    (pane) => pane.session ?? null,
+    (state) => state.currentSession,
+    null,
+  )
   const warmupSentRef = useRef(false)
-  const workflowsFetchedRef = useRef(false)
+  const loadedWorkdirRef = useRef<string | undefined>(undefined)
   const sendingRef = useRef(false)
   const [activeSlashParams, setActiveSlashParams] = useState<string[]>([])
   // Records the scope chosen via the slash autocomplete so the launch resolves
   // the exact definition the user picked (only honored when the id still matches).
   const selectedSlashScopeRef = useRef<{ id: string; scope: WorkflowLaunchScope } | null>(null)
 
-  const { sendMessage, launchWorkflow } = useScrolledSend(setAutoScroll)
+  const { sendMessage, launchWorkflow } = useScrolledSend(setAutoScroll, sessionId)
 
-  // Eagerly load workflows and commands so slash autocomplete always has data
+  // Eagerly load workflows and commands so slash autocomplete always has data.
+  // Scoped to the session's project workdir; reloads when the active project changes.
   useEffect(() => {
-    if (workflowsFetchedRef.current) return
-    workflowsFetchedRef.current = true
-    const allWorkflows = useWorkflowsStore.getState()
-    if (
-      allWorkflows.defaults.length === 0 &&
-      allWorkflows.userItems.length === 0 &&
-      allWorkflows.projectItems.length === 0
-    ) {
-      allWorkflows.fetchWorkflows()
-    }
-    const allCommands = useCommandsStore.getState()
-    if (
-      allCommands.defaults.length === 0 &&
-      allCommands.userItems.length === 0 &&
-      allCommands.projectItems.length === 0
-    ) {
-      allCommands.fetchCommands()
-    }
-  }, [])
+    if (loadedWorkdirRef.current === workdir) return
+    loadedWorkdirRef.current = workdir
+    useWorkflowsStore.getState().fetchWorkflows(workdir)
+    useCommandsStore.getState().fetchCommands(workdir)
+  }, [workdir])
 
   // Clear inline param hints when input is emptied (after send, escape, etc.)
   useEffect(() => {
@@ -151,21 +158,41 @@ export function ChatInput({
   useEffect(() => {
     if (restoredInput !== null) {
       setInput(restoredInput)
-      clearRestoredInput()
+      clearRestoredInput(sessionId)
       if (shouldAutofocus()) textareaRef.current?.focus()
     }
   }, [restoredInput, setInput, clearRestoredInput])
 
-  const resizeTextarea = useCallback(() => {
-    const textarea = textareaRef.current
-    if (!textarea) return
-    const isGrowing = input.length >= prevLenRef.current
-    prevLenRef.current = input.length
-    if (!isGrowing) {
-      textarea.style.height = 'auto'
-    }
-    textarea.style.height = `${Math.min(200, textarea.scrollHeight)}px`
-  }, [input])
+  const resizeTextarea = useCallback(
+    (opts: { force?: boolean } = {}) => {
+      const textarea = textareaRef.current
+      if (!textarea) return
+      // An empty textarea reports its wrapped placeholder in scrollHeight, which
+      // balloons the box on narrow layouts; pin it to the minimum height instead.
+      if (!input) {
+        textarea.style.height = `${COMPOSER_MIN_HEIGHT}px`
+        return
+      }
+      // While typing (content growing), avoid collapsing to 'auto' on every
+      // keystroke: that forces a full re-layout of the collapsed box and makes the
+      // pane jump. Reset to 'auto' only when the content shrinks, or when forced
+      // (e.g. the column width changed and wrapping needs re-measuring).
+      const isGrowing = input.length >= prevLenRef.current
+      prevLenRef.current = input.length
+      if (opts.force || !isGrowing) {
+        textarea.style.height = 'auto'
+      }
+      textarea.style.height = `${Math.min(COMPOSER_MAX_HEIGHT, textarea.scrollHeight)}px`
+    },
+    [input],
+  )
+
+  // Latest resizeTextarea for the (stable) width observer, so the observer isn't
+  // torn down and rebuilt on every keystroke.
+  const resizeTextareaRef = useRef(resizeTextarea)
+  useEffect(() => {
+    resizeTextareaRef.current = resizeTextarea
+  }, [resizeTextarea])
 
   useEffect(() => {
     if (!sessionId) return
@@ -197,6 +224,24 @@ export function ChatInput({
   useEffect(() => {
     resizeTextarea()
   }, [input, resizeTextarea])
+
+  // Re-evaluate the height when the composer's column changes width (narrower or
+  // wider panes change how content wraps). Forces a fresh 'auto' measurement so a
+  // previously measured height can't keep the box stale. Guarded to only fire on
+  // width changes so adjusting the textarea's own height doesn't loop.
+  useEffect(() => {
+    const container = textareaRef.current?.parentElement
+    if (!container || typeof ResizeObserver === 'undefined') return
+    let lastWidth = container.clientWidth
+    const observer = new ResizeObserver(() => {
+      const width = container.clientWidth
+      if (width === lastWidth) return
+      lastWidth = width
+      resizeTextareaRef.current({ force: true })
+    })
+    observer.observe(container)
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     const textarea = textareaRef.current
@@ -258,7 +303,7 @@ export function ChatInput({
         case 'Escape':
           e.preventDefault()
           closeHistory()
-          if (isRunning) stopGeneration()
+          if (isRunning && sessionId) stopGeneration(sessionId)
           return
         case 'ArrowUp':
           e.preventDefault()
@@ -387,7 +432,7 @@ export function ChatInput({
       }
       if (slashResult?.commandId) {
         // Fetch command, resolve params, send as message
-        allCommands.fetchCommand(slashResult.commandId).then((full) => {
+        allCommands.fetchCommand(slashResult.commandId, workdir).then((full) => {
           if (full) {
             // Map positional args to named params by order of appearance in the prompt
             const paramNames = extractTemplateParams(full.prompt)
@@ -422,49 +467,35 @@ export function ChatInput({
       // Files get a trailing space (closes the popup); directories get a trailing
       // slash so the query continues and the popup refetches the dir's contents.
       const suffix = isDirectory ? '/' : ' '
-      const beforeCursor = input.slice(0, startIndex)
-      const afterCursor = input.slice(cursorPosRef.current)
-      const newText = `${beforeCursor}@${suggestion.path}${suffix}${afterCursor}`
+      const { newText, newCursorPos } = insertSuggestionAtCursor(
+        input,
+        cursorPosRef.current,
+        startIndex,
+        `@${suggestion.path}${suffix}`,
+      )
       setInput(newText)
-      const newCursorPos = startIndex + suggestion.path.length + 2
       cursorPosRef.current = newCursorPos
-      if (textareaRef.current) {
-        textareaRef.current.selectionStart = newCursorPos
-        textareaRef.current.selectionEnd = newCursorPos
-        textareaRef.current.focus()
-      }
+      focusTextareaAt(textareaRef.current, newCursorPos)
     },
     [input, setInput],
   )
 
   const handleSelectSlash = useCallback(
     (suggestion: SlashSuggestion, startIndex: number) => {
-      const beforeCursor = input.slice(0, startIndex)
-      const afterCursor = input.slice(cursorPosRef.current)
-      const newText = `${beforeCursor}/${suggestion.id} ${afterCursor}`
+      const { newText, newCursorPos } = insertSuggestionAtCursor(
+        input,
+        cursorPosRef.current,
+        startIndex,
+        `/${suggestion.id} `,
+      )
       setInput(newText)
-      const newCursorPos = startIndex + suggestion.id.length + 2
       cursorPosRef.current = newCursorPos
-      if (textareaRef.current) {
-        textareaRef.current.selectionStart = newCursorPos
-        textareaRef.current.selectionEnd = newCursorPos
-        textareaRef.current.focus()
-      }
-      // Set inline param hints
+      focusTextareaAt(textareaRef.current, newCursorPos)
+      // Set inline param hints (same resolution as the task editor)
       if (suggestion.type === 'workflow') {
         selectedSlashScopeRef.current = { id: suggestion.id, scope: suggestion.scope }
-        const wf = selectAllWorkflows(useWorkflowsStore.getState()).find(
-          (w) => w.id === suggestion.id && w.scope === suggestion.scope,
-        )
-        setActiveSlashParams((wf?.parameters ?? []).map((p) => p.id))
-      } else {
-        // Use paramNames from the command list (server-computed from prompt)
-        const allCmds = useCommandsStore.getState()
-        const cmd = dedupById(dedupById(allCmds.defaults, allCmds.userItems), allCmds.projectItems).find(
-          (c) => c.id === suggestion.id,
-        )
-        setActiveSlashParams(cmd?.paramNames ?? [])
       }
+      setActiveSlashParams(resolveSlashParamIds(suggestion))
     },
     [input, setInput],
   )
@@ -512,12 +543,12 @@ export function ChatInput({
   return (
     <div className="relative">
       {isRunning && (
-        <div className="absolute -top-8 left-2 md:left-4 z-10">
+        <div className="absolute -top-8 left-2 @md:left-4 z-10">
           <RunningIndicator />
         </div>
       )}
       <div
-        className={`absolute -top-8 right-2 md:right-4 z-10 flex items-center gap-2 border${!isAutoScrollActive ? ' rounded backdrop-blur-xl saturate-150 border-border' : ' border-transparent'}`}
+        className={`absolute -top-8 right-2 @md:right-4 z-10 flex items-center gap-2 border${!isAutoScrollActive ? ' rounded backdrop-blur-xl saturate-150 border-border' : ' border-transparent'}`}
       >
         <AutoScrollToggle
           isActive={isAutoScrollActive}
@@ -537,7 +568,7 @@ export function ChatInput({
 
       <WorkflowBar />
 
-      <form onSubmit={handleSubmit} className="p-2 md:p-4 bg-secondary rounded-lg">
+      <form onSubmit={handleSubmit} className="p-2 @md:p-4 bg-secondary rounded-lg">
         <input
           ref={fileInputRef}
           type="file"
@@ -577,7 +608,10 @@ export function ChatInput({
           />
         )}
 
-        <QueuedMessages messages={queuedMessages} onCancel={cancelQueued} />
+        <QueuedMessages
+          messages={queuedMessages}
+          onCancel={(queueId) => sessionId && cancelQueued(sessionId, queueId)}
+        />
 
         <div
           className={`flex items-end gap-3 p-3 rounded transition-colors ${
@@ -599,7 +633,7 @@ export function ChatInput({
               placeholder="What would you like to build?"
               data-testid="chat-input-textarea"
               className="w-full bg-transparent text-sm placeholder:text-text-muted resize-none overflow-y-auto focus:outline-none"
-              style={{ minHeight: '24px', maxHeight: '200px' }}
+              style={{ minHeight: `${COMPOSER_MIN_HEIGHT}px`, maxHeight: `${COMPOSER_MAX_HEIGHT}px` }}
               spellCheck={false}
             />
             <AtMentionAutocomplete
@@ -642,7 +676,7 @@ export function ChatInput({
             {isRunning && (
               <button
                 type="button"
-                onClick={() => stopGeneration()}
+                onClick={() => sessionId && stopGeneration(sessionId)}
                 data-testid="chat-stop-button"
                 className="flex items-center gap-1 px-4 py-1.5 rounded bg-accent-error/20 text-sm text-accent-error font-medium hover:bg-accent-error/30 transition-colors whitespace-nowrap"
               >

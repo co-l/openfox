@@ -89,6 +89,7 @@ export function updateProject(
     name?: string
     customInstructions?: string | null
     dangerLevel?: DangerLevel | null
+    defaultAgent?: string | null
     workspaceRootDir?: string | null
     mcpOverrides?: Record<string, { disabled?: boolean; disabledTools?: string[] }> | null
   },
@@ -112,6 +113,11 @@ export function updateProject(
   if (updates.dangerLevel !== undefined) {
     sets.push('danger_level = ?')
     values.push(updates.dangerLevel)
+  }
+
+  if (updates.defaultAgent !== undefined) {
+    sets.push('default_agent = ?')
+    values.push(updates.defaultAgent)
   }
 
   if (updates.workspaceRootDir !== undefined) {
@@ -154,6 +160,17 @@ export function toggleStar(id: string, isStarred: boolean): Project | null {
   return getProject(id)
 }
 
+export function getProjectDefaultAgent(projectId: string): string | null {
+  try {
+    const db = getDatabase()
+    const row = db.prepare('SELECT default_agent FROM projects WHERE id = ?').get(projectId) as
+      { default_agent: string | null } | undefined
+    return row?.default_agent ?? null
+  } catch {
+    return null
+  }
+}
+
 // ============================================================================
 // Row Types
 // ============================================================================
@@ -164,6 +181,7 @@ interface ProjectRow {
   workdir: string
   custom_instructions: string | null
   danger_level: string | null
+  default_agent: string | null
   is_starred: number
   workspace_root_dir: string | null
   mcp_overrides: string | null
@@ -178,6 +196,7 @@ function rowToProject(row: ProjectRow): Project {
     workdir: row.workdir,
     ...(row.custom_instructions ? { customInstructions: row.custom_instructions } : {}),
     ...(row.danger_level ? { dangerLevel: row.danger_level as DangerLevel } : {}),
+    ...(row.default_agent ? { defaultAgent: row.default_agent } : {}),
     isStarred: !!row.is_starred,
     ...(row.workspace_root_dir ? { workspaceRootDir: row.workspace_root_dir } : {}),
     ...(row.mcp_overrides

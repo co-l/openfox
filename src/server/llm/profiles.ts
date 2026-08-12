@@ -24,7 +24,7 @@ const DEFAULT_PROFILE: ModelProfile = {
   name: 'default',
   temperature: 0.7,
   topP: 0.9,
-  defaultMaxTokens: 4096,
+  defaultMaxTokens: 16384,
   supportsVision: true,
 }
 

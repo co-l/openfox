@@ -17,6 +17,7 @@ import { logger } from '../utils/logger.js'
 import { getRuntimeConfig } from '../runtime-config.js'
 import { getGlobalConfigDir } from '../../cli/paths.js'
 import { getSetting, SETTINGS_KEYS } from '../db/settings.js'
+import { getProjectDefaultAgent } from '../db/projects.js'
 
 const __bundleDir = dirname(fileURLToPath(import.meta.url))
 const DEFAULTS_DIR = join(__bundleDir, 'defaults')
@@ -148,11 +149,11 @@ export async function deleteProjectAgent(
   return { success: false }
 }
 
-export async function loadAllAgentsDefault(): Promise<AgentDefinition[]> {
+export async function loadAllAgentsDefault(projectDir?: string): Promise<AgentDefinition[]> {
   try {
     const config = getRuntimeConfig()
     const configDir = getGlobalConfigDir(config.mode ?? 'production')
-    return await loadAllAgents(configDir, config.workdir)
+    return await loadAllAgents(configDir, projectDir ?? config.workdir)
   } catch {
     return loadDefaultAgents()
   }
@@ -259,13 +260,28 @@ export async function getOverrideAgentIds(configDir: string, projectDir?: string
  * Resolve the default agent ID for new sessions.
  *
  * Resolution chain:
- * 1. DB setting (`agent.defaultAgent`) — runtime override via settings UI
- * 2. Global config file (`defaultAgent`) — persistent config
- * 3. Environment variable (`OPENFOX_DEFAULT_AGENT`) — env override
+ * 1. Project default (`projects.default_agent`) — project-scoped override via project settings
+ * 2. DB setting (`agent.defaultAgent`) — global runtime override via settings UI
+ * 3. Global config file (`defaultAgent`) / environment variable (`OPENFOX_DEFAULT_AGENT`) —
+ *    persistent config, with the env var folded in at config load time
  * 4. Fallback to `'planner'`
  */
-export function resolveDefaultAgentId(): string {
-  // 1. Check DB setting first (runtime override from settings UI)
+export function resolveDefaultAgentId(projectId?: string): string {
+  // 1. Check project-scoped default first (project settings UI)
+  if (projectId) {
+    try {
+      const projectDefault = getProjectDefaultAgent(projectId)
+      if (projectDefault && projectDefault.trim().length > 0) {
+        return projectDefault.trim()
+      }
+    } catch (err) {
+      logger.debug('Failed to read project defaultAgent from DB', {
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+
+  // 2. Check DB setting (global runtime override from settings UI)
   try {
     const dbSetting = getSetting(SETTINGS_KEYS.DEFAULT_AGENT)
     if (dbSetting && dbSetting.trim().length > 0) {
@@ -277,7 +293,7 @@ export function resolveDefaultAgentId(): string {
     })
   }
 
-  // 2. Check runtime config (from config file or env var)
+  // 3. Check runtime config (from config file or env var)
   try {
     const config = getRuntimeConfig()
     if (config.defaultAgent && config.defaultAgent.trim().length > 0) {
@@ -287,6 +303,6 @@ export function resolveDefaultAgentId(): string {
     // Config might not be loaded yet
   }
 
-  // 3. Fallback to 'planner'
+  // 4. Fallback to 'planner'
   return 'planner'
 }

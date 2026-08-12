@@ -90,6 +90,27 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   // Initialize event store
   initEventStore(db)
 
+  // Deferred broadcast for the project-tasks service. The tasks router must be
+  // mounted before the Vite middleware (dev mode), but the WebSocket server
+  // isn't created until later — this indirection bridges the gap.
+  let deferTasksBroadcast: (
+    projectId: string,
+    payload: import('../shared/protocol.js').TasksUpdatePayload,
+  ) => void = () => {}
+
+  // Deferred workflow launcher for slash-workflow tasks. Same rationale: the
+  // launcher needs the WebSocket broadcaster + LLM client, which only exist
+  // after createWebSocketServer below.
+  let deferTasksLaunchWorkflow: (
+    sessionId: string,
+    launch: {
+      workflowId: string
+      params?: Record<string, string>
+      scope?: import('../shared/types.js').WorkflowLaunchScope
+      attachments?: import('../shared/types.js').Attachment[]
+    },
+  ) => void = () => {}
+
   // Get config directory for loading user items
   const configDir = getGlobalConfigDir(config.mode ?? 'production')
 
@@ -252,7 +273,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   })
 
   // Changelog (public)
-  app.get('/api/changelog', async (_req, res) => {
+  app.get('/api/changelog', async (req, res) => {
     try {
       const fs = await import('node:fs')
       const path = await import('node:path')
@@ -263,7 +284,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         changelogPath = path.resolve(dirname, '../../CHANGELOG.md')
       }
       const content = fs.readFileSync(changelogPath, 'utf-8')
-      res.json({ content })
+      const since = typeof req.query['since'] === 'string' ? req.query['since'] : undefined
+      const { trimChangelog } = await import('./utils/changelog.js')
+      res.json({ content: since ? trimChangelog(content, since) : content })
     } catch {
       res.json({ content: '# Changelog\n\nUnable to load changelog.' })
     }
@@ -404,12 +427,17 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   app.put('/api/projects/:id', async (req, res) => {
     const { updateProject } = await import('./db/projects.js')
-    const { name, customInstructions, dangerLevel } = req.body
-    const updates: { name?: string; customInstructions?: string | null; dangerLevel?: 'normal' | 'dangerous' | null } =
-      {}
+    const { name, customInstructions, dangerLevel, defaultAgent } = req.body
+    const updates: {
+      name?: string
+      customInstructions?: string | null
+      dangerLevel?: 'normal' | 'dangerous' | null
+      defaultAgent?: string | null
+    } = {}
     if (name !== undefined) updates.name = name
     if (customInstructions !== undefined) updates.customInstructions = customInstructions
     if (dangerLevel !== undefined) updates.dangerLevel = dangerLevel as 'normal' | 'dangerous' | null
+    if (defaultAgent !== undefined) updates.defaultAgent = defaultAgent as string | null
     const updated = updateProject(req.params.id, updates)
     if (!updated) {
       return res.status(404).json({ error: 'Project not found' })
@@ -443,6 +471,27 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   const sessionFavoriteRouter = express.Router()
   registerSessionFavoriteRoute(sessionFavoriteRouter, sessionManager)
   app.use('/api', sessionFavoriteRouter)
+
+  // Project tasks: domain service + REST routes + agent tool wiring.
+  //
+  // NOTE: this router MUST be mounted before the Vite middleware (dev mode),
+  // which otherwise swallows unmatched /api paths. The broadcast and workflow
+  // launcher targets are deferred because the WebSocket server (wssExports) is
+  // created later in this function — see the assignments below.
+  const { createTasksService } = await import('./tasks/service.js')
+  const { registerTaskRoutes } = await import('./routes/tasks.js')
+  const { setTasksService } = await import('./tools/index.js')
+  const tasksService = createTasksService({
+    sessionManager,
+    config,
+    broadcast: (projectId, payload) => deferTasksBroadcast(projectId, payload),
+    configDir,
+    launchWorkflow: (sessionId, launch) => deferTasksLaunchWorkflow(sessionId, launch),
+  })
+  setTasksService(tasksService)
+  const tasksRouter = express.Router()
+  registerTaskRoutes(tasksRouter, tasksService)
+  app.use('/api', tasksRouter)
 
   // Branch management endpoints (project-scoped, repo operations)
 
@@ -872,7 +921,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const queueState = sessionManager.getQueueState(req.params.id)
     const pendingQuestions = getPendingQuestionsForSession(req.params.id)
     const pendingConfirmations = foldPendingConfirmations(events)
-    const activeWorkflowExecution = sessionManager.getActiveWorkflowExecution(req.params.id)
+    const activeWorkflowExecution = sessionManager.getDisplayWorkflowExecution(req.params.id)
 
     res.json({
       session: toClientSession(session!),
@@ -1096,7 +1145,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     if (!mode) {
       return res.status(400).json({ error: 'mode is required' })
     }
-    const allAgents = await loadAllAgentsDefault()
+    const allAgents = await loadAllAgentsDefault(sessionManager.getProjectWorkdir(sessionId))
     const topLevelIds = getTopLevelAgents(allAgents).map((a) => a.metadata.id)
     if (!topLevelIds.includes(mode)) {
       return res.status(400).json({ error: `Invalid mode. Must be one of: ${topLevelIds.join(', ')}` })
@@ -1251,6 +1300,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         undefined,
         undefined,
         hiddenCount,
+        sessionManager.getDisplayWorkflowExecution(sessionId) ?? undefined,
       )
       wssExports.broadcastForSession(sessionId, { ...stateMsg, sessionId })
     }
@@ -3164,6 +3214,47 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   )
   const wss = wssExports.wss
 
+  // Point the tasks service at the live WebSocket broadcaster now that it exists.
+  deferTasksBroadcast = (projectId, payload) =>
+    wssExports.broadcastForProject(projectId, '', { type: 'tasks.update', payload })
+
+  // Point the tasks service at the workflow launcher. Task-seeded workflows run
+  // through the same shared launcher as runner.launch (src/server/runner/launch.ts).
+  const { launchWorkflowRun, abortRunnerRun } = await import('./runner/launch.js')
+  deferTasksLaunchWorkflow = (sessionId, launch) => {
+    // Honor the session's pinned provider/model (set from the task at seed time)
+    // exactly like the WS session-aware client path — never force the global model.
+    const session = sessionManager.getSession(sessionId)
+    let llmClient = getLLMClient()
+    if (session?.providerId && session.providerModel) {
+      const resolvedModel = providerManager.resolveModel(session.providerId, session.providerModel)
+      llmClient = getLLMClientForProvider(session.providerId, resolvedModel ?? session.providerModel) ?? getLLMClient()
+    }
+    const provider = providerManager.getActiveProvider()
+    const controller = new AbortController()
+    launchWorkflowRun(
+      {
+        sessionManager,
+        sessionId,
+        controller,
+        llmClient,
+        statsIdentity: {
+          providerId: provider?.id ?? `provider:${llmClient.getModel()}`,
+          providerName: provider?.name ?? 'Unknown Provider',
+          backend: provider?.backend ?? llmClient.getBackend(),
+          model: llmClient.getModel(),
+        },
+        broadcastForSession: wssExports.broadcastForSession,
+      },
+      {
+        workflowId: launch.workflowId,
+        ...(launch.params && Object.keys(launch.params).length > 0 ? { params: launch.params } : {}),
+        ...(launch.scope ? { scope: launch.scope } : {}),
+        ...(launch.attachments && launch.attachments.length > 0 ? { attachments: launch.attachments } : {}),
+      },
+    )
+  }
+
   // Wire MCP config tool to broadcast changes to all connected UIs
   setNotifyMcpServersChanged((sessionId: string) => {
     const servers = mcpManager.getAllServers()
@@ -3187,7 +3278,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   const abortSession = (sessionId: string) => {
     const wsAborted = wssExports.abortSession(sessionId)
     const qpAborted = queueProcessor.abortSession(sessionId)
-    const aborted = wsAborted || qpAborted
+    const taskAborted = abortRunnerRun(sessionId)
+    const aborted = wsAborted || qpAborted || taskAborted
     if (aborted) {
       sessionManager.setRunning(sessionId, false)
       wssExports.broadcastForSession(sessionId, { type: 'session.running', payload: { isRunning: false } })

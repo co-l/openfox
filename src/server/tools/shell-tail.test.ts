@@ -16,11 +16,8 @@ describe('stripTailPipe', () => {
     })
   })
 
-  it('strips | tail -N with cd prefix', () => {
-    expect(stripTailPipe('cd /home/user/proj && npm test 2>&1 | tail -30')).toEqual({
-      command: 'cd /home/user/proj && npm test 2>&1',
-      tailLines: 30,
-    })
+  it('returns null when && precedes the tail (cd prefix)', () => {
+    expect(stripTailPipe('cd /home/user/proj && npm test 2>&1 | tail -30')).toBeNull()
   })
 
   it('strips tail from multi-pipe command', () => {
@@ -52,6 +49,22 @@ describe('stripTailPipe', () => {
 
   it('returns null when || follows the tail', () => {
     expect(stripTailPipe('cmd 2>&1 | tail -10 || echo "failed"')).toBeNull()
+  })
+
+  it('returns null for &&-chained commands where each segment has its own tail', () => {
+    expect(stripTailPipe('cmd1 | tail -3 && cmd2 | tail -2')).toBeNull()
+  })
+
+  it('returns null for a chained verify command ending in | tail', () => {
+    expect(
+      stripTailPipe(
+        'npm run typecheck 2>&1 | tail -4 && npm run lint 2>&1 | tail -3 && npx prettier --check src/server/db/tasks.ts src/server/tasks/service.test.ts 2>&1 | tail -3',
+      ),
+    ).toBeNull()
+  })
+
+  it('returns null when || precedes the tail', () => {
+    expect(stripTailPipe('fallback_cmd || primary_cmd 2>&1 | tail -10')).toBeNull()
   })
 
   it('returns null when ; follows the tail', () => {

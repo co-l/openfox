@@ -19,6 +19,7 @@ allowedTools:
   - background_process
   - mcp_config
   - workspace
+  - project_tasks
 ---
 
 # Build Mode

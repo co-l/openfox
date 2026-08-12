@@ -22,6 +22,22 @@ vi.mock('../utils/session-utils.js', () => ({
   getSessionMessageCount: vi.fn(() => 1),
 }))
 
+vi.mock('../db/sessions.js', () => ({
+  updateSessionMetadata: vi.fn(),
+}))
+
+vi.mock('../db/settings.js', () => ({
+  getMaxVisibleItems: vi.fn(() => 100),
+}))
+
+vi.mock('../tools/index.js', () => ({
+  getPendingQuestionsForSession: vi.fn(() => []),
+}))
+
+vi.mock('../events/index.js', () => ({
+  combineEventsWithSnapshot: vi.fn((_id: string, _snapshot: unknown, eventsSince: unknown[]) => eventsSince ?? []),
+}))
+
 describe('Session Name Generator', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -341,6 +357,63 @@ describe('Session Name Generator', () => {
 
       expect(broadcastForSession).not.toHaveBeenCalled()
       expect(eventStore.append).not.toHaveBeenCalled()
+    })
+
+    it('includes the active workflow execution in the session.state broadcast so a paused user step is never wiped', async () => {
+      const { getRuntimeConfig } = await import('../runtime-config.js')
+      ;(getRuntimeConfig as any).mockReturnValue({ disableAutoSessionTitle: false })
+
+      const waitingExec = {
+        id: 'exec-1',
+        sessionId: 'test-session',
+        workflowId: 'default',
+        workflowName: 'Build & Verify',
+        status: 'waiting',
+        currentStepId: 'choose-workspace',
+        currentStepName: 'Choose workspace',
+        stepOutput: {},
+        params: {},
+        pendingChoices: [{ id: 'yes', label: 'Yes', goto: '' }],
+      }
+      const session = {
+        id: 'test-session',
+        messages: [],
+        metadata: { title: 'Session 1' },
+      } as unknown as Session
+      const sessionManager = {
+        getSession: vi.fn().mockReturnValue(session),
+        getDisplayWorkflowExecution: vi.fn().mockReturnValue(waitingExec),
+      }
+      const client = {
+        complete: vi.fn().mockResolvedValue({
+          id: 'test-id',
+          content: 'Nice title',
+          finishReason: 'stop',
+          usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+        }),
+      }
+      const broadcastForSession = vi.fn()
+      const eventStore = {
+        getEventsSinceSnapshot: vi.fn().mockReturnValue({ snapshot: undefined, events: [] }),
+        append: vi.fn(),
+      }
+
+      await generateSessionNameForSession('test-session', 'Hello', {
+        sessionManager: sessionManager as any,
+        providerManager: {
+          getProviders: vi.fn().mockReturnValue([]),
+          getCurrentModel: vi.fn().mockReturnValue(null),
+        } as any,
+        broadcastForSession,
+        eventStore: eventStore as any,
+        getLLMClient: () => client as any,
+      })
+
+      const stateMsg = broadcastForSession.mock.calls
+        .map((c: any[]) => c[1])
+        .find((m: any) => m?.type === 'session.state')
+      expect(stateMsg).toBeDefined()
+      expect(stateMsg.payload.activeWorkflowExecution).toEqual(waitingExec)
     })
 
     it('uses the session provider client instead of mutating the active provider client', async () => {

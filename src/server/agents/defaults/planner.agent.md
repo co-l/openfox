@@ -17,6 +17,7 @@ allowedTools:
   - mcp_config
   - dev_server
   - workspace
+  - project_tasks
 ---
 
 # Plan Mode

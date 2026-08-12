@@ -5,7 +5,7 @@ import { CloseButton } from './IconButton'
 
 interface ModalProps {
   label?: ReactNode
-  title?: string
+  title?: ReactNode
   headerRight?: ReactNode
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'full'
   minHeight?: string
@@ -99,9 +99,9 @@ export function Modal({
                   className={`relative w-full ${sizeClasses[size]} max-h-[90vh] bg-bg-secondary border border-border rounded shadow-xl flex flex-col`}
                 >
                   {(title || headerRight || showCloseButton) && (
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 border-b border-border">
                       {title && <h2 className="text-lg font-semibold text-text-primary">{title}</h2>}
-                      <div className="flex items-center gap-2 ml-auto">
+                      <div className="flex items-center gap-2 ml-auto w-full sm:w-auto min-w-0">
                         {headerRight}
                         {showCloseButton && <CloseButton onClick={close} aria-label="Close" />}
                       </div>

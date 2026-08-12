@@ -71,6 +71,21 @@ describe('db projects', () => {
     expect(listProjects()).toHaveLength(1)
   })
 
+  it('sets and clears the project default agent', () => {
+    const project = createProject('Agent Default', workdirA)
+    expect(project.defaultAgent).toBeUndefined()
+
+    const withAgent = updateProject(project.id, { defaultAgent: 'builder' })
+    expect(withAgent).toMatchObject({ id: project.id, defaultAgent: 'builder' })
+    expect(getProject(project.id)?.defaultAgent).toBe('builder')
+    expect(listProjects()[0]?.defaultAgent).toBe('builder')
+
+    const cleared = updateProject(project.id, { defaultAgent: null })
+    expect(cleared).toMatchObject({ id: project.id })
+    expect(cleared && 'defaultAgent' in cleared).toBe(false)
+    expect(getProject(project.id)?.defaultAgent).toBeUndefined()
+  })
+
   it('returns existing project when creating with duplicate workdir', () => {
     const original = createProject('Original', workdirA)
     const duplicate = createProject('Duplicate', workdirA)

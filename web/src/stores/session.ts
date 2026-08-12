@@ -1,9 +1,10 @@
 export { useSessionStore } from './session/store'
-export type { SessionState, PendingPathConfirmation, PendingQuestion } from './session/types'
+export type { SessionState, SessionPane, PendingPathConfirmation, PendingQuestion } from './session/types'
 export {
   useIsRunning,
   useQueuedMessages,
   useAbortInProgress,
+  usePendingQuestions,
   useVisionFallbackItems,
   useVisionFallbackForMessage,
 } from './session/hooks'

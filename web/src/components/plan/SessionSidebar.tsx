@@ -2,9 +2,9 @@ import { ScrollArea } from '../shared/ScrollArea'
 import { useState } from 'react'
 import { useSessionStats } from '../../hooks/useSessionStats'
 import { useGitStatus } from '../../hooks/useGitStatus'
+import { useScopedContext } from '../../stores/session/session-scope'
 import { useConfigStore } from '../../stores/config'
 import { useSettingsStore, SETTINGS_KEYS } from '../../stores/settings'
-import { useSessionStore } from '../../stores/session'
 import { useUpdateStore } from '../../stores/update'
 import { authFetch } from '../../lib/api'
 import { pathBasename } from '../../lib/path'
@@ -35,7 +35,7 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
   const stats = useSessionStats(messages)
   const { branch } = useGitStatus()
   const version = useConfigStore((state) => state.version)
-  const session = useSessionStore((state) => state.currentSession)
+  const { currentSession: session } = useScopedContext()
 
   const workspaceName = pathBasename(session?.workspace ?? '') || null
 

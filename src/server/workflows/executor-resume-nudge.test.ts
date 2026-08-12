@@ -27,7 +27,12 @@ const { mockRunAgentTurn } = vi.hoisted(() => ({ mockRunAgentTurn: vi.fn() }))
 // ============================================================================
 
 vi.mock('../events/index.js', () => ({
-  getEventStore: () => ({ append: mockAppend }),
+  getEventStore: () => ({
+    append: mockAppend,
+    getLatestSeq: vi.fn(() => 0),
+    getEvents: vi.fn(() => []),
+    deleteEventsAfterSeq: vi.fn(),
+  }),
   getCurrentContextWindowId: vi.fn(() => undefined),
 }))
 
@@ -117,6 +122,7 @@ function createMockOptions(extra?: Partial<OrchestratorOptions>): OrchestratorOp
       setMode: vi.fn(),
       setPhase: vi.fn(),
       getEffectiveWorkdir: vi.fn().mockReturnValue('/tmp/test'),
+      getProjectWorkdir: vi.fn().mockReturnValue('/tmp/test'),
       addMessage: vi.fn(),
       startWorkflow: vi.fn(),
       updateWorkflowStep: vi.fn(),

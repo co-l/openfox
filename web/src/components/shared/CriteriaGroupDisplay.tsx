@@ -1,4 +1,5 @@
 import { memo } from 'react'
+import type { ReactNode } from 'react'
 import type { ToolCall, MetadataEntry } from '@shared/types.js'
 import { Markdown } from './Markdown'
 import { MetadataStatusIcon } from './MetadataStatusIcon'
@@ -9,23 +10,29 @@ interface CriteriaGroupDisplayProps {
   criteria?: MetadataEntry[] // For looking up criterion descriptions by ID
 }
 
-type CriterionAction = 'add' | 'update' | 'remove' | 'complete' | 'pass' | 'fail' | 'get' | 'list' | 'schema'
+type CriterionMutation = 'add' | 'update' | 'remove' | 'complete' | 'pass' | 'fail'
 
-const actionConfig: Record<CriterionAction, { icon: string; color: string }> = {
+const actionConfig: Record<CriterionMutation, { icon: string; color: string }> = {
   add: { icon: '○', color: 'text-text-muted' },
   update: { icon: '○', color: 'text-text-muted' },
   remove: { icon: '○', color: 'text-text-muted' },
   complete: { icon: '◉', color: 'text-purple-400' },
   pass: { icon: '✓', color: 'text-accent-success' },
   fail: { icon: '✗', color: 'text-accent-error' },
-  get: { icon: '○', color: 'text-text-muted' },
-  list: { icon: '○', color: 'text-text-muted' },
-  schema: { icon: '○', color: 'text-text-muted' },
 }
+
+// Actions that read metadata instead of mutating an item. Their result output
+// is rendered directly rather than forced into an item row.
+const READ_ACTIONS = new Set(['get', 'list', 'schema'])
 
 interface DisplayCriterion {
   id: string
   description: string
+}
+
+interface DisplayRow {
+  key: string
+  node: ReactNode
 }
 
 export const CriteriaGroupDisplay = memo(function CriteriaGroupDisplay({
@@ -37,9 +44,12 @@ export const CriteriaGroupDisplay = memo(function CriteriaGroupDisplay({
   // Build a map for fast criterion lookup by ID
   const criteriaMap = new Map(criteria?.map((c) => [c.id, c]) ?? [])
 
-  const getAction = toolCalls.find((tc) => tc.arguments['action'] === 'get' && tc.result?.success && tc.result?.output)
-
   const isSessionMetadata = toolCalls.some((tc) => tc.name === 'session_metadata')
+
+  // Expand each tool call into one or more display rows, preserving order
+  const rows = toolCalls.flatMap((tc) =>
+    READ_ACTIONS.has(String(tc.arguments['action'])) ? readRows(tc) : [itemRow(tc, criteriaMap)],
+  )
 
   const headerTitle = (() => {
     if (!isSessionMetadata) return 'Acceptance Criteria'
@@ -60,52 +70,110 @@ export const CriteriaGroupDisplay = memo(function CriteriaGroupDisplay({
 
       {/* Criteria list */}
       <div className="bg-primary">
-        {getAction
-          ? (() => {
-              const output = getAction.result!.output!
-              if (output === 'No criteria defined yet.') {
-                return (
-                  <div className="flex items-start gap-2 px-2 py-1.5">
-                    <span className="text-text-muted text-sm leading-tight flex-shrink-0">○</span>
-                    <div className="flex-1 min-w-0 text-text-muted text-sm">No criteria defined yet.</div>
-                  </div>
-                )
-              }
-              try {
-                const resultCriteria: DisplayCriterion[] = JSON.parse(output)
-                return resultCriteria.map((c, idx) => (
-                  <div
-                    key={c.id ?? idx}
-                    className={`flex items-start gap-2 px-2 py-1.5 ${idx > 0 ? 'border-t border-border' : ''}`}
-                  >
-                    <span className="text-text-muted text-sm leading-tight flex-shrink-0">○</span>
-                    <div className="flex-1 min-w-0">
-                      <Markdown content={`[${c.id}] ${c.description}`} />
-                    </div>
-                  </div>
-                ))
-              } catch {
-                return toolCalls.map((tc, index) => (
-                  <SingleCriterionRow key={tc.id ?? index} tc={tc} index={index} criteriaMap={criteriaMap} />
-                ))
-              }
-            })()
-          : toolCalls.map((tc, index) => (
-              <SingleCriterionRow key={tc.id ?? index} tc={tc} index={index} criteriaMap={criteriaMap} />
-            ))}
+        {rows.map((row, index) => (
+          <div
+            key={row.key}
+            className={`flex items-start gap-2 px-2 py-1.5 ${index > 0 ? 'border-t border-border' : ''}`}
+          >
+            {row.node}
+          </div>
+        ))}
       </div>
     </div>
   )
 })
 
+function itemRow(tc: ToolCall, criteriaMap: Map<string, MetadataEntry>): DisplayRow {
+  return {
+    key: tc.id,
+    node: <SingleCriterionRow tc={tc} criteriaMap={criteriaMap} />,
+  }
+}
+
+// Expand a read-style session_metadata call (get/list/schema) into display
+// rows. Result output is shown directly instead of being shoehorned into an
+// item row; failed or output-less reads still leave a trace.
+function readRows(tc: ToolCall): DisplayRow[] {
+  const output = tc.result?.output
+
+  if (tc.result && !tc.result.success) {
+    return [
+      {
+        key: `${tc.id}-error`,
+        node: <span className="text-text-muted text-sm">{tc.result.error ?? 'Read failed.'}</span>,
+      },
+    ]
+  }
+
+  if (!tc.result?.success || !output) {
+    return [
+      {
+        key: `${tc.id}-empty`,
+        node: <span className="text-text-muted text-sm">No output.</span>,
+      },
+    ]
+  }
+
+  if (tc.arguments['action'] === 'get') {
+    try {
+      const parsed: unknown = JSON.parse(output)
+      if (Array.isArray(parsed)) {
+        return parsed.map((entry, idx) => ({
+          key: `${tc.id}-${idx}`,
+          node: (
+            <>
+              <span className="text-text-muted text-sm leading-tight flex-shrink-0">○</span>
+              <div className="flex-1 min-w-0">
+                <Markdown content={`[${(entry as DisplayCriterion).id}] ${(entry as DisplayCriterion).description}`} />
+              </div>
+            </>
+          ),
+        }))
+      }
+    } catch {
+      // Not JSON — fall through to raw output below
+    }
+  }
+
+  if (tc.arguments['action'] === 'schema') {
+    const key = tc.arguments['key'] as string | undefined
+    return [
+      {
+        key: tc.id,
+        node: (
+          <>
+            <span className="text-accent-success text-sm leading-tight flex-shrink-0">✓</span>
+            <div className="flex-1 min-w-0 text-sm">
+              {key ? `Schema loaded for '${key}' metadata` : 'Schema loaded.'}
+            </div>
+          </>
+        ),
+      },
+    ]
+  }
+
+  return [
+    {
+      key: tc.id,
+      node: (
+        <>
+          <span className="text-text-muted text-sm leading-tight flex-shrink-0">○</span>
+          <div className="flex-1 min-w-0">
+            <Markdown content={output} />
+          </div>
+        </>
+      ),
+    },
+  ]
+}
+
 interface SingleCriterionRowProps {
   tc: ToolCall
-  index: number
   criteriaMap: Map<string, MetadataEntry>
 }
 
-function SingleCriterionRow({ tc, index, criteriaMap }: SingleCriterionRowProps) {
-  const action = tc.arguments['action'] as CriterionAction | undefined
+function SingleCriterionRow({ tc, criteriaMap }: SingleCriterionRowProps) {
+  const action = tc.arguments['action'] as CriterionMutation | undefined
   const args = tc.arguments
 
   const isSessionMetadata = tc.name === 'session_metadata'
@@ -113,16 +181,24 @@ function SingleCriterionRow({ tc, index, criteriaMap }: SingleCriterionRowProps)
   const criterionId = args['id'] as string | undefined
   const argDescription = args['description'] as string | undefined
   const lookedUpCriterion = criterionId ? criteriaMap.get(criterionId) : undefined
+
+  const actionPastTense: Partial<Record<CriterionMutation, string>> = {
+    add: 'Added',
+    update: 'Updated',
+    remove: 'Removed',
+    complete: 'Completed',
+    pass: 'Passed',
+    fail: 'Failed',
+  }
+  const fallback = isSessionMetadata ? `${(action && actionPastTense[action]) ?? 'Managed'} item` : 'Criterion updated'
   const displayText =
-    argDescription ??
-    lookedUpCriterion?.description ??
-    (isRemoved && criterionId ? `[${criterionId}]` : 'Criterion updated')
+    argDescription ?? lookedUpCriterion?.description ?? (isRemoved && criterionId ? `[${criterionId}]` : fallback)
 
   const reason = args['reason'] as string | undefined
   const isFailed = action === 'fail'
 
   return (
-    <div className={`flex items-start gap-2 px-2 py-1.5 ${index > 0 ? 'border-t border-border' : ''}`}>
+    <>
       {isSessionMetadata ? (
         <MetadataStatusIcon status={args['status'] as string} className="text-sm leading-tight flex-shrink-0" />
       ) : (
@@ -143,7 +219,7 @@ function SingleCriterionRow({ tc, index, criteriaMap }: SingleCriterionRowProps)
           </div>
         )}
       </div>
-    </div>
+    </>
   )
 }
 

@@ -51,6 +51,8 @@ function createSessionManager(state: any) {
     setCurrentContextSize: vi.fn(),
     addTokensUsed: vi.fn(),
     getLspManager: vi.fn(() => ({ name: 'lsp' })),
+    getEffectiveWorkdir: vi.fn(() => state['current']?.workspace ?? state['current']?.workdir ?? '/test'),
+    getProjectWorkdir: vi.fn(() => state['current']?.workdir ?? '/test'),
     setRunning: vi.fn(),
     updateExecutionState: vi.fn(),
     addMessage: vi.fn(),

@@ -1,15 +1,14 @@
 import { useState, useRef, useEffect } from 'react'
 import { useSessionStore } from '../../stores/session'
 import { XCloseIcon } from '../shared/icons'
-import { wsClient } from '../../lib/ws'
 import { DynamicContextPreviewModal } from './DynamicContextPreviewModal'
+import { useApplyDynamicContext, useScopedContext } from '../../stores/session/session-scope'
 
 export function SessionHeader() {
-  const contextState = useSessionStore((state) => state.contextState)
-  const currentSession = useSessionStore((state) => state.currentSession)
+  const { sessionId, contextState, currentSession } = useScopedContext()
   const pendingUpdate = useSessionStore((state) => state.pendingUpdate)
   const triggerPendingUpdate = useSessionStore((state) => state.triggerPendingUpdate)
-  const queueUpdate = useSessionStore((state) => state.queueUpdate)
+  const applyDynamicContext = useApplyDynamicContext()
 
   const [bannerDismissed, setBannerDismissed] = useState(false)
   const [showApplyModal, setShowApplyModal] = useState(false)
@@ -25,11 +24,11 @@ export function SessionHeader() {
 
   useEffect(() => {
     const isRunning = currentSession?.isRunning ?? false
-    if (prevIsRunning.current && !isRunning && pendingUpdate) {
+    if (prevIsRunning.current && !isRunning && pendingUpdate && pendingUpdate === sessionId) {
       triggerPendingUpdate()
     }
     prevIsRunning.current = isRunning
-  }, [currentSession?.isRunning, pendingUpdate, triggerPendingUpdate])
+  }, [currentSession?.isRunning, pendingUpdate, sessionId, triggerPendingUpdate])
 
   if (!contextState || !currentSession) {
     return null
@@ -39,11 +38,7 @@ export function SessionHeader() {
   const isRunning = currentSession.isRunning
 
   const handleApplyDynamic = () => {
-    if (isRunning) {
-      queueUpdate()
-    } else {
-      wsClient.send('context.applyDynamic', {})
-    }
+    applyDynamicContext(isRunning)
     setBannerDismissed(true)
     setShowApplyModal(false)
   }

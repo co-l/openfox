@@ -38,6 +38,7 @@ import {
   createWorkflowExecution,
   updateWorkflowExecutionStatus,
   getActiveWorkflowExecution as dbGetActiveWorkflowExecution,
+  getLatestWorkflowExecution as dbGetLatestWorkflowExecution,
   clearWorkflowExecution,
   type DangerLevel,
 } from '../db/sessions.js'
@@ -204,6 +205,17 @@ export class SessionManager {
   getEffectiveWorkdir(sessionId: string): string {
     const session = this.requireSession(sessionId)
     return session.workspace ?? session.workdir
+  }
+
+  /**
+   * Get the project root working directory for a session.
+   * Ignores any active workspace — session.workdir is always the project root,
+   * which is where project-scoped .openfox/ content (agents, skills, commands,
+   * workflows) lives and is managed from.
+   */
+  getProjectWorkdir(sessionId: string): string {
+    const session = this.requireSession(sessionId)
+    return session.workdir
   }
 
   // ============================================================================
@@ -595,6 +607,7 @@ export class SessionManager {
     workflowName: string,
     workflowColor: string | undefined,
     params: Record<string, string>,
+    subGroup?: string,
   ): void {
     // Cancel any existing active workflow execution before starting a new one
     const existing = this.getActiveWorkflowExecution(sessionId)
@@ -602,7 +615,7 @@ export class SessionManager {
       this.cancelWorkflow(sessionId, existing.id, existing.workflowId, existing.workflowName, existing.workflowColor)
     }
 
-    createWorkflowExecution(executionId, sessionId, workflowId, workflowName, workflowColor, params)
+    createWorkflowExecution(executionId, sessionId, workflowId, workflowName, workflowColor, params, subGroup)
     emitWorkflowExecutionChanged(sessionId, executionId, workflowId, workflowName, workflowColor, 'running')
     const updatedSession = this.requireSession(sessionId)
     this.emit({ type: 'session_updated', session: updatedSession })
@@ -667,7 +680,8 @@ export class SessionManager {
   }
 
   /**
-   * Resume a paused workflow. Returns the saved params and step output.
+   * Resume a paused (waiting) or blocked workflow execution. Flips it back to
+   * 'running' and returns the saved params and step output.
    */
   resumeWorkflow(
     sessionId: string,
@@ -676,8 +690,9 @@ export class SessionManager {
     workflowName: string,
     workflowColor: string | undefined,
   ): { params: Record<string, string>; stepOutput: Record<string, string> } | null {
-    const row = dbGetActiveWorkflowExecution(sessionId)
+    const row = dbGetLatestWorkflowExecution(sessionId)
     if (!row || row.id !== executionId) return null
+    if (row.status !== 'waiting' && row.status !== 'blocked') return null
     // Clear pending choices — they only apply to the paused step being resumed
     updateWorkflowExecutionStatus(executionId, 'running', undefined, undefined, undefined, [])
     emitWorkflowExecutionChanged(
@@ -800,12 +815,54 @@ export class SessionManager {
       ...(row.current_step_name ? { currentStepName: row.current_step_name } : {}),
       stepOutput: JSON.parse(row.step_output ?? '{}') as Record<string, string>,
       params: JSON.parse(row.params ?? '{}') as Record<string, string>,
+      ...(row.sub_group ? { subGroup: row.sub_group } : {}),
       ...(row.pending_choices
         ? { pendingChoices: JSON.parse(row.pending_choices) as import('../../shared/types.js').UserStepChoice[] }
         : {}),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }
+  }
+
+  /**
+   * Latest workflow execution for a session regardless of status, mapped to the
+   * shared type. Used to locate a blocked execution when the user retries its
+   * step — blocked rows are excluded from getActiveWorkflowExecution.
+   */
+  getLatestWorkflowExecution(sessionId: string): import('../../shared/types.js').WorkflowExecution | null {
+    const row = dbGetLatestWorkflowExecution(sessionId)
+    if (!row) return null
+    return {
+      id: row.id,
+      sessionId: row.session_id,
+      workflowId: row.workflow_id,
+      workflowName: row.workflow_name,
+      ...(row.workflow_color ? { workflowColor: row.workflow_color } : {}),
+      status: row.status as import('../../shared/types.js').WorkflowExecutionStatus,
+      ...(row.current_step_id ? { currentStepId: row.current_step_id } : {}),
+      ...(row.current_step_name ? { currentStepName: row.current_step_name } : {}),
+      stepOutput: JSON.parse(row.step_output ?? '{}') as Record<string, string>,
+      params: JSON.parse(row.params ?? '{}') as Record<string, string>,
+      ...(row.sub_group ? { subGroup: row.sub_group } : {}),
+      ...(row.pending_choices
+        ? { pendingChoices: JSON.parse(row.pending_choices) as import('../../shared/types.js').UserStepChoice[] }
+        : {}),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }
+  }
+
+  /**
+   * The execution a client should render: the active run, or a blocked one
+   * awaiting a user-triggered retry. Completed/cancelled runs are not
+   * surfaced — the UI only acts on running/waiting/blocked.
+   */
+  getDisplayWorkflowExecution(sessionId: string): import('../../shared/types.js').WorkflowExecution | null {
+    const active = this.getActiveWorkflowExecution(sessionId)
+    if (active) return active
+    const latest = this.getLatestWorkflowExecution(sessionId)
+    if (latest && latest.status === 'blocked') return latest
+    return null
   }
 
   // ============================================================================
@@ -1232,9 +1289,13 @@ export class SessionManager {
   /**
    * Record that a file was read.
    */
-  recordFileRead(sessionId: string, filePath: string, contentHash: string): void {
+  recordFileRead(sessionId: string, filePath: string, contentHash: string, relPath?: string): void {
     const cache = this.readFilesCache.get(sessionId) ?? {}
-    cache[filePath] = { hash: contentHash, readAt: new Date().toISOString() }
+    cache[filePath] = {
+      hash: contentHash,
+      readAt: new Date().toISOString(),
+      ...(relPath ? { relPath } : {}),
+    }
     this.readFilesCache.set(sessionId, cache)
   }
 
@@ -1248,12 +1309,13 @@ export class SessionManager {
   /**
    * Update file hash after write.
    */
-  updateFileHash(sessionId: string, filePath: string, contentHash: string): void {
+  updateFileHash(sessionId: string, filePath: string, contentHash: string, relPath?: string): void {
     const cache = this.readFilesCache.get(sessionId) ?? {}
     const existingEntry = cache[filePath]
     cache[filePath] = {
       hash: contentHash,
       readAt: existingEntry?.readAt ?? new Date().toISOString(),
+      ...(relPath ? { relPath } : {}),
     }
     this.readFilesCache.set(sessionId, cache)
   }

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
 import WebSocket from 'ws'
+import { recordLLMFailure, clearLLMFailure, sleepThroughRetryBackoff } from '../chat/stream-pure.js'
 
 const {
   createProjectMock,
@@ -25,6 +26,7 @@ const {
   getRuntimeConfigMock,
   getGlobalConfigDirMock,
   createLLMClientMock,
+  applyDynamicContextMock,
 } = vi.hoisted(() => ({
   createProjectMock: vi.fn(),
   getProjectMock: vi.fn(),
@@ -47,6 +49,7 @@ const {
   getRuntimeConfigMock: vi.fn(),
   getGlobalConfigDirMock: vi.fn(),
   createLLMClientMock: vi.fn(),
+  applyDynamicContextMock: vi.fn(),
 }))
 
 vi.mock('../db/projects.js', () => ({
@@ -68,6 +71,13 @@ vi.mock('../db/settings.js', () => ({
 vi.mock('../context/instructions.js', () => ({
   getAllInstructions: getAllInstructionsMock,
   toInjectedFiles: (files: unknown[]) => files as unknown,
+}))
+
+vi.mock('../chat/dynamic-context.js', () => ({
+  computeSessionHash: vi.fn(),
+  computeUnifiedDiff: vi.fn(),
+  buildCachedPrompt: vi.fn(),
+  applyDynamicContext: applyDynamicContextMock,
 }))
 
 vi.mock('../skills/registry.js', () => ({
@@ -365,6 +375,7 @@ function createSessionManager(overrides: Record<string, unknown> = {}) {
     createSession: vi.fn(() => session),
     getSession: vi.fn(() => session),
     requireSession: vi.fn(() => session),
+    getLatestWorkflowExecution: vi.fn(() => null),
     getContextState: vi.fn(() => ({
       currentTokens: 10,
       maxTokens: 200000,
@@ -1017,6 +1028,122 @@ describe('createWebSocketServer', () => {
     await harness.close()
   })
 
+  it('routes context.applyDynamic to the session named in the payload', async () => {
+    applyDynamicContextMock.mockResolvedValue(undefined)
+    const sessionB: any = {
+      id: 'session-b',
+      projectId: 'project-1',
+      workdir: '/tmp/project',
+      mode: 'planner',
+      phase: 'plan',
+      isRunning: false,
+      criteria: [],
+    }
+    const sessionManager = createSessionManager({
+      getSession: vi.fn((id: string) => (id === 'session-b' ? sessionB : { ...sessionB, id: 'session-1' })),
+      requireSession: vi.fn((id: string) => (id === 'session-b' ? sessionB : { ...sessionB, id: 'session-1' })),
+      getContextState: vi.fn(() => ({
+        currentTokens: 10,
+        maxTokens: 200000,
+        compactionCount: 0,
+        dangerZone: false,
+        canCompact: false,
+        dynamicContextChanged: false,
+      })),
+    })
+    const harness = await createHarness({ sessionManager })
+
+    // Active WS session is session-1…
+    harness.send({ id: 'sl-1', type: 'session.load', payload: { sessionId: 'session-1' } })
+    await harness.nextMessage((message) => message.id === 'sl-1')
+
+    // …but the payload names session-b, so the update must target it.
+    harness.send({ id: 'apply-b', type: 'context.applyDynamic', payload: { sessionId: 'session-b' } })
+    expect(await harness.nextMessage((message) => message.id === 'apply-b')).toMatchObject({ type: 'ack' })
+    expect(applyDynamicContextMock).toHaveBeenCalledTimes(1)
+    expect(applyDynamicContextMock.mock.calls[0]![1]).toBe('session-b')
+
+    // Without a payload sessionId, fall back to the active session.
+    applyDynamicContextMock.mockClear()
+    harness.send({ id: 'apply-active', type: 'context.applyDynamic', payload: {} })
+    expect(await harness.nextMessage((message) => message.id === 'apply-active')).toMatchObject({ type: 'ack' })
+    expect(applyDynamicContextMock).toHaveBeenCalledTimes(1)
+    expect(applyDynamicContextMock.mock.calls[0]![1]).toBe('session-1')
+
+    await harness.close()
+  })
+
+  it('routes context.compact to the session named in the payload, not the active one', async () => {
+    const sessionB: any = {
+      id: 'session-b',
+      projectId: 'project-1',
+      workdir: '/tmp/project',
+      mode: 'planner',
+      phase: 'plan',
+      isRunning: false,
+      criteria: [],
+    }
+    const sessionManager = createSessionManager({
+      getSession: vi.fn((id: string) => (id === 'session-b' ? sessionB : { ...sessionB, id: 'session-1' })),
+      requireSession: vi.fn((id: string) => (id === 'session-b' ? sessionB : { ...sessionB, id: 'session-1' })),
+      getContextState: vi.fn(() => ({
+        currentTokens: 10,
+        maxTokens: 200000,
+        compactionCount: 0,
+        dangerZone: false,
+        canCompact: false,
+        dynamicContextChanged: false,
+      })),
+      setRunning: vi.fn(),
+    })
+    runChatTurnMock.mockResolvedValue(undefined)
+    const harness = await createHarness({ sessionManager })
+
+    // Active WS session is session-1…
+    harness.send({ id: 'sl-1', type: 'session.load', payload: { sessionId: 'session-1' } })
+    await harness.nextMessage((message) => message.id === 'sl-1')
+
+    // …but the payload names session-b, so the compaction must target it.
+    harness.send({ id: 'compact-b', type: 'context.compact', payload: { sessionId: 'session-b' } })
+    expect(await harness.nextMessage((message) => message.id === 'compact-b')).toMatchObject({ type: 'ack' })
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    expect(runChatTurnMock).toHaveBeenCalled()
+    expect(runChatTurnMock.mock.calls[0]![0].sessionId).toBe('session-b')
+
+    await harness.close()
+  })
+
+  it('routes workflow.exit to the session named in the payload, not the active one', async () => {
+    const sessionB: any = {
+      id: 'session-b',
+      projectId: 'project-1',
+      workdir: '/tmp/project',
+      mode: 'planner',
+      phase: 'plan',
+      isRunning: false,
+      criteria: [],
+    }
+    const setPhase = vi.fn((_id, phase) => ({ ...sessionB, phase }))
+    const sessionManager = createSessionManager({
+      getSession: vi.fn((id: string) => (id === 'session-b' ? sessionB : { ...sessionB, id: 'session-1' })),
+      getActiveWorkflowExecution: vi.fn(() => null),
+      setPhase,
+      setRunning: vi.fn(),
+    })
+    const harness = await createHarness({ sessionManager })
+
+    // Active WS session is session-1…
+    harness.send({ id: 'sl-1', type: 'session.load', payload: { sessionId: 'session-1' } })
+    await harness.nextMessage((message) => message.id === 'sl-1')
+
+    // …but the payload names session-b, so the exit must target it.
+    harness.send({ id: 'exit-b', type: 'workflow.exit', payload: { sessionId: 'session-b' } })
+    expect(await harness.nextMessage((message) => message.id === 'exit-b')).toMatchObject({ type: 'ack' })
+    expect(setPhase).toHaveBeenCalledWith('session-b', 'build')
+
+    await harness.close()
+  })
+
   it('surfaces manual compaction failures as recoverable chat errors', async () => {
     const sessionState: any = {
       id: 'session-1',
@@ -1183,6 +1310,189 @@ describe('createWebSocketServer', () => {
     const callArgs = runOrchestratorMock.mock.calls[0]![0]
     expect(callArgs.workflowId).toBe('pr-review')
     expect(callArgs.params).toEqual({ pr_number: '157', pr_title: 'Fix bug' })
+  })
+
+  it('routes runner.launch to the session named in the payload, not the active one', async () => {
+    const sessionState: any = {
+      id: 'session-1',
+      projectId: 'project-1',
+      workdir: '/tmp/project',
+      mode: 'planner',
+      phase: 'plan',
+      isRunning: false,
+      metadata: { title: null },
+      criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'pending' }, attempts: [] }],
+    }
+    const sessionManager = createSessionManager({
+      createSession: vi.fn(() => sessionState),
+      getSession: vi.fn(() => sessionState),
+      requireSession: vi.fn(() => sessionState),
+      setMode: vi.fn((_id, mode) => ({ ...sessionState, mode })),
+      setPhase: vi.fn((_id, phase) => ({ ...sessionState, phase })),
+      setRunning: vi.fn((_id, isRunning) => {
+        sessionState.isRunning = isRunning
+      }),
+      setCurrentContextSize: vi.fn(),
+      getContextState: vi.fn(() => ({
+        currentTokens: 10,
+        maxTokens: 200000,
+        compactionCount: 0,
+        dangerZone: false,
+        canCompact: false,
+        dynamicContextChanged: false,
+      })),
+      getCurrentModelSettings: vi.fn(() => ({})),
+      getDynamicContextChanged: vi.fn(() => false),
+      setDynamicContextChanged: vi.fn(),
+      getCachedPrompt: vi.fn(() => undefined),
+      setCachedPrompt: vi.fn(),
+      getLspManager: vi.fn(),
+      drainAsapMessages: vi.fn(() => []),
+      getCurrentWindowMessages: vi.fn(() => []),
+      updateMessage: vi.fn(),
+    })
+
+    runOrchestratorMock.mockResolvedValue({ success: true })
+
+    const harness = await createHarness({ sessionManager })
+
+    // The active session is session-1…
+    harness.send({ id: 'sl-active', type: 'session.load', payload: { sessionId: 'session-1' } })
+    await harness.nextMessage((message) => message.id === 'sl-active')
+
+    // …but the launch names session-2, which must win.
+    harness.send({
+      id: 'runner-targeted',
+      type: 'runner.launch',
+      payload: { sessionId: 'session-2', workflowId: 'pr-review' },
+    })
+    await harness.nextMessage((message) => message.id === 'runner-targeted')
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+
+    expect(runOrchestratorMock).toHaveBeenCalled()
+    const callArgs = runOrchestratorMock.mock.calls[0]![0]
+    expect(callArgs.sessionId).toBe('session-2')
+    expect(callArgs.workflowId).toBe('pr-review')
+  })
+
+  it('labels queue.state feedback with the session named in the runner.launch payload', async () => {
+    const sessionB: any = {
+      id: 'session-b',
+      projectId: 'project-1',
+      workdir: '/tmp/project',
+      mode: 'planner',
+      phase: 'plan',
+      isRunning: true,
+      criteria: [],
+    }
+    const sessionManager = createSessionManager({
+      getSession: vi.fn((id: string) =>
+        id === 'session-b' ? sessionB : { ...sessionB, id: 'session-1', isRunning: false },
+      ),
+      requireSession: vi.fn((id: string) =>
+        id === 'session-b' ? sessionB : { ...sessionB, id: 'session-1', isRunning: false },
+      ),
+    })
+    const harness = await createHarness({ sessionManager })
+
+    // Active WS session is session-1, but the target session-b is running, so
+    // the launch queues — the queue feedback must be attributed to session-b.
+    harness.send({ id: 'sl-1', type: 'session.load', payload: { sessionId: 'session-1' } })
+    await harness.nextMessage((message) => message.id === 'sl-1')
+
+    harness.send({
+      id: 'launch-while-running',
+      type: 'runner.launch',
+      payload: { sessionId: 'session-b', workflowId: 'wf-1' },
+    })
+    const reply = await harness.nextMessage((message) => message.id === 'launch-while-running')
+    expect(reply).toMatchObject({ type: 'queue.state', payload: { success: true } })
+    expect(reply.sessionId).toBe('session-b')
+
+    await harness.close()
+  })
+
+  it('sources the persisted sub-group when resuming a paused slice', async () => {
+    const sessionState: any = {
+      id: 'session-1',
+      projectId: 'project-1',
+      workdir: '/tmp/project',
+      mode: 'planner',
+      phase: 'waiting',
+      isRunning: false,
+      metadata: { title: null },
+      criteria: [{ id: 'tests-pass', description: 'Tests pass', status: { type: 'pending' }, attempts: [] }],
+    }
+    const sessionManager = createSessionManager({
+      createSession: vi.fn(() => sessionState),
+      getSession: vi.fn(() => sessionState),
+      requireSession: vi.fn(() => sessionState),
+      setMode: vi.fn((_id, mode) => ({ ...sessionState, mode })),
+      setPhase: vi.fn((_id, phase) => ({ ...sessionState, phase })),
+      setRunning: vi.fn((_id, isRunning) => {
+        sessionState.isRunning = isRunning
+      }),
+      setCurrentContextSize: vi.fn(),
+      getContextState: vi.fn(() => ({
+        currentTokens: 10,
+        maxTokens: 200000,
+        compactionCount: 0,
+        dangerZone: false,
+        canCompact: false,
+        dynamicContextChanged: false,
+      })),
+      getCurrentModelSettings: vi.fn(() => ({})),
+      getDynamicContextChanged: vi.fn(() => false),
+      setDynamicContextChanged: vi.fn(),
+      getCachedPrompt: vi.fn(() => undefined),
+      setCachedPrompt: vi.fn(),
+      getLspManager: vi.fn(),
+      drainAsapMessages: vi.fn(() => []),
+      getCurrentWindowMessages: vi.fn(() => []),
+      updateMessage: vi.fn(),
+      getActiveWorkflowExecution: vi.fn(() => ({
+        id: 'exec-1',
+        sessionId: 'session-1',
+        workflowId: 'default',
+        workflowName: 'Build & Verify',
+        status: 'waiting',
+        currentStepId: 'work_location',
+        stepOutput: {},
+        params: {},
+        subGroup: 'verify',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })),
+      getLatestWorkflowExecution: vi.fn(() => ({
+        id: 'exec-1',
+        sessionId: 'session-1',
+        workflowId: 'default',
+        workflowName: 'Build & Verify',
+        status: 'waiting',
+        currentStepId: 'work_location',
+        stepOutput: {},
+        params: {},
+        subGroup: 'verify',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })),
+      resumeWorkflow: vi.fn(() => ({ params: {}, stepOutput: {} })),
+    })
+
+    runOrchestratorMock.mockResolvedValue({ success: true })
+
+    const harness = await createHarness({ sessionManager })
+
+    harness.send({ id: 'sl-ok', type: 'session.load', payload: { sessionId: 'session-1' } })
+    await harness.nextMessage((message) => message.id === 'sl-ok')
+
+    harness.send({ id: 'runner-resume', type: 'runner.launch', payload: { resumeFrom: 'work_location' } })
+    await harness.nextMessage((message) => message.id === 'runner-resume')
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+
+    expect(runOrchestratorMock).toHaveBeenCalled()
+    const callArgs = runOrchestratorMock.mock.calls[0]![0]
+    expect(callArgs.subGroup).toBe('verify')
   })
 
   it('handles runner relaunch, subscription failures, and orchestrator errors', async () => {
@@ -1483,6 +1793,155 @@ describe('createWebSocketServer', () => {
       }),
     )
     expect(createLLMClientMock).not.toHaveBeenCalled()
+
+    await harness.close()
+  })
+
+  it('guards chat.retry — session state, recorded failure, and active workflow', async () => {
+    const sessionState: any = {
+      id: 'session-1',
+      projectId: 'project-1',
+      workdir: '/tmp/project',
+      mode: 'planner',
+      phase: 'build',
+      isRunning: false,
+      criteria: [],
+    }
+    const sessionManager = createSessionManager({
+      createSession: vi.fn(() => sessionState),
+      getSession: vi.fn(() => sessionState),
+      requireSession: vi.fn(() => structuredClone(sessionState)),
+      getLatestWorkflowExecution: vi.fn(() => null),
+    })
+    runChatTurnMock.mockResolvedValue(undefined)
+    const harness = await createHarness({ sessionManager })
+
+    // No active session → NO_SESSION
+    harness.send({ id: 'retry-none', type: 'chat.retry', payload: {} })
+    expect(await harness.nextMessage((message) => message.id === 'retry-none')).toMatchObject({
+      payload: { code: 'NO_SESSION' },
+    })
+
+    harness.send({ id: 'sl-ok', type: 'session.load', payload: { sessionId: 'session-1' } })
+    await harness.nextMessage((message) => message.id === 'sl-ok')
+
+    // Session not found → NOT_FOUND
+    ;(sessionManager.getSession as any).mockReturnValue(null)
+    harness.send({ id: 'retry-notfound', type: 'chat.retry', payload: { sessionId: 'session-1' } })
+    expect(await harness.nextMessage((message) => message.id === 'retry-notfound')).toMatchObject({
+      payload: { code: 'NOT_FOUND' },
+    })
+    ;(sessionManager.getSession as any).mockReturnValue(sessionState)
+
+    // Session running → SESSION_RUNNING
+    sessionState.isRunning = true
+    harness.send({ id: 'retry-running', type: 'chat.retry', payload: { sessionId: 'session-1' } })
+    expect(await harness.nextMessage((message) => message.id === 'retry-running')).toMatchObject({
+      payload: { code: 'SESSION_RUNNING' },
+    })
+    sessionState.isRunning = false
+
+    // No recorded LLM failure → NO_FAILED_TURN (prevents unsolicited turns)
+    harness.send({ id: 'retry-nofail', type: 'chat.retry', payload: { sessionId: 'session-1' } })
+    expect(await harness.nextMessage((message) => message.id === 'retry-nofail')).toMatchObject({
+      payload: { code: 'NO_FAILED_TURN' },
+    })
+
+    // Recorded failure but an active (blocked) workflow → WORKFLOW_ACTIVE
+    recordLLMFailure('session-1')
+    ;(sessionManager.getLatestWorkflowExecution as any).mockReturnValue({
+      id: 'exec-1',
+      sessionId: 'session-1',
+      workflowId: 'default',
+      workflowName: 'Build & Verify',
+      status: 'blocked',
+      currentStepId: 'build',
+      stepOutput: {},
+      params: {},
+    })
+    harness.send({ id: 'retry-wf', type: 'chat.retry', payload: { sessionId: 'session-1' } })
+    expect(await harness.nextMessage((message) => message.id === 'retry-wf')).toMatchObject({
+      payload: { code: 'WORKFLOW_ACTIVE' },
+    })
+
+    // Recorded failure, no workflow → ack + turn starts without re-adding a message
+    ;(sessionManager.getLatestWorkflowExecution as any).mockReturnValue(null)
+    harness.send({ id: 'retry-ok', type: 'chat.retry', payload: { sessionId: 'session-1' } })
+    expect(await harness.nextMessage((message) => message.id === 'retry-ok')).toMatchObject({ type: 'ack' })
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    expect(runChatTurnMock).toHaveBeenCalled()
+    expect(runChatTurnMock.mock.calls[0]![0].sessionId).toBe('session-1')
+
+    clearLLMFailure('session-1')
+    await harness.close()
+  })
+
+  it('handles chat.llm_retry_now with no active backoff wait', async () => {
+    const sessionState: any = {
+      id: 'session-1',
+      projectId: 'project-1',
+      workdir: '/tmp/project',
+      mode: 'planner',
+      phase: 'build',
+      isRunning: false,
+      criteria: [],
+    }
+    const sessionManager = createSessionManager({
+      createSession: vi.fn(() => sessionState),
+      getSession: vi.fn(() => sessionState),
+      requireSession: vi.fn(() => sessionState),
+    })
+    const harness = await createHarness({ sessionManager })
+
+    harness.send({ id: 'rn-none', type: 'chat.llm_retry_now', payload: {} })
+    expect(await harness.nextMessage((message) => message.id === 'rn-none')).toMatchObject({
+      payload: { code: 'NO_SESSION' },
+    })
+
+    harness.send({ id: 'sl-ok', type: 'session.load', payload: { sessionId: 'session-1' } })
+    await harness.nextMessage((message) => message.id === 'sl-ok')
+
+    harness.send({ id: 'rn-idle', type: 'chat.llm_retry_now', payload: { sessionId: 'session-1' } })
+    expect(await harness.nextMessage((message) => message.id === 'rn-idle')).toMatchObject({
+      type: 'ack',
+      payload: { interrupted: false },
+    })
+
+    await harness.close()
+  })
+
+  it('chat.llm_retry_now interrupts an active backoff wait', async () => {
+    const sessionState: any = {
+      id: 'session-1',
+      projectId: 'project-1',
+      workdir: '/tmp/project',
+      mode: 'planner',
+      phase: 'build',
+      isRunning: false,
+      criteria: [],
+    }
+    const sessionManager = createSessionManager({
+      createSession: vi.fn(() => sessionState),
+      getSession: vi.fn(() => sessionState),
+      requireSession: vi.fn(() => sessionState),
+    })
+    const harness = await createHarness({ sessionManager })
+
+    harness.send({ id: 'sl-ok', type: 'session.load', payload: { sessionId: 'session-1' } })
+    await harness.nextMessage((message) => message.id === 'sl-ok')
+
+    // Start a real backoff wait for session-1 (registered in the retry-waiters map)
+    const waitPromise = sleepThroughRetryBackoff(60_000, 'session-1')
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+
+    harness.send({ id: 'rn-live', type: 'chat.llm_retry_now', payload: { sessionId: 'session-1' } })
+    expect(await harness.nextMessage((message) => message.id === 'rn-live')).toMatchObject({
+      type: 'ack',
+      payload: { interrupted: true },
+    })
+
+    // The wait resolves immediately as interrupted
+    expect(await waitPromise).toBe('retry-now')
 
     await harness.close()
   })

@@ -118,7 +118,7 @@ function buildAssistantMessage(
 ): Record<string, unknown> {
   const result: Record<string, unknown> = {
     role: 'assistant',
-    content: msg.toolCalls?.length ? msg.content || '' : msg.content || null,
+    content: msg.content || ' ',
   }
   if (msg.toolCalls?.length) {
     result['tool_calls'] = convertToolCalls(msg.toolCalls)

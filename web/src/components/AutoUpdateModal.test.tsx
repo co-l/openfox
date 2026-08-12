@@ -372,6 +372,7 @@ describe('AutoUpdateModal — restart-after-update flow', () => {
     mockCheckCurrent('2.0.110')
     mockCheckRejected()
     mockCheckCurrent('2.0.111', '2.0.111')
+    localStorage.setItem('openfox_last_version', '2.0.110')
 
     const reloadMock = (window.location as unknown as { reload: () => void }).reload
     const { container } = await renderModal()
@@ -401,6 +402,8 @@ describe('AutoUpdateModal — restart-after-update flow', () => {
     // Truthful announcement: the applied-version flags are set only at reload.
     expect(localStorage.getItem('update_pending')).toBe('true')
     expect(localStorage.getItem('openfox_updated_to')).toBe('2.0.111')
+    // The pre-update version is pinned as the changelog trim boundary.
+    expect(localStorage.getItem('openfox_previous_version')).toBe('2.0.110')
 
     vi.useRealTimers()
   })

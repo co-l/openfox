@@ -203,6 +203,54 @@ describe('QueueProcessor', () => {
       expect(mockActivateProvider).toHaveBeenCalledWith('provider-2', { model: 'custom-model' })
     })
 
+    it('re-resolves the session LLM client per attempt so a mid-turn provider switch takes effect', async () => {
+      const runChatTurnMock = vi.fn().mockResolvedValue(undefined)
+      vi.doMock('../chat/orchestrator.js', () => ({ runChatTurn: runChatTurnMock }))
+
+      mockProviderManager.resolveModel = vi.fn(() => undefined)
+      mockProviderManager.getActiveProviderId = vi.fn(() => 'provider-global')
+      mockProviderManager.activateProvider = vi.fn().mockResolvedValue({ success: true })
+
+      const sessionClient = { getModel: () => 'session-model', getBackend: () => 'vllm' }
+      const switchedClient = { getModel: () => 'switched-model', getBackend: () => 'vllm' }
+      const getLLMClientForProviderMock = vi.fn().mockReturnValueOnce(sessionClient).mockReturnValueOnce(switchedClient)
+
+      sessionState = {
+        id: 'sess-1',
+        isRunning: false,
+        metadata: { title: undefined },
+        providerId: 'provider-2',
+        providerModel: 'custom-model',
+      }
+      queueItems = [{ queueId: 'q-1', mode: 'asap', content: 'hello', queuedAt: '2024-01-01' }]
+
+      const qp = new QueueProcessor({
+        sessionManager: mockSessionManager as any,
+        providerManager: mockProviderManager as any,
+        getLLMClient: mockGetLLMClient,
+        getLLMClientForProvider: getLLMClientForProviderMock,
+        getActiveProvider: mockGetActiveProvider,
+        broadcastForSession: mockBroadcastForSession,
+      })
+      qp.start()
+
+      const callback = mockSessionManager.subscribe.mock.calls[0][0]
+      callback({ type: 'queue_added', sessionId: 'sess-1', queueId: 'q-1', mode: 'asap', content: 'hello' })
+
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      const params = runChatTurnMock.mock.calls[0]![0]!
+      expect(typeof params.getSessionLLMClient).toBe('function')
+
+      // First resolution builds a client for the session's provider
+      expect(params.getSessionLLMClient()).toBe(sessionClient)
+
+      // Simulate the user switching providers mid-turn: resolution picks it up
+      sessionState = { ...sessionState, providerId: 'provider-switched', providerModel: 'new-model' }
+      expect(params.getSessionLLMClient()).toBe(switchedClient)
+      qp.stop()
+    })
+
     it('should use global provider when session has no custom provider', async () => {
       const mockActivateProvider = vi.fn().mockResolvedValue({ success: true })
       mockProviderManager.activateProvider = mockActivateProvider

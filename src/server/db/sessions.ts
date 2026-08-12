@@ -39,7 +39,7 @@ export function createSession(
   const id = crypto.randomUUID()
   const dangerLevel = getProjectDangerLevel(projectId)
 
-  const defaultAgent = resolveDefaultAgentId()
+  const defaultAgent = resolveDefaultAgentId(projectId)
 
   db.prepare(
     `
@@ -556,6 +556,7 @@ export interface WorkflowExecutionRow {
   step_output: string | null
   params: string | null
   pending_choices: string | null
+  sub_group: string | null
   created_at: number
   updated_at: number
 }
@@ -567,13 +568,24 @@ export function createWorkflowExecution(
   workflowName: string,
   workflowColor: string | undefined,
   params: Record<string, string>,
+  subGroup?: string,
 ): void {
   const db = getDatabase()
   const now = Date.now()
   db.prepare(
-    `INSERT INTO workflow_executions (id, session_id, workflow_id, workflow_name, workflow_color, status, step_output, params, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, 'running', '{}', ?, ?, ?)`,
-  ).run(id, sessionId, workflowId, workflowName, workflowColor ?? null, JSON.stringify(params), now, now)
+    `INSERT INTO workflow_executions (id, session_id, workflow_id, workflow_name, workflow_color, status, step_output, params, sub_group, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 'running', '{}', ?, ?, ?, ?)`,
+  ).run(
+    id,
+    sessionId,
+    workflowId,
+    workflowName,
+    workflowColor ?? null,
+    JSON.stringify(params),
+    subGroup ?? null,
+    now,
+    now,
+  )
 }
 
 export function updateWorkflowExecutionStatus(
@@ -599,6 +611,19 @@ export function getActiveWorkflowExecution(sessionId: string): WorkflowExecution
     .prepare(
       `SELECT * FROM workflow_executions WHERE session_id = ? AND status IN ('running', 'waiting') ORDER BY updated_at DESC LIMIT 1`,
     )
+    .get(sessionId) as WorkflowExecutionRow | undefined
+  return row
+}
+
+/**
+ * Latest execution for a session regardless of status. Used to re-activate a
+ * blocked execution when the user retries its step (blocked rows are excluded
+ * from getActiveWorkflowExecution).
+ */
+export function getLatestWorkflowExecution(sessionId: string): WorkflowExecutionRow | undefined {
+  const db = getDatabase()
+  const row = db
+    .prepare(`SELECT * FROM workflow_executions WHERE session_id = ? ORDER BY updated_at DESC LIMIT 1`)
     .get(sessionId) as WorkflowExecutionRow | undefined
   return row
 }

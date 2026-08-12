@@ -187,7 +187,7 @@ export const ChatFeedItems = memo(function ChatFeedItems({
             <div
               key={itemKey(item)}
               data-item-index={displayIndex}
-              className="flex items-center gap-2 feed-item px-2 md:px-4"
+              className="flex items-center gap-2 feed-item px-2 @md:px-4"
             >
               <div className="flex-1 border-t border-border" />
               <span className="text-[10px] text-text-muted font-medium px-2">Earlier context summarized</span>
@@ -202,7 +202,7 @@ export const ChatFeedItems = memo(function ChatFeedItems({
             <div
               key={itemKey(item)}
               data-item-index={displayIndex}
-              className="px-2 md:px-4"
+              className="px-2 @md:px-4"
               style={itemContainmentStyle}
             >
               <SubAgentContainer
@@ -221,7 +221,7 @@ export const ChatFeedItems = memo(function ChatFeedItems({
             <div
               key={itemKey(item)}
               data-item-index={displayIndex}
-              className="px-2 md:px-4"
+              className="px-2 @md:px-4"
               style={itemContainmentStyle}
             >
               <AssistantMessage
@@ -243,7 +243,12 @@ export const ChatFeedItems = memo(function ChatFeedItems({
         }
 
         return (
-          <div key={itemKey(item)} data-item-index={displayIndex} className="px-2 md:px-4" style={itemContainmentStyle}>
+          <div
+            key={itemKey(item)}
+            data-item-index={displayIndex}
+            className="px-2 @md:px-4"
+            style={itemContainmentStyle}
+          >
             <div
               data-message-id={message.id}
               className={highlightedMessageId === message.id ? 'rounded animate-highlight-fade' : undefined}

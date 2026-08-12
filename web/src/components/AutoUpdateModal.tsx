@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { Modal } from './shared/Modal'
 import { authFetch } from '../lib/api'
 import { appUrl } from '../lib/basePath'
+import { getStoredLastVersion, stampPreviousVersion } from '../lib/versionTracking'
 
 type ModalState = 'ready' | 'updating' | 'complete' | 'failed' | 'restarting' | 'restartFailed'
 
@@ -105,6 +106,12 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
   // new version is confirmed running (right before reload) so the success
   // banner/changelog never fire for a version that is not live yet.
   const markUpdateApplied = useCallback((version: string) => {
+    // Pin the pre-update version as the trim boundary. The last observed
+    // version is the reliable source; the version reported at modal open is a
+    // fallback. Guard against mistaking the freshly installed version for the
+    // previous one, since a reloaded window may already report it.
+    const previous = getStoredLastVersion() ?? versionInfoRef.current?.current ?? null
+    if (previous && previous !== version) stampPreviousVersion(previous)
     localStorage.setItem('openfox_updated_to', version)
     localStorage.setItem('update_pending', 'true')
   }, [])

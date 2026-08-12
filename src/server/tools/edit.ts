@@ -1,4 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises'
+import { relative } from 'node:path'
 import type { Diagnostic, EditContextRegion } from '../../shared/types.js'
 import { createTool } from './tool-helpers.js'
 import { formatDiagnosticsForLLM, appendLspInstallHint } from './diagnostics.js'
@@ -82,11 +83,13 @@ export const editFileTool = createTool<EditFileArgs>(
     return withFileLock(fullPath, async () => {
       const replaceAll = args.replace_all ?? false
 
+      // jscpd:ignore-start
       const readFiles = context.sessionManager.getReadFiles(context.sessionId)
-      const validation = await validateFileForWrite(fullPath, readFiles)
+      const validation = await validateFileForWrite(fullPath, readFiles, context.workdir)
       if (!validation.valid) {
         return helpers.error(validation.error?.message ?? 'File validation failed')
       }
+      // jscpd:ignore-end
 
       let rawBuffer: Buffer
       try {
@@ -183,7 +186,7 @@ export const editFileTool = createTool<EditFileArgs>(
 
       const newHash = await computeFileHash(fullPath)
       if (newHash) {
-        context.sessionManager.updateFileHash(context.sessionId, fullPath, newHash)
+        context.sessionManager.updateFileHash(context.sessionId, fullPath, newHash, relative(context.workdir, fullPath))
       }
 
       return helpers.success(output, false, {

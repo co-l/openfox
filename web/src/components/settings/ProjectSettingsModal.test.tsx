@@ -17,6 +17,29 @@ const { mockStoreState, mockFetchConfig, mockSaveConfig, mockUpdateProject, mock
   },
 )
 
+const { mockDefaultAgents, mockUserAgents, mockProjectAgents, mockFetchAgents } = vi.hoisted(() => ({
+  mockDefaultAgents: [
+    { id: 'planner', name: 'Planner', description: '', subagent: false, allowedTools: [] },
+    { id: 'builder', name: 'Builder', description: '', subagent: false, allowedTools: [] },
+  ],
+  mockUserAgents: [{ id: 'architect', name: 'Architect', description: '', subagent: false, allowedTools: [] }],
+  mockProjectAgents: [
+    { id: 'qa-lead', name: 'QA Lead', description: '', subagent: false, allowedTools: [] },
+    { id: 'builder', name: 'Builder', description: '', subagent: false, allowedTools: [] },
+  ],
+  mockFetchAgents: vi.fn(async () => undefined),
+}))
+
+vi.mock('../../stores/agents', () => ({
+  useAgentsStore: (selector: any) =>
+    selector({
+      defaults: mockDefaultAgents,
+      userItems: mockUserAgents,
+      projectItems: mockProjectAgents,
+      fetchAgents: mockFetchAgents,
+    }),
+}))
+
 vi.mock('../../stores/project', () => ({
   useProjectStore: (selector: any) =>
     selector({
@@ -190,6 +213,140 @@ describe('ProjectSettingsModal', () => {
 
     expect(mockSaveConfig).not.toHaveBeenCalled()
     expect(mockUpdateProject).toHaveBeenCalled()
+  })
+})
+
+describe('ProjectSettingsModal — default agent', () => {
+  it('renders the default agent select with top-level agents', () => {
+    render(<ProjectSettingsModal isOpen={true} onClose={vi.fn()} project={defaultProject} />)
+
+    const select = screen.getByLabelText('Default Agent')
+    const options = Array.from(select.querySelectorAll('option')).map((o) => o.textContent)
+    expect(options).toContain('Use system default')
+    expect(options).toContain('Planner')
+    expect(options).toContain('Builder')
+    expect(options).toContain('Architect')
+  })
+
+  it('pre-selects the project default agent', () => {
+    render(
+      <ProjectSettingsModal isOpen={true} onClose={vi.fn()} project={{ ...defaultProject, defaultAgent: 'builder' }} />,
+    )
+
+    expect((screen.getByLabelText('Default Agent') as HTMLSelectElement).value).toBe('builder')
+  })
+
+  it('surfaces a stored default agent that no longer exists', () => {
+    render(
+      <ProjectSettingsModal
+        isOpen={true}
+        onClose={vi.fn()}
+        project={{ ...defaultProject, defaultAgent: 'vanished-agent' }}
+      />,
+    )
+
+    const select = screen.getByLabelText('Default Agent') as HTMLSelectElement
+    expect(select.value).toBe('vanished-agent')
+    expect(screen.getByRole('option', { name: 'vanished-agent (missing agent)' })).toBeTruthy()
+    expect(screen.getByText(/no longer exists/i)).toBeTruthy()
+  })
+
+  it('saves the selected default agent', async () => {
+    const user = userEvent.setup()
+
+    render(<ProjectSettingsModal isOpen={true} onClose={vi.fn()} project={defaultProject} />)
+
+    await user.selectOptions(screen.getByLabelText('Default Agent'), 'architect')
+    await user.click(screen.getByTestId('save-btn'))
+
+    expect(mockUpdateProject).toHaveBeenCalledWith(
+      defaultProject.id,
+      expect.objectContaining({ defaultAgent: 'architect' }),
+    )
+  })
+
+  it('clears the project default agent when system default is chosen', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <ProjectSettingsModal isOpen={true} onClose={vi.fn()} project={{ ...defaultProject, defaultAgent: 'builder' }} />,
+    )
+
+    await user.selectOptions(screen.getByLabelText('Default Agent'), '')
+    await user.click(screen.getByTestId('save-btn'))
+
+    expect(mockUpdateProject).toHaveBeenCalledWith(defaultProject.id, expect.objectContaining({ defaultAgent: null }))
+  })
+
+  it('does not mark save disabled until the default agent changes', () => {
+    render(<ProjectSettingsModal isOpen={true} onClose={vi.fn()} project={defaultProject} />)
+
+    expect((screen.getByTestId('save-btn') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('fetches agents scoped to the project when opened', () => {
+    render(<ProjectSettingsModal isOpen={true} onClose={vi.fn()} project={defaultProject} />)
+
+    expect(mockFetchAgents).toHaveBeenCalledWith(defaultProject.workdir)
+  })
+
+  it('lists top-level project-scoped agents in the default agent select', () => {
+    render(<ProjectSettingsModal isOpen={true} onClose={vi.fn()} project={defaultProject} />)
+
+    const select = screen.getByLabelText('Default Agent')
+    const options = Array.from(select.querySelectorAll('option')).map((o) => o.textContent)
+    expect(options).toContain('QA Lead')
+  })
+
+  it('does not list duplicate options when a project agent overrides a built-in id', () => {
+    render(<ProjectSettingsModal isOpen={true} onClose={vi.fn()} project={defaultProject} />)
+
+    const select = screen.getByLabelText('Default Agent') as HTMLSelectElement
+    expect(Array.from(select.options).filter((o) => o.value === 'builder')).toHaveLength(1)
+    expect(select.options[select.selectedIndex]?.value).toBe('')
+  })
+
+  it('groups agents by scope in the default agent select', () => {
+    render(<ProjectSettingsModal isOpen={true} onClose={vi.fn()} project={defaultProject} />)
+
+    const select = screen.getByLabelText('Default Agent')
+    const projectOptions = Array.from(select.querySelectorAll('optgroup[label="Project"] option')).map(
+      (o) => o.textContent,
+    )
+    const userOptions = Array.from(select.querySelectorAll('optgroup[label="User"] option')).map((o) => o.textContent)
+    const defaultOptions = Array.from(select.querySelectorAll('optgroup[label="Built-in"] option')).map(
+      (o) => o.textContent,
+    )
+    expect(projectOptions).toEqual(['QA Lead', 'Builder'])
+    expect(userOptions).toEqual(['Architect'])
+    expect(defaultOptions).toEqual(['Planner'])
+  })
+
+  it('saves a project-scoped agent as the project default', async () => {
+    const user = userEvent.setup()
+
+    render(<ProjectSettingsModal isOpen={true} onClose={vi.fn()} project={defaultProject} />)
+
+    await user.selectOptions(screen.getByLabelText('Default Agent'), 'qa-lead')
+    await user.click(screen.getByTestId('save-btn'))
+
+    expect(mockUpdateProject).toHaveBeenCalledWith(
+      defaultProject.id,
+      expect.objectContaining({ defaultAgent: 'qa-lead' }),
+    )
+  })
+
+  it('resets the selection when cancelling', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <ProjectSettingsModal isOpen={true} onClose={vi.fn()} project={{ ...defaultProject, defaultAgent: 'builder' }} />,
+    )
+
+    await user.selectOptions(screen.getByLabelText('Default Agent'), 'architect')
+    await user.click(screen.getByTestId('cancel-btn'))
+
+    expect((screen.getByLabelText('Default Agent') as HTMLSelectElement).value).toBe('builder')
   })
 })
 

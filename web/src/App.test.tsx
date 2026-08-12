@@ -69,6 +69,7 @@ vi.mock('./stores/session', () => ({
       clearError: vi.fn(),
       submitPassword: vi.fn(),
       cancelPassword: vi.fn(),
+      openSessionIds: [],
     }
     return selector ? selector(state) : state
   },

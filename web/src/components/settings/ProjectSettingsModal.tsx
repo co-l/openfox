@@ -1,15 +1,18 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { Project, DangerLevel } from '@shared/types.js'
 import { Modal } from '../shared/SelfContainedModal'
+import { ModalCrumbTitle } from '../shared/ModalCrumbTitle'
 import { McpServerCard } from './McpServerCard'
 import { ModalFooter } from '../shared/ModalFooter'
 import { useProjectStore } from '../../stores/project'
+import { useAgentsStore } from '../../stores/agents'
 import { useWorkspaceConfigStore, type WorkspaceConfigResponse } from '../../stores/workspace-config'
 import { useMcpStore } from '../../stores/mcp'
 import { mcpStatusColor, mcpStatusDot } from '../../lib/mcp-utils'
 import { wsClient } from '../../lib/ws'
 import { authFetch } from '../../lib/api'
 import { formatRootDir, getRootDirBlockReason, suggestRootDirChild } from '@shared/workspace.js'
+import { dedupById } from '../../lib/modal-utils'
 
 interface ProjectSettingsModalProps {
   isOpen: boolean
@@ -23,6 +26,30 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
   const wsLoading = useWorkspaceConfigStore((s) => s.loading)
   const fetchWsConfig = useWorkspaceConfigStore((s) => s.fetchConfig)
   const saveWsConfig = useWorkspaceConfigStore((s) => s.saveConfig)
+  const defaultAgents = useAgentsStore((s) => s.defaults)
+  const userAgents = useAgentsStore((s) => s.userItems)
+  const projectAgents = useAgentsStore((s) => s.projectItems)
+  const fetchAgents = useAgentsStore((s) => s.fetchAgents)
+  const topLevelByScope = {
+    builtin: defaultAgents.filter((a) => !a.subagent),
+    user: userAgents.filter((a) => !a.subagent),
+    project: projectAgents.filter((a) => !a.subagent),
+  }
+  const topLevelAgents = dedupById(dedupById(topLevelByScope.builtin, topLevelByScope.user), topLevelByScope.project)
+  const scopeOrder = [
+    { label: 'Project', agents: topLevelByScope.project },
+    { label: 'User', agents: topLevelByScope.user },
+    { label: 'Built-in', agents: topLevelByScope.builtin },
+  ]
+  const groupedAgents = scopeOrder.map((scope) => ({
+    label: scope.label,
+    agents: scope.agents.filter(
+      (agent) =>
+        !scopeOrder
+          .slice(0, scopeOrder.indexOf(scope))
+          .some((higher) => higher.agents.some((candidate) => candidate.id === agent.id)),
+    ),
+  }))
 
   const handleClose = () => {
     try {
@@ -35,10 +62,13 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
 
   const [customInstructions, setCustomInstructions] = useState(project.customInstructions ?? '')
   const [dangerLevel, setDangerLevel] = useState<DangerLevel | ''>(project.dangerLevel ?? '')
+  const [defaultAgent, setDefaultAgent] = useState(project.defaultAgent ?? '')
   const [instructionsDirty, setInstructionsDirty] = useState(false)
   const [dangerLevelDirty, setDangerLevelDirty] = useState(false)
+  const [defaultAgentDirty, setDefaultAgentDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const currentAgentMissing = defaultAgent !== '' && !topLevelAgents.some((a) => a.id === defaultAgent)
 
   const [setupCmd, setSetupCmd] = useState('')
   const [setupDirty, setSetupDirty] = useState(false)
@@ -55,21 +85,24 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
   const [mcpDirty, setMcpDirty] = useState(false)
   const [expandedServers, setExpandedServers] = useState<Set<string>>(new Set())
 
-  const isDirty = instructionsDirty || dangerLevelDirty || setupDirty || rootDirDirty || mcpDirty
+  const isDirty = instructionsDirty || dangerLevelDirty || defaultAgentDirty || setupDirty || rootDirDirty || mcpDirty
 
   useEffect(() => {
     if (isOpen) {
       setCustomInstructions(project.customInstructions ?? '')
       setDangerLevel(project.dangerLevel ?? '')
+      setDefaultAgent(project.defaultAgent ?? '')
       setInstructionsDirty(false)
       setDangerLevelDirty(false)
+      setDefaultAgentDirty(false)
       setSetupDirty(false)
       setRootDirDirty(false)
       setMcpDirty(false)
       setExpandedServers(new Set())
       fetchWsConfig(project.workdir)
+      fetchAgents(project.workdir).catch(() => {})
     }
-  }, [isOpen, project, fetchWsConfig])
+  }, [isOpen, project, fetchWsConfig, fetchAgents])
 
   useEffect(() => {
     if (wsConfig?.setup && wsConfig.setup.length > 0) {
@@ -150,10 +183,18 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
 
   const persistSettings = useCallback(async () => {
     const dangerLevelValue = dangerLevel === '' ? null : dangerLevel
-    await updateProject(project.id, {
+    const projectUpdates: {
+      customInstructions: string | null
+      dangerLevel: DangerLevel | null
+      defaultAgent?: string | null
+    } = {
       customInstructions: customInstructions || null,
       dangerLevel: dangerLevelValue,
-    })
+    }
+    if (defaultAgentDirty) {
+      projectUpdates.defaultAgent = defaultAgent === '' ? null : defaultAgent
+    }
+    await updateProject(project.id, projectUpdates)
     if (setupDirty || rootDirDirty || mcpDirty) {
       const setup = setupCmd.trim()
         ? setupCmd
@@ -169,6 +210,7 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
     }
     setInstructionsDirty(false)
     setDangerLevelDirty(false)
+    setDefaultAgentDirty(false)
     setSetupDirty(false)
     setRootDirDirty(false)
     setMcpDirty(false)
@@ -177,6 +219,8 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
     project.id,
     dangerLevel,
     customInstructions,
+    defaultAgent,
+    defaultAgentDirty,
     setupCmd,
     rootDir,
     mcpOverrides,
@@ -322,8 +366,10 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
     setShowMigrationWarning(false)
     setCustomInstructions(project.customInstructions ?? '')
     setDangerLevel(project.dangerLevel ?? '')
+    setDefaultAgent(project.defaultAgent ?? '')
     setInstructionsDirty(false)
     setDangerLevelDirty(false)
+    setDefaultAgentDirty(false)
     setSetupDirty(false)
     setRootDirDirty(false)
     handleClose()
@@ -333,7 +379,7 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
     <Modal
       isOpen={isOpen}
       onClose={handleCancel}
-      title={`${project.name} Settings`}
+      title={<ModalCrumbTitle projectName={project.name}>Settings</ModalCrumbTitle>}
       size="lg"
       footer={
         <ModalFooter onCancel={handleCancel} onSave={handleSave} saving={saving} saveDisabled={!isDirty || saving} />
@@ -383,6 +429,52 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
               Dangerous
             </button>
           </div>
+        </div>
+
+        <div>
+          <label
+            htmlFor="project-default-agent"
+            className="block text-sm font-medium text-text-primary mb-1 flex-shrink-0"
+          >
+            Default Agent
+          </label>
+          <p className="text-sm text-text-muted mb-3">
+            Default agent for new sessions in this project. Choose "Use system default" to follow the global default
+            agent. Existing sessions are not affected.
+          </p>
+          <select
+            id="project-default-agent"
+            value={defaultAgent}
+            onChange={(e) => {
+              setDefaultAgent(e.target.value)
+              setDefaultAgentDirty(true)
+            }}
+            className="w-full px-3 py-2 text-sm bg-bg-primary border border-border rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-accent-primary"
+            disabled={saving}
+          >
+            <option value="">Use system default</option>
+            {currentAgentMissing && <option value={defaultAgent}>{defaultAgent} (missing agent)</option>}
+            {groupedAgents.map(
+              ({ label, agents }) =>
+                agents.length > 0 && (
+                  <optgroup key={label} label={label}>
+                    {agents.map((agent) => (
+                      <option key={agent.id} value={agent.id}>
+                        {agent.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                ),
+            )}
+          </select>
+          {currentAgentMissing && (
+            <p className="text-xs text-red-400 mt-1">
+              The stored default agent "{defaultAgent}" no longer exists. Pick another agent to restore a valid default.
+            </p>
+          )}
+          {topLevelAgents.length === 0 && (
+            <p className="text-xs text-text-muted mt-1">No agents available. Create one in the Agents modal.</p>
+          )}
         </div>
 
         <div>

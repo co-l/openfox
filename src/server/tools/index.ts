@@ -19,6 +19,7 @@ import { backgroundProcessTool } from './background-process/index.js'
 import { mcpConfigTool } from './mcp-config.js'
 import { webSearchTool } from './web-search.js'
 import { workspaceTool } from './workspace.js'
+import { projectTasksTool } from './project-tasks.js'
 import { computeEffectiveTools } from './tool-policy.js'
 import { logger } from '../utils/logger.js'
 
@@ -56,6 +57,7 @@ function getBuiltInTools(): Tool[] {
       backgroundProcessTool,
       mcpConfigTool,
       workspaceTool,
+      projectTasksTool,
     ]
   }
   return _builtInTools
@@ -437,3 +439,4 @@ export {
   getConfirmationSessionId,
 } from './path-security.js'
 export { stepDoneTool } from './step-done.js'
+export { setTasksService } from './project-tasks.js'

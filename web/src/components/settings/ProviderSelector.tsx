@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useLocation } from 'wouter'
 import { useConfigStore, getBackendDisplayName, type Provider } from '../../stores/config'
 import { useSessionStore } from '../../stores/session'
+import { useSessionScope, useScopedPaneState } from '../../stores/session/session-scope'
 import { useAgentsStore, getAgentColor } from '../../stores/agents'
 import { ProviderModal, providerFormPayload, type ProviderFormData } from '../shared/ProviderModal'
 import { authFetch } from '../../lib/api'
@@ -39,7 +40,7 @@ function ProviderLabel({
         )}
         {activeProvider ? (
           <>
-            <span className="hidden sm:inline">{activeProvider.name} • </span>
+            <span className="hidden @sm:inline">{activeProvider.name} • </span>
             {shortModelName}
           </>
         ) : (
@@ -61,7 +62,13 @@ function ProviderLabel({
 
 export function ProviderSelector() {
   const [, navigate] = useLocation()
-  const currentSession = useSessionStore((state) => state.currentSession)
+  const sessionId = useSessionScope()
+  const currentSession = useScopedPaneState(
+    sessionId,
+    (pane) => pane.session ?? null,
+    (state) => state.currentSession,
+    null,
+  )
   const setSessionProvider = useSessionStore((state) => state.setSessionProvider)
   const [isOpen, setIsOpen] = useState(false)
   const [expandedProviderIds, setExpandedProviderIds] = useState<string[]>([])
@@ -244,8 +251,8 @@ export function ProviderSelector() {
       return
     }
 
-    if (currentSession) {
-      setSessionProvider(provider.id, undefined)
+    if (currentSession && sessionId) {
+      setSessionProvider(sessionId, provider.id, undefined)
       setIsOpen(false)
       setExpandedProviderIds([])
     } else {
@@ -377,11 +384,12 @@ export function ProviderSelector() {
       })
     }
 
-    if (currentSession) {
+    if (currentSession && sessionId) {
       useSessionStore.setState((state) => ({
+        ...state,
         currentSession: state.currentSession ? { ...state.currentSession, providerId, providerModel: newModel } : null,
       }))
-      setSessionProvider(providerId, newModel)
+      setSessionProvider(sessionId, providerId, newModel)
       setExpandedProviderIds([])
       setIsOpen(false)
       focusChatTextarea()

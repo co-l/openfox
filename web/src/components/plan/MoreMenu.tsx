@@ -3,6 +3,7 @@ import { useEffect, useState, useRef } from 'react'
 import { MoreIcon, AttachIcon } from '../shared/icons'
 import { useCommandsStore } from '../../stores/commands'
 import { CommandsModal } from '../settings/CommandsModal'
+import { useSessionStore } from '../../stores/session'
 import { useWorkflowsStore, type WorkflowInfo, useAllWorkflows } from '../../stores/workflows'
 import { WorkflowsModal } from '../settings/WorkflowsModal'
 import { dedupById } from '../../lib/modal-utils'
@@ -64,6 +65,7 @@ export function MoreMenu({
   const fetchCommands = useCommandsStore((state) => state.fetchCommands)
 
   const fetchWorkflows = useWorkflowsStore((state) => state.fetchWorkflows)
+  const currentWorkdir = useSessionStore((state) => state.currentSession?.workdir)
 
   const commands = dedupById(dedupById(commandDefaults, commandUserItems), commandProjectItems)
   // Workflows: keep every scope visible so same-id workflows in different scopes
@@ -72,10 +74,10 @@ export function MoreMenu({
 
   useEffect(() => {
     if (isOpen) {
-      if (tab === 'commands') fetchCommands()
-      else if (tab === 'workflows') fetchWorkflows()
+      if (tab === 'commands') fetchCommands(currentWorkdir)
+      else if (tab === 'workflows') fetchWorkflows(currentWorkdir)
     }
-  }, [isOpen, tab, fetchCommands, fetchWorkflows])
+  }, [isOpen, tab, fetchCommands, fetchWorkflows, currentWorkdir])
 
   useEffect(() => {
     if (isOpen) {
@@ -135,7 +137,7 @@ export function MoreMenu({
   const filteredWorkflows = workflows.filter((w) => !search || w.name.toLowerCase().includes(search.toLowerCase()))
 
   const handleSelectCommand = async (commandId: string) => {
-    const full = await useCommandsStore.getState().fetchCommand(commandId)
+    const full = await useCommandsStore.getState().fetchCommand(commandId, currentWorkdir)
     if (full) {
       onSendCommand(full.prompt, full.metadata.agentMode, textareaContent, attachments)
     }
@@ -342,7 +344,12 @@ export function MoreMenu({
         </div>
       )}
 
-      <CommandsModal isOpen={!!editCommandId} onClose={() => setEditCommandId(null)} initialEditId={editCommandId} />
+      <CommandsModal
+        isOpen={!!editCommandId}
+        onClose={() => setEditCommandId(null)}
+        initialEditId={editCommandId}
+        projectDir={currentWorkdir}
+      />
       <WorkflowsModal
         isOpen={!!editWorkflowId}
         onClose={() => setEditWorkflowId(null)}

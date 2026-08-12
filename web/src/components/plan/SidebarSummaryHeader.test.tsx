@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { cleanup, render, screen, fireEvent } from '@testing-library/react'
 import type { Mock } from 'vitest'
 import { SidebarSummaryHeader } from './SidebarSummaryHeader'
+import { SessionScopeProvider } from '../../stores/session/session-scope'
 
 /* ------------------------------------------------------------------ */
 /*  Store mocks                                                       */
@@ -290,6 +291,60 @@ describe('SidebarSummaryHeader', () => {
 
     const html = renderToStaticMarkup(<SidebarSummaryHeader visible={true} />)
     expect(html).not.toContain('+3 -1')
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/*  Split view pane isolation                                         */
+/* ------------------------------------------------------------------ */
+
+describe('SidebarSummaryHeader — split view pane isolation', () => {
+  it('renders the scoped pane workspace and context, not the focused session', () => {
+    mockSessionStore.mockReturnValue({
+      focusedSessionId: 'B',
+      currentSession: {
+        id: 'B',
+        projectId: 'p1',
+        metadataEntries: mockMetadataEntries(),
+        workspace: '/repo/workspace-b',
+        workdir: '/repo',
+      },
+      contextState: { currentTokens: 8000, maxTokens: 65536, dangerZone: false },
+      panes: {
+        A: {
+          session: {
+            id: 'A',
+            projectId: 'p1',
+            metadataEntries: mockMetadataEntries(),
+            workspace: '/repo/workspace-a',
+            workdir: '/repo',
+          },
+          contextState: { currentTokens: 3400, maxTokens: 4096, dangerZone: false },
+        },
+        B: {
+          session: {
+            id: 'B',
+            projectId: 'p1',
+            metadataEntries: mockMetadataEntries(),
+            workspace: '/repo/workspace-b',
+            workdir: '/repo',
+          },
+          contextState: { currentTokens: 8100, maxTokens: 10240, dangerZone: false },
+        },
+      },
+    })
+
+    const html = renderToStaticMarkup(
+      <SessionScopeProvider value="A">
+        <SidebarSummaryHeader visible={true} />
+      </SessionScopeProvider>,
+    )
+
+    expect(html).toContain('workspace-a')
+    expect(html).not.toContain('workspace-b')
+    // A's context tokens (3400 -> "3K"); B's (8100 -> "8K") must stay out.
+    expect(html).toContain('3K')
+    expect(html).not.toContain('8K')
   })
 })
 

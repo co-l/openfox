@@ -1,5 +1,110 @@
 # Changelog
 
+## 2.0.118 - 2026-08-12
+
+### Features
+
+- **LLM failures retry automatically** — chat, workflow steps, and sub-agents back off and retry, with a live countdown and "Retry now" to skip the wait
+- **Searchable new-session modal in split view** — live case-insensitive project search with autofocus, arrow-key navigation, Enter to select, Esc to dismiss
+
+### Enhancements
+
+- **LLM retries recover smoothly** — partial replies continue where they left off, provider switches apply on the next attempt, and failed calls leave no ghost messages
+
+### Bug Fixes
+
+- **Paused workflow steps no longer vanish** — the choose-workspace pause survives late session refreshes
+- **Composer no longer jumps while typing** — the input stays put on every keystroke
+
+## 2.0.117 - 2026-08-12
+
+### Features
+
+- **New-session picker in split view** — pick any project, create a session, and open it as a pane
+- **Project dropdown in split panes** — open the folder, manage tasks, or edit settings straight from a pane header
+
+### Enhancements
+
+- **Live session list in split view** — the control panel refreshes automatically and on tab focus
+- **Breadcrumb modal titles** — Tasks and Project Settings now read "project › action"
+
+### Bug Fixes
+
+- **Tail smartness off for chained commands** — `&&`/`||` chains are no longer misread as piped output
+- **Queued messages survive sub-agent runs** — no longer drained into a sub-agent context mid-run
+- **Composer stays compact on narrow layouts** — and re-sizes when the pane width changes
+- **Split-view actions target the owning pane** — launch, resume, retry, compact, and exit stay in their pane
+- **Path confirmations land in the right pane** — allow/deny prompts appear instantly where they were asked
+- **Each split pane shows its own workspace** — branch, git diff, and context no longer bleed between panes
+- **Adding a split pane mid-stream no longer crashes** — the "maximum update depth" blank-screen error is gone
+- **Project-scoped agents in the default agent list** — grouped by Project, User, and Built-in
+- **Saving a new agent no longer hangs** — the settings modal no longer sticks on "saving"
+
+## 2.0.116 - 2026-08-11
+
+### Features
+
+- **Split view for multiple sessions** — run independent sessions side-by-side in one window, each with its own feed, sidebar, and responsive layout
+- **Workflow steps retry automatically** — LLM-failed steps retry with escalating backoff and a clean history
+- **Changelog trimmed to your upgrade path** — release notes only show what changed since the version you last ran
+
+### Enhancements
+
+- **Bigger default response limit** — max response tokens raised from 4096 to 16384
+- **Header task badge tracks running work** — only actively running tasks count toward the green badge
+
+### Bug Fixes
+
+- **False path confirmations eliminated** — sed/awk/perl/ruby regex expressions no longer trip the file-access guard
+- **Sandbox escapes now flagged** — bare-root paths and dot-dot traversal outside the workdir are caught
+- **Context size survives failed calls** — a failed LLM query keeps the last known context size
+- **System-prompt warning scoped per pane** — the "prompt changed" banner only shows in the session that changed
+- **Setup workspace step stays scoped** — the workflow's first step only creates the workspace, no premature implementation
+- **Dependency vulnerabilities patched** — npm audit reports zero known issues
+
+## 2.0.115 - 2026-08-11
+
+### Features
+
+- **Built-in Mark Task as Done command** — a bundled command that guides agents through completing a task
+- **Per-project default agent for new sessions** — choose the agent fresh chats start with in Project Settings
+
+### Enhancements
+
+- **Task board output renders as a kanban board** — project_tasks tool results show in the chat feed with columns, running/queued badges, and gate chips
+- **New custom agents default to top-level type** — instead of being created as sub-agents
+
+### Bug Fixes
+
+- **Partial thinking resumes cleanly on strict APIs** — content-less assistant messages now carry a space instead of null, clearing the "content or tool_calls must be set" 400
+- **Workspace edits honor reads from the original clone** — the write/edit guard no longer rejects after browsing files in the base workspace
+- **.openfox/ content resolves from the project root** — skills, commands, agents, and workflows scope to the session's project wherever it lives
+- **Custom agents save beside their project** — not the server directory
+- **session_metadata reads render real output** — the feed shows actual entries instead of a placeholder
+- **Task sessions get auto-generated names** — and Open session links to a real session
+
+## 2.0.114 - 2026-08-10
+
+### Features
+
+- **Project-scoped task board**
+  - Every idea, bug, or chore gets a home — a clean To Do / In Progress / Done board right inside your project, with search and drag-and-drop
+  - Run tasks in parallel or leave them queued — the next one starts automatically when a slot frees, and you get a nudge linking to its session
+  - One click turns a card into a focused working session — the agent already knows the task and what's expected
+  - Define your own "definition of done" — a task needs the required evidence before it can move to Done
+  - Agents work the board just like you — picking up, working on, and completing tasks, with every move visible and reversible
+  - A fresh chat offers your next open task — start it with one click from the empty feed
+  - Creating a task feels like chatting — same composer, slash commands, attachments, and agent/model selection
+
+### Enhancements
+
+- **Workflow sub-group slices can escape** — tagged transitions let a slice loop across groups (verify → build → verify → done) while untagged edges stay clamped
+
+### Bug Fixes
+
+- **Wheel-up scrolling reliably stops auto-scroll** — scrolling up while streaming detaches the feed; deliberate scrolls down still re-attach
+- **Dev-server inspect proxy survives high ports** — the port scan is clamped below 65536 so proxies above port 64535 start cleanly
+
 ## 2.0.113 - 2026-08-07
 
 ### Features

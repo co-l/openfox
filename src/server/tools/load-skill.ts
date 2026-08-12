@@ -33,7 +33,7 @@ const handler: ToolHandler<LoadSkillArgs> = async (args, context, helpers): Prom
 
   const config = getRuntimeConfig()
   const configDir = getGlobalConfigDir(config.mode ?? 'production')
-  const allSkills = await loadAllSkills(configDir, context.workdir)
+  const allSkills = await loadAllSkills(configDir, context.sessionManager.getProjectWorkdir(context.sessionId))
   const skill = findSkillById(skillId, allSkills)
 
   if (!skill) {

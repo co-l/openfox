@@ -22,6 +22,7 @@ function hasTopLevelStatementSeparator(command: string): boolean {
       continue
     }
     if (ch === ';' || ch === '\n') return true
+    if ((ch === '&' || ch === '|') && command[i + 1] === ch) return true
   }
   return false
 }

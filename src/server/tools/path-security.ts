@@ -278,6 +278,241 @@ function isPlaceholderToken(str: string): boolean {
   )
 }
 
+/** Commands that take bare /addr/ operands and therefore tolerate the relaxed quoted-span masking. */
+const REGEX_TOOL_RE = /\b(?:sed|awk|gawk|mawk|perl|ruby|raku)\b/
+
+/** Characters that terminate a word in a shell command. */
+const SHELL_TOKEN_END_RE = /[\s'"`|&;,<>()]/
+
+/**
+ * Decide whether a `/…/` span in a command is a regex address rather than a
+ * real absolute path. Strong signals (regex metacharacters, `,`-ranges, the
+ * perl/ruby `=~`/`!~` match operator outside quotes, or a single-letter sed
+ * action like `p`/`d` glued to the closing slash) hold in any quoting
+ * context. As a fallback, a space-free `/…/` span inside quotes of a command
+ * invoking a regex tool is treated as an address too (covers `awk '/pat/'`
+ * pattern-only programs).
+ */
+function isRegexAddress(
+  command: string,
+  start: number,
+  end: number,
+  hasRegexTool: boolean,
+  quote: "'" | '"' | '`' | null,
+): boolean {
+  const content = command.slice(start + 1, end)
+
+  // Regex metacharacters: /foo.*bar/, /[a-z]/, /x\+y/ ...
+  if (looksLikeRegex(content)) return true
+
+  // Range addresses: /start/,/end/p
+  if (command[end + 1] === ',') return true
+
+  // Perl/Ruby match operators (=~ /re/, !~ /re/). Only meaningful outside
+  // quotes; inside quotes they are covered by the relaxed rule below.
+  if (quote === null && command[start - 1] === '~' && (command[start - 2] === '=' || command[start - 2] === '!')) {
+    return true
+  }
+
+  // A single-letter sed action glued to the closing slash (/pattern/p,
+  // /pattern/d), terminated by a shell token end outside quotes or the
+  // closing quote inside them. Multi-letter runs (filenames like the `passwd`
+  // in /etc/passwd) are never actions.
+  const action = command[end + 1]
+  if (action !== undefined && /[a-zA-Z]/.test(action)) {
+    const after = command[end + 2]
+    const terminated = quote === null ? SHELL_TOKEN_END_RE.test(after ?? '') : after === quote
+    if (terminated) return true
+  }
+
+  // Pattern-only addresses inside a quoted argument to a regex tool.
+  return hasRegexTool && quote !== null && !/\s/.test(content)
+}
+
+/**
+ * Replace slash-delimited regex addresses (sed/awk/perl/ruby) with the
+ * `__SED__` placeholder so path extraction ignores them. Walks the command
+ * honoring shell quoting: inner quotes in a pattern (e.g. the `"Add session"`
+ * inside '/heading "Add session"/') are literal and must not split the scan.
+ */
+function maskRegexAddresses(command: string): string {
+  // Neutralize the perl/ruby/bash match operators `=~` / `!~` so their `~` is
+  // not read as a tilde expansion downstream. Assignments like CFG=~/config
+  // are spared: there the `~` is glued to a path, not to whitespace.
+  const work = command.replace(/(?:=|!)~\s+/g, ' __SED__ ')
+  if (!work.includes('/')) return work
+
+  const hasRegexTool = REGEX_TOOL_RE.test(work)
+  const out: string[] = []
+  let quote: "'" | '"' | '`' | null = null
+  let i = 0
+  const n = work.length
+
+  // Replace a masked span, also swallowing a directly-preceding `=~`/`!~`
+  // operator (the compact `x=~/re/` form) so its `~` can't later be read as
+  // a tilde expansion.
+  const maskSpan = (end: number): void => {
+    if (out[out.length - 1] === '~' && (out[out.length - 2] === '=' || out[out.length - 2] === '!')) {
+      out.pop()
+      out.pop()
+    }
+    out.push(' __SED__ ')
+    i = end + 1
+  }
+
+  while (i < n) {
+    const ch = work[i]!
+
+    if (quote !== null) {
+      // Escapes only exist inside double quotes and backticks.
+      if (ch === '\\' && quote !== "'") {
+        out.push(ch, work[i + 1] ?? '')
+        i += 2
+        continue
+      }
+      if (ch === quote) {
+        out.push(ch)
+        quote = null
+        i += 1
+        continue
+      }
+      if (ch === '/') {
+        // Find the closing slash, stopping at the end of the quoted region.
+        let j = i + 1
+        while (j < n) {
+          if (work[j] === '\\' && quote !== "'") {
+            j += 2
+            continue
+          }
+          if (work[j] === quote || work[j] === '/') break
+          j += 1
+        }
+        if (j < n && work[j] === '/' && isRegexAddress(work, i, j, hasRegexTool, quote)) {
+          maskSpan(j)
+          continue
+        }
+      }
+      out.push(ch)
+      i += 1
+      continue
+    }
+
+    if (ch === "'" || ch === '"' || ch === '`') {
+      quote = ch
+      out.push(ch)
+      i += 1
+      continue
+    }
+
+    if (ch === '/') {
+      // In bare context a `/regex/` address stays within one argument: stop at
+      // whitespace and shell operators so the scan cannot race across the rest
+      // of the command to an unrelated slash (e.g. `... \; 2>/dev/null`).
+      let j = i + 1
+      while (j < n && work[j] !== '/' && !/[\s|&;<>()'"`]/.test(work[j]!)) j += 1
+      if (j < n && work[j] === '/' && isRegexAddress(work, i, j, hasRegexTool, null)) {
+        maskSpan(j)
+        continue
+      }
+    }
+    out.push(ch)
+    i += 1
+  }
+
+  return out.join('')
+}
+
+/**
+ * Expand tilde paths the way bash does: only an UNQUOTED `~` at the start of
+ * a word (or after `=`/`(`) is a home-dir reference. Inside single or double
+ * quotes a `~` is literal (e.g. awk '$1 ~ /x/', echo '~') and must be ignored.
+ */
+function extractUnquotedTildePaths(command: string, home: string): string[] {
+  const paths: string[] = []
+  let quote: "'" | '"' | '`' | null = null
+  let i = 0
+  const n = command.length
+
+  while (i < n) {
+    const ch = command[i]!
+
+    if (quote !== null) {
+      if (ch === '\\' && quote !== "'") {
+        i += 2
+        continue
+      }
+      if (ch === quote) {
+        quote = null
+        i += 1
+        continue
+      }
+      i += 1
+      continue
+    }
+
+    if (ch === "'" || ch === '"' || ch === '`') {
+      quote = ch
+      i += 1
+      continue
+    }
+
+    if (ch === '~' && (i === 0 || /[\s=(]/.test(command[i - 1]!))) {
+      // Consume the tilde-prefix: everything up to whitespace, a quote, a
+      // parenthesis, or the end of the command.
+      let j = i + 1
+      while (j < n && !/[\s'"()]/.test(command[j]!)) j += 1
+      const tail = command.slice(i + 1, j)
+
+      // `~/path` expands the current user's home; a bare `~` expands to the
+      // home dir alone. Anything else (~root, ~name/x) is a different user's
+      // home — outside this heuristic's scope, matching the old behaviour.
+      if (tail === '' || tail.startsWith('/')) {
+        const resolved = normalize(resolve(home + tail))
+        if (!isSafePath(resolved)) {
+          paths.push(resolved)
+        }
+      }
+      i = j
+      continue
+    }
+
+    i += 1
+  }
+
+  return paths
+}
+
+/** Matches a `..` path segment that can traverse up a directory tree. */
+const TRAVERSAL_SEGMENT_RE = /(?:^|\/)\.\.(?:\/|$)/
+
+/**
+ * Extract relative `..` traversal tokens from a shell command. These contain
+ * no absolute path yet can still escape the workdir (cat ../../.bashrc), so
+ * they are returned as-is for the caller to resolve against the working
+ * directory. Collected from bare positions and quoted strings; shapes handled
+ * elsewhere (absolute, tilde, windows drives) are skipped.
+ */
+function extractRelativeTraversals(command: string): string[] {
+  const out: string[] = []
+  const isTraversal = (token: string) => TRAVERSAL_SEGMENT_RE.test(token)
+
+  const quotedPattern = /["']([^"']+)["']/g
+  let m
+  while ((m = quotedPattern.exec(command)) !== null) {
+    const content = m[1]!
+    if (!content || content.startsWith('/') || content.startsWith('~') || isWindowsAbsolutePath(content)) continue
+    if (isTraversal(content)) out.push(content)
+  }
+
+  const bare = command.replace(/["'][^"']*["']/g, ' ').split(/[\s|&;<>()]+/)
+  for (const token of bare) {
+    if (!token || token.startsWith('/') || token.startsWith('~')) continue
+    if (isTraversal(token)) out.push(token)
+  }
+
+  return [...new Set(out)]
+}
+
 /**
  * Extract absolute paths from a shell command (heuristic).
  * Handles: /absolute/paths, ~/tilde/paths, quoted paths.
@@ -307,6 +542,11 @@ export function extractAbsolutePathsFromCommand(command: string): string[] {
   sanitized = sanitized.replace(/(?<!\w)s\|[^|]*\|[^|]*\|[gip]*/g, ' __SED__ ')
   sanitized = sanitized.replace(/(?<!\w)s:[^:]*:[^:]*:[gip]*/g, ' __SED__ ')
 
+  // Strip sed/awk/perl/ruby regex addresses (/pat/, /pat/p, /a/,/b/p), which
+  // are otherwise mistaken for absolute paths. Runs after substitution
+  // masking so URLs and s/// replacements are already gone.
+  sanitized = maskRegexAddresses(sanitized)
+
   // Strip git commit -m/--message content to avoid treating commit message
   // text as file paths (e.g. "/api/auto-update" in a commit message).
   // The message argument is a quoted string that should not be scanned for paths.
@@ -326,22 +566,15 @@ export function extractAbsolutePathsFromCommand(command: string): string[] {
   sanitized = sanitized.replace(/file:\/\/[^\s'"]+/g, ' __FILEURL__ ')
 
   // Pattern 1: Tilde paths ~/... or just ~
-  // Match ~ followed by optional /path, at word boundary
-  const tildePattern = /(?:^|[\s='"(])~(\/[^\s'"()]*)?(?=[\s'"()]|$)/g
-  let match
-  while ((match = tildePattern.exec(sanitized)) !== null) {
-    const pathPart = match[1] ?? ''
-    // Concatenate home + pathPart then resolve to handle ~/../etc properly
-    // ~/../etc/passwd with home=/home/user becomes /home/user/../etc/passwd -> /etc/passwd
-    const fullPath = home + pathPart
-    const resolved = normalize(resolve(fullPath))
-    if (!isSafePath(resolved)) {
-      paths.push(resolved)
-    }
-  }
+  // Expand only unquoted tildes at word start (bash semantics): inside quotes
+  // a `~` is literal (awk '$1 ~ /x/', echo '~'). The perl/ruby `=~` operator
+  // is neutralized earlier by maskRegexAddresses, so `=` stays a valid
+  // predecessor and VAR=~/path assignments still expand.
+  paths.push(...extractUnquotedTildePaths(sanitized, home))
 
   // Pattern 2: Quoted strings (may contain paths with spaces)
   const quotedPattern = /["']([^"']+)["']/g
+  let match
   while ((match = quotedPattern.exec(sanitized)) !== null) {
     const content = match[1]!
 
@@ -367,15 +600,8 @@ export function extractAbsolutePathsFromCommand(command: string): string[] {
         paths.push(resolved)
       }
     }
-    // Check for tilde path
-    else if (content.startsWith('~')) {
-      const pathPart = content.slice(1) // Remove ~
-      const fullPath = join(home, pathPart)
-      const resolved = normalize(resolve(fullPath))
-      if (!isSafePath(resolved)) {
-        paths.push(resolved)
-      }
-    }
+    // Note: tildes inside quotes are literal in bash and are intentionally
+    // not expanded here (see extractUnquotedTildePaths).
   }
 
   // Pattern 3: Unquoted absolute paths
@@ -402,6 +628,14 @@ export function extractAbsolutePathsFromCommand(command: string): string[] {
   }
   if (posixShell) {
     const absolutePattern = /(?:^|[\s=(])(\/[^\s"'|&;<>`()]+)/g
+
+    // A lone `/` token is the root filesystem — flag it (find /, ls /, cd /).
+    // `//` comment lines and JSX `/>` self-closing tags are not roots.
+    const rootPattern = /(?:^|[\s=(])\/(?=$|[\s'"`|&;,<()])/g
+    if (rootPattern.test(sanitized)) {
+      paths.push('/')
+    }
+
     while ((match = absolutePattern.exec(sanitized)) !== null) {
       const candidate = match[1]!
 
@@ -419,6 +653,9 @@ export function extractAbsolutePathsFromCommand(command: string): string[] {
       }
     }
   }
+
+  // Relative `..` traversal tokens that can escape the workdir.
+  paths.push(...extractRelativeTraversals(sanitized))
 
   // Deduplicate
   return [...new Set(paths)]

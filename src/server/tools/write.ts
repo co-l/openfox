@@ -1,5 +1,5 @@
 import { writeFile, mkdir } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { dirname, relative } from 'node:path'
 import type { Diagnostic } from '../../shared/types.js'
 import { createTool } from './tool-helpers.js'
 import { formatDiagnosticsForLLM, appendLspInstallHint } from './diagnostics.js'
@@ -47,7 +47,7 @@ export const writeFileTool = createTool<WriteFileArgs>(
 
     // Validate file was read before writing (only for existing files)
     const readFiles = context.sessionManager.getReadFiles(context.sessionId)
-    const validation = await validateFileForWrite(fullPath, readFiles)
+    const validation = await validateFileForWrite(fullPath, readFiles, context.workdir)
     if (!validation.valid) {
       return helpers.error(validation.error?.message ?? 'File validation failed')
     }
@@ -77,7 +77,7 @@ export const writeFileTool = createTool<WriteFileArgs>(
     // Update file hash after write so subsequent writes don't require re-reading
     const newHash = await computeFileHash(fullPath)
     if (newHash) {
-      context.sessionManager.updateFileHash(context.sessionId, fullPath, newHash)
+      context.sessionManager.updateFileHash(context.sessionId, fullPath, newHash, relative(context.workdir, fullPath))
     }
 
     // jscpd:ignore-start

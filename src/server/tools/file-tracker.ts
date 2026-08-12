@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { relative, resolve } from 'node:path'
 import type { FileReadEntry } from '../../shared/types.js'
 
 // ============================================================================
@@ -61,10 +61,13 @@ export interface ValidationResult {
  * - New files (don't exist on disk) → allowed
  * - Existing files must be in readFiles map with matching hash
  * - If file changed externally (hash mismatch) → treated same as not read
+ * - When baseDir is provided, a file also counts as read if the same repo-relative
+ *   path was read elsewhere (e.g. in the original workspace) with identical content.
  */
 export async function validateFileForWrite(
   filePath: string,
   readFiles: Record<string, FileReadEntry>,
+  baseDir?: string,
 ): Promise<ValidationResult> {
   // Normalize path for consistent comparison
   const normalizedPath = resolve(filePath)
@@ -80,22 +83,35 @@ export async function validateFileForWrite(
   // File exists - check if it was read
   const readEntry = readFiles[normalizedPath]
 
-  if (!readEntry) {
-    return {
-      valid: false,
-      error: new FileNotReadError(filePath),
+  if (readEntry) {
+    // Check if file changed since read
+    if (readEntry.hash !== currentHash) {
+      return {
+        valid: false,
+        error: new FileChangedExternallyError(filePath),
+      }
+    }
+    return { valid: true }
+  }
+
+  // Cross-workspace fallback: the same repo-relative path may have been read in
+  // a different workspace (e.g. the original) where the content is identical.
+  if (baseDir) {
+    const relPath = relative(baseDir, normalizedPath)
+    // Relative paths outside the workdir are not comparable across workspaces —
+    // unrelated directories can produce the same '../...' string.
+    if (!relPath.startsWith('..')) {
+      const relMatches = Object.values(readFiles).filter((entry) => entry.relPath === relPath)
+      if (relMatches.some((entry) => entry.hash === currentHash)) {
+        return { valid: true }
+      }
     }
   }
 
-  // Check if file changed since read
-  if (readEntry.hash !== currentHash) {
-    return {
-      valid: false,
-      error: new FileChangedExternallyError(filePath),
-    }
+  return {
+    valid: false,
+    error: new FileNotReadError(filePath),
   }
-
-  return { valid: true }
 }
 
 // ============================================================================

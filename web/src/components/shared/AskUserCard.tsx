@@ -1,15 +1,17 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import type { ToolCall } from '@shared/types.js'
 import { normalizeAskOptions } from '@shared/ask-options.js'
-import { useSessionStore, type PendingQuestion } from '../../stores/session'
+import { useSessionStore, usePendingQuestions, type PendingQuestion } from '../../stores/session'
 import { shouldAutofocus } from '../../lib/device'
+import { useSessionScope } from '../../stores/session/session-scope'
 
 interface AskUserCardProps {
   toolCall: ToolCall
 }
 
 export function AskUserCard({ toolCall }: AskUserCardProps) {
-  const pendingQuestions = useSessionStore((state) => state.pendingQuestions)
+  const sessionId = useSessionScope()
+  const pendingQuestions = usePendingQuestions(sessionId)
   const answerQuestion = useSessionStore((state) => state.answerQuestion)
   const [answer, setAnswer] = useState('')
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -46,14 +48,14 @@ export function AskUserCard({ toolCall }: AskUserCardProps) {
   }, [isPending])
 
   const handleSubmit = useCallback(() => {
-    if (!pendingQuestion) return
-    answerQuestion(pendingQuestion.callId, answer)
-  }, [pendingQuestion, answer, answerQuestion])
+    if (!pendingQuestion || !sessionId) return
+    answerQuestion(sessionId, pendingQuestion.callId, answer)
+  }, [pendingQuestion, answer, answerQuestion, sessionId])
 
   const handleSkip = useCallback(() => {
-    if (!pendingQuestion) return
-    answerQuestion(pendingQuestion.callId, '', true)
-  }, [pendingQuestion, answerQuestion])
+    if (!pendingQuestion || !sessionId) return
+    answerQuestion(sessionId, pendingQuestion.callId, '', true)
+  }, [pendingQuestion, answerQuestion, sessionId])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -71,10 +73,10 @@ export function AskUserCard({ toolCall }: AskUserCardProps) {
 
   const handleOptionSelect = useCallback(
     (option: string) => {
-      if (!pendingQuestion) return
-      answerQuestion(pendingQuestion.callId, option)
+      if (!pendingQuestion || !sessionId) return
+      answerQuestion(sessionId, pendingQuestion.callId, option)
     },
-    [pendingQuestion, answerQuestion],
+    [pendingQuestion, answerQuestion, sessionId],
   )
 
   const btnBase = 'px-3 py-1.5 text-xs font-medium rounded transition-colors'

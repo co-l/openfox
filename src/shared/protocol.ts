@@ -31,6 +31,9 @@ export type ClientMessageType =
   | 'runner.launch' // Start the auto-loop runner (build → verify → done)
   // Workflow
   | 'workflow.exit' // Exit/cancel a paused workflow
+  // Chat
+  | 'chat.retry' // Re-run the last turn after an LLM failure (no user message re-added)
+  | 'chat.llm_retry_now' // Interrupt the current LLM-retry backoff wait and retry immediately
   // Path confirmation
   | 'path.confirm' // User response to path confirmation request
   // Ask user
@@ -102,6 +105,8 @@ export type ServerMessageType =
   // Vision fallback events
   | 'chat.vision_fallback' // Vision model is describing an image
   | 'chat.error' // Error during generation
+  | 'chat.llm_retry' // An LLM call failed — reporting a backoff retry in progress
+  | 'chat.llm_retry_failed' // The LLM retry window was exhausted — definitive Retry available
   | 'chat.path_confirmation' // Request user confirmation for outside-workdir path access
   | 'chat.ask_user' // Request user answer to a question
   // Mode events
@@ -135,6 +140,8 @@ export type ServerMessageType =
   | 'backgroundProcess.removed' // Process removed from list
   // Git status events
   | 'git.status' // Branch and diff info, pushed on interval or session load
+  // Project tasks events
+  | 'tasks.update' // A task (or task config) changed; clients owning the project update their boards
   // MCP server events
   | 'mcp.servers.changed' // MCP server configuration was modified by agent
   // Other
@@ -324,6 +331,27 @@ export interface ChatErrorPayload {
   recoverable: boolean
 }
 
+export interface ChatLLMRetryPayload {
+  attempt: number
+  /** Delay in ms until the next retry attempt (drives the UI countdown). */
+  retryInMs: number
+}
+
+export interface ChatLLMRetryFailedPayload {
+  error: string
+  /** Number of consecutive failed attempts before giving up. */
+  attempts: number
+}
+
+// Client payloads for retry actions
+export interface ChatRetryPayload {
+  sessionId: string
+}
+
+export interface ChatLLMRetryNowPayload {
+  sessionId: string
+}
+
 // Path confirmation payloads
 export type PathConfirmationReason =
   'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify'
@@ -475,6 +503,22 @@ export interface GitDiffFile {
   status: 'modified' | 'added' | 'deleted'
   additions: number
   deletions: number
+}
+
+// Payloads for project tasks
+
+export interface TasksUpdatePayload {
+  projectId: string
+  /** Full refreshed task list — the modal renders one code path (fetch == push). */
+  tasks: import('./types.js').ProjectTask[]
+  settings: import('./types.js').ProjectTaskSettings
+  counts: import('./types.js').ProjectTaskCounts
+  /** Current gate configuration — pushed with every board update so config changes sync to all clients. */
+  gates?: import('./types.js').TaskGateConfig[] | undefined
+  /** Set when a queued task auto-launched so clients can offer to open the session. */
+  autoLaunched?: { taskId: string; taskTitle: string; sessionId: string; projectId: string } | undefined
+  /** Which task changed, when a targeted update is desired (informational). */
+  changedTaskId?: string | undefined
 }
 
 // Shared background process types

@@ -221,7 +221,7 @@ describe('Error banner behavior', () => {
       status: 200,
     } as any)
 
-    await useSessionStore.getState().sendMessage('Hello')
+    await useSessionStore.getState().sendMessage('session-1', 'Hello')
 
     expect(useSessionStore.getState().error).toBeNull()
   })

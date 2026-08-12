@@ -220,6 +220,10 @@ vi.mock('../chat/stream-pure.js', () => ({
     type: 'tool.result',
     data: { messageId, toolCallId, result },
   })),
+  evaluateLLMRetry: vi.fn(() => ({ retry: true, delayMs: 0, attempt: 2 })),
+  sleepThroughRetryBackoff: vi.fn(async () => 'waited' as const),
+  recordLLMFailure: vi.fn(),
+  clearLLMFailure: vi.fn(),
 }))
 
 async function setSessionBranch(manager: SessionManager, sessionId: string, branch: string) {

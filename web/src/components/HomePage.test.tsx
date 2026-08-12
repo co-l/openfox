@@ -19,6 +19,13 @@ vi.mock('wouter', () => ({
   useLocation: () => [undefined, vi.fn()],
 }))
 
+vi.mock('../lib/api', () => ({
+  authFetch: vi.fn(),
+}))
+
+import { useTasksStore } from '../stores/tasks'
+import { authFetch } from '../lib/api'
+
 const { listHomeSessionsMock, listSessionsMock, ensureFullSessionListMock } = vi.hoisted(() => ({
   listHomeSessionsMock: vi.fn(),
   listSessionsMock: vi.fn(),
@@ -31,6 +38,7 @@ vi.mock('../stores/session', () => ({
     const state = {
       sessions: sessionStore.sessions,
       searchSessions: null,
+      sessionsWithPendingConfirmations: [],
       listSessions: listSessionsMock,
       listHomeSessions: listHomeSessionsMock,
       ensureFullSessionList: ensureFullSessionListMock,
@@ -38,6 +46,11 @@ vi.mock('../stores/session', () => ({
     }
     return selector ? selector(state) : state
   },
+}))
+
+const { listProjectsMock, deleteProjectMock } = vi.hoisted(() => ({
+  listProjectsMock: vi.fn(),
+  deleteProjectMock: vi.fn(),
 }))
 
 vi.mock('../stores/project', () => ({
@@ -60,8 +73,8 @@ vi.mock('../stores/project', () => ({
         },
       ],
       loading: false,
-      listProjects: vi.fn(),
-      deleteProject: vi.fn(),
+      listProjects: listProjectsMock,
+      deleteProject: deleteProjectMock,
     }
     return selector ? selector(state) : state
   },
@@ -87,12 +100,59 @@ beforeEach(() => {
   listHomeSessionsMock.mockClear()
   listSessionsMock.mockClear()
   ensureFullSessionListMock.mockClear()
+  useTasksStore.setState({
+    tasks: [],
+    gates: [],
+    settings: { slotLimit: 1, queuePaused: false },
+    counts: { open: 0, todo: 0, inProgress: 0, running: 0, queued: 0, done: 0 },
+    summaries: {},
+    activeProjectId: null,
+    lastError: null,
+    lastAutoLaunch: null,
+  })
+  const authFetchMock = vi.mocked(authFetch)
+  authFetchMock.mockReset()
+  authFetchMock.mockImplementation(async (url: string) => {
+    if (url.endsWith('/p1/tasks/count')) {
+      return {
+        ok: true,
+        json: async () => ({
+          counts: { open: 4, todo: 1, inProgress: 2, running: 1, queued: 1, done: 3 },
+        }),
+      } as unknown as Response
+    }
+    if (url.endsWith('/p2/tasks/count')) {
+      return {
+        ok: true,
+        json: async () => ({
+          counts: { open: 0, todo: 0, inProgress: 0, running: 0, queued: 0, done: 0 },
+        }),
+      } as unknown as Response
+    }
+    return {
+      ok: true,
+      json: async () => ({
+        tasks: [],
+        settings: { slotLimit: 1, queuePaused: false },
+        counts: { open: 0, todo: 0, inProgress: 0, running: 0, queued: 0, done: 0 },
+        gates: [],
+      }),
+    } as unknown as Response
+  })
 })
 
 describe('HomePage', () => {
   it('exports the component', async () => {
     const { HomePage } = await import('./HomePage')
     expect(HomePage).toBeDefined()
+  })
+
+  it('links to the split-view route from the homepage entry point', async () => {
+    const { HomePage } = await import('./HomePage')
+    const container = render(<HomePage />)
+    const link = container.querySelector('a[href="/split-view"]')
+    expect(link).toBeTruthy()
+    expect(link?.textContent).toContain('Open split view')
   })
 
   it('renders the search bar when sessions exist', async () => {
@@ -587,6 +647,39 @@ describe('HomePage', () => {
 
     await vi.waitFor(() => {
       expect(ensureFullSessionListMock).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('shows a per-project Tasks button with color-coded state counts', async () => {
+    const { HomePage } = await import('./HomePage')
+    const container = render(<HomePage />)
+
+    const alphaTasks = container.querySelector<HTMLElement>('[aria-label="Tasks for Project Alpha"]')
+    expect(alphaTasks).toBeTruthy()
+
+    // p1: todo 1, running 1, queued 1, done 3 — nonzero chips only.
+    await vi.waitFor(() => {
+      expect(textOf(alphaTasks)).toContain('1')
+    })
+    expect(textOf(alphaTasks)).toContain('3')
+    expect(textOf(alphaTasks)).not.toContain('0')
+
+    // p2 has no tasks at all: the button shows the label and icon, no chips.
+    const betaTasks = container.querySelector<HTMLElement>('[aria-label="Tasks for Project Beta"]')
+    expect(textOf(betaTasks)).toBe('Tasks')
+  })
+
+  it('opens the Tasks modal for the clicked project', async () => {
+    const { HomePage } = await import('./HomePage')
+    const container = render(<HomePage />)
+
+    const alphaTasks = container.querySelector<HTMLElement>('[aria-label="Tasks for Project Alpha"]')!
+    await userEvent.click(alphaTasks)
+
+    // The modal portals to document.body, so assert there rather than on the
+    // homepage wrapper.
+    await vi.waitFor(() => {
+      expect(document.querySelector('[placeholder="Search tasks…"]')).toBeTruthy()
     })
   })
 })

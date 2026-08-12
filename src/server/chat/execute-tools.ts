@@ -57,11 +57,15 @@ function extractSubAgentPrompt(args: Record<string, unknown>): string {
  * mutates it to call_sub_agent with the original name as subAgentType.
  * Must happen before event emission so the feed displays the correct tool name.
  */
-export async function transformSubAgentAliases(toolCalls: ToolCall[], toolRegistry: ToolRegistry): Promise<void> {
+export async function transformSubAgentAliases(
+  toolCalls: ToolCall[],
+  toolRegistry: ToolRegistry,
+  projectDir?: string,
+): Promise<void> {
   const hasCallSubAgent = toolRegistry.tools.some((t) => t.name === 'call_sub_agent')
   if (!hasCallSubAgent) return
 
-  const agents = await loadAllAgentsDefault()
+  const agents = await loadAllAgentsDefault(projectDir)
 
   for (const tc of toolCalls) {
     const agentDef = findAgentById(tc.name, agents)
@@ -100,7 +104,7 @@ export async function executeTools(
   // Transform sub-agent aliases in place before emitting events,
   // so the feed displays the correct tool name (call_sub_agent)
   // instead of the hallucinated name (e.g. "explorer").
-  await transformSubAgentAliases(toolCalls, ctx.toolRegistry)
+  await transformSubAgentAliases(toolCalls, ctx.toolRegistry, ctx.sessionManager.getProjectWorkdir(ctx.sessionId))
 
   for (const toolCall of toolCalls) {
     append(createToolCallEvent(assistantMsgId, toolCall))

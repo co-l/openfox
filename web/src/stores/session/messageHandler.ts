@@ -13,10 +13,10 @@ import type {
   ChatToolOutputPayload,
   ChatToolResultPayload,
   ChatTodoPayload,
-  ChatProgressPayload,
-  ChatFormatRetryPayload,
   ChatMessagePayload,
   ChatMessageUpdatedPayload,
+  ChatLLMRetryPayload,
+  ChatLLMRetryFailedPayload,
   ChatDonePayload,
   ChatErrorPayload,
   ChatPathConfirmationPayload,
@@ -31,30 +31,24 @@ import type {
 } from '@shared/protocol.js'
 import { useDevServerStore } from '../dev-server'
 import { useBackgroundProcessesStore } from '../background-processes'
+import { useTasksStore } from '../tasks'
 import { playNewMessage } from '../../lib/sound'
 import type { AgentType } from '../notifications'
-import type { SessionState, PendingQuestion } from './types'
+import type { SessionState, PendingQuestion, SessionPane } from './types'
 import { handleGlobalSoundEffects, resolveAgentType } from './sounds'
 import { getBuffer, scheduleStreamingFlush, cancelStreamingFlush } from './streamingBuffer'
 import { useMcpStore, type McpServerInfo } from '../mcp'
+import {
+  emptyPane,
+  paneFromFlat,
+  effectiveFocusedId,
+  isLivePane,
+  replacePane,
+  updatePane,
+  updatePaneSession,
+} from './panes'
 
 const triggeredNewMessageSound = new Set<string>()
-
-function isMessageForCurrentSession(message: ServerMessage, currentSessionId: string | null): boolean {
-  return currentSessionId !== null && message.sessionId === currentSessionId
-}
-
-function isSessionStateForCurrentView(
-  message: ServerMessage,
-  currentSessionId: string | null,
-  pendingSessionCreate: boolean | string,
-): boolean {
-  return (
-    message.id !== undefined ||
-    isMessageForCurrentSession(message, currentSessionId) ||
-    (pendingSessionCreate === true && message.sessionId !== undefined)
-  )
-}
 
 function addUnreadSessionId(unreadSessionIds: string[], sessionId: string): string[] {
   return unreadSessionIds.includes(sessionId) ? unreadSessionIds : [...unreadSessionIds, sessionId]
@@ -62,6 +56,15 @@ function addUnreadSessionId(unreadSessionIds: string[], sessionId: string): stri
 
 function removeUnreadSessionId(unreadSessionIds: string[], sessionId: string): string[] {
   return unreadSessionIds.filter((id) => id !== sessionId)
+}
+
+function markBackgroundSessionUnread(
+  set: (fn: (state: SessionState) => Partial<SessionState>) => void,
+  message: ServerMessage,
+) {
+  const eventSessionId = message.sessionId
+  if (!eventSessionId) return
+  set((state) => ({ unreadSessionIds: addUnreadSessionId(state.unreadSessionIds, eventSessionId) }))
 }
 
 function mergeSessionIntoSummary(
@@ -144,20 +147,53 @@ function updateSessionField(
   updater: (session: import('@shared/types.js').SessionSummary) => import('@shared/types.js').SessionSummary,
 ) {
   const eventSessionId = message.sessionId
-  const activeSessionId = get().currentSession?.id
-  const isBackgroundSession = eventSessionId && eventSessionId !== activeSessionId
+  if (!eventSessionId) return
+  const state = get()
+  const live = isLivePane(state, eventSessionId)
 
-  set((state) => ({
-    sessions: state.sessions.map((s) => (s.id === eventSessionId ? updater(s) : s)),
-  }))
-
-  if (!isBackgroundSession) {
-    const cs = get().currentSession
-    if (cs) {
-      const updated = updater(cs as unknown as import('@shared/types.js').SessionSummary)
-      set(() => ({ currentSession: updated as unknown as import('@shared/types.js').Session }))
+  set((s) => {
+    let next: SessionState = {
+      ...s,
+      sessions: s.sessions.map((ses) => (ses.id === eventSessionId ? updater(ses) : ses)),
     }
-  }
+    if (live) {
+      next = updatePaneSession(next, eventSessionId, (session) => {
+        const patched = updater(session as unknown as import('@shared/types.js').SessionSummary)
+        return { ...session, ...patched }
+      })
+    }
+    return next
+  })
+}
+
+/** Apply a chat-feed mutation to the session's pane (mirrored to flat when focused). */
+function applyChat(
+  set: (fn: (state: SessionState) => Partial<SessionState> | SessionState) => void,
+  get: () => SessionState,
+  sessionId: string | undefined,
+  updater: (pane: SessionPane) => SessionPane,
+): boolean {
+  if (!sessionId) return false
+  const state = get()
+  if (!isLivePane(state, sessionId)) return false
+  set((s) => updatePane(s, sessionId, updater))
+  return true
+}
+
+/**
+ * Drop the "waiting to retry" pill once a retried LLM attempt actually
+ * streams. Stream activity means the backoff is over — the pill would
+ * otherwise linger until the whole turn ends.
+ */
+function dismissRetryPill(
+  set: (fn: (state: SessionState) => Partial<SessionState> | SessionState) => void,
+  get: () => SessionState,
+  sessionId: string | undefined,
+): void {
+  if (!sessionId) return
+  const pane = get().panes?.[sessionId]
+  if (pane?.llmRetry?.status !== 'retrying') return
+  applyChat(set, get, sessionId, (p) => ({ ...p, llmRetry: null }))
 }
 
 export function handleServerMessage(
@@ -168,30 +204,26 @@ export function handleServerMessage(
   const stateSnapshot = get()
   handleGlobalSoundEffects(message, stateSnapshot)
 
-  const activeSessionId = stateSnapshot.currentSession?.id ?? null
-  const markBackgroundSessionUnread = () => {
-    const eventSessionId = message.sessionId
-    if (!eventSessionId || eventSessionId === activeSessionId) {
-      return
-    }
-    set((state) => ({ unreadSessionIds: addUnreadSessionId(state.unreadSessionIds, eventSessionId) }))
-  }
-
-  const updateToolState = (
-    state: SessionState,
-    messageId: string,
-    apply: (m: Message) => Message,
-  ): Partial<SessionState> => ({
-    messages: state.messages.map((m) => (m.id === messageId ? apply(m) : m)),
-  })
+  const activeSessionId = stateSnapshot.focusedSessionId ?? stateSnapshot.currentSession?.id ?? null
 
   switch (message.type) {
     case 'session.state': {
       const payload = message.payload as SessionStatePayload
-      if (!isSessionStateForCurrentView(message, activeSessionId, stateSnapshot.pendingSessionCreate)) {
+      const eventSessionId = message.sessionId
+      const current = get()
+      const live =
+        message.id !== undefined ||
+        isLivePane(current, eventSessionId) ||
+        (current.pendingSessionCreate === true && eventSessionId !== undefined)
+      if (!live) {
         break
       }
-      cancelStreamingFlush()
+      // Capture the in-flight stream before the snapshot cancels it: the
+      // snapshot can lag the client's already-flushed deltas, and replacing
+      // the pane messages wholesale would wipe the streamed reply. Preserve
+      // the live content for the message being streamed.
+      const bufferedMessageId = getBuffer(eventSessionId ?? '').messageId
+      cancelStreamingFlush(eventSessionId ?? '')
       const wasPendingCreate = get().pendingSessionCreate === true
 
       const confs = payload.pendingConfirmations ?? []
@@ -199,20 +231,55 @@ export function handleServerMessage(
       const crossCleanup = { ...get().crossSessionConfirmations }
       delete crossCleanup[sessionId]
 
-      set({
-        currentSession: payload.session,
-        sessions: mergeSessionIntoSummary(get().sessions, payload.session),
-        unreadSessionIds: removeUnreadSessionId(get().unreadSessionIds, sessionId),
-        messages: payload.messages,
-        hiddenCount: payload.hiddenCount ?? 0,
-        currentTodos: [],
-        pendingPathConfirmations: confs,
-        crossSessionConfirmations: crossCleanup,
-        sessionsWithPendingConfirmations: Object.keys(crossCleanup),
-        pendingQuestions: payload.pendingQuestions ?? [],
-        activeWorkflowExecution:
-          (payload.activeWorkflowExecution as import('@shared/types.js').WorkflowExecution | undefined) ?? null,
-        ...(wasPendingCreate ? { pendingSessionCreate: payload.session.id } : {}),
+      set((state) => {
+        const prior =
+          state.panes[sessionId] ?? (effectiveFocusedId(state) === sessionId ? paneFromFlat(state) : emptyPane())
+        const messages = payload.messages.map((m) => {
+          const live = prior.messages.find((pm) => pm.id === m.id)
+          if (m.id === bufferedMessageId && live) {
+            // Stream in flight: the client's live copy is at least as fresh as
+            // this snapshot — keep it so a lagging snapshot can never wipe the
+            // streamed reply.
+            return live
+          }
+          if (!live) return m
+          // Safety net for recently-streamed messages: never regress content.
+          const liveContent = live.content ?? ''
+          const snapContent = m.content ?? ''
+          const liveThinking = live.thinkingContent ?? ''
+          const snapThinking = m.thinkingContent ?? ''
+          if (liveContent.length <= snapContent.length && liveThinking.length <= snapThinking.length) return m
+          const next: typeof m = { ...m }
+          if (liveContent.length > snapContent.length) {
+            next.content = liveContent
+          }
+          if (liveThinking.length > snapThinking.length) {
+            next.thinkingContent = liveThinking
+          }
+          return next
+        })
+        const nextPane: SessionPane = {
+          ...prior,
+          session: payload.session,
+          messages,
+          hiddenCount: payload.hiddenCount ?? 0,
+          currentTodos: [],
+          pendingPathConfirmations: confs,
+          pendingQuestions: payload.pendingQuestions ?? [],
+          activeWorkflowExecution:
+            (payload.activeWorkflowExecution as import('@shared/types.js').WorkflowExecution | undefined) ?? null,
+          queuedMessages: prior.queuedMessages,
+          llmRetry: null,
+        }
+        const base = replacePane(state, sessionId, nextPane)
+        return {
+          ...base,
+          sessions: mergeSessionIntoSummary(base.sessions, payload.session),
+          unreadSessionIds: removeUnreadSessionId(base.unreadSessionIds, sessionId),
+          crossSessionConfirmations: crossCleanup,
+          sessionsWithPendingConfirmations: Object.keys(crossCleanup),
+          ...(wasPendingCreate ? { pendingSessionCreate: sessionId } : {}),
+        }
       })
 
       break
@@ -240,10 +307,16 @@ export function handleServerMessage(
 
     case 'session.deleted': {
       const payload = message.payload as { sessionId: string }
-      set((state) => ({
-        unreadSessionIds: removeUnreadSessionId(state.unreadSessionIds, payload.sessionId),
-        searchSessions: null,
-      }))
+      set((state) => {
+        const panes = { ...state.panes }
+        delete panes[payload.sessionId]
+        return {
+          panes,
+          openSessionIds: state.openSessionIds.filter((id) => id !== payload.sessionId),
+          unreadSessionIds: removeUnreadSessionId(state.unreadSessionIds, payload.sessionId),
+          searchSessions: null,
+        }
+      })
       get().listSessions()
       break
     }
@@ -257,142 +330,184 @@ export function handleServerMessage(
     case 'session.running': {
       const payload = message.payload as SessionRunningPayload
       updateSessionField(message, set, get, (s) => ({ ...s, isRunning: payload.isRunning }))
+      const eventSessionId = message.sessionId
+      if (!eventSessionId || !isLivePane(get(), eventSessionId)) {
+        break
+      }
       if (!payload.isRunning) {
-        set({ abortInProgress: false, queuedMessages: [] })
+        set((state) => updatePane(state, eventSessionId, (p) => ({ ...p, abortInProgress: false, queuedMessages: [] })))
       }
       if (payload.isRunning) {
-        set({ restoredInput: null })
+        set((state) => updatePane(state, eventSessionId, (p) => ({ ...p, restoredInput: null })))
       }
       break
     }
 
     case 'chat.message': {
-      if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-        markBackgroundSessionUnread()
-        break
+      if (
+        !applyChat(set, get, message.sessionId, (pane) => {
+          const payload = message.payload as ChatMessagePayload
+          if (pane.messages.some((m) => m.id === payload.message.id)) {
+            return pane
+          }
+          const isUserMessage = payload.message.role === 'user'
+          return {
+            ...pane,
+            messages: [...pane.messages, payload.message],
+            session:
+              pane.session && isUserMessage
+                ? { ...pane.session, messageCount: (pane.session.messageCount ?? 0) + 1 }
+                : pane.session,
+          }
+        })
+      ) {
+        const payload = message.payload as ChatMessagePayload
+        if (payload.message.role === 'user') {
+          // Keep session message counts fresh even for non-open sessions
+          set((state) => ({
+            sessions: state.sessions.map((s) =>
+              s.id === message.sessionId ? { ...s, messageCount: s.messageCount + 1 } : s,
+            ),
+          }))
+        }
+        markBackgroundSessionUnread(set, message)
       }
-      const payload = message.payload as ChatMessagePayload
-
-      set((state) => {
-        if (state.messages.some((m) => m.id === payload.message.id)) {
-          return state
-        }
-
-        const isUserMessage = payload.message.role === 'user'
-
-        return {
-          messages: [...state.messages, payload.message],
-          sessions: state.sessions.map((s) =>
-            s.id === message.sessionId && isUserMessage ? { ...s, messageCount: s.messageCount + 1 } : s,
-          ),
-        }
-      })
       break
     }
 
     case 'chat.message_updated': {
-      if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-        markBackgroundSessionUnread()
-        break
-      }
       const payload = message.payload as ChatMessageUpdatedPayload
-      const target = get().messages.find((m) => m.id === payload.messageId)
-      const isEndingStreaming = payload.updates.isStreaming === false && target?.isStreaming === true
-
+      const sessionId = message.sessionId
+      // Ending-stream detection must read the pre-update state. The flush is
+      // performed OUTSIDE the set below: cancelling inside an updater triggers
+      // a nested set() whose result gets overwritten by the enclosing one —
+      // silently dropping the streamed deltas.
+      const paneState = get().panes[sessionId ?? '']
+      const targetMsg =
+        paneState?.messages.find((m) => m.id === payload.messageId) ??
+        (get().currentSession?.id === sessionId ? get().messages.find((m) => m.id === payload.messageId) : undefined)
+      const isEndingStreaming = payload.updates.isStreaming === false && targetMsg?.isStreaming === true
       if (isEndingStreaming) {
-        cancelStreamingFlush()
+        cancelStreamingFlush(sessionId ?? '')
       }
-
-      set((state) => ({
-        messages: state.messages.map((m) => (m.id === payload.messageId ? { ...m, ...payload.updates } : m)),
-      }))
+      if (
+        !applyChat(set, get, sessionId, (pane) => {
+          return {
+            ...pane,
+            messages: pane.messages.map((m) => {
+              if (m.id !== payload.messageId) return m
+              const merged = { ...m, ...payload.updates }
+              // The update can lag the live stream (the server snapshots its
+              // stored content, which may trail the deltas the client already
+              // assembled). Never regress a message's streamed content.
+              const mergedContent = (merged as { content?: string }).content ?? ''
+              const currentContent = m.content ?? ''
+              if (currentContent.length > mergedContent.length) {
+                ;(merged as { content?: string }).content = currentContent
+              }
+              return merged
+            }),
+          }
+        })
+      ) {
+        markBackgroundSessionUnread(set, message)
+      }
       break
     }
 
     case 'chat.delta': {
-      if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-        markBackgroundSessionUnread()
-        break
-      }
+      const sessionId = message.sessionId
       const payload = message.payload as ChatDeltaPayload
-      if (!triggeredNewMessageSound.has(payload.messageId)) {
-        triggeredNewMessageSound.add(payload.messageId)
-        const agent: AgentType | undefined = payload.subAgentType
-          ? 'sub-agent'
-          : resolveAgentType(get(), message.sessionId)
-        playNewMessage(agent)
+      if (
+        !applyChat(set, get, sessionId, (pane) => {
+          if (sessionId === activeSessionId) {
+            if (!triggeredNewMessageSound.has(payload.messageId)) {
+              triggeredNewMessageSound.add(payload.messageId)
+              const agent: AgentType | undefined = payload.subAgentType
+                ? 'sub-agent'
+                : resolveAgentType(get(), sessionId)
+              playNewMessage(agent)
+            }
+          }
+          const buf = getBuffer(sessionId ?? '')
+          buf.messageId = payload.messageId
+          buf.deltaContent += payload.content
+          scheduleStreamingFlush(sessionId ?? '')
+          return pane
+        })
+      ) {
+        markBackgroundSessionUnread(set, message)
       }
-      const buf = getBuffer()
-      buf.messageId = payload.messageId
-      buf.deltaContent += payload.content
-      scheduleStreamingFlush()
+      dismissRetryPill(set, get, sessionId)
       break
     }
 
     case 'chat.thinking': {
-      if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-        markBackgroundSessionUnread()
-        break
-      }
+      const sessionId = message.sessionId
       const payload = message.payload as ChatThinkingPayload
-      const buf = getBuffer()
-      buf.messageId = payload.messageId
-      buf.thinkingContent += payload.content
-      scheduleStreamingFlush()
+      if (
+        !applyChat(set, get, sessionId, (pane) => {
+          const buf = getBuffer(sessionId ?? '')
+          buf.messageId = payload.messageId
+          buf.thinkingContent += payload.content
+          scheduleStreamingFlush(sessionId ?? '')
+          return pane
+        })
+      ) {
+        markBackgroundSessionUnread(set, message)
+      }
+      dismissRetryPill(set, get, sessionId)
       break
     }
 
     case 'chat.tool_preparing': {
-      if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-        markBackgroundSessionUnread()
-        break
-      }
+      const sessionId = message.sessionId
       const payload = message.payload as ChatToolPreparingPayload
+      if (
+        !applyChat(set, get, sessionId, (pane) => {
+          const msg = pane.messages.find((m) => m.id === payload.messageId)
+          if (!msg) return pane
 
-      set((state) => {
-        const msg = state.messages.find((m) => m.id === payload.messageId)
-        if (!msg) return {}
+          const existingToolCall = msg.toolCalls?.find((_, idx) => idx === payload.index)
+          if (existingToolCall) return pane
 
-        const existingToolCall = msg.toolCalls?.find((_, idx) => idx === payload.index)
-        if (existingToolCall) return {}
-
-        const existing = msg.preparingToolCalls ?? []
-        const existingIndex = existing.findIndex((p) => p.index === payload.index)
-        let preparingToolCalls: typeof existing
-        if (existingIndex >= 0) {
-          preparingToolCalls = existing.map((p, i) =>
-            i === existingIndex ? { ...p, arguments: payload.arguments } : p,
-          )
-        } else {
-          preparingToolCalls = [
-            ...existing,
-            {
-              index: payload.index,
-              name: payload.name,
-              ...(payload.arguments ? { arguments: payload.arguments } : {}),
-            },
-          ]
-        }
-        return {
-          messages: state.messages.map((m) => (m.id === payload.messageId ? { ...m, preparingToolCalls } : m)),
-        }
-      })
+          const existing = msg.preparingToolCalls ?? []
+          const existingIndex = existing.findIndex((p) => p.index === payload.index)
+          let preparingToolCalls: typeof existing
+          if (existingIndex >= 0) {
+            preparingToolCalls = existing.map((p, i) =>
+              i === existingIndex ? { ...p, arguments: payload.arguments } : p,
+            )
+          } else {
+            preparingToolCalls = [
+              ...existing,
+              {
+                index: payload.index,
+                name: payload.name,
+                ...(payload.arguments ? { arguments: payload.arguments } : {}),
+              },
+            ]
+          }
+          return {
+            ...pane,
+            messages: pane.messages.map((m) => (m.id === payload.messageId ? { ...m, preparingToolCalls } : m)),
+          }
+        })
+      ) {
+        markBackgroundSessionUnread(set, message)
+      }
+      dismissRetryPill(set, get, sessionId)
       break
     }
 
     case 'chat.tool_call': {
-      if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-        markBackgroundSessionUnread()
-        break
-      }
+      const sessionId = message.sessionId
       const payload = message.payload as ChatToolCallPayload
 
       const applyToolCall = (m: Message): Message => {
-        // Preparing entries carry an index matching the tool call's position.
-        // The next tool call's index equals the current toolCalls length.
         const nextIndex = (m.toolCalls ?? []).length
         const preparingToolCalls = m.preparingToolCalls?.filter((ptc) => ptc.index !== nextIndex)
-        const buf = getBuffer()
+        const buf = getBuffer(sessionId ?? '')
         const bufferedOutputs = buf.toolOutput.filter((o) => o.callId === payload.callId)
         if (bufferedOutputs.length > 0) {
           buf.toolOutput = buf.toolOutput.filter((o) => o.callId !== payload.callId)
@@ -423,146 +538,195 @@ export function handleServerMessage(
         }
       }
 
-      set((state) => updateToolState(state, payload.messageId, applyToolCall))
+      if (
+        !applyChat(set, get, sessionId, (pane) => ({
+          ...pane,
+          messages: pane.messages.map((m) => (m.id === payload.messageId ? applyToolCall(m) : m)),
+        }))
+      ) {
+        markBackgroundSessionUnread(set, message)
+      }
+      dismissRetryPill(set, get, sessionId)
       break
     }
 
     case 'chat.tool_output': {
-      if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-        markBackgroundSessionUnread()
-        break
-      }
+      const sessionId = message.sessionId
       const payload = message.payload as ChatToolOutputPayload
-
-      const buf = getBuffer()
-      buf.messageId = payload.messageId
-      buf.toolOutput.push({
-        messageId: payload.messageId,
-        callId: payload.callId,
-        stream: payload.stream,
-        content: payload.output,
-      })
-      scheduleStreamingFlush()
+      if (
+        !applyChat(set, get, sessionId, (pane) => {
+          const buf = getBuffer(sessionId ?? '')
+          buf.messageId = payload.messageId
+          buf.toolOutput.push({
+            messageId: payload.messageId,
+            callId: payload.callId,
+            stream: payload.stream,
+            content: payload.output,
+          })
+          scheduleStreamingFlush(sessionId ?? '')
+          return pane
+        })
+      ) {
+        markBackgroundSessionUnread(set, message)
+      }
+      dismissRetryPill(set, get, sessionId)
       break
     }
 
     case 'chat.tool_result': {
-      if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-        markBackgroundSessionUnread()
-        break
-      }
+      const sessionId = message.sessionId
       const payload = message.payload as ChatToolResultPayload
 
-      const applyToolResult = (m: Message): Message => {
-        const toolCalls = m.toolCalls?.map((tc) => (tc.id === payload.callId ? { ...tc, result: payload.result } : tc))
-        return { ...m, toolCalls }
+      if (
+        !applyChat(set, get, sessionId, (pane) => ({
+          ...pane,
+          messages: pane.messages.map((m) =>
+            m.id === payload.messageId
+              ? {
+                  ...m,
+                  toolCalls: m.toolCalls?.map((tc) =>
+                    tc.id === payload.callId ? { ...tc, result: payload.result } : tc,
+                  ),
+                }
+              : m,
+          ),
+        }))
+      ) {
+        markBackgroundSessionUnread(set, message)
       }
-
-      set((state) => updateToolState(state, payload.messageId, applyToolResult))
       break
     }
 
     case 'chat.vision_fallback': {
-      if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-        markBackgroundSessionUnread()
-        break
-      }
+      const sessionId = message.sessionId
       const payload = message.payload as ChatVisionFallbackPayload
-      set((state) => {
-        const key = `${payload.messageId}-${payload.attachmentId}`
-        const newByMessage = { ...state.visionFallbackByMessage }
-        newByMessage[key] = {
-          type: payload.type,
-          attachmentId: payload.attachmentId,
-          filename: payload.filename,
-          description: payload.description,
-        }
-        return { visionFallbackByMessage: newByMessage }
-      })
+      if (
+        !applyChat(set, get, sessionId, (pane) => {
+          const key = `${payload.messageId}-${payload.attachmentId}`
+          const newByMessage = { ...pane.visionFallbackByMessage }
+          newByMessage[key] = {
+            type: payload.type,
+            attachmentId: payload.attachmentId,
+            filename: payload.filename,
+            description: payload.description,
+          }
+          return { ...pane, visionFallbackByMessage: newByMessage }
+        })
+      ) {
+        markBackgroundSessionUnread(set, message)
+      }
       break
     }
 
     case 'chat.todo': {
-      if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-        markBackgroundSessionUnread()
-        break
-      }
       const payload = message.payload as ChatTodoPayload
-      set({ currentTodos: payload.todos })
+      if (!applyChat(set, get, message.sessionId, (pane) => ({ ...pane, currentTodos: payload.todos }))) {
+        markBackgroundSessionUnread(set, message)
+      }
       break
     }
 
     case 'chat.progress': {
-      if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-        markBackgroundSessionUnread()
-        break
+      // Liveness-only event: no state to apply. Background (non-open)
+      // sessions get an unread tick — the original behaviour — while open
+      // panes already stream live.
+      if (!isLivePane(get(), message.sessionId)) {
+        markBackgroundSessionUnread(set, message)
       }
-      const payload = message.payload as ChatProgressPayload
-      console.warn('Progress:', payload.message, payload.phase)
       break
     }
 
     case 'chat.format_retry': {
-      if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-        markBackgroundSessionUnread()
-        break
+      // Same treatment as progress: acknowledge, mark background sessions
+      // unread, and carry no state of our own.
+      if (!isLivePane(get(), message.sessionId)) {
+        markBackgroundSessionUnread(set, message)
       }
-      const payload = message.payload as ChatFormatRetryPayload
-      console.warn('Format retry:', payload.attempt, '/', payload.maxAttempts)
       break
     }
 
     case 'chat.done': {
-      if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-        markBackgroundSessionUnread()
+      const sessionId = message.sessionId
+      const payload = message.payload as ChatDonePayload
+      if (!isLivePane(get(), sessionId)) {
+        markBackgroundSessionUnread(set, message)
         break
       }
-      cancelStreamingFlush()
-      triggeredNewMessageSound.delete((message.payload as ChatDonePayload).messageId)
+      cancelStreamingFlush(sessionId ?? '')
+      triggeredNewMessageSound.delete(payload.messageId)
 
-      const payload = message.payload as ChatDonePayload
       const messageStats = payload.stats as Message['stats']
+      set((state) =>
+        updatePane(state, sessionId ?? '', (pane) => ({
+          ...pane,
+          messages: pane.messages.map((m) =>
+            m.id === payload.messageId
+              ? {
+                  ...m,
+                  isStreaming: false,
+                  stats: messageStats ?? m.stats,
+                  completeReason: payload.reason,
+                  preparingToolCalls: undefined,
+                }
+              : m,
+          ),
+          visionFallbackByMessage: {},
+          ...(payload.reason !== 'error' ? { llmRetry: null } : {}),
+        })),
+      )
+      break
+    }
 
-      set((state) => ({
-        messages: state.messages.map((m) =>
-          m.id === payload.messageId
-            ? {
-                ...m,
-                isStreaming: false,
-                stats: messageStats ?? m.stats,
-                completeReason: payload.reason,
-                preparingToolCalls: undefined,
-              }
-            : m,
-        ),
-        visionFallbackByMessage: {},
+    case 'chat.llm_retry': {
+      const sessionId = message.sessionId
+      const payload = message.payload as ChatLLMRetryPayload
+      if (!isLivePane(get(), sessionId)) {
+        markBackgroundSessionUnread(set, message)
+        break
+      }
+      applyChat(set, get, sessionId, (pane) => ({
+        ...pane,
+        error: null,
+        llmRetry: { status: 'retrying', attempt: payload.attempt, retryInMs: payload.retryInMs },
+      }))
+      break
+    }
+
+    case 'chat.llm_retry_failed': {
+      const sessionId = message.sessionId
+      const payload = message.payload as ChatLLMRetryFailedPayload
+      if (!isLivePane(get(), sessionId)) {
+        markBackgroundSessionUnread(set, message)
+        break
+      }
+      applyChat(set, get, sessionId, (pane) => ({
+        ...pane,
+        error: null,
+        llmRetry: { status: 'failed', error: payload.error },
       }))
       break
     }
 
     case 'chat.error': {
-      if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-        markBackgroundSessionUnread()
+      const sessionId = message.sessionId
+      const payload = message.payload as ChatErrorPayload
+      if (!isLivePane(get(), sessionId)) {
+        markBackgroundSessionUnread(set, message)
         break
       }
-      cancelStreamingFlush()
-
-      const payload = message.payload as ChatErrorPayload
+      cancelStreamingFlush(sessionId ?? '')
       console.error('Chat error:', payload.error, 'recoverable:', payload.recoverable)
-      set((state) => ({
-        error: { code: 'CHAT_ERROR', message: payload.error },
-        ...(payload.recoverable
-          ? {}
-          : {
-              messages: state.messages,
-            }),
-      }))
+      set((state) =>
+        updatePane(state, sessionId ?? '', (pane) => ({
+          ...pane,
+          error: { code: 'CHAT_ERROR', message: payload.error },
+        })),
+      )
       break
     }
 
     case 'chat.path_confirmation': {
       const eventSessionId = message.sessionId
-      const isCurrentSession = eventSessionId === (get().currentSession?.id ?? null)
       const payload = message.payload as ChatPathConfirmationPayload
       const newConfirmation = {
         callId: payload.callId,
@@ -572,8 +736,13 @@ export function handleServerMessage(
         reason: payload.reason,
       }
 
-      if (!isCurrentSession) {
-        markBackgroundSessionUnread()
+      if (
+        !applyChat(set, get, eventSessionId, (pane) => ({
+          ...pane,
+          pendingPathConfirmations: dedupeByCallId(pane.pendingPathConfirmations, newConfirmation),
+        }))
+      ) {
+        markBackgroundSessionUnread(set, message)
         if (eventSessionId) {
           set((state) => ({
             crossSessionConfirmations: {
@@ -585,12 +754,7 @@ export function handleServerMessage(
               : [...state.sessionsWithPendingConfirmations, eventSessionId],
           }))
         }
-        break
       }
-
-      set((state) => ({
-        pendingPathConfirmations: dedupeByCallId(state.pendingPathConfirmations, newConfirmation),
-      }))
       break
     }
 
@@ -604,7 +768,13 @@ export function handleServerMessage(
         workdir: payload.workdir,
         reason: payload.reason,
       }
-      if (pendingSessionId) {
+      if (
+        !applyChat(set, get, pendingSessionId, (pane) => ({
+          ...pane,
+          pendingPathConfirmations: dedupeByCallId(pane.pendingPathConfirmations, conf),
+        })) &&
+        pendingSessionId
+      ) {
         set((state) => ({
           crossSessionConfirmations: {
             ...state.crossSessionConfirmations,
@@ -636,42 +806,46 @@ export function handleServerMessage(
             sessionsWithPendingConfirmations: Object.keys(newCross),
           }
         })
+        applyChat(set, get, resolvedId, (pane) => ({
+          ...pane,
+          pendingPathConfirmations: pane.pendingPathConfirmations.filter((c) => c.callId !== resolvedPayload.callId),
+        }))
       }
       break
     }
 
     case 'chat.ask_user': {
-      if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-        markBackgroundSessionUnread()
-        return
-      }
-      // Server normalizes to ChoiceOption[] at the ask_user boundary and
-      // persists/relays that exact shape — see ChatAskUserPayload in
-      // shared/protocol.ts and normalizeAskOptions in src/shared/ask-options.ts.
-      // This handler trusts the wire contract and forwards the options as-is
-      // into PendingQuestion so reload parity is preserved end-to-end.
+      const sessionId = message.sessionId
       const payload = message.payload as ChatAskUserPayload
-      const newQuestion: PendingQuestion = {
-        callId: payload.callId,
-        question: payload.question,
-        type: payload.type ?? 'text',
-        options: payload.options ?? undefined,
+      if (
+        !applyChat(set, get, sessionId, (pane) => {
+          const newQuestion: PendingQuestion = {
+            callId: payload.callId,
+            question: payload.question,
+            type: payload.type ?? 'text',
+            options: payload.options ?? undefined,
+          }
+          return {
+            ...pane,
+            pendingQuestions: [...pane.pendingQuestions.filter((q) => q.callId !== payload.callId), newQuestion],
+          }
+        })
+      ) {
+        markBackgroundSessionUnread(set, message)
       }
-      set((state) => ({
-        pendingQuestions: [...state.pendingQuestions.filter((q) => q.callId !== payload.callId), newQuestion],
-      }))
       break
     }
 
     case 'mode.changed': {
-      if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-        markBackgroundSessionUnread()
-        break
-      }
+      const sessionId = message.sessionId
       const payload = message.payload as ModeChangedPayload
-      set((state) => ({
-        currentSession: state.currentSession ? { ...state.currentSession, mode: payload.mode } : null,
-      }))
+      if (
+        !applyChat(set, get, sessionId, (pane) =>
+          pane.session ? { ...pane, session: { ...pane.session, mode: payload.mode } } : pane,
+        )
+      ) {
+        markBackgroundSessionUnread(set, message)
+      }
       break
     }
 
@@ -682,10 +856,7 @@ export function handleServerMessage(
     }
 
     case 'workflow.execution_changed': {
-      if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-        markBackgroundSessionUnread()
-        break
-      }
+      const sessionId = message.sessionId
       const payload = message.payload as {
         executionId: string
         workflowId: string
@@ -701,82 +872,102 @@ export function handleServerMessage(
         ...(payload.currentStepName ? { currentStepName: payload.currentStepName } : {}),
         ...(payload.pendingChoices ? { pendingChoices: payload.pendingChoices } : {}),
       }
-      set((state) => {
-        const current = state.activeWorkflowExecution
-        if (!current) {
-          // Event arrived before session state loaded — create minimal entry
+      if (
+        !applyChat(set, get, sessionId, (pane) => {
+          const current = pane.activeWorkflowExecution
+          if (!current) {
+            // Event arrived before session state loaded — create minimal entry
+            return {
+              ...pane,
+              activeWorkflowExecution: {
+                id: payload.executionId,
+                sessionId: message.sessionId ?? '',
+                workflowId: payload.workflowId,
+                workflowName: payload.workflowName,
+                ...(payload.workflowColor ? { workflowColor: payload.workflowColor } : {}),
+                status: payload.status,
+                ...stepPatch,
+                stepOutput: {},
+                params: {},
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+              },
+            }
+          }
           return {
+            ...pane,
             activeWorkflowExecution: {
-              id: payload.executionId,
-              sessionId: message.sessionId ?? '',
-              workflowId: payload.workflowId,
-              workflowName: payload.workflowName,
-              ...(payload.workflowColor ? { workflowColor: payload.workflowColor } : {}),
+              ...current,
               status: payload.status,
               ...stepPatch,
-              stepOutput: {},
-              params: {},
-              createdAt: Date.now(),
-              updatedAt: Date.now(),
             },
           }
-        }
-        return {
-          activeWorkflowExecution: {
-            ...current,
-            status: payload.status,
-            ...stepPatch,
-          },
-        }
-      })
+        })
+      ) {
+        markBackgroundSessionUnread(set, message)
+      }
       break
     }
 
     case 'criteria.updated': {
-      if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-        markBackgroundSessionUnread()
-        break
-      }
+      const sessionId = message.sessionId
       const payload = message.payload as CriteriaUpdatedPayload
-      set((state) => ({
-        currentSession: state.currentSession ? { ...state.currentSession, criteria: payload.criteria } : null,
-      }))
+      if (
+        !applyChat(set, get, sessionId, (pane) =>
+          pane.session ? { ...pane, session: { ...pane.session, criteria: payload.criteria } } : pane,
+        )
+      ) {
+        markBackgroundSessionUnread(set, message)
+      }
       break
     }
 
     case 'metadata.updated': {
-      if (!isMessageForCurrentSession(message, get().currentSession?.id ?? null)) {
-        markBackgroundSessionUnread()
-        break
-      }
+      const sessionId = message.sessionId
       const payload = message.payload as MetadataUpdatedPayload
-      set((state) => ({
-        currentSession: state.currentSession
-          ? {
-              ...state.currentSession,
-              metadataEntries: {
-                ...state.currentSession.metadataEntries,
-                [payload.key]: payload.entries,
-              },
-            }
-          : null,
-      }))
+      if (
+        !applyChat(set, get, sessionId, (pane) =>
+          pane.session
+            ? {
+                ...pane,
+                session: {
+                  ...pane.session,
+                  metadataEntries: {
+                    ...pane.session.metadataEntries,
+                    [payload.key]: payload.entries,
+                  },
+                },
+              }
+            : pane,
+        )
+      ) {
+        markBackgroundSessionUnread(set, message)
+      }
       break
     }
 
     case 'context.state': {
       const payload = message.payload as ContextStatePayload
-      const isCurrentSession = isMessageForCurrentSession(message, get().currentSession?.id ?? null)
+      const sessionId = message.sessionId
+      const isCurrentSession = isLivePane(get(), sessionId)
 
       if (payload.subAgentId) {
-        if (isCurrentSession) {
-          get().updateSubAgentContextState(payload.subAgentId, payload.context)
+        if (isCurrentSession && sessionId) {
+          set((state) =>
+            updatePane(state, sessionId, (pane) => ({
+              ...pane,
+              subAgentContextStates: {
+                ...pane.subAgentContextStates,
+                [payload.subAgentId!]: payload.context,
+              },
+            })),
+          )
         }
       } else {
-        if (isCurrentSession) {
-          set({ contextState: payload.context })
+        if (isCurrentSession && sessionId) {
+          set((state) => updatePane(state, sessionId, (pane) => ({ ...pane, contextState: payload.context })))
         } else {
-          markBackgroundSessionUnread()
+          markBackgroundSessionUnread(set, message)
         }
       }
       break
@@ -785,21 +976,23 @@ export function handleServerMessage(
     case 'session.name_generated': {
       const payload = message.payload as { name: string }
       const eventSessionId = message.sessionId
-      const activeSessionId = get().currentSession?.id
+      const activeSessionId = get().focusedSessionId ?? get().currentSession?.id
 
       set((state) => {
-        const updatedSessions = state.sessions.map((s) => (s.id === eventSessionId ? { ...s, title: payload.name } : s))
-
-        const updatedCurrentSession =
-          activeSessionId === eventSessionId
-            ? state.currentSession
-              ? { ...state.currentSession, metadata: { ...state.currentSession.metadata, title: payload.name } }
-              : null
-            : state.currentSession
-
+        const base =
+          eventSessionId && state.panes[eventSessionId]?.session
+            ? updatePane(state, eventSessionId, (p) => ({
+                ...p,
+                session: { ...p.session!, metadata: { ...p.session!.metadata, title: payload.name } },
+              }))
+            : state
         return {
-          sessions: updatedSessions,
-          currentSession: updatedCurrentSession,
+          ...base,
+          sessions: base.sessions.map((s) => (s.id === eventSessionId ? { ...s, title: payload.name } : s)),
+          currentSession:
+            activeSessionId === eventSessionId && base.currentSession
+              ? { ...base.currentSession, metadata: { ...base.currentSession.metadata, title: payload.name } }
+              : base.currentSession,
         }
       })
       break
@@ -807,7 +1000,12 @@ export function handleServerMessage(
 
     case 'queue.state': {
       const payload = message.payload as QueueStatePayload
-      set({ queuedMessages: payload.messages ?? [] })
+      const sessionId = message.sessionId ?? effectiveFocusedId(get())
+      if (sessionId && isLivePane(get(), sessionId)) {
+        set((state) => updatePane(state, sessionId, (p) => ({ ...p, queuedMessages: payload.messages ?? [] })))
+      } else {
+        set({ queuedMessages: payload.messages ?? [] })
+      }
       break
     }
 
@@ -824,7 +1022,14 @@ export function handleServerMessage(
 
     case 'git.status': {
       const payload = message.payload as { branch: string | null; diff: { files: GitDiffFile[] } }
-      set({ gitStatus: { branch: payload.branch, diff: payload.diff } })
+      const sessionId = message.sessionId ?? effectiveFocusedId(get())
+      if (sessionId && isLivePane(get(), sessionId)) {
+        set((state) =>
+          updatePane(state, sessionId, (p) => ({ ...p, gitStatus: { branch: payload.branch, diff: payload.diff } })),
+        )
+      } else {
+        set({ gitStatus: { branch: payload.branch, diff: payload.diff } })
+      }
       break
     }
 
@@ -842,11 +1047,23 @@ export function handleServerMessage(
       break
     }
 
+    case 'tasks.update': {
+      useTasksStore.getState().handleTasksUpdate(message.payload as import('@shared/protocol.js').TasksUpdatePayload)
+      break
+    }
+
     case 'error': {
       const payload = message.payload as { code: string; message: string }
       console.error('Server error:', payload)
-      set({
-        error: { code: payload.code, message: payload.message },
+      const sessionId = message.sessionId ?? effectiveFocusedId(get())
+      set((state) => {
+        if (sessionId && isLivePane(state, sessionId)) {
+          return updatePane(state, sessionId, (p) => ({
+            ...p,
+            error: { code: payload.code, message: payload.message },
+          }))
+        }
+        return { error: { code: payload.code, message: payload.message } }
       })
       break
     }

@@ -12,8 +12,11 @@ export function getSessionMessageCount(sessionId: string): number {
   let count = 0
   for (const event of events) {
     if (event.type === 'message.start') {
-      const data = event.data as { role: string }
-      if (data.role === 'user') {
+      const data = event.data as { role: string; isSystemGenerated?: boolean }
+      // System-generated messages (task reminders, auto prompts) are not
+      // "real" user input — they must not count as the first user message so
+      // auto session naming keys off the actual prompt.
+      if (data.role === 'user' && !data.isSystemGenerated) {
         count++
       }
     }
@@ -36,6 +39,8 @@ export interface RunChatTurnParams {
   sessionManager: SessionManager
   sessionId: string
   llmClient: LLMClientWithModel
+  /** Re-resolve the session's LLM client per retry attempt (provider switch mid-turn). */
+  getSessionLLMClient?: () => LLMClientWithModel
   statsIdentity?: StatsIdentity
   signal: AbortSignal
   onMessage: (msg: ServerMessage) => void
@@ -45,6 +50,7 @@ export function buildRunChatTurnParams(params: RunChatTurnParams): {
   sessionManager: SessionManager
   sessionId: string
   llmClient: LLMClientWithModel
+  getSessionLLMClient?: () => LLMClientWithModel
   statsIdentity?: StatsIdentity
   signal: AbortSignal
   onMessage: (msg: ServerMessage) => void
@@ -53,6 +59,7 @@ export function buildRunChatTurnParams(params: RunChatTurnParams): {
     sessionManager: params.sessionManager,
     sessionId: params.sessionId,
     llmClient: params.llmClient,
+    ...(params.getSessionLLMClient ? { getSessionLLMClient: params.getSessionLLMClient } : {}),
     signal: params.signal,
     onMessage: params.onMessage,
     ...(params.statsIdentity ? { statsIdentity: params.statsIdentity } : {}),

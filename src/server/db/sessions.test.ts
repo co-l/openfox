@@ -12,6 +12,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { loadConfig } from '../config.js'
 import { closeDatabase, initDatabase } from './index.js'
 import { createProject, updateProject } from './projects.js'
+import { SETTINGS_KEYS, deleteSetting, setSetting } from './settings.js'
+import { resolveDefaultAgentId } from '../agents/registry.js'
 import {
   createSession,
   deleteSession,
@@ -87,6 +89,55 @@ describe('db sessions', () => {
 
     const session = createSession(projectAId, rootA, 'Dangerous Session')
     expect(session.dangerLevel).toBe('dangerous')
+  })
+
+  it('creates sessions using project default agent', () => {
+    updateProject(projectAId, { defaultAgent: 'builder' })
+
+    const session = createSession(projectAId, rootA, 'Builder Session')
+    expect(session.mode).toBe('builder')
+  })
+
+  it('falls back to global default agent when project has none', () => {
+    setSetting(SETTINGS_KEYS.DEFAULT_AGENT, 'architect')
+
+    const session = createSession(projectAId, rootA, 'Global Session')
+    expect(session.mode).toBe('architect')
+
+    deleteSetting(SETTINGS_KEYS.DEFAULT_AGENT)
+  })
+
+  describe('resolveDefaultAgentId', () => {
+    it('prefers project default over global DB setting', () => {
+      setSetting(SETTINGS_KEYS.DEFAULT_AGENT, 'architect')
+      updateProject(projectAId, { defaultAgent: 'builder' })
+
+      expect(resolveDefaultAgentId(projectAId)).toBe('builder')
+
+      deleteSetting(SETTINGS_KEYS.DEFAULT_AGENT)
+    })
+
+    it('falls back to global DB setting when project has no default', () => {
+      setSetting(SETTINGS_KEYS.DEFAULT_AGENT, 'architect')
+
+      expect(resolveDefaultAgentId(projectAId)).toBe('architect')
+
+      deleteSetting(SETTINGS_KEYS.DEFAULT_AGENT)
+    })
+
+    it('falls back to planner when neither project nor global default is set', () => {
+      expect(resolveDefaultAgentId(projectAId)).toBe('planner')
+      expect(resolveDefaultAgentId()).toBe('planner')
+    })
+
+    it('ignores an empty-string project default and falls back', () => {
+      setSetting(SETTINGS_KEYS.DEFAULT_AGENT, 'architect')
+      updateProject(projectAId, { defaultAgent: '' })
+
+      expect(resolveDefaultAgentId(projectAId)).toBe('architect')
+
+      deleteSetting(SETTINGS_KEYS.DEFAULT_AGENT)
+    })
   })
 
   it('gets session by id', () => {

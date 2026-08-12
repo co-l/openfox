@@ -103,6 +103,18 @@ describe('DropdownMenu', () => {
     })
   })
 
+  describe('positioning', () => {
+    it('right-aligns the menu with the trigger right edge when align="right"', () => {
+      const container = render(
+        <DropdownMenu items={ITEMS} trigger={<button>Open</button>} minWidth="176px" align="right" />,
+      )
+      clickTrigger(container)
+      // jsdom reports a zero-size trigger rect, so right alignment lands the
+      // menu's left edge at -(minWidth) — anchored to the trigger's right.
+      expect(getMenu()?.style.left).toBe('-176px')
+    })
+  })
+
   // Keyboard navigation tests require useEffect to fire (keyboard listener + initial
   // selection are set up in effects). React.act doesn't flush effects in React 19,
   // so these can't be tested with unit tests. Covered by e2e tests instead.

@@ -77,3 +77,14 @@ vi.mock('overlayscrollbars-react', () => {
     useOverlayScrollbars: () => [() => {}, () => null],
   }
 })
+
+// RTL only auto-cleans up when vitest globals are enabled, which they are not
+// here. Without it, a test that leaves a portal/modal mounted leaks its React
+// root into the next test — the following test's `document.body.innerHTML = ''`
+// detaches those nodes, and React's late portal deletion then throws
+// "removeChild: not a child". Unmount every tracked root after each test.
+import { afterEach } from 'vitest'
+import { cleanup } from '@testing-library/react'
+afterEach(() => {
+  cleanup()
+})

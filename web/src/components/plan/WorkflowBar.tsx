@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSessionStore } from '../../stores/session'
+import { useSessionScope, useScopedPaneState } from '../../stores/session/session-scope'
 
 export function WorkflowBar() {
-  const activeWorkflowExecution = useSessionStore((state) => state.activeWorkflowExecution)
+  const sessionId = useSessionScope()
+  const activeWorkflowExecution = useScopedPaneState(
+    sessionId,
+    (pane) => pane.activeWorkflowExecution ?? null,
+    (state) => state.activeWorkflowExecution,
+    null,
+  )
   const exitWorkflow = useSessionStore((state) => state.exitWorkflow)
   const [exiting, setExiting] = useState(false)
 
@@ -12,10 +19,10 @@ export function WorkflowBar() {
   }, [activeWorkflowExecution?.id])
 
   const handleExit = useCallback(() => {
-    if (exiting) return
+    if (exiting || !sessionId) return
     setExiting(true)
-    exitWorkflow()
-  }, [exiting, exitWorkflow])
+    exitWorkflow(sessionId)
+  }, [exiting, exitWorkflow, sessionId])
 
   if (!activeWorkflowExecution) return null
   if (activeWorkflowExecution.status !== 'running' && activeWorkflowExecution.status !== 'waiting') return null

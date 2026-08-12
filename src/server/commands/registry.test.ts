@@ -271,6 +271,21 @@ describe('getDefaultCommandIds', () => {
   })
 })
 
+describe('mark-done default command', () => {
+  it('should ship a mark-done command with proper metadata and prompt', async () => {
+    const defaults = await loadDefaultCommands()
+    const markDone = defaults.find((c) => c.metadata.id === 'mark-done')
+
+    expect(markDone).toBeDefined()
+    expect(markDone!.metadata.name).toBe('Mark Task as Done')
+    expect(markDone!.metadata.agentMode).toBeUndefined()
+    expect(markDone!.prompt.trim().length).toBeGreaterThan(0)
+    expect(markDone!.prompt).toContain('project_tasks')
+    expect(markDone!.prompt).toContain("status='in_progress'")
+    expect(markDone!.prompt).toContain("status='done'")
+  })
+})
+
 async function createProjectCommandFile(projectDir: string, id: string, name: string, prompt: string): Promise<void> {
   const commandsDir = join(projectDir, '.openfox', 'commands')
   await mkdir(commandsDir, { recursive: true })

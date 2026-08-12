@@ -26,16 +26,8 @@ export function TurnStatsModal({ stats: s, onClose }: TurnStatsModalProps) {
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <StatCard label="Total Time" value={formatTime(s.totalTime)} />
-          <StatCard
-            label="Prefill"
-            value={s.prefillTokens >= 1000 ? `${(s.prefillTokens / 1000).toFixed(1)}k` : String(s.prefillTokens)}
-          />
-          <StatCard
-            label="Generated"
-            value={
-              s.generationTokens >= 1000 ? `${(s.generationTokens / 1000).toFixed(1)}k` : String(s.generationTokens)
-            }
-          />
+          <StatCard label="Prefill" value={formatTokens(s.prefillTokens)} />
+          <StatCard label="Generated" value={formatTokens(s.generationTokens)} />
           <StatCard label="LLM Calls" value={String(s.llmCalls?.length ?? 1)} />
         </div>
 
@@ -71,6 +63,11 @@ export function TurnStatsModal({ stats: s, onClose }: TurnStatsModalProps) {
       </div>
     </Modal>
   )
+}
+
+function formatTokens(value: number | null | undefined): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '—'
+  return value >= 1000 ? `${(value / 1000).toFixed(1)}k` : String(value)
 }
 
 function StatCard({ label, value }: { label: string; value: string }) {

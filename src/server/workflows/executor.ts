@@ -29,6 +29,7 @@ import { computeSessionStats } from '../../shared/stats.js'
 import { formatGitDiffFiles } from '../git/diff.js'
 import { executeShellCommand } from './shell.js'
 import { logger } from '../utils/logger.js'
+import { LLMError } from '../utils/errors.js'
 
 // ============================================================================
 // Template Variables
@@ -150,18 +151,25 @@ export function evaluateCondition(
   }
 }
 
+export function findMatchingTransition(
+  transitions: Transition[],
+  stepOutcome: StepOutcome | null,
+  metadataEntries?: Record<string, import('../../shared/types.js').MetadataEntry[]>,
+): Transition | null {
+  for (const transition of transitions) {
+    if (evaluateCondition(transition.when, stepOutcome, metadataEntries)) {
+      return transition
+    }
+  }
+  return null
+}
+
 export function evaluateTransitions(
   transitions: Transition[],
   stepOutcome: StepOutcome | null,
   metadataEntries?: Record<string, import('../../shared/types.js').MetadataEntry[]>,
 ): string {
-  for (const transition of transitions) {
-    if (evaluateCondition(transition.when, stepOutcome, metadataEntries)) {
-      return transition.goto
-    }
-  }
-  // No transition matched — treat as blocked
-  return TERMINAL_BLOCKED
+  return findMatchingTransition(transitions, stepOutcome, metadataEntries)?.goto ?? TERMINAL_BLOCKED
 }
 
 // ============================================================================
@@ -300,8 +308,16 @@ export async function executeWorkflow(
   const messagesBeforeWorkflow = sessionManager.requireSession(sessionId).messages.length
 
   const activeStepIds = new Set(activeSteps.map((s) => s.id))
+  // Sub-groups whose tagged transitions are eligible in this slice run. Starts
+  // with the running slice; each escape into another sub-group adds its tag.
+  const activeSubGroups = new Set<string>()
+  if (subGroup) {
+    activeSubGroups.add(subGroup)
+  }
+  // Map every step so transitions escaping a sub-group slice (see transition
+  // evaluation below) can resolve steps outside the active slice.
   const stepsById = new Map<string, WorkflowStep>()
-  for (const step of activeSteps) {
+  for (const step of workflow.steps) {
     stepsById.set(step.id, step)
   }
 
@@ -384,6 +400,7 @@ export async function executeWorkflow(
       workflow.metadata.name,
       workflow.metadata.color,
       options.params ?? {},
+      subGroup,
     )
   }
 
@@ -473,14 +490,16 @@ export async function executeWorkflow(
         const STEP_DONE_NUDGE =
           "You haven't called step_done(). If you haven't finished the task, continue and when you're finished call step_done()"
 
+        // When resuming from the same step after abort, skip re-injecting the
+        // prompt or nudge — the agent already knows what step it's in and the
+        // user's message (which triggered the resume) is already in context.
+        // LLM-failure retries happen inside streamLLMPure, so the prompt +
+        // reminder stay in history untouched and are never re-injected.
+        const isResumingCurrentStep = isResume && step.id === resumeFromStep && !resumeConsumed
+
         // Build prompt content
         let promptContent: string | null
         let nudgeContent: string | null
-
-        // When resuming from the same step after abort, skip re-injecting the prompt
-        // or nudge — the agent already knows what step it's in and the user's message
-        // (which triggered the resume) is already in context. Just let it continue naturally.
-        const isResumingCurrentStep = isResume && step.id === resumeFromStep && !resumeConsumed
 
         if (!firstEntryForStep.has(step.id) && agentStep.prompt && !isResumingCurrentStep) {
           const resolvedPrompt = resolveTemplate(agentStep.prompt, templateCtx)
@@ -523,38 +542,85 @@ export async function executeWorkflow(
           emitWorkflowMessage(eventStore, sessionId, nudgeContent, currentWindowMessageOptions, onMessage)
         }
 
+        // Block the execution when the LLM retry window is exhausted. Nothing
+        // is rolled back: failed attempts were buffered in streamLLMPure and
+        // never touched history. The step prompt stays in place so a user
+        // retry (resume) reuses the exact same context.
+        const blockOnLLMFailure = (errorMessage: string): OrchestratorResult => {
+          sessionManager.setPhase(sessionId, 'blocked')
+          if (executionId) {
+            sessionManager.blockWorkflow(
+              sessionId,
+              executionId,
+              workflow.metadata.id,
+              workflow.metadata.name,
+              workflow.metadata.color,
+            )
+          }
+          const reason = `Step "${step.name}" failed: ${errorMessage}`
+          return {
+            finalAction: { type: 'BLOCKED', reason, blockedCriteria: [] },
+            iterations,
+            totalTime: (performance.now() - startTime) / 1000,
+          }
+        }
+
         const turnMetrics = new TurnMetrics()
         const es = getEventStore()
         const append = (event: import('../events/types.js').TurnEvent) => es.append(sessionId, event)
 
         let stepDoneCalled = false
 
-        const agentResult = await runAgentTurn(
-          {
-            sessionManager,
-            sessionId,
-            llmClient,
-            ...(options.statsIdentity ? { statsIdentity: options.statsIdentity } : {}),
-            ...(signal ? { signal } : {}),
-            ...(onMessage ? { onMessage } : {}),
-          },
-          turnMetrics,
-          agentStep.agentId ?? resolveDefaultAgentId(),
-          append,
-          {
-            ...(!firstEntryForStep.has(step.id) && !agentStep.prompt && !isResumingCurrentStep
-              ? { injectKickoff: () => injectGenericKickoff(sessionId) }
-              : {}),
-            onToolExecuted: (toolCall: ToolCall, toolResult: ToolResult) => {
-              // Also detected in execute-tools.ts (stepDoneCalled flag) to break
-              // the agent loop immediately. This layer handles workflow orchestration
-              // (transition evaluation) after the agent turn returns.
-              if (toolCall.name === 'step_done' && toolResult.success) {
-                stepDoneCalled = true
-              }
+        let agentResult: Awaited<ReturnType<typeof runAgentTurn>>
+        try {
+          agentResult = await runAgentTurn(
+            {
+              sessionManager,
+              sessionId,
+              llmClient,
+              ...(options.getSessionLLMClient ? { getSessionLLMClient: options.getSessionLLMClient } : {}),
+              ...(options.statsIdentity ? { statsIdentity: options.statsIdentity } : {}),
+              ...(signal ? { signal } : {}),
+              ...(onMessage ? { onMessage } : {}),
+              ...(options.llmRetryPolicy ? { llmRetryPolicy: options.llmRetryPolicy } : {}),
+              ...(isResumingCurrentStep ? { skipAgentReminder: true } : {}),
             },
-          },
-        )
+            turnMetrics,
+            agentStep.agentId ?? resolveDefaultAgentId(),
+            append,
+            {
+              ...(!firstEntryForStep.has(step.id) && !agentStep.prompt && !isResumingCurrentStep
+                ? { injectKickoff: () => injectGenericKickoff(sessionId) }
+                : {}),
+              onToolExecuted: (toolCall: ToolCall, toolResult: ToolResult) => {
+                // Also detected in execute-tools.ts (stepDoneCalled flag) to break
+                // the agent loop immediately. This layer handles workflow orchestration
+                // (transition evaluation) after the agent turn returns.
+                if (toolCall.name === 'step_done' && toolResult.success) {
+                  stepDoneCalled = true
+                }
+              },
+            },
+          )
+        } catch (error) {
+          // Controlled aborts are not failures — let them propagate as before.
+          if (error instanceof Error && error.message === 'Aborted') {
+            throw error
+          }
+          // A thrown LLMError means the retry window was exhausted (transient
+          // failures are retried inside the stream layer). Unexpected internal
+          // errors propagate as before instead of being masked.
+          if (!(error instanceof LLMError)) {
+            throw error
+          }
+          return blockOnLLMFailure(error.message)
+        }
+
+        // Soft LLM failure (retry window exhausted in streamLLMPure) — block
+        // the execution so the user can retry the step on demand.
+        if (agentResult.failed) {
+          return blockOnLLMFailure(agentResult.failed.error)
+        }
 
         firstEntryForStep.add(step.id)
         // After the first resumed turn completes, mark resume as consumed so
@@ -588,7 +654,7 @@ export async function executeWorkflow(
         const promptTemplate = subStep.prompt ?? 'Perform your task.'
         const resolvedPrompt = resolveTemplate(promptTemplate, templateCtx)
 
-        const allAgents = await loadAllAgentsDefault()
+        const allAgents = await loadAllAgentsDefault(sessionManager.getProjectWorkdir(sessionId))
         const agentDef = findAgentById(subStep.subAgentType, allAgents)
         if (!agentDef) {
           logger.error('Sub-agent definition not found', { subAgentType: subStep.subAgentType })
@@ -745,21 +811,31 @@ export async function executeWorkflow(
       }
     }
 
-    // Evaluate transitions
+    // Evaluate transitions. In a slice run, only untagged transitions and
+    // transitions tagged with an entered sub-group are candidates; on full runs
+    // every transition applies.
     const refreshedSession = sessionManager.requireSession(sessionId)
-    const effectiveTransitions = subGroup
-      ? step.transitions.filter((t) => !t.subGroup || t.subGroup === subGroup)
+    const candidates = subGroup
+      ? step.transitions.filter((t) => !t.subGroup || activeSubGroups.has(t.subGroup))
       : step.transitions
-    const rawNextStepId = evaluateTransitions(effectiveTransitions, stepOutcome, refreshedSession.metadataEntries)
+    const fired = findMatchingTransition(candidates, stepOutcome, refreshedSession.metadataEntries)
+    let nextStepId = fired ? fired.goto : TERMINAL_BLOCKED
 
-    // When running a sub-group, treat transitions to steps outside the group as $done
-    const nextStepId =
-      subGroup &&
-      rawNextStepId !== TERMINAL_DONE &&
-      rawNextStepId !== TERMINAL_BLOCKED &&
-      !activeStepIds.has(rawNextStepId)
-        ? TERMINAL_DONE
-        : rawNextStepId
+    // When running a sub-group, a transition leaving the active set either:
+    // - escapes (tagged with an entered sub-group): the target step is pulled
+    //   into the slice and executes, enabling loops across sub-groups; or
+    // - clamps to $done (untagged or tagged with a sub-group never entered).
+    if (subGroup && nextStepId !== TERMINAL_DONE && nextStepId !== TERMINAL_BLOCKED && !activeStepIds.has(nextStepId)) {
+      if (fired && fired.subGroup && activeSubGroups.has(fired.subGroup)) {
+        activeStepIds.add(nextStepId)
+        const targetStep = stepsById.get(nextStepId)
+        if (targetStep?.subGroup) {
+          activeSubGroups.add(targetStep.subGroup)
+        }
+      } else {
+        nextStepId = TERMINAL_DONE
+      }
+    }
 
     // Handle terminal states
     if (nextStepId === TERMINAL_DONE) {

@@ -16,9 +16,9 @@ import { getMaxVisibleItems } from '../db/settings.js'
 import type { Message, Provider, ProviderBackend, StatsIdentity, Attachment } from '../../shared/types.js'
 import type { ProviderManager } from '../provider-manager.js'
 import { runChatTurn } from '../chat/orchestrator.js'
+import { interruptLLMRetryWait, hasRecentLLMFailure } from '../chat/stream-pure.js'
 
-import { runOrchestrator } from '../runner/index.js'
-import { normalizeWorkflowScope } from '../workflows/registry.js'
+import { launchWorkflowRun } from '../runner/launch.js'
 import { appendCompactionPrompt } from '../context/compactor.js'
 import { computeSessionHash, applyDynamicContext, computeUnifiedDiff } from '../chat/dynamic-context.js'
 import { provideAnswer } from '../tools/index.js'
@@ -531,6 +531,7 @@ export function createWebSocketServer(
       sessionManager,
       sessionId,
       llmClient: llmForSession(sessionId),
+      getSessionLLMClient: () => llmForSession(sessionId),
       statsIdentity: statsForSession(sessionId),
       signal: controller.signal,
       onMessage: (msg) => broadcastForSession(sessionId, msg),
@@ -637,7 +638,7 @@ export function createWebSocketServer(
       const { messages, hiddenCount } = buildMessagesFromStoredEvents(events, maxVisible || undefined)
       const pendingConfirmations = foldPendingConfirmations(events)
       const pendingQuestions = getPendingQuestionsForSession(updatedSession.id)
-      const activeWorkflowExecution = sessionManager.getActiveWorkflowExecution(updatedSession.id)
+      const activeWorkflowExecution = sessionManager.getDisplayWorkflowExecution(updatedSession.id)
 
       // Update activeWorkdir when workspace changed so git polling picks up the right dir
       const effectiveWorkdir = updatedSession.workspace ?? updatedSession.workdir
@@ -1008,13 +1009,14 @@ async function handleClientMessage(
     // =========================================================================
 
     case 'context.compact': {
-      if (!client.activeSessionId) {
+      const payload = message.payload as { sessionId?: string } | undefined
+      const sessionId = payload?.sessionId ?? client.activeSessionId
+      if (!sessionId) {
         send(createErrorMessage('NO_SESSION', 'No active session', message.id))
         return
       }
 
-      const session = sessionManager.requireSession(client.activeSessionId)
-      const sessionId = client.activeSessionId
+      const session = sessionManager.requireSession(sessionId)
 
       // Check if session is running
       if (session.isRunning) {
@@ -1042,6 +1044,7 @@ async function handleClientMessage(
         sessionManager,
         sessionId,
         llmClient: llmForSession(sessionId),
+        getSessionLLMClient: () => llmForSession(sessionId),
         statsIdentity: statsForSession(sessionId),
         signal: controller.signal,
         onMessage: (msg) => _broadcastForSession(sessionId, msg),
@@ -1137,12 +1140,13 @@ async function handleClientMessage(
     }
 
     case 'context.applyDynamic.preview': {
-      if (!client.activeSessionId) {
+      const payload = message.payload as { sessionId?: string } | undefined
+      const sessionId = payload?.sessionId ?? client.activeSessionId
+      if (!sessionId) {
         send(createErrorMessage('NO_SESSION', 'No active session', message.id))
         return
       }
 
-      const sessionId = client.activeSessionId
       const session = sessionManager.requireSession(sessionId)
 
       try {
@@ -1194,12 +1198,13 @@ async function handleClientMessage(
     }
 
     case 'context.applyDynamic': {
-      if (!client.activeSessionId) {
+      const payload = message.payload as { sessionId?: string } | undefined
+      const sessionId = payload?.sessionId ?? client.activeSessionId
+      if (!sessionId) {
         send(createErrorMessage('NO_SESSION', 'No active session', message.id))
         return
       }
 
-      const sessionId = client.activeSessionId
       const session = sessionManager.requireSession(sessionId)
 
       if (session.isRunning) {
@@ -1236,12 +1241,15 @@ async function handleClientMessage(
     // =========================================================================
 
     case 'runner.launch': {
-      if (!client.activeSessionId) {
+      const launchPayloadEarly = message.payload as
+        { workflowId?: string; resumeFrom?: string; sessionId?: string } | undefined
+      const sessionId = launchPayloadEarly?.sessionId ?? client.activeSessionId
+      if (!sessionId) {
         send(createErrorMessage('NO_SESSION', 'No active session', message.id))
         return
       }
 
-      const session = sessionManager.requireSession(client.activeSessionId)
+      const session = sessionManager.requireSession(sessionId)
 
       // If running, queue for later processing instead of rejecting
       if (session.isRunning) {
@@ -1259,20 +1267,18 @@ async function handleClientMessage(
         }
 
         // Queue as ASAP message - will be processed at next turn boundary
-        sessionManager.queueMessage(client.activeSessionId, 'asap', fullContent, attachments, 'workflow-launch')
+        sessionManager.queueMessage(sessionId, 'asap', fullContent, attachments, 'workflow-launch')
 
-        // Return success with queue state
-        const queueState = sessionManager.getQueueState(client.activeSessionId)
-        send({
+        // Return success with queue state, tagged with the target session so
+        // the client attributes the queue feedback to the launching pane.
+        const queueState = sessionManager.getQueueState(sessionId)
+        sendForSession(sessionId, {
           type: 'queue.state',
           payload: { success: true, queueState },
           id: message.id,
         })
         return
       }
-
-      // Parse launch payload early to check for resume
-      const launchPayloadEarly = message.payload as { workflowId?: string; resumeFrom?: string } | undefined
 
       // Skip criteria check when resuming from a user step
       if (!launchPayloadEarly?.resumeFrom) {
@@ -1282,8 +1288,6 @@ async function handleClientMessage(
           return
         }
       }
-
-      const sessionId = client.activeSessionId
 
       // Check if session is blocked - user intervention resets it
       if (session.phase === 'blocked') {
@@ -1313,11 +1317,9 @@ async function handleClientMessage(
       const hasUserMessage = hasUserContent || hasUserAttachments
       const isResume = !!launchPayload?.resumeFrom
 
-      // Mark session as running (emits running.changed event)
-      sessionManager.setRunning(sessionId, true)
-      sendForSession(sessionId, createSessionRunningMessage(true))
-
       // Create AbortController for this run (abort existing if any - defense in depth)
+      // The running-state lifecycle (setRunning + session.running messages) is
+      // owned by the shared launcher below.
       const controller = new AbortController()
       const existingController = activeAgents.get(sessionId)
       if (existingController) {
@@ -1362,85 +1364,35 @@ async function handleClientMessage(
         }
       }
 
-      runOrchestrator({
-        sessionManager,
-        sessionId,
-        llmClient: llmForSession(sessionId),
-        statsIdentity: statsForSession(sessionId),
-        scope: normalizeWorkflowScope(launchPayload?.scope),
-        ...(launchPayload?.workflowId ? { workflowId: launchPayload.workflowId } : {}),
-        ...(launchPayload?.subGroup ? { subGroup: launchPayload.subGroup } : {}),
-        ...(isResume && launchPayload?.resumeFrom ? { resumeFromStep: launchPayload.resumeFrom } : {}),
-        ...(isResume && launchPayload?.stepOutput ? { initialStepOutput: launchPayload.stepOutput } : {}),
-        ...(isResume && launchPayload?.userChoice ? { userChoice: launchPayload.userChoice } : {}),
-        ...(launchPayload?.params ? { params: launchPayload.params } : {}),
-        // On resume, prefer params/stepOutput from the persisted workflow execution
-        ...(isResume
-          ? (() => {
-              const exec = sessionManager.getActiveWorkflowExecution(sessionId)
-              if (!exec) return {}
-
-              if (exec.status === 'waiting') {
-                // Normal resume from a user step — call resumeWorkflow to update status
-                const resumed = sessionManager.resumeWorkflow(
-                  sessionId,
-                  exec.id,
-                  exec.workflowId,
-                  exec.workflowName,
-                  exec.workflowColor,
-                )
-                if (resumed) {
-                  return {
-                    params: resumed.params,
-                    initialStepOutput: resumed.stepOutput,
-                    ...(exec.currentStepId ? { resumeFromStep: exec.currentStepId } : {}),
-                  }
-                }
-              }
-
-              // For 'running' status (e.g. abort during agent step), use existing
-              // execution info without calling resumeWorkflow — status is already current.
-              return {
-                ...(Object.keys(exec.params).length > 0 ? { params: exec.params } : {}),
-                ...(Object.keys(exec.stepOutput).length > 0 ? { initialStepOutput: exec.stepOutput } : {}),
-                ...(exec.currentStepId ? { resumeFromStep: exec.currentStepId } : {}),
-              }
-            })()
-          : {}),
-        ...(hasUserMessage
-          ? {
-              userMessage: {
+      launchWorkflowRun(
+        {
+          sessionManager,
+          sessionId,
+          controller,
+          llmClient: llmForSession(sessionId),
+          getSessionLLMClient: () => llmForSession(sessionId),
+          statsIdentity: statsForSession(sessionId),
+          broadcastForSession: (sid, msg) => _broadcastForSession(sid, msg),
+          onFinished: () => cleanupAfterTurn(sessionId, controller, sendForSession, true),
+        },
+        {
+          ...(launchPayload?.workflowId ? { workflowId: launchPayload.workflowId } : {}),
+          ...(launchPayload?.subGroup ? { subGroup: launchPayload.subGroup } : {}),
+          ...(launchPayload?.scope
+            ? { scope: launchPayload.scope as import('../../shared/types.js').WorkflowLaunchScope }
+            : {}),
+          ...(isResume && launchPayload?.resumeFrom ? { resumeFrom: launchPayload.resumeFrom } : {}),
+          ...(isResume && launchPayload?.stepOutput ? { stepOutput: launchPayload.stepOutput } : {}),
+          ...(isResume && launchPayload?.userChoice ? { userChoice: launchPayload.userChoice } : {}),
+          ...(launchPayload?.params ? { params: launchPayload.params } : {}),
+          ...(hasUserMessage
+            ? {
                 content: hasUserContent ? launchPayload!.content! : '',
                 ...(hasUserAttachments ? { attachments: launchAttachments! } : {}),
-              },
-            }
-          : {}),
-        signal: controller.signal,
-        onMessage: (msg) => _broadcastForSession(sessionId, msg), // For path confirmation dialogs
-      })
-        .catch((error: unknown) => {
-          // Don't create error message for controlled abort
-          if (error instanceof Error && error.message === 'Aborted') {
-            return
-          }
-          const errorMessage = error instanceof Error ? error.message : String(error)
-          logger.error('Runner error', { error: errorMessage, sessionId })
-          // Surface validation errors to the user (e.g. missing required params)
-          _broadcastForSession(
-            sessionId,
-            createServerMessage('chat.error', { error: errorMessage, recoverable: false }),
-          )
-        })
-        .finally(() => {
-          try {
-            // Runner orchestrator bypasses runChatTurn, so isRunning must be cleared here
-            sessionManager.setRunning(sessionId, false)
-            sendForSession(sessionId, createSessionRunningMessage(false))
-            cleanupAfterTurn(sessionId, controller, sendForSession, true)
-          } catch {
-            // Session may have been deleted during execution
-          }
-        })
+              }
+            : {}),
+        },
+      )
 
       break
     }
@@ -1499,12 +1451,13 @@ async function handleClientMessage(
     // =========================================================================
 
     case 'workflow.exit': {
-      if (!client.activeSessionId) {
+      const payload = message.payload as { sessionId?: string } | undefined
+      const exitSessionId = payload?.sessionId ?? client.activeSessionId
+      if (!exitSessionId) {
         send(createErrorMessage('NO_SESSION', 'No active session', message.id))
         return
       }
 
-      const exitSessionId = client.activeSessionId
       const exitSession = sessionManager.getSession(exitSessionId)
       if (!exitSession) {
         send(createErrorMessage('NOT_FOUND', 'Session not found', message.id))
@@ -1539,6 +1492,77 @@ async function handleClientMessage(
       }
 
       send({ type: 'ack', payload: {}, id: message.id })
+      break
+    }
+
+    // =========================================================================
+    // LLM Retry
+    // =========================================================================
+
+    case 'chat.llm_retry_now': {
+      const payload = message.payload as import('../../shared/protocol.js').ChatLLMRetryNowPayload | undefined
+      const retrySessionId = payload?.sessionId ?? client.activeSessionId
+      if (!retrySessionId) {
+        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
+        return
+      }
+      // Interrupt the in-flight backoff wait — the stream's next attempt starts immediately
+      const interrupted = interruptLLMRetryWait(retrySessionId)
+      send({ type: 'ack', payload: { interrupted }, id: message.id })
+      break
+    }
+
+    case 'chat.retry': {
+      const payload = message.payload as import('../../shared/protocol.js').ChatRetryPayload | undefined
+      const retrySessionId = payload?.sessionId ?? client.activeSessionId
+      if (!retrySessionId) {
+        send(createErrorMessage('NO_SESSION', 'No active session', message.id))
+        return
+      }
+
+      const retrySession = sessionManager.getSession(retrySessionId)
+      if (!retrySession) {
+        send(createErrorMessage('NOT_FOUND', 'Session not found', message.id))
+        return
+      }
+      if (retrySession.isRunning) {
+        send(createErrorMessage('SESSION_RUNNING', 'Session is already running', message.id))
+        return
+      }
+      // Only allow a retry when the last turn actually failed (definitive LLM
+      // failure recorded within the retry window) — never an unsolicited turn.
+      if (!hasRecentLLMFailure(retrySessionId, 30 * 60_000)) {
+        send(createErrorMessage('NO_FAILED_TURN', 'No failed turn to retry', message.id))
+        return
+      }
+      // The workflow resume path owns retries for blocked/running workflow
+      // executions — a plain turn would fight the workflow state machine
+      const latestExec = sessionManager.getLatestWorkflowExecution(retrySessionId)
+      if (
+        latestExec &&
+        (latestExec.status === 'blocked' || latestExec.status === 'running' || latestExec.status === 'waiting')
+      ) {
+        send(createErrorMessage('WORKFLOW_ACTIVE', 'A workflow run is active', message.id))
+        return
+      }
+
+      // User intervention resets a blocked phase
+      if (retrySession.phase === 'blocked') {
+        sessionManager.setPhase(retrySessionId, 'build')
+      }
+
+      // Re-run the last turn WITHOUT re-adding the user message — the context is
+      // already in history, untouched by the failed attempt.
+      const controller = new AbortController()
+      const existingController = activeAgents.get(retrySessionId)
+      if (existingController) {
+        logger.warn('Aborting existing agent before retrying turn', { sessionId: retrySessionId })
+        existingController.abort()
+      }
+      activeAgents.set(retrySessionId, controller)
+
+      send({ type: 'ack', payload: {}, id: message.id })
+      _startTurnWithCompletionChain(retrySessionId, controller)
       break
     }
 

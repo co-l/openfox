@@ -266,8 +266,21 @@ export const AssistantMessage = memo(function AssistantMessage({
               const modeColor = getAgentColor(agents, stats.mode)
               const agentInfo = agents.find((a) => a.id === stats.mode)
               const modeName = agentInfo?.name ?? stats.mode
-              const formatTokens = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toString())
-              const formatSpeed = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toFixed(1))
+              const formatTokens = (n: number | null | undefined) => {
+                if (typeof n !== 'number' || !Number.isFinite(n)) return null
+                return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toString()
+              }
+              const formatSpeed = (n: number | null | undefined) => {
+                if (typeof n !== 'number' || !Number.isFinite(n)) return null
+                return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toFixed(1)
+              }
+              const formatUsage = (tokens: number | null | undefined, speed: number | null | undefined) => {
+                const formattedTokens = formatTokens(tokens)
+                const formattedSpeed = formatSpeed(speed)
+                return formattedTokens !== null && formattedSpeed !== null
+                  ? `${formattedTokens} @ ${formattedSpeed}`
+                  : '—'
+              }
 
               return (
                 <div key={i} className="flex items-center justify-center gap-1.5 text-[10px] text-text-muted">
@@ -284,13 +297,9 @@ export const AssistantMessage = memo(function AssistantMessage({
                     </>
                   )}
                   <span className="text-text-muted">·</span>
-                  <span>
-                    {formatTokens(stats.prefillTokens)} @ {formatSpeed(stats.prefillSpeed)} pp
-                  </span>
+                  <span>{formatUsage(stats.prefillTokens, stats.prefillSpeed)} pp</span>
                   <span className="text-text-muted">·</span>
-                  <span>
-                    {formatTokens(stats.generationTokens)} @ {formatSpeed(stats.generationSpeed)} tg
-                  </span>
+                  <span>{formatUsage(stats.generationTokens, stats.generationSpeed)} tg</span>
                   <span className="text-text-muted">·</span>
                   <button
                     type="button"

@@ -9,9 +9,10 @@ import { SETTINGS_KEYS } from '../stores/settings'
 interface ChangelogModalProps {
   isOpen: boolean
   onClose: () => void
+  since?: string
 }
 
-export function ChangelogModal({ isOpen, onClose }: ChangelogModalProps) {
+export function ChangelogModal({ isOpen, onClose, since }: ChangelogModalProps) {
   const [content, setContent] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const { settings, getSetting, setSetting } = useSettingsStoreState()
@@ -25,7 +26,8 @@ export function ChangelogModal({ isOpen, onClose }: ChangelogModalProps) {
   useEffect(() => {
     if (!isOpen) return
     setLoading(true)
-    authFetch('/api/changelog')
+    const url = since ? `/api/changelog?since=${encodeURIComponent(since)}` : '/api/changelog'
+    authFetch(url)
       .then((res) => res.json())
       .then((data) => {
         setContent(data.content as string)
@@ -34,7 +36,7 @@ export function ChangelogModal({ isOpen, onClose }: ChangelogModalProps) {
         setContent('# Changelog\n\nFailed to load changelog.')
       })
       .finally(() => setLoading(false))
-  }, [isOpen])
+  }, [isOpen, since])
 
   const handleToggleShowOnUpdate = useCallback(() => {
     const newValue = showOnUpdate ? 'false' : 'true'

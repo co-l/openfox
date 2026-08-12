@@ -24,11 +24,14 @@ import type { ToolContext } from './types.js'
 
 const metadata = { id: 'test', name: 'Test', description: 'Test', version: '' }
 
-function makeContext(overrides?: Partial<ToolContext>): ToolContext {
+function makeContext(overrides?: Partial<ToolContext> & { projectWorkdir?: string }): ToolContext {
   return {
     workdir: '/session/project',
     sessionId: 'test-session',
-    sessionManager: { requireSession: vi.fn() } as any,
+    sessionManager: {
+      requireSession: vi.fn(),
+      getProjectWorkdir: vi.fn().mockReturnValue(overrides?.projectWorkdir ?? '/session/project'),
+    } as any,
     ...overrides,
   }
 }
@@ -57,25 +60,26 @@ describe('load_skill handler', () => {
     vi.clearAllMocks()
   })
 
-  it('passes session workdir to loadAllSkills instead of global server workdir', async () => {
+  it('passes the session project workdir to loadAllSkills instead of the effective workspace workdir', async () => {
     vi.mocked(isSkillEnabled).mockReturnValueOnce(true)
     vi.mocked(loadAllSkills).mockResolvedValueOnce([])
     vi.mocked(findSkillById).mockReturnValueOnce(undefined)
 
-    const ctx = makeContext({ workdir: '/my/project' })
+    const ctx = makeContext({ workdir: '/workspaces/openfox/review-branch', projectWorkdir: '/original/project' })
 
     await loadSkillTool.execute({ skillId: 'nonexistent' }, ctx)
 
-    expect(loadAllSkills).toHaveBeenCalledWith('/test/config', '/my/project')
+    expect(loadAllSkills).toHaveBeenCalledWith('/test/config', '/original/project')
+    expect(loadAllSkills).not.toHaveBeenCalledWith('/test/config', '/workspaces/openfox/review-branch')
     expect(loadAllSkills).not.toHaveBeenCalledWith('/test/config', '/global-server-workdir')
   })
 
-  it('finds a skill loaded from session workdir', async () => {
+  it('finds a skill loaded from the project workdir', async () => {
     const skill: SkillDefinition = {
       metadata: { id: 'proj-skill', name: 'Project Skill', description: 'A project skill', version: '1.0' },
       prompt: 'Do project things.',
       legacy: false,
-      directory: '/my/project/.openfox/skills/proj-skill',
+      directory: '/original/project/.openfox/skills/proj-skill',
     }
 
     vi.mocked(isSkillEnabled).mockReturnValueOnce(true)
@@ -84,12 +88,12 @@ describe('load_skill handler', () => {
       skills.find((s) => s.metadata.id === id),
     )
 
-    const ctx = makeContext({ workdir: '/my/project' })
+    const ctx = makeContext({ workdir: '/workspaces/openfox/review-branch', projectWorkdir: '/original/project' })
 
     const result = await loadSkillTool.execute({ skillId: 'proj-skill' }, ctx)
 
     expect(result.success).toBe(true)
     expect(result.output).toContain('Do project things.')
-    expect(loadAllSkills).toHaveBeenCalledWith('/test/config', '/my/project')
+    expect(loadAllSkills).toHaveBeenCalledWith('/test/config', '/original/project')
   })
 })

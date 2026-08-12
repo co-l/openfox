@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { writeFile, mkdir, rm } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { computeFileHash, validateFileForWrite, FileNotReadError, FileChangedExternallyError } from './file-tracker.js'
 import type { FileReadEntry } from '../../shared/types.js'
@@ -147,6 +147,127 @@ describe('file-tracker', () => {
       const result = await validateFileForWrite(filePath, readFiles)
 
       expect(result.valid).toBe(true)
+    })
+  })
+
+  describe('cross-workspace matching', () => {
+    it('allows write when the same relative path was read with identical content in another workspace', async () => {
+      const originalDir = join(testDir, 'original')
+      const workspaceDir = join(testDir, 'workspace')
+      await mkdir(join(originalDir, 'src'), { recursive: true })
+      await mkdir(join(workspaceDir, 'src'), { recursive: true })
+
+      const content = 'shared content'
+      await writeFile(join(originalDir, 'src', 'app.ts'), content)
+      await writeFile(join(workspaceDir, 'src', 'app.ts'), content)
+
+      const origPath = join(originalDir, 'src', 'app.ts')
+      const wsPath = join(workspaceDir, 'src', 'app.ts')
+
+      const hash = await computeFileHash(origPath)
+      const readFiles: Record<string, FileReadEntry> = {
+        [origPath]: { hash: hash!, readAt: new Date().toISOString(), relPath: join('src', 'app.ts') },
+      }
+
+      const result = await validateFileForWrite(wsPath, readFiles, workspaceDir)
+
+      expect(result.valid).toBe(true)
+    })
+
+    it('rejects write when the same relative path has different content across workspaces', async () => {
+      const originalDir = join(testDir, 'original')
+      const workspaceDir = join(testDir, 'workspace')
+      await mkdir(originalDir, { recursive: true })
+      await mkdir(workspaceDir, { recursive: true })
+
+      await writeFile(join(originalDir, 'app.ts'), 'original content')
+      await writeFile(join(workspaceDir, 'app.ts'), 'diverged content')
+
+      const origPath = join(originalDir, 'app.ts')
+      const wsPath = join(workspaceDir, 'app.ts')
+
+      const hash = await computeFileHash(origPath)
+      const readFiles: Record<string, FileReadEntry> = {
+        [origPath]: { hash: hash!, readAt: new Date().toISOString(), relPath: 'app.ts' },
+      }
+
+      const result = await validateFileForWrite(wsPath, readFiles, workspaceDir)
+
+      // The agent never read THIS copy, so it must read it first — it is not
+      // an external modification of a file the agent actually read.
+      expect(result.valid).toBe(false)
+      expect(result.error).toBeInstanceOf(FileNotReadError)
+    })
+
+    it('skips cross-workspace matching for files outside the workdir', async () => {
+      const baseA = join(testDir, 'base-a')
+      const baseB = join(testDir, 'base-b')
+      await mkdir(baseA, { recursive: true })
+      await mkdir(baseB, { recursive: true })
+
+      const content = 'identical content'
+      const outsideA = join(testDir, 'outside-a', 'x.txt')
+      const outsideB = join(testDir, 'outside-b', 'x.txt')
+      await mkdir(dirname(outsideA), { recursive: true })
+      await mkdir(dirname(outsideB), { recursive: true })
+      await writeFile(outsideA, content)
+      await writeFile(outsideB, content)
+
+      // Both produce the same '../...'-style relPath despite living in unrelated dirs.
+      const readFiles: Record<string, FileReadEntry> = {
+        [outsideA]: {
+          hash: (await computeFileHash(outsideA))!,
+          readAt: new Date().toISOString(),
+          relPath: '../outside-a/x.txt',
+        },
+      }
+
+      const result = await validateFileForWrite(outsideB, readFiles, baseB)
+
+      expect(result.valid).toBe(false)
+      expect(result.error).toBeInstanceOf(FileNotReadError)
+    })
+
+    it('rejects write when no relative path matches', async () => {
+      const workspaceDir = join(testDir, 'workspace')
+      await mkdir(workspaceDir, { recursive: true })
+      await writeFile(join(workspaceDir, 'app.ts'), 'content')
+
+      const readFiles: Record<string, FileReadEntry> = {
+        [join(testDir, 'original', 'other.ts')]: {
+          hash: 'deadbeef',
+          readAt: new Date().toISOString(),
+          relPath: 'other.ts',
+        },
+      }
+
+      const result = await validateFileForWrite(join(workspaceDir, 'app.ts'), readFiles, workspaceDir)
+
+      expect(result.valid).toBe(false)
+      expect(result.error).toBeInstanceOf(FileNotReadError)
+    })
+
+    it('does not match across workspaces when no baseDir is provided', async () => {
+      const originalDir = join(testDir, 'original')
+      const workspaceDir = join(testDir, 'workspace')
+      await mkdir(originalDir, { recursive: true })
+      await mkdir(workspaceDir, { recursive: true })
+
+      await writeFile(join(originalDir, 'app.ts'), 'content')
+      await writeFile(join(workspaceDir, 'app.ts'), 'content')
+
+      const origPath = join(originalDir, 'app.ts')
+      const wsPath = join(workspaceDir, 'app.ts')
+
+      const hash = await computeFileHash(origPath)
+      const readFiles: Record<string, FileReadEntry> = {
+        [origPath]: { hash: hash!, readAt: new Date().toISOString(), relPath: 'app.ts' },
+      }
+
+      const result = await validateFileForWrite(wsPath, readFiles)
+
+      expect(result.valid).toBe(false)
+      expect(result.error).toBeInstanceOf(FileNotReadError)
     })
   })
 })

@@ -1,6 +1,7 @@
 import { ScrollArea } from './ScrollArea'
 import { useSessionStore, type PendingPathConfirmation } from '../../stores/session'
 import { WarningSmallIcon } from './icons'
+import { useSessionScope } from '../../stores/session/session-scope'
 
 interface PathConfirmationButtonsProps {
   confirmation: PendingPathConfirmation
@@ -41,8 +42,8 @@ function getReasonMessage(reason: PendingPathConfirmation['reason']): {
 }
 
 export function PathConfirmationButtons({ confirmation }: PathConfirmationButtonsProps) {
+  const sessionId = useSessionScope()
   const confirmPath = useSessionStore((state) => state.confirmPath)
-  const currentSession = useSessionStore((state) => state.currentSession)
   const switchDangerLevel = useSessionStore((state) => state.switchDangerLevel)
   const { title, description } = getReasonMessage(confirmation.reason)
 
@@ -53,10 +54,9 @@ export function PathConfirmationButtons({ confirmation }: PathConfirmationButton
   const isGitNoVerify = confirmation.reason === 'git_no_verify'
 
   const handleEnableDangerousAndAllow = () => {
-    if (currentSession?.id) {
-      switchDangerLevel('dangerous')
-    }
-    confirmPath(confirmation.callId, true, false)
+    if (!sessionId) return
+    switchDangerLevel(sessionId, 'dangerous')
+    confirmPath(sessionId, confirmation.callId, true, false)
   }
 
   return (
@@ -85,13 +85,13 @@ export function PathConfirmationButtons({ confirmation }: PathConfirmationButton
 
       <div className="flex gap-2">
         <button
-          onClick={() => confirmPath(confirmation.callId, false)}
+          onClick={() => sessionId && confirmPath(sessionId, confirmation.callId, false)}
           className="flex-1 px-3 py-1.5 text-xs font-medium rounded bg-bg-tertiary hover:bg-bg-tertiary/80 text-text-secondary border border-border transition-colors"
         >
           Deny
         </button>
         <button
-          onClick={() => confirmPath(confirmation.callId, true, false)}
+          onClick={() => sessionId && confirmPath(sessionId, confirmation.callId, true, false)}
           className="flex-1 px-3 py-1.5 text-xs font-medium rounded bg-accent-primary hover:bg-accent-primary/80 text-text-primary transition-colors"
         >
           Allow

@@ -3,6 +3,7 @@ import { cleanup, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useSessionStore } from '../../stores/session'
 import { SETTINGS_KEYS, useSettingsStore } from '../../stores/settings'
+import { SessionScopeProvider } from '../../stores/session/session-scope'
 import { ToolCallDisplay } from './ToolCallDisplay'
 
 vi.mock('./RunCommandView', () => ({
@@ -22,6 +23,12 @@ vi.mock('./DiagnosticsView', () => ({
 
 vi.mock('./Markdown', () => ({
   Markdown: ({ content }: { content: string }) => <div data-testid="markdown">{content}</div>,
+}))
+
+vi.mock('./ProjectTasksView', () => ({
+  ProjectTasksView: ({ action }: { action: string }) => (
+    <div data-testid="project-tasks-view">project tasks board ({action})</div>
+  ),
 }))
 
 vi.mock('./ScrollArea', () => ({
@@ -203,6 +210,88 @@ describe('ToolCallDisplay — PathConfirmationButtons placement', () => {
     expect(previewPos).not.toBe(-1)
     expect(denyPos).not.toBe(-1)
     expect(denyPos).toBeGreaterThan(previewPos)
+  })
+
+  it('renders PathConfirmationButtons for a non-focused split pane without focusing it', () => {
+    useSessionStore.setState({
+      focusedSessionId: 's1',
+      pendingPathConfirmations: [],
+      panes: {
+        s2: {
+          session: null,
+          messages: [],
+          hiddenCount: 0,
+          currentTodos: [],
+          contextState: null,
+          subAgentContextStates: {},
+          pendingPathConfirmations: [pendingConfirmation],
+          pendingQuestions: [],
+          visionFallbackByMessage: {},
+          queuedMessages: [],
+          abortInProgress: false,
+          restoredInput: null,
+          activeWorkflowExecution: null,
+          gitStatus: null,
+          error: null,
+          llmRetry: null,
+        },
+      },
+    })
+
+    const { container } = render(
+      <SessionScopeProvider value="s2">
+        <ToolCallDisplay
+          tool="run_command"
+          args={{ command: 'echo hello' }}
+          status="pending"
+          variant="expandable"
+          callId="call-run-1"
+        />
+      </SessionScopeProvider>,
+    )
+
+    expect(container.textContent).toContain('Deny')
+    expect(container.textContent).toContain('Allow')
+    expect(container.textContent).toContain('Allow Everything')
+  })
+})
+
+describe('ToolCallDisplay — project_tasks', () => {
+  beforeEach(() => {
+    useSessionStore.setState({ pendingPathConfirmations: [] })
+    useSettingsStore.setState({ settings: {} })
+  })
+
+  afterEach(cleanup)
+
+  it('renders the project tasks view for a successful list', () => {
+    const { container } = render(
+      <ToolCallDisplay
+        tool="project_tasks"
+        args={{ action: 'list' }}
+        status="success"
+        result={'{"gates":[],"tasks":[]}'}
+        variant="expandable"
+      />,
+    )
+
+    expect(container.querySelector('[data-testid="project-tasks-view"]')).not.toBeNull()
+    expect(container.textContent).toContain('project tasks board (list)')
+  })
+
+  it('does not fall through to the generic result pre for project_tasks', () => {
+    const { container } = render(
+      <ToolCallDisplay
+        tool="project_tasks"
+        args={{ action: 'move', taskId: 'tk_02' }}
+        status="success"
+        result={'{"id":"tk_02","status":"in_progress"}'}
+        variant="expandable"
+      />,
+    )
+
+    expect(container.querySelector('[data-testid="project-tasks-view"]')).not.toBeNull()
+    expect(container.textContent).not.toContain('Result:')
   })
 })
 

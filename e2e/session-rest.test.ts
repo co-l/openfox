@@ -202,7 +202,7 @@ describe('Session REST API', () => {
       const client = await createTestClient({ url: server.wsUrl })
       await client.send('session.load', { sessionId })
 
-      // Send a message that triggers slow streaming (gives us time to delete mid-flight)
+      // Send a message that triggers streaming (gives us time to delete mid-flight)
       client.send('chat.send', { content: 'Write a very long and detailed explanation of TypeScript.' })
 
       // Wait for session to be marked as running

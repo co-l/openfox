@@ -8,6 +8,9 @@ import {
   createMessageStartEvent,
   createToolCallEvent,
   createToolResultEvent,
+  evaluateLLMRetry,
+  hasRecentLLMFailure,
+  recordLLMFailure,
   streamLLMPure,
 } from './stream-pure.js'
 
@@ -155,6 +158,56 @@ describe('stream-pure', () => {
     expect(result.content).toBe('')
   })
 
+  it('marks the result as errored without emitting chat.error when the stream reports an error', async () => {
+    const client = createMockClient([{ type: 'error', error: 'boom' }])
+
+    const gen = streamLLMPure({
+      messageId: 'msg-error',
+      systemPrompt: 'system',
+      llmClient: client,
+      messages: [{ role: 'user', content: 'hello' }],
+    })
+
+    const events: Array<{ type: string; data: unknown }> = []
+    const result = await consumeStreamGenerator(gen, (event) => {
+      events.push(event)
+    })
+
+    // A request that fails before any content emits nothing (case 1) — and the
+    // caller owns failure UX, so no chat.error is emitted.
+    expect(events).toEqual([])
+    expect(result.error).toBe('boom')
+    expect(result.usage).toEqual({ promptTokens: 0, completionTokens: 0 })
+  })
+
+  it('streams partial content live when the stream fails mid-flight (case 2)', async () => {
+    const client = createMockClient([
+      { type: 'text_delta', content: 'partial ' },
+      { type: 'text_delta', content: 'work' },
+      { type: 'error', error: 'boom' },
+    ])
+
+    const gen = streamLLMPure({
+      messageId: 'msg-partial',
+      systemPrompt: 'system',
+      llmClient: client,
+      messages: [{ role: 'user', content: 'hello' }],
+    })
+
+    const events: Array<{ type: string; data: unknown }> = []
+    const result = await consumeStreamGenerator(gen, (event) => {
+      events.push(event)
+    })
+
+    // The partial content stays visible (kept in history by the caller); the
+    // caller decides how to continue. No chat.error is emitted.
+    expect(events).toEqual([
+      { type: 'message.delta', data: { messageId: 'msg-partial', content: 'partial ' } },
+      { type: 'message.delta', data: { messageId: 'msg-partial', content: 'work' } },
+    ])
+    expect(result.error).toBe('boom')
+  })
+
   it('does not emit chat.error when aborted mid-stream', async () => {
     vi.useFakeTimers()
 
@@ -190,8 +243,8 @@ describe('stream-pure', () => {
       events.push(event)
     })
 
-    // Advance time a tiny bit so the first text_delta flows through but the
-    // 10ms timer inside the mock client hasn't fired yet.
+    // Events stream live: the first text_delta is already visible before the
+    // 10ms timer inside the mock client fires.
     await vi.advanceTimersByTimeAsync(1)
     expect(events.filter((e) => e.type === 'message.delta')).toHaveLength(1)
 
@@ -199,12 +252,13 @@ describe('stream-pure', () => {
     controller.abort()
 
     // Advance past the remaining timer → mock client throws →
-    // streamWithSegments yields 'error' → our fix should suppress chat.error
+    // streamWithSegments yields 'error' → the turn is aborted, not a failure
     await vi.advanceTimersByTimeAsync(10)
 
     const result = await consumePromise
 
     expect(events.filter((e) => e.type === 'chat.error')).toHaveLength(0)
+    expect(events.filter((e) => e.type === 'message.delta')).toHaveLength(1)
     expect(result.aborted).toBe(true)
   })
 
@@ -521,6 +575,60 @@ describe('stream-pure', () => {
 
       // Should match the first pattern that triggers (the one that appears first in content)
       expect(result.patternMatch).toBeDefined()
+    })
+  })
+
+  describe('evaluateLLMRetry', () => {
+    const policy = {
+      backoffMs: [1000, 5000, 30_000],
+      minIntervalMs: 60_000,
+      maxDurationMs: 30 * 60_000,
+      maxAttempts: 40,
+    }
+
+    it('escalates delays through the backoff ladder, then holds at the steady interval', () => {
+      const now = 1_000_000
+      expect(evaluateLLMRetry(1, now, now, policy)).toEqual({ retry: true, delayMs: 1000, attempt: 2 })
+      expect(evaluateLLMRetry(2, now, now, policy)).toEqual({ retry: true, delayMs: 5000, attempt: 3 })
+      expect(evaluateLLMRetry(3, now, now, policy)).toEqual({ retry: true, delayMs: 30_000, attempt: 4 })
+      expect(evaluateLLMRetry(4, now, now, policy)).toEqual({ retry: true, delayMs: 60_000, attempt: 5 })
+      expect(evaluateLLMRetry(10, now, now, policy)).toEqual({ retry: true, delayMs: 60_000, attempt: 11 })
+    })
+
+    it('gives up once the retry window elapses', () => {
+      const first = 1_000_000
+      const before = first + 30 * 60_000 - 1
+      const after = first + 30 * 60_000
+      expect(evaluateLLMRetry(5, first, before, policy)).toEqual({ retry: true, delayMs: 60_000, attempt: 6 })
+      expect(evaluateLLMRetry(5, first, after, policy)).toEqual({ retry: false })
+    })
+
+    it('gives up once the attempt backstop is reached', () => {
+      const now = 1_000_000
+      expect(evaluateLLMRetry(39, now, now, policy)).toEqual({ retry: true, delayMs: 60_000, attempt: 40 })
+      expect(evaluateLLMRetry(40, now, now, policy)).toEqual({ retry: false })
+    })
+  })
+
+  describe('hasRecentLLMFailure', () => {
+    it('reports failures recorded inside the window', () => {
+      recordLLMFailure('session-window-ok')
+      expect(hasRecentLLMFailure('session-window-ok', 30 * 60_000)).toBe(true)
+    })
+
+    it('prunes expired entries lazily so the map cannot grow unbounded', () => {
+      vi.useFakeTimers()
+      try {
+        vi.setSystemTime(1_700_000_000_000)
+        recordLLMFailure('session-expired')
+        // Far past the 30-minute window
+        vi.setSystemTime(1_700_000_000_000 + 61 * 60_000)
+        expect(hasRecentLLMFailure('session-expired', 30 * 60_000)).toBe(false)
+        // Even a huge window no longer reports it — the entry was actually removed
+        expect(hasRecentLLMFailure('session-expired', 365 * 24 * 3600 * 1000)).toBe(false)
+      } finally {
+        vi.useRealTimers()
+      }
     })
   })
 })

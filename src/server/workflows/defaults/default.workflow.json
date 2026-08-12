@@ -3,7 +3,7 @@
     "id": "default",
     "name": "Build & Verify",
     "description": "Standard build-verify loop. Builder implements criteria, verifier checks them.",
-    "version": "1.1.0",
+    "version": "1.3.0",
     "color": "#3b82f6"
   },
   "entryStep": "work_location",
@@ -16,6 +16,7 @@
       "name": "Where to work",
       "type": "user",
       "phase": "build",
+      "subGroup": "build",
       "transitions": [
         {
           "when": {
@@ -39,7 +40,8 @@
       "type": "agent",
       "phase": "build",
       "agentId": "builder",
-      "prompt": "Set up a fresh workspace for this task before implementing:\n\n1. Use the `workspace` tool with action `switch` to create and switch to a new workspace (switching to a name that doesn't exist yet creates it automatically).\n2. Pick a proper name yourself — a short, descriptive lowercase slug derived from the task (hyphen-separated, e.g. `dark-theme`, `fix-auth-redirect`). If a workspace with that name already exists, choose a sensible variation.\n3. Do NOT ask the user for the name — decide based on the task and just do it.\n4. Confirm the switch worked, then call step_done().",
+      "subGroup": "build",
+      "prompt": "Set up a fresh workspace for this task. This step is ONLY about workspace setup — do not start implementing the task or modifying files here.\n\n1. Use the `workspace` tool with action `switch` to create and switch to a new workspace (switching to a name that doesn't exist yet creates it automatically).\n2. Pick a proper name yourself — a short, descriptive lowercase slug derived from the task (hyphen-separated, e.g. `dark-theme`, `fix-auth-redirect`). If a workspace with that name already exists, choose a sensible variation.\n3. Do NOT ask the user for the name — decide based on the task and just do it.\n4. Do NOT begin implementing or testing anything here — the next step (\"Implement\") runs automatically right after this one and owns all coding.\n5. Confirm the switch worked, then call step_done() and stop.",
       "transitions": [
         {
           "when": {
@@ -84,7 +86,7 @@
           "when": { "type": "metadata_all_match", "key": "criteria", "field": "status", "value": "passed" },
           "goto": "code_review"
         },
-        { "when": { "type": "always" }, "goto": "build" }
+        { "when": { "type": "always" }, "goto": "build", "subGroup": "verify" }
       ]
     },
     {
@@ -126,7 +128,7 @@
       "phase": "verification",
       "agentId": "builder",
       "subGroup": "summarize",
-      "prompt": "Produce a concise summary of what was accomplished in this session. Include:\n- What was implemented or fixed\n- Key files modified\n- Any notable decisions or tradeoffs\n- **What to test** — a short, actionable mini-tutorial from the user's perspective:\n  - Exact commands to run and what \"good\" looks like\n  - Concrete UI flows or interactions to try, with the expected outcome\n  - Edge cases worth poking at\n  - One action per line, numbered, so the user can follow along without extra context\n\nCall step_done() when done.",
+      "prompt": "Produce a concise summary of what was accomplished in this session. Include:\n- What was implemented or fixed\n- Key files modified\n- Any notable decisions or tradeoffs\n- **What to test** — a short, actionable mini-tutorial from the user's perspective:\n  - Concrete UI flows or interactions to try, with the expected outcome\n  - Edge cases worth poking at\n  - One action per line, numbered, so the user can follow along without extra context\n\nCall step_done() when done.",
       "transitions": [{ "when": { "type": "always" }, "goto": "$done" }]
     }
   ],

@@ -27,7 +27,7 @@ describe('llm client pure helpers', () => {
       { role: 'system', content: 'system' },
       {
         role: 'assistant',
-        content: '',
+        content: ' ',
         tool_calls: [{ id: 'call-1', type: 'function', function: { name: 'glob', arguments: '{"pattern":"*.ts"}' } }],
       },
       { role: 'tool', content: 'ok', tool_call_id: 'call-1' },
@@ -54,7 +54,7 @@ describe('llm client pure helpers', () => {
     // First assistant message with tool calls includes reasoning
     const firstAssistant = result[0] as unknown as Record<string, unknown>
     expect(firstAssistant['role']).toBe('assistant')
-    expect(firstAssistant['content']).toBe('')
+    expect(firstAssistant['content']).toBe(' ')
     expect(firstAssistant['reasoning']).toBe('I need to read the file first')
     expect(firstAssistant['tool_calls']).toBeDefined()
 
@@ -85,7 +85,7 @@ describe('llm client pure helpers', () => {
     // First assistant message — reasoning should be absent
     const firstAssistant = result[0] as unknown as Record<string, unknown>
     expect(firstAssistant['role']).toBe('assistant')
-    expect(firstAssistant['content']).toBe('')
+    expect(firstAssistant['content']).toBe(' ')
     expect(firstAssistant['reasoning']).toBeUndefined()
     expect(firstAssistant['tool_calls']).toBeDefined()
 
@@ -114,7 +114,7 @@ describe('llm client pure helpers', () => {
 
     expect(result).toEqual([
       { role: 'user', content: 'do a thing' },
-      { role: 'assistant', content: null, reasoning: 'I was interrupted halfway through thinking' },
+      { role: 'assistant', content: ' ', reasoning: 'I was interrupted halfway through thinking' },
     ])
   })
 
@@ -134,7 +134,7 @@ describe('llm client pure helpers', () => {
 
     expect(result).toEqual([
       { role: 'user', content: 'do a thing' },
-      { role: 'assistant', content: null, reasoning: 'Interrupted mid-thought' },
+      { role: 'assistant', content: ' ', reasoning: 'Interrupted mid-thought' },
     ])
   })
 

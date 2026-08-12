@@ -24,6 +24,8 @@ interface CommandsModalProps {
   isOpen: boolean
   onClose: () => void
   initialEditId?: string | null
+  /** Project root workdir this modal was opened from — scopes project commands shown and saved. */
+  projectDir?: string
 }
 
 type CommandFormData = {
@@ -56,7 +58,7 @@ function ViewButton({ onClick }: { onClick: () => void }) {
   )
 }
 
-export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalProps) {
+export function CommandsModal({ isOpen, onClose, initialEditId, projectDir }: CommandsModalProps) {
   const defaults = useCommandsStore((state) => state.defaults)
   const userItems = useCommandsStore((state) => state.userItems)
   const projectItems = useCommandsStore((state) => state.projectItems)
@@ -87,6 +89,7 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
   const fetchAgentsRef = useRef(fetchAgents)
   const fetchCommandRef = useRef(fetchCommand)
   const fetchDefaultContentRef = useRef(fetchDefaultContent)
+  const projectDirRef = useRef(projectDir)
   const initialEditIdRef = useRef(initialEditId)
   const setViewRef = useRef(setView)
   const setEditingIdRef = useRef(setEditingId)
@@ -98,6 +101,7 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
     fetchAgentsRef.current = fetchAgents
     fetchCommandRef.current = fetchCommand
     fetchDefaultContentRef.current = fetchDefaultContent
+    projectDirRef.current = projectDir
     initialEditIdRef.current = initialEditId
     setViewRef.current = setView
     setEditingIdRef.current = setEditingId
@@ -107,8 +111,8 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
 
   useEffect(() => {
     if (isOpen) {
-      fetchCommandsRef.current()
-      fetchAgentsRef.current()
+      fetchCommandsRef.current(projectDirRef.current)
+      fetchAgentsRef.current(projectDirRef.current)
       if (!clearConfirmCalled.current) {
         clearConfirmRef.current()
         clearConfirmCalled.current = true
@@ -131,7 +135,7 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
             })
           })
         } else {
-          fetchCommandRef.current(initialEditIdRef.current).then((command) => {
+          fetchCommandRef.current(initialEditIdRef.current, projectDirRef.current).then((command) => {
             if (!command) return
             setFormData({
               name: command.metadata.name,
@@ -176,7 +180,7 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
         setView('edit')
       }
     } else {
-      const command = await fetchCommand(commandId)
+      const command = await fetchCommand(commandId, projectDir)
       if (command) {
         setEditingId(null)
         setFormData({
@@ -200,7 +204,7 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
   }
 
   const handleEdit = async (commandId: string) => {
-    const command = await fetchCommand(commandId)
+    const command = await fetchCommand(commandId, projectDir)
     if (!command) return
     setEditingId(commandId)
     setFormData({
@@ -216,7 +220,7 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
   }
 
   const handleDelete = async (commandId: string) => {
-    await deleteCommandAction(commandId)
+    await deleteCommandAction(commandId, projectDir)
     clearConfirm()
   }
 
@@ -236,8 +240,8 @@ export function CommandsModal({ isOpen, onClose, initialEditId }: CommandsModalP
     }
 
     const result = editingId
-      ? await updateCommand(editingId, command)
-      : await createCommand(command, formData.destination as 'project' | 'user')
+      ? await updateCommand(editingId, command, projectDir)
+      : await createCommand(command, formData.destination as 'project' | 'user', projectDir)
 
     setSaving(false)
 

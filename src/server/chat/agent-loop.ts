@@ -24,19 +24,30 @@ import {
   createMessageStartEvent,
   createMessageDoneEvent,
   createChatDoneEvent,
+  evaluateLLMRetry,
+  sleepThroughRetryBackoff,
+  recordLLMFailure,
+  clearLLMFailure,
 } from './stream-pure.js'
 import { getCurrentContextWindowId, getCurrentWindowMessageOptions } from '../events/index.js'
 import { getAllInstructions } from '../context/instructions.js'
 import { getEnabledSkillMetadata } from '../skills/registry.js'
 import { getRuntimeConfig } from '../runtime-config.js'
 import { getGlobalConfigDir } from '../../cli/paths.js'
-import { createChatMessageUpdatedMessage, createChatDoneMessage } from '../ws/protocol.js'
+import {
+  createChatMessageUpdatedMessage,
+  createChatDoneMessage,
+  createChatLLMRetryMessage,
+  createChatLLMRetryFailedMessage,
+} from '../ws/protocol.js'
 import { executeTools, type ToolBatchContext } from './execute-tools.js'
 import { loadAllAgentsDefault, getSubAgents } from '../agents/registry.js'
 import { createRetryLimiter, type RetryLimiter } from './retry-limiter.js'
 import { drainQueue } from './drain-queue.js'
 import { COMPACTION_PROMPT } from './prompts.js'
 import { logger } from '../utils/logger.js'
+import type { LLMRetryPolicy } from '../runner/types.js'
+import { DEFAULT_LLM_RETRY_POLICY } from '../runner/types.js'
 
 function emitPartialDoneEvents(
   _sessionId: string,
@@ -100,6 +111,10 @@ export interface TopLevelLoopConfig {
   sessionManager: SessionManager
   sessionId: string
   llmClient: LLMClientWithModel
+  /** Re-resolve the LLM client for each attempt so a mid-turn provider switch
+   *  (e.g. during retry backoff) takes effect on the next attempt. Falls back
+   *  to `llmClient` when absent. */
+  getLLMClient?: (() => LLMClientWithModel) | undefined
   statsIdentity: StatsIdentity
   providerManager?: ProviderManager | undefined
   /** Override model settings (e.g. for sub-agents with model override).
@@ -153,6 +168,8 @@ export interface TopLevelLoopConfig {
   /** When true, only warm up the LLM cache by sending system prompt + tools.
    *  Skips message creation, event emission, tool execution — just prefills the KV cache. */
   warmup?: boolean
+  /** Overrides for the LLM-failure retry backoff policy (retried inside streamLLMPure). */
+  llmRetryPolicy?: Partial<LLMRetryPolicy>
 }
 
 // ============================================================================
@@ -161,14 +178,18 @@ export interface TopLevelLoopConfig {
 
 const MAX_TRUNCATION_RETRIES = 3
 const CONTINUE_PROMPT = 'Continue your previous response. Do NOT repeat what you already wrote.'
+const CONTINUE_AFTER_STREAM_ERROR_PROMPT =
+  'The LLM stream was interrupted mid-response. Continue exactly where you left off — do not repeat what was already written.'
 
 export async function runTopLevelAgentLoop(
   config: TopLevelLoopConfig,
   turnMetrics: TurnMetrics,
-): Promise<{ returnValueContent?: string; returnValueResult?: string }> {
+): Promise<{ returnValueContent?: string; returnValueResult?: string; failed?: { error: string } }> {
   const { mode, sessionManager, sessionId, llmClient, signal, onMessage, statsIdentity } = config
   const append = config.append
   const agentType = config.subAgentMetadata ? ('sub-agent' as const) : undefined
+  // Fresh per attempt when a resolver is provided (provider switch mid-turn).
+  const resolveClient = () => config.getLLMClient?.() ?? llmClient
 
   const retryLimiter: RetryLimiter = createRetryLimiter(config.maxRetriesPerTurn ?? 10)
   let truncationRetryCount = 0
@@ -188,7 +209,7 @@ export async function runTopLevelAgentLoop(
       const session = sessionManager.requireSession(sessionId)
       const runtimeConfig = getRuntimeConfig()
       const configDir = getGlobalConfigDir(runtimeConfig.mode ?? 'production')
-      const skills = await getEnabledSkillMetadata(configDir, sessionManager.getEffectiveWorkdir(sessionId))
+      const skills = await getEnabledSkillMetadata(configDir, sessionManager.getProjectWorkdir(sessionId))
       const { content: instructionContent } = await getAllInstructions(session.workdir, session.projectId)
       const toolRegistry = config.getToolRegistry()
 
@@ -204,7 +225,7 @@ export async function runTopLevelAgentLoop(
 
       const modelSettings = sessionManager.getCurrentModelSettings(sessionId)
 
-      await llmClient.complete({
+      await resolveClient().complete({
         messages: [{ role: 'system', content: assembledRequest.systemPrompt }],
         tools: assembledRequest.tools,
         maxTokens: 1,
@@ -234,87 +255,166 @@ export async function runTopLevelAgentLoop(
     const toolRegistry = config.getToolRegistry()
     const currentWindowMessageOptions = getCurrentWindowMessageOptions(sessionId)
 
-    const requestMessages = await config.getConversationMessages()
-
-    if (retryLimiter.count() > 0) {
-      const continueMsgId = crypto.randomUUID()
-      const continueContent = lastPatternMatch
-        ? `Your previous response was interrupted because it matched pattern "${lastPatternMatch.pattern}" in ${lastPatternMatch.field}.\nMatched content:\n${lastPatternMatch.matchedContent}\n\n${CONTINUE_PROMPT}`
-        : CONTINUE_PROMPT
-      append(
-        createMessageStartEvent(continueMsgId, 'user', continueContent, {
-          ...(currentWindowMessageOptions ?? {}),
-          isSystemGenerated: true,
-          messageKind: 'correction',
-        }),
-      )
-      append({ type: 'message.done', data: { messageId: continueMsgId } })
-      requestMessages.push({ role: 'user', content: continueContent, source: 'history' })
-    }
-
+    // ---- LLM round with automatic failure retry ----
+    // Case 1: a request fails before any content → retry the same request with
+    // exponential backoff; nothing is written (message.start deferred).
+    // Case 2: the stream fails mid-flight → keep the partial content, finalize
+    // its bubble, append ONE visible continuation prompt, then retry against
+    // the enriched context. History only ever grows — no tombstones.
+    const retryPolicy: LLMRetryPolicy = { ...DEFAULT_LLM_RETRY_POLICY, ...config.llmRetryPolicy }
     const runtimeConfig = getRuntimeConfig()
-    const configDir = getGlobalConfigDir(runtimeConfig.mode ?? 'production')
-    const skills = await getEnabledSkillMetadata(configDir, sessionManager.getEffectiveWorkdir(sessionId))
-    if (signal?.aborted) throw new Error('Aborted')
+    let requestFailures = 0
+    let requestFirstFailureAt = 0
+    let continuationAppended = false
+    let previousContextTokens: number
+    let result!: import('./stream-pure.js').PureStreamResult
+    let assistantMsgId: string
+    let assistantMessageStarted = false
 
-    const assembledRequest = await config.assembleRequest({
-      workdir: session.workdir,
-      messages: requestMessages,
-      injectedFiles,
-      promptTools: toolRegistry.definitions,
-      toolChoice: 'auto',
-      ...(instructionContent ? { customInstructions: instructionContent } : {}),
-      ...(skills.length > 0 ? { skills } : {}),
-    })
+    for (;;) {
+      const requestMessages = await config.getConversationMessages()
 
-    const assistantMsgId = crypto.randomUUID()
-    append(
-      createMessageStartEvent(assistantMsgId, 'assistant', undefined, {
-        ...(currentWindowMessageOptions ?? {}),
-        ...(config.subAgentMetadata
-          ? { subAgentId: config.subAgentMetadata.subAgentId, subAgentType: config.subAgentMetadata.subAgentType }
-          : {}),
-      }),
-    )
+      // The format-retry continuation is appended once per round (not on
+      // LLM-error retries) — its persisted copy feeds later context rebuilds.
+      if (requestFailures === 0 && retryLimiter.count() > 0) {
+        const continueMsgId = crypto.randomUUID()
+        const continueContent = lastPatternMatch
+          ? `Your previous response was interrupted because it matched pattern "${lastPatternMatch.pattern}" in ${lastPatternMatch.field}.\nMatched content:\n${lastPatternMatch.matchedContent}\n\n${CONTINUE_PROMPT}`
+          : CONTINUE_PROMPT
+        append(
+          createMessageStartEvent(continueMsgId, 'user', continueContent, {
+            ...(currentWindowMessageOptions ?? {}),
+            isSystemGenerated: true,
+            messageKind: 'correction',
+          }),
+        )
+        append({ type: 'message.done', data: { messageId: continueMsgId } })
+        requestMessages.push({ role: 'user', content: continueContent, source: 'history' })
+      }
 
-    const contextState = sessionManager.getContextState(sessionId)
-    const previousContextTokens = contextState.currentTokens
+      const configDir = getGlobalConfigDir(runtimeConfig.mode ?? 'production')
+      const skills = await getEnabledSkillMetadata(configDir, sessionManager.getProjectWorkdir(sessionId))
+      if (signal?.aborted) throw new Error('Aborted')
 
-    const contextWindow = sessionManager.getCurrentModelContext()
-    const availableForOutput = Math.max(256, contextWindow - contextState.currentTokens)
+      const assembledRequest = await config.assembleRequest({
+        workdir: session.workdir,
+        messages: requestMessages,
+        injectedFiles,
+        promptTools: toolRegistry.definitions,
+        toolChoice: 'auto',
+        ...(instructionContent ? { customInstructions: instructionContent } : {}),
+        ...(skills.length > 0 ? { skills } : {}),
+      })
 
-    let modelSettings =
-      config.modelSettings ??
-      (currentMaxTokensOverride !== undefined
-        ? { ...sessionManager.getCurrentModelSettings(sessionId), maxTokens: currentMaxTokensOverride }
-        : sessionManager.getCurrentModelSettings(sessionId))
+      assistantMsgId = crypto.randomUUID()
+      // The assistant message.start is DEFERRED until the first streamed event:
+      // a request that fails before any content (case 1) leaves nothing behind.
+      assistantMessageStarted = false
+      const ensureAssistantMessage = () => {
+        if (assistantMessageStarted) return
+        assistantMessageStarted = true
+        append(
+          createMessageStartEvent(assistantMsgId, 'assistant', undefined, {
+            ...(currentWindowMessageOptions ?? {}),
+            ...(config.subAgentMetadata
+              ? { subAgentId: config.subAgentMetadata.subAgentId, subAgentType: config.subAgentMetadata.subAgentType }
+              : {}),
+          }),
+        )
+      }
 
-    if (modelSettings) {
-      const requestedMaxTokens = modelSettings.maxTokens ?? 16384
-      modelSettings = { ...modelSettings, maxTokens: Math.min(requestedMaxTokens, availableForOutput) }
+      const contextState = sessionManager.getContextState(sessionId)
+      previousContextTokens = contextState.currentTokens
+
+      const contextWindow = sessionManager.getCurrentModelContext()
+      const availableForOutput = Math.max(256, contextWindow - contextState.currentTokens)
+
+      let modelSettings =
+        config.modelSettings ??
+        (currentMaxTokensOverride !== undefined
+          ? { ...sessionManager.getCurrentModelSettings(sessionId), maxTokens: currentMaxTokensOverride }
+          : sessionManager.getCurrentModelSettings(sessionId))
+
+      if (modelSettings) {
+        const requestedMaxTokens = modelSettings.maxTokens ?? 16384
+        modelSettings = { ...modelSettings, maxTokens: Math.min(requestedMaxTokens, availableForOutput) }
+      }
+
+      // Build set of sub-agent IDs so streamLLMPure can show the correct
+      // tool name in preparing events instead of hallucinated aliases.
+      const allAgents = await loadAllAgentsDefault(sessionManager.getProjectWorkdir(sessionId))
+      const subAgentAliases = new Set(getSubAgents(allAgents).map((a) => a.metadata.id))
+
+      const streamGen = streamLLMPure({
+        messageId: assistantMsgId,
+        systemPrompt: assembledRequest.systemPrompt,
+        llmClient: resolveClient(),
+        messages: assembledRequest.messages,
+        tools: assembledRequest.tools,
+        toolChoice: 'auto',
+        signal,
+        subAgentAliases,
+        ...(config.retryPatterns ? { retryPatterns: config.retryPatterns } : {}),
+        ...(modelSettings && { modelSettings }),
+      })
+
+      const attemptResult = await consumeStreamGenerator(streamGen, (event) => {
+        ensureAssistantMessage()
+        append(event)
+      })
+
+      if (!attemptResult.error) {
+        result = attemptResult
+        break
+      }
+
+      // ---- LLM failure ----
+      // Case 2: content was streamed → finalize the partial bubble and append
+      // ONE visible continuation prompt; the retry rebuilds context from the
+      // store (which already includes the partial + continuation).
+      if (assistantMessageStarted && !continuationAppended) {
+        append(createMessageDoneEvent(assistantMsgId, { partial: true }))
+        onMessage?.(createChatMessageUpdatedMessage(assistantMsgId, { isStreaming: false, partial: true }))
+        const continueMsgId = crypto.randomUUID()
+        append(
+          createMessageStartEvent(continueMsgId, 'user', CONTINUE_AFTER_STREAM_ERROR_PROMPT, {
+            ...(currentWindowMessageOptions ?? {}),
+            isSystemGenerated: true,
+            messageKind: 'correction',
+          }),
+        )
+        append({ type: 'message.done', data: { messageId: continueMsgId } })
+        continuationAppended = true
+      }
+
+      if (signal?.aborted) throw new Error('Aborted')
+
+      // Backoff decision — the shared LLMRetryPolicy (same defaults as workflows).
+      requestFailures += 1
+      if (requestFirstFailureAt === 0) {
+        requestFirstFailureAt = Date.now()
+      }
+      const decision = evaluateLLMRetry(requestFailures, requestFirstFailureAt, Date.now(), retryPolicy)
+      if (!decision.retry) {
+        if (!config.subAgentMetadata) {
+          recordLLMFailure(sessionId)
+          config.onMessage?.(createChatLLMRetryFailedMessage(attemptResult.error, requestFailures))
+        }
+        return { failed: { error: attemptResult.error } }
+      }
+      if (!config.subAgentMetadata) {
+        config.onMessage?.(createChatLLMRetryMessage(decision.attempt, decision.delayMs))
+      }
+      const waitResult = await sleepThroughRetryBackoff(decision.delayMs, sessionId, signal)
+      if (waitResult === 'aborted') throw new Error('Aborted')
+      // Loop: rebuild the request — case 1 uses the same context, case 2 picks
+      // up the persisted partial + continuation.
     }
 
-    // Build set of sub-agent IDs so streamLLMPure can show the correct
-    // tool name in preparing events instead of hallucinated aliases.
-    const allAgents = await loadAllAgentsDefault()
-    const subAgentAliases = new Set(getSubAgents(allAgents).map((a) => a.metadata.id))
-
-    const streamGen = streamLLMPure({
-      messageId: assistantMsgId,
-      systemPrompt: assembledRequest.systemPrompt,
-      llmClient,
-      messages: assembledRequest.messages,
-      tools: assembledRequest.tools,
-      toolChoice: 'auto',
-      signal,
-      subAgentAliases,
-      ...(config.retryPatterns ? { retryPatterns: config.retryPatterns } : {}),
-      ...(modelSettings && { modelSettings }),
-    })
-
-    const result = await consumeStreamGenerator(streamGen, (event) => {
-      append(event)
-    })
+    // Success — clear any recorded failure so a later chat.retry is rejected.
+    if (!config.subAgentMetadata) {
+      clearLLMFailure(sessionId)
+    }
 
     // Check if a retry pattern matched mid-stream
     if (result.patternMatch) {
@@ -362,10 +462,16 @@ export async function runTopLevelAgentLoop(
     }
 
     if (result.aborted) {
-      emitPartialDoneEvents(sessionId, assistantMsgId, statsIdentity, mode, turnMetrics, append, agentType)
+      // Only finalize if the assistant message was actually started (a turn
+      // aborted during the backoff wait never created one).
+      if (assistantMessageStarted) {
+        emitPartialDoneEvents(sessionId, assistantMsgId, statsIdentity, mode, turnMetrics, append, agentType)
+      }
       throw new Error('Aborted')
     }
 
+    // The retry loop above guarantees `result` has no error — record usage and
+    // update the context size.
     turnMetrics.addLLMCall(
       result.timing,
       result.usage.promptTokens,
@@ -485,7 +591,7 @@ ${COMPACTION_PROMPT}`,
           turnMetrics,
           signal,
           onMessage,
-          llmClient,
+          llmClient: resolveClient(),
           statsIdentity,
           onToolExecuted: config.onToolExecuted,
         }
@@ -548,7 +654,9 @@ ${COMPACTION_PROMPT}`,
         throw new Error('Aborted')
       }
 
-      void drainQueue(sessionManager, sessionId, append, onMessage)
+      if (!config.subAgentMetadata) {
+        void drainQueue(sessionManager, sessionId, append, onMessage)
+      }
 
       retryLimiter.reset()
       continue

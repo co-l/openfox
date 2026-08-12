@@ -3,6 +3,7 @@ import { Modal } from '../shared/SelfContainedModal'
 import { useAgentsStore, type AgentFull } from '../../stores/agents'
 import { useConfigStore } from '../../stores/config'
 import { useSessionStore } from '../../stores/session'
+import { useSessionScope } from '../../stores/session/session-scope'
 import { authFetch } from '../../lib/api'
 import { CRUDListHeader, useConfirmDialog, DestinationSelector, ModalActions } from './CRUDModal'
 import { AgentGroup } from './agents/AgentListItem'
@@ -13,6 +14,8 @@ interface AgentsModalProps {
   isOpen: boolean
   onClose: () => void
   initialEditId?: string | null
+  /** Project root workdir this modal was opened from — scopes project agents shown and saved. */
+  projectDir?: string
 }
 
 function toSlug(name: string): string {
@@ -23,7 +26,7 @@ function toSlug(name: string): string {
   return slug ? `custom-${slug}` : ''
 }
 
-export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps) {
+export function AgentsModal({ isOpen, onClose, initialEditId, projectDir }: AgentsModalProps) {
   const defaults = useAgentsStore((state) => state.defaults)
   const userItems = useAgentsStore((state) => state.userItems)
   const projectItems = useAgentsStore((state) => state.projectItems)
@@ -42,7 +45,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
   const [formName, setFormName] = useState('')
   const [formId, setFormId] = useState('')
   const [formDescription, setFormDescription] = useState('')
-  const [formSubagent, setFormSubagent] = useState(true)
+  const [formSubagent, setFormSubagent] = useState(false)
   const [formTools, setFormTools] = useState<string[]>([])
   const [formColor, setFormColor] = useState('#6b7280')
   const [formModel, setFormModel] = useState<string | undefined>(undefined)
@@ -53,6 +56,8 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
   const [loadingModel, setLoadingModel] = useState(false)
 
   const [modelModalAgentId, setModelModalAgentId] = useState<string | null>(null)
+
+  const sessionScopeId = useSessionScope()
 
   const [availableTools, setAvailableTools] = useState<{ name: string; actions: string[]; topLevelOnly?: boolean }[]>(
     [],
@@ -109,7 +114,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
 
   useEffect(() => {
     if (isOpen) {
-      fetchAgents()
+      fetchAgents(projectDir)
       authFetch('/api/tools')
         .then((r) => r.json())
         .then((d) => {
@@ -131,7 +136,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
             applyDuplicateFromContent(content, initialEditId, true)
           })
         } else {
-          fetchAgent(initialEditId).then((agent) => {
+          fetchAgent(initialEditId, projectDir).then((agent) => {
             if (!agent) return
             populateFormFromAgent(agent)
             setEditingId(initialEditId)
@@ -145,7 +150,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
         setIsReadOnly(false)
       }
     }
-  }, [isOpen, fetchAgents, fetchAgent, fetchDefaultContent, initialEditId])
+  }, [isOpen, fetchAgents, fetchAgent, fetchDefaultContent, initialEditId, projectDir])
 
   const handleView = async (agentId: string) => {
     const isDefault = defaults.some((d) => d.id === agentId)
@@ -154,7 +159,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
       if (!content) return
       applyViewFromContent(content, agentId)
     } else {
-      const agent = await fetchAgent(agentId)
+      const agent = await fetchAgent(agentId, projectDir)
       if (!agent) return
       applyViewFromContent(agent, agentId)
     }
@@ -163,7 +168,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
   const handleDuplicate = async (agentId: string) => {
     let content = await fetchDefaultContent(agentId)
     if (!content) {
-      content = await fetchAgent(agentId)
+      content = await fetchAgent(agentId, projectDir)
     }
     if (!content) return
     applyDuplicateFromContent(content, agentId, true)
@@ -174,7 +179,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
     setFormName('')
     setFormId('')
     setFormDescription('')
-    setFormSubagent(true)
+    setFormSubagent(false)
     setFormTools(['read_file'])
     setFormColor('#6b7280')
     setFormPrompt('')
@@ -185,7 +190,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
   }
 
   const handleEdit = async (agentId: string) => {
-    const agent = await fetchAgent(agentId)
+    const agent = await fetchAgent(agentId, projectDir)
     if (!agent) return
     populateFormFromAgent(agent)
     setEditingId(agentId)
@@ -198,7 +203,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
   }
 
   const handleDelete = async (agentId: string) => {
-    await deleteAgentAction(agentId)
+    await deleteAgentAction(agentId, projectDir)
   }
 
   const handleSave = async () => {
@@ -223,7 +228,9 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
       prompt: formPrompt,
     }
 
-    const result = editingId ? await updateAgent(editingId, agent) : await createAgent(agent, formDestination)
+    const result = editingId
+      ? await updateAgent(editingId, agent, projectDir)
+      : await createAgent(agent, formDestination, projectDir)
 
     if (!result.success) {
       setSaving(false)
@@ -235,14 +242,17 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
     await saveAgentModelOverride(editingId ?? formId, formModel)
 
     // Re-fetch agents so the list reflects the updated model override badge
-    await fetchAgents()
+    await fetchAgents(projectDir)
 
     // Propagate to current session if this agent is active
     const agentId = editingId ?? formId
-    const currentSession = useSessionStore.getState().currentSession
-    if (currentSession?.mode === agentId && formModel) {
+    const sessionId = sessionScopeId
+    const currentSession = sessionId
+      ? (useSessionStore.getState().panes[sessionId]?.session ?? null)
+      : useSessionStore.getState().currentSession
+    if (currentSession?.mode === agentId && formModel && sessionId) {
       const { providerId, model } = parseModelOverride(formModel)
-      useSessionStore.getState().setSessionProvider(providerId, model)
+      useSessionStore.getState().setSessionProvider(sessionId, providerId, model)
     }
 
     setSaving(false)
@@ -340,7 +350,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
         <BuiltInModelModal
           agentId={modelModalAgentId}
           onClose={() => setModelModalAgentId(null)}
-          onSaved={() => fetchAgents()}
+          onSaved={() => fetchAgents(projectDir)}
         />
       </>
     )
@@ -416,7 +426,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId }: AgentsModalProps
       <BuiltInModelModal
         agentId={modelModalAgentId}
         onClose={() => setModelModalAgentId(null)}
-        onSaved={() => fetchAgents()}
+        onSaved={() => fetchAgents(projectDir)}
       />
     </>
   )
@@ -462,6 +472,7 @@ function BuiltInModelModal({
   const agents = [...defaults, ...userItems, ...projectItems]
   const agent = agentId ? agents.find((a) => a.id === agentId) : undefined
   const providers = useConfigStore((s) => s.providers)
+  const sessionScopeId = useSessionScope()
 
   useEffect(() => {
     if (!agentId) return
@@ -483,10 +494,13 @@ function BuiltInModelModal({
       await saveAgentModelOverride(agentId, value)
 
       // Propagate to current session if this agent is active
-      const currentSession = useSessionStore.getState().currentSession
-      if (currentSession?.mode === agentId && value) {
+      const sessionId = sessionScopeId
+      const currentSession = sessionId
+        ? (useSessionStore.getState().panes[sessionId]?.session ?? null)
+        : useSessionStore.getState().currentSession
+      if (currentSession?.mode === agentId && value && sessionId) {
         const { providerId, model } = parseModelOverride(value)
-        useSessionStore.getState().setSessionProvider(providerId, model)
+        useSessionStore.getState().setSessionProvider(sessionId, providerId, model)
       }
 
       onSaved()

@@ -4,20 +4,56 @@ import { Link } from 'wouter'
 import { useSessionStore } from '../stores/session'
 import { useProjectStore } from '../stores/project'
 import { Button } from './shared/Button'
+import { CurrentlyRunning } from './split/CurrentlyRunning'
 import { OpenProjectModal } from './CreateSessionModal'
 import { DeleteProjectConfirmationModal } from './DeleteProjectConfirmationModal'
 import { formatRelativeDate } from '../lib/format-date'
-import { SearchIcon, XCloseIcon, FolderIcon, TrashIcon } from './shared/icons'
+import { SearchIcon, XCloseIcon, FolderIcon, TrashIcon, TasksIcon, ColumnsIcon } from './shared/icons'
 import { Spinner } from './shared/Spinner'
 import { fuzzyMatch, highlightMatches } from '../lib/modal-utils'
 import { shouldAutofocus } from '../lib/device'
-import type { SessionSummary } from '@shared/types.js'
+import { useTasksStore } from '../stores/tasks'
+import { TasksModal } from './tasks/TasksModal'
+import type { SessionSummary, ProjectTaskCounts } from '@shared/types.js'
+
+/** Color-coded task-state chips shown on each project's Tasks button. */
+const TASK_STATE_CHIPS: {
+  key: keyof Pick<ProjectTaskCounts, 'todo' | 'queued' | 'running' | 'done'>
+  label: string
+  color: string
+}[] = [
+  { key: 'todo', label: 'To Do', color: 'text-blue-400' },
+  { key: 'queued', label: 'Queued', color: 'text-amber-400' },
+  { key: 'running', label: 'Running', color: 'text-emerald-400' },
+  { key: 'done', label: 'Done', color: 'text-text-muted' },
+]
+
+function TaskStateChips({ counts }: { counts?: ProjectTaskCounts }) {
+  if (!counts) return null
+  const total = counts.todo + counts.queued + counts.running + counts.done
+  if (total === 0) return null
+  return (
+    <span className="flex items-center gap-1.5">
+      {TASK_STATE_CHIPS.map((chip) => {
+        const count = counts[chip.key]
+        if (count === 0) return null
+        return (
+          <span key={chip.key} title={chip.label} className={`flex items-center gap-1 ${chip.color}`}>
+            <span className="w-1.5 h-1.5 rounded-full bg-current" />
+            {count}
+          </span>
+        )
+      })}
+    </span>
+  )
+}
 
 export function HomePage() {
   const [showOpenModal, setShowOpenModal] = useState(false)
   const [projectToDelete, setProjectToDelete] = useState<{ id: string; name: string } | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
+  const [tasksProjectId, setTasksProjectId] = useState<string | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
 
   // The home page shows only the N most recent sessions per project; the full
@@ -32,6 +68,8 @@ export function HomePage() {
   const deleteProject = useProjectStore((state) => state.deleteProject)
 
   const connectionStatus = useSessionStore((state) => state.connectionStatus)
+  const summaries = useTasksStore((state) => state.summaries)
+  const loadSummaries = useTasksStore((state) => state.loadSummaries)
 
   useEffect(() => {
     if (connectionStatus === 'connected') {
@@ -39,6 +77,17 @@ export function HomePage() {
       listHomeSessions()
     }
   }, [connectionStatus, listProjects, listHomeSessions])
+
+  // Load per-project task summaries once per project set. The key is a stable
+  // string (not the `projects` array reference, which UIs must not depend on
+  // staying stable across renders) so the effect can never re-fire in a loop.
+  const projectTaskKey = projects
+    .map((p) => p.id)
+    .sort()
+    .join(',')
+  useEffect(() => {
+    if (projectTaskKey) void loadSummaries(projectTaskKey.split(','))
+  }, [projectTaskKey, loadSummaries])
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(searchQuery), 150)
@@ -200,10 +249,21 @@ export function HomePage() {
             <h1 className="text-3xl font-bold text-accent-primary">OpenFox</h1>
             <p className="text-text-secondary">Local LLM-powered coding assistant with contract-driven execution</p>
           </div>
-          <Button variant="primary" onClick={handleOpenProject}>
-            Open Project
-          </Button>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/split-view"
+              className="inline-flex items-center gap-1.5 rounded font-medium transition-colors bg-bg-secondary border border-border text-text-primary hover:bg-bg-tertiary px-3 py-1.5 text-sm"
+            >
+              <ColumnsIcon className="w-4 h-4" />
+              Open split view
+            </Link>
+            <Button variant="primary" onClick={handleOpenProject}>
+              Open Project
+            </Button>
+          </div>
         </div>
+
+        <CurrentlyRunning />
 
         {sessions.length > 0 && (
           <div className="mb-4 md:mb-6 relative">
@@ -259,12 +319,26 @@ export function HomePage() {
                       <FolderIcon className="w-5 h-5 text-accent-primary flex-shrink-0" />
                       <span className="text-text-primary font-semibold">{project.name}</span>
                     </Link>
-                    <Link
-                      href={`/p/${project.id}/new`}
-                      className="rounded font-medium transition-colors bg-accent-primary/25 text-text-primary hover:bg-accent-primary/40 px-1.5 py-1 text-xs"
-                    >
-                      + New Session
-                    </Link>
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setTasksProjectId(project.id)}
+                        title={`Tasks for ${project.name}`}
+                        aria-label={`Tasks for ${project.name}`}
+                        className="flex items-center gap-1.5"
+                      >
+                        <TasksIcon className="w-4 h-4" />
+                        <span>Tasks</span>
+                        <TaskStateChips counts={summaries[project.id]} />
+                      </Button>
+                      <Link
+                        href={`/p/${project.id}/new`}
+                        className="rounded font-medium transition-colors bg-accent-primary/25 text-text-primary hover:bg-accent-primary/40 px-1.5 py-1 text-xs"
+                      >
+                        + New Session
+                      </Link>
+                    </div>
                     <button
                       type="button"
                       onClick={() => setProjectToDelete({ id: project.id, name: project.name })}
@@ -339,6 +413,8 @@ export function HomePage() {
       </div>
 
       {showOpenModal && <OpenProjectModal isOpen={showOpenModal} onClose={() => setShowOpenModal(false)} />}
+
+      {tasksProjectId && <TasksModal isOpen onClose={() => setTasksProjectId(null)} projectId={tasksProjectId} />}
 
       {projectToDelete && (
         <DeleteProjectConfirmationModal

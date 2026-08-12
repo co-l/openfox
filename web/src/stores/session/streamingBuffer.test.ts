@@ -199,25 +199,44 @@ describe('streaming flush throttling', () => {
     expect(flushFn).toHaveBeenCalledTimes(2)
   })
 
-  it('flushes pending content immediately and clears the buffer on cancel', async () => {
+  it('flushes pending content and clears the buffer only when the flush consumed it', async () => {
     const { scheduleStreamingFlush, cancelStreamingFlush, setFlushFn, getBuffer } = await loadStreamingBuffer()
-    const flushFn = vi.fn()
-    setFlushFn(flushFn)
 
+    // When the flush does not consume the content (the target message has not
+    // landed in the store yet), cancelling must keep the buffer so the stream
+    // is not silently dropped.
+    const idleFlush = vi.fn()
+    setFlushFn(idleFlush)
     const buf = getBuffer()
     buf.messageId = 'm1'
     buf.deltaContent = 'partial'
     scheduleStreamingFlush()
     cancelStreamingFlush()
 
-    expect(flushFn).toHaveBeenCalledTimes(1)
+    expect(idleFlush).toHaveBeenCalledTimes(1)
+    expect(buf.messageId).toBe('m1')
+    expect(buf.deltaContent).toBe('partial')
+
+    // When the flush consumes the pending content, cancelling resets the buffer.
+    const consumingFlush = vi.fn(() => {
+      buf.deltaContent = ''
+      buf.thinkingContent = ''
+      buf.toolOutput = []
+    })
+    setFlushFn(consumingFlush)
+    buf.messageId = 'm1'
+    buf.deltaContent = 'partial'
+    scheduleStreamingFlush()
+    cancelStreamingFlush()
+
+    expect(consumingFlush).toHaveBeenCalledTimes(1)
     expect(buf.messageId).toBeNull()
     expect(buf.deltaContent).toBe('')
     expect(buf.thinkingContent).toBe('')
     expect(buf.toolOutput).toEqual([])
 
     await vi.runAllTimersAsync()
-    expect(flushFn).toHaveBeenCalledTimes(1)
+    expect(idleFlush).toHaveBeenCalledTimes(1)
   })
 
   it('uses the rAF fast path when enough time elapsed since the last flush', async () => {

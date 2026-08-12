@@ -156,6 +156,8 @@ vi.mock('../../stores/session', () => ({
   useSessionStore: (selector: (state: unknown) => unknown) =>
     selector({
       currentSession: { id: 's1', workdir: '/tmp', messages: [], projectId: 'p1' },
+      panes: {},
+      focusedSessionId: null,
       stopGeneration: vi.fn(),
       cancelQueued: vi.fn(),
       queuedMessages: [],
@@ -163,6 +165,7 @@ vi.mock('../../stores/session', () => ({
       clearRestoredInput: vi.fn(),
     }),
   useIsRunning: () => false,
+  useQueuedMessages: () => [],
 }))
 
 vi.mock('../../stores/workflows', () => ({

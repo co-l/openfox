@@ -9,7 +9,7 @@ const { mockHiddenCountBox } = vi.hoisted(() => ({ mockHiddenCountBox: { value: 
 vi.mock('../../stores/session', () => ({
   useSessionStore: (selector: (state: unknown) => unknown) =>
     selector({
-      currentSession: { id: 's1', criteria: [], metadata: {}, metadataEntries: {} },
+      currentSession: { id: 's1', projectId: 'proj-1', criteria: [], metadata: {}, metadataEntries: {} },
       messages: [],
       hiddenCount: mockHiddenCountBox.value,
       queuedMessages: [],
@@ -128,13 +128,29 @@ vi.mock('../QuickActionModal', () => ({
   QuickActionModal: () => null,
 }))
 
+const { mockMessageListProps } = vi.hoisted(() => ({
+  mockMessageListProps: { emptyState: null as unknown },
+}))
+
 vi.mock('./MessageList', () => ({
-  default: ({ hiddenCount }: { hiddenCount: number }) => (
-    <div>{hiddenCount > 0 && <div data-testid="hidden-count">{hiddenCount} older items hidden</div>}</div>
-  ),
-  MessageList: ({ hiddenCount }: { hiddenCount: number }) => (
-    <div>{hiddenCount > 0 && <div data-testid="hidden-count">{hiddenCount} older items hidden</div>}</div>
-  ),
+  default: ({ hiddenCount, emptyState }: { hiddenCount: number; emptyState?: unknown }) => {
+    mockMessageListProps.emptyState = emptyState
+    return (
+      <div>
+        {hiddenCount > 0 && <div data-testid="hidden-count">{hiddenCount} older items hidden</div>}
+        {emptyState != null && <div data-testid="captured-empty-state" />}
+      </div>
+    )
+  },
+  MessageList: ({ hiddenCount, emptyState }: { hiddenCount: number; emptyState?: unknown }) => {
+    mockMessageListProps.emptyState = emptyState
+    return (
+      <div>
+        {hiddenCount > 0 && <div data-testid="hidden-count">{hiddenCount} older items hidden</div>}
+        {emptyState != null && <div data-testid="captured-empty-state" />}
+      </div>
+    )
+  },
 }))
 
 vi.mock('./groupMessages', () => ({
@@ -274,5 +290,45 @@ describe('PlanPanel — message search navigation', () => {
     expect(scrollIntoViewMock).toHaveBeenCalledTimes(1)
     expect(scrollIntoViewMock).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' })
     expect(scrollByMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('PlanPanel — next-task card lives in the feed, not the composer', () => {
+  beforeEach(() => {
+    mockMessageListProps.emptyState = null
+    document.body.innerHTML = ''
+  })
+
+  it('[AUTOMATED] passes the next-task card to MessageList as emptyState when the feed is empty', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(<PlanPanel />)
+    })
+
+    expect(mockMessageListProps.emptyState).not.toBeNull()
+  })
+
+  it('[AUTOMATED] passes no emptyState once the feed has messages', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(
+        <PlanPanel rawMessages={[{ id: 'msg-1', role: 'user', content: 'Hi', timestamp: new Date().toISOString() }]} />,
+      )
+    })
+
+    expect(mockMessageListProps.emptyState).toBeUndefined()
+  })
+
+  it('[AUTOMATED] does not render the next-task card inline between the feed and the composer', () => {
+    const html = renderToStaticMarkup(<PlanPanel />)
+    // The card travels exclusively as MessageList's emptyState prop — it must
+    // never appear as a sibling of the composer in the panel markup.
+    expect(html).not.toContain('Work on next task')
   })
 })

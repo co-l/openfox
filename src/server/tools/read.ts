@@ -1,5 +1,5 @@
 import { readFile, stat, readdir } from 'node:fs/promises'
-import { extname, join } from 'node:path'
+import { extname, join, relative } from 'node:path'
 import { OUTPUT_LIMITS } from './types.js'
 import { createTool } from './tool-helpers.js'
 import { computeFileHash } from './file-tracker.js'
@@ -160,7 +160,12 @@ export const readFileTool = createTool<ReadFileArgs>(
       // Record file read with content hash for write validation
       const contentHash = await computeFileHash(fullPath)
       if (contentHash) {
-        context.sessionManager.recordFileRead(context.sessionId, fullPath, contentHash)
+        context.sessionManager.recordFileRead(
+          context.sessionId,
+          fullPath,
+          contentHash,
+          relative(context.workdir, fullPath),
+        )
       }
 
       return helpers.success(`[Image: ${args.path} (${mimeType}, ${rawBuffer.length} bytes)]`, false, {
@@ -183,7 +188,12 @@ export const readFileTool = createTool<ReadFileArgs>(
         // Record file read with content hash for write validation
         const contentHash = await computeFileHash(fullPath)
         if (contentHash) {
-          context.sessionManager.recordFileRead(context.sessionId, fullPath, contentHash)
+          context.sessionManager.recordFileRead(
+            context.sessionId,
+            fullPath,
+            contentHash,
+            relative(context.workdir, fullPath),
+          )
         }
 
         if (isScanned) {
@@ -247,7 +257,12 @@ export const readFileTool = createTool<ReadFileArgs>(
     // Record file read with content hash for write validation
     const contentHash = await computeFileHash(fullPath)
     if (contentHash) {
-      context.sessionManager.recordFileRead(context.sessionId, fullPath, contentHash)
+      context.sessionManager.recordFileRead(
+        context.sessionId,
+        fullPath,
+        contentHash,
+        relative(context.workdir, fullPath),
+      )
     }
 
     return helpers.success(output, truncated, {

@@ -176,7 +176,10 @@ export function needsNameGenerationCheck(
 }
 
 export interface ApplyGeneratedSessionNameDeps {
-  sessionManager: { getSession: (id: string) => Session | null }
+  sessionManager: {
+    getSession: (id: string) => Session | null
+    getDisplayWorkflowExecution?: (id: string) => import('../../shared/types.js').WorkflowExecution | null
+  }
   eventStore: {
     getEventsSinceSnapshot: (sessionId: string) => { snapshot: SessionSnapshot | undefined; events: StoredEvent[] }
     append: (sessionId: string, event: TurnEvent) => void
@@ -198,6 +201,9 @@ export function applyGeneratedSessionName(sessionId: string, name: string, deps:
     const { messages, hiddenCount } = buildMessagesFromStoredEvents(events, maxVisibleItems || undefined)
     const pendingConfirmations = foldPendingConfirmations(events)
     const pendingQuestions = getPendingQuestionsForSession(sessionId)
+    // Carry the live workflow execution (e.g. a paused user step) through the
+    // broadcast — omitting it would wipe the execution from every client.
+    const activeWorkflowExecution = deps.sessionManager.getDisplayWorkflowExecution?.(sessionId) ?? undefined
 
     deps.broadcastForSession(
       sessionId,
@@ -209,6 +215,7 @@ export function applyGeneratedSessionName(sessionId: string, name: string, deps:
         undefined,
         undefined,
         hiddenCount,
+        activeWorkflowExecution,
       ),
     )
   }
@@ -219,7 +226,10 @@ export function applyGeneratedSessionName(sessionId: string, name: string, deps:
 // ============================================================================
 
 export interface GenerateSessionNameForSessionDeps {
-  sessionManager: { getSession: (id: string) => Session | null }
+  sessionManager: {
+    getSession: (id: string) => Session | null
+    getDisplayWorkflowExecution?: (id: string) => import('../../shared/types.js').WorkflowExecution | null
+  }
   providerManager: ProviderManager
   broadcastForSession: (sessionId: string, msg: ServerMessage) => void
   eventStore: {

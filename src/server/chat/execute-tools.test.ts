@@ -24,7 +24,11 @@ describe('executeTools', () => {
   function makeCtx(overrides?: Record<string, unknown>) {
     return {
       toolRegistry: mockToolRegistry,
-      sessionManager: { getLspManager: vi.fn(), getEffectiveWorkdir: vi.fn().mockReturnValue('/test') } as any,
+      sessionManager: {
+        getLspManager: vi.fn(),
+        getEffectiveWorkdir: vi.fn().mockReturnValue('/test'),
+        getProjectWorkdir: vi.fn().mockReturnValue('/test'),
+      } as any,
       sessionId: 'test-session',
       workdir: '/test',
       turnMetrics: mockTurnMetrics,
@@ -404,6 +408,16 @@ describe('executeTools', () => {
         subAgentType: 'verifier',
         prompt: 'verify criteria',
       })
+    })
+
+    it('resolves sub-agent aliases from the session project workdir', async () => {
+      const toolCalls: ToolCall[] = [{ id: 'call-1', name: 'explorer', arguments: { prompt: 'find stuff' } }]
+      const registry = { tools: [{ name: 'call_sub_agent' }] } as unknown as ToolRegistry
+
+      await transformSubAgentAliases(toolCalls, registry, '/original/project')
+
+      const { loadAllAgentsDefault } = await import('../agents/registry.js')
+      expect(loadAllAgentsDefault).toHaveBeenCalledWith('/original/project')
     })
 
     it('emits transformed tool.call events via executeTools', async () => {

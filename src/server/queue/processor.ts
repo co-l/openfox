@@ -188,12 +188,26 @@ export class QueueProcessor {
       model: llmClient.getModel(),
     }
 
+    // Re-resolve the session's LLM client for each retry attempt so a provider
+    // switch made mid-turn (e.g. during backoff) takes effect on the next attempt.
+    const getSessionLLMClient = (): LLMClientWithModel => {
+      const current = sessionManager.getSession(sessionId)
+      if (current?.providerId && current.providerModel && this.deps.getLLMClientForProvider) {
+        const resolvedModel = providerManager.resolveModel?.(current.providerId, current.providerModel)
+        const effectiveModel = resolvedModel ?? current.providerModel
+        const client = this.deps.getLLMClientForProvider(current.providerId, effectiveModel)
+        if (client) return client
+      }
+      return llmClient
+    }
+
     const { runChatTurn } = await import('../chat/orchestrator.js')
 
     const runChatTurnParams = buildRunChatTurnParams({
       sessionManager,
       sessionId,
       llmClient,
+      getSessionLLMClient,
       statsIdentity,
       signal: controller.signal,
       onMessage: (msg) => broadcastForSession(sessionId, msg),

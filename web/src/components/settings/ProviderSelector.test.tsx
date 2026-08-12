@@ -576,7 +576,7 @@ describe('ProviderSelector search mode (AC 0-5)', () => {
 
     await user.click(modelBtn)
 
-    expect(mockSetSessionProvider).toHaveBeenCalledWith('provider-1', 'gpt-4')
+    expect(mockSetSessionProvider).toHaveBeenCalledWith('session-1', 'provider-1', 'gpt-4')
   })
 
   it('[AUTOMATED] AC-3 selecting a model without session calls activateProvider', async () => {
@@ -708,7 +708,7 @@ describe('ProviderSelector search mode (AC 0-5)', () => {
 
     await user.keyboard('{Enter}')
 
-    expect(mockSetSessionProvider).toHaveBeenCalledWith('provider-1', 'gpt-4-turbo')
+    expect(mockSetSessionProvider).toHaveBeenCalledWith('session-1', 'provider-1', 'gpt-4-turbo')
   })
 
   it('[AUTOMATED] AC-6 Ctrl+M shortcut is wired to toggle dropdown', async () => {
@@ -804,7 +804,7 @@ describe('ProviderSelector search mode (AC 0-5)', () => {
     fireEvent.keyDown(input, { key: 'ArrowDown' })
     fireEvent.keyDown(input, { key: 'Enter' })
 
-    expect(spy).toHaveBeenCalledWith('provider-1', 'gpt-4-turbo')
+    expect(spy).toHaveBeenCalledWith('session-1', 'provider-1', 'gpt-4-turbo')
   })
 
   it('[AUTOMATED] AC-7 ArrowUp wraps past manage providers to last model, Enter selects it', async () => {
@@ -845,6 +845,6 @@ describe('ProviderSelector search mode (AC 0-5)', () => {
     fireEvent.keyDown(input, { key: 'ArrowUp' })
     fireEvent.keyDown(input, { key: 'Enter' })
 
-    expect(mockSetSessionProvider).toHaveBeenCalledWith('provider-1', 'gpt-4-turbo')
+    expect(mockSetSessionProvider).toHaveBeenCalledWith('session-1', 'provider-1', 'gpt-4-turbo')
   })
 })

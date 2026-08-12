@@ -81,6 +81,7 @@ function createMockSessionManager(): SessionManager {
     getModelCompactionThreshold: vi.fn().mockReturnValue(undefined),
     getLspManager: vi.fn().mockReturnValue(undefined),
     getEffectiveWorkdir: vi.fn().mockReturnValue('/test'),
+    getProjectWorkdir: vi.fn().mockReturnValue('/test'),
     drainAsapMessages: vi.fn().mockReturnValue([]),
     getCurrentWindowMessages: vi.fn().mockReturnValue([]),
     updateMessage: vi.fn(),

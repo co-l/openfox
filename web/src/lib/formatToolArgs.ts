@@ -68,6 +68,16 @@ export function formatToolArgs(tool: string, args: Record<string, unknown>): str
     return String(args.action ?? '')
   }
 
+  // Project tasks - show action, with the target task when present
+  if (tool === 'project_tasks') {
+    const action = String(args.action ?? '')
+    const taskId = args.taskId ? String(args.taskId) : ''
+    let label = taskId ? `${action}: ${taskId}` : action
+    if (action === 'move' && args.to) label += ` → ${String(args.to)}`
+    if (action === 'set_gate_value' && args.gateId) label += ` (${String(args.gateId)})`
+    return label
+  }
+
   // Fallback: stringify with truncation
   const str = JSON.stringify(args)
   return str.length > 50 ? str.slice(0, 50) + '...' : str

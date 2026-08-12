@@ -1,13 +1,12 @@
 import type { StreamingBuffer } from './types'
 
-const buffer: StreamingBuffer = {
-  messageId: null,
-  deltaContent: '',
-  thinkingContent: '',
-  toolOutput: [],
-}
+/** Key used when no session is supplied (legacy/tests). */
+export const DEFAULT_BUFFER_KEY = '__default__'
 
-let flushFn: (() => void) | null = null
+const buffers = new Map<string, StreamingBuffer>()
+const dirtySessionIds = new Set<string>()
+
+let flushFn: ((sessionId: string) => void) | null = null
 let pendingTimer: ReturnType<typeof setTimeout> | number | null = null
 let pendingTimerKind: 'raf' | 'timeout' | null = null
 let lastFlushTime = 0
@@ -15,12 +14,23 @@ let lastFlushTime = 0
 // frame are coalesced into a single render via the rAF fast path below.
 const MIN_STREAM_FLUSH_INTERVAL_MS = 16
 
-export function setFlushFn(fn: () => void) {
+export function setFlushFn(fn: ((sessionId: string) => void) | null) {
   flushFn = fn
 }
 
-export function getBuffer(): StreamingBuffer {
+export function getBuffer(sessionId: string = DEFAULT_BUFFER_KEY): StreamingBuffer {
+  let buffer = buffers.get(sessionId)
+  if (!buffer) {
+    buffer = { messageId: null, deltaContent: '', thinkingContent: '', toolOutput: [] }
+    buffers.set(sessionId, buffer)
+  }
   return buffer
+}
+
+/** Drop a session's buffer entirely (e.g. when its split pane is closed). */
+export function releaseStreamingBuffer(sessionId: string = DEFAULT_BUFFER_KEY) {
+  buffers.delete(sessionId)
+  dirtySessionIds.delete(sessionId)
 }
 
 function clearPendingTimer() {
@@ -38,10 +48,14 @@ function doFlush() {
   pendingTimer = null
   pendingTimerKind = null
   lastFlushTime = Date.now()
-  flushFn?.()
+  for (const sessionId of dirtySessionIds) {
+    flushFn?.(sessionId)
+  }
+  dirtySessionIds.clear()
 }
 
-export function scheduleStreamingFlush() {
+export function scheduleStreamingFlush(sessionId: string = DEFAULT_BUFFER_KEY) {
+  dirtySessionIds.add(sessionId)
   if (pendingTimer !== null) return
   const elapsed = Date.now() - lastFlushTime
   if (elapsed >= MIN_STREAM_FLUSH_INTERVAL_MS) {
@@ -62,15 +76,26 @@ export function scheduleStreamingFlush() {
   }
 }
 
-export function cancelStreamingFlush() {
-  clearPendingTimer()
-  flushFn?.()
-  buffer.messageId = null
-  buffer.deltaContent = ''
-  buffer.thinkingContent = ''
-  buffer.toolOutput = []
+export function cancelStreamingFlush(sessionId: string = DEFAULT_BUFFER_KEY) {
   // The flush above is a terminal commit (end of message, error, session switch).
   // Reset the throttle window so the first delta of the next message renders
   // immediately instead of waiting out the remaining interval.
   lastFlushTime = 0
+  clearPendingTimer()
+  dirtySessionIds.delete(sessionId)
+  flushFn?.(sessionId)
+  const buffer = buffers.get(sessionId)
+  if (buffer) {
+    // Only reset when the flush actually consumed the pending content. If the
+    // target message has not landed in the store yet (stream racing ahead), the
+    // flush re-buffers the deltas — wiping them here would drop the stream.
+    const stillPending =
+      buffer.deltaContent.length > 0 || buffer.thinkingContent.length > 0 || buffer.toolOutput.length > 0
+    if (!stillPending) {
+      buffer.messageId = null
+      buffer.deltaContent = ''
+      buffer.thinkingContent = ''
+      buffer.toolOutput = []
+    }
+  }
 }

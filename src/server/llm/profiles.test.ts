@@ -40,6 +40,7 @@ describe('profiles', () => {
       const profile = getModelProfile('some-unknown-model')
 
       expect(profile.name).toBe('default')
+      expect(profile.defaultMaxTokens).toBeGreaterThanOrEqual(16384)
     })
   })
 })

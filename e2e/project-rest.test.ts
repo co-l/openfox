@@ -23,6 +23,8 @@ describe('Project REST API', () => {
       '/tmp/original',
       '/tmp/instructions',
       '/tmp/clear',
+      '/tmp/agent-default',
+      '/tmp/agent-default-clear',
       '/tmp/delete-me',
     ]
     await Promise.all(dirs.map((d) => rm(d, { recursive: true, force: true }).catch(() => {})))
@@ -213,6 +215,60 @@ describe('Project REST API', () => {
       const data: any = await response.json()
       // customInstructions is omitted when null (see rowToProject in db/projects.ts)
       expect(data.project.customInstructions).toBeUndefined()
+    })
+
+    it('sets the project default agent', async () => {
+      const createRes = await fetch(`${server.url}/api/projects`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Agent Default', workdir: '/tmp/agent-default' }),
+      })
+      const created: any = await createRes.json()
+
+      const response = await fetch(`${server.url}/api/projects/${created.project.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ defaultAgent: 'builder' }),
+      })
+
+      expect(response.status).toBe(200)
+      const data: any = await response.json()
+      expect(data.project.defaultAgent).toBe('builder')
+
+      // Round-trips through reads
+      const loadRes = await fetch(`${server.url}/api/projects/${created.project.id}`)
+      const loaded: any = await loadRes.json()
+      expect(loaded.project.defaultAgent).toBe('builder')
+
+      const listRes = await fetch(`${server.url}/api/projects`)
+      const listed: any = await listRes.json()
+      expect(listed.projects.find((p: any) => p.id === created.project.id)?.defaultAgent).toBe('builder')
+    })
+
+    it('clears the project default agent with null', async () => {
+      const createRes = await fetch(`${server.url}/api/projects`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Agent Default Clear', workdir: '/tmp/agent-default-clear' }),
+      })
+      const created: any = await createRes.json()
+
+      await fetch(`${server.url}/api/projects/${created.project.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ defaultAgent: 'builder' }),
+      })
+
+      const response = await fetch(`${server.url}/api/projects/${created.project.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ defaultAgent: null }),
+      })
+
+      expect(response.status).toBe(200)
+      const data: any = await response.json()
+      // defaultAgent is omitted when null (see rowToProject in db/projects.ts)
+      expect(data.project.defaultAgent).toBeUndefined()
     })
 
     it('returns 404 for non-existent project', async () => {

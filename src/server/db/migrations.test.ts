@@ -242,4 +242,34 @@ describe('db migrations', () => {
 
     db.close()
   })
+
+  it('adds sub_group column to workflow_executions on upgrade from old schema', () => {
+    createOldSchemaDatabase(dbPath)
+
+    const config = loadConfig()
+    config.database.path = dbPath
+    initDatabase(config)
+
+    const db = new Database(dbPath)
+    const columns = db.prepare(`PRAGMA table_info(workflow_executions)`).all() as { name: string }[]
+    const columnNames = columns.map((c) => c.name)
+
+    expect(columnNames).toContain('sub_group')
+
+    db.close()
+  })
+
+  it('creates workflow_executions with sub_group on a fresh database', () => {
+    const config = loadConfig()
+    config.database.path = dbPath
+    initDatabase(config)
+
+    const db = new Database(dbPath)
+    const columns = db.prepare(`PRAGMA table_info(workflow_executions)`).all() as { name: string }[]
+    const columnNames = columns.map((c) => c.name)
+
+    expect(columnNames).toContain('sub_group')
+
+    db.close()
+  })
 })

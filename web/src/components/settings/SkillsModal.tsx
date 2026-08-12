@@ -53,14 +53,14 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
 
   useEffect(() => {
     if (isOpen) {
-      const sessionWorkdir = currentSession?.workspace ?? currentSession?.workdir ?? null
+      const sessionWorkdir = currentSession?.workdir ?? null
       setWorkdir(sessionWorkdir)
       fetchSkills(sessionWorkdir)
       setView('list')
       setEditingId(null)
       clearConfirm()
     }
-  }, [isOpen, fetchSkills, setWorkdir, clearConfirm, currentSession?.workdir, currentSession?.workspace])
+  }, [isOpen, fetchSkills, setWorkdir, clearConfirm, currentSession?.workdir])
 
   const setSkillFormData = (skill: SkillFull, readOnly: boolean, newId?: string, newName?: string) => {
     setFormData({

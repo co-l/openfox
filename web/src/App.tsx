@@ -1,5 +1,5 @@
 import { ScrollArea } from './components/shared/ScrollArea'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { SETTINGS_KEYS, DISPLAY_SETTINGS_KEYS, useSettingsStore } from './stores/settings'
 import { useVisualViewport } from './hooks/useVisualViewport'
 import { Route, Switch, useRoute, useLocation } from 'wouter'
@@ -27,12 +27,15 @@ import { NewSessionHandler } from './components/NewSessionHandler'
 import { EmptyProjectView } from './components/EmptyProjectView'
 import { PlanPanel } from './components/plan/PlanPanel'
 import { ReadonlySessionView } from './components/plan/ReadonlySessionView'
+import { SplitView } from './components/split/SplitView'
+import { useIsSplit, readSplitLayout } from './lib/splitPersistence'
 import { Spinner, SpinnerWithText } from './components/shared/Spinner'
 import { PasswordModal } from './components/PasswordModal'
 import { OnboardingWizard } from './components/onboarding/OnboardingWizard'
 import { CrossSessionConfirmationBanner } from './components/shared/CrossSessionConfirmationBanner'
 import { UpdateBanner } from './components/UpdateBanner'
 import { ChangelogModal } from './components/ChangelogModal'
+import { getStoredLastVersion, getStoredPreviousVersion, isVersionNewerThan, trackVersion } from './lib/versionTracking'
 
 function hasStoredToken(): boolean {
   if (typeof window === 'undefined') return false
@@ -269,14 +272,18 @@ function App() {
       localStorage.removeItem('update_pending')
     }
 
-    // Check version change (npm / manual upgrade)
+    // Check version change (npm / manual upgrade). Only a genuine upgrade
+    // shows the modal (a downgrade or dev-prerelease drift has nothing new to
+    // offer). trackVersion preserves the previous version durably, so the
+    // changelog trim boundary survives even if a different window performed
+    // or observed the update.
     if (configFetched) {
       const currentVersion = useConfigStore.getState().version
-      const lastVersion = localStorage.getItem('openfox_last_version')
-      if (currentVersion && lastVersion && currentVersion !== lastVersion) {
+      const lastVersion = getStoredLastVersion()
+      if (isVersionNewerThan(currentVersion, lastVersion)) {
         shouldShow = true
       }
-      localStorage.setItem('openfox_last_version', currentVersion ?? '')
+      trackVersion(currentVersion)
     }
 
     if (shouldShow) {
@@ -315,8 +322,50 @@ function App() {
   const [location] = useLocation()
   const isProjectPage = /^\/p\/[^/]+$/.test(location)
 
+  // Split view: restore the persisted pane set when landing on /split-view,
+  // and collapse the layout when leaving the route. Restored panes are loaded
+  // (async) before SplitView mounts so it never flashes an empty state.
+  const isSplit = useIsSplit()
+  const [splitReady, setSplitReady] = useState(false)
+  const prevIsSplitRef = useRef(false)
+  useEffect(() => {
+    if (prevIsSplitRef.current && !isSplit) {
+      useSessionStore.getState().exitSplitView()
+    }
+    prevIsSplitRef.current = isSplit
+  }, [isSplit])
+
+  useEffect(() => {
+    if (!isSplit) {
+      setSplitReady(false)
+      return
+    }
+    let cancelled = false
+    // Restore the persisted layout when one exists; otherwise keep whatever
+    // panes were deliberately opened (e.g. via the header/home entry buttons).
+    // Sessions merely visited during normal browsing are never listed as panes
+    // (ensurePane does not touch openSessionIds), so no browsing history leaks
+    // into the split view.
+    const layout = readSplitLayout()
+    const restore =
+      layout && layout.openSessionIds.length > 0
+        ? useSessionStore.getState().enterSplitView(layout.openSessionIds, layout.focusedSessionId ?? undefined)
+        : Promise.resolve()
+    restore.then(() => {
+      if (!cancelled) setSplitReady(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [isSplit])
+
   const effectiveLeftOpen = isMobile ? leftMobileOpen : isProjectPage ? true : leftSidebarOpen
   const effectiveRightOpen = isMobile ? rightMobileOpen : rightSidebarOpen
+  // On the split route with no panes open, the control sidebar must stay
+  // visible so the user can pick a session to open; once a pane exists the
+  // regular toggle takes over.
+  const openPaneCount = useSessionStore((state) => state.openSessionIds.length)
+  const splitControlOpen = isSplit && openPaneCount === 0 ? true : effectiveLeftOpen
 
   const handleLeftToggle = () => {
     if (isMobile) {
@@ -386,10 +435,13 @@ function App() {
         <PageTitle />
         <Header onMenuClick={handleLeftToggle} onCriteriaToggle={handleRightToggle} />
 
-        <div className="flex-1 flex overflow-hidden">
+        <div className="@container flex-1 flex overflow-hidden">
           <Switch>
             <Route path="/onboarding">
               <OnboardingPage />
+            </Route>
+            <Route path="/split-view">
+              {splitReady ? <SplitView controlOpen={splitControlOpen} /> : <LoadingSpinner />}
             </Route>
             <Route path="/p/:projectId/s/:sessionId">
               <ProjectSessionView
@@ -412,7 +464,11 @@ function App() {
         </div>
       </div>
       <UpdateBanner />
-      <ChangelogModal isOpen={showChangelog} onClose={() => setShowChangelog(false)} />
+      <ChangelogModal
+        isOpen={showChangelog}
+        onClose={() => setShowChangelog(false)}
+        since={getStoredPreviousVersion() ?? undefined}
+      />
     </>
   )
 }

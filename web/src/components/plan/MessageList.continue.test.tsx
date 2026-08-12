@@ -27,6 +27,8 @@ function buildSessionState() {
         ? { criteria: [{ id: 'c1', description: 'x', status: 'pending' }] }
         : {},
     },
+    panes: {},
+    focusedSessionId: null,
     waitingWorkflow: mockState.hasWaitingWorkflow
       ? {
           workflowId: 'pr-review',
@@ -185,7 +187,7 @@ describe('MessageList continue workflow button', () => {
     renderMessageList()
     screen.getByRole('button', { name: 'apply' }).click()
     expect(mockContinueWorkflow).toHaveBeenCalledTimes(1)
-    expect(mockContinueWorkflow).toHaveBeenCalledWith('apply')
+    expect(mockContinueWorkflow).toHaveBeenCalledWith('s1', 'apply')
   })
 
   it('falls back to a single continue button when pendingChoices is absent', () => {

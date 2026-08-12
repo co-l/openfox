@@ -154,6 +154,11 @@ function runMigrations(db: Database.Database): void {
     db.exec(`ALTER TABLE projects ADD COLUMN is_starred INTEGER NOT NULL DEFAULT 0`)
   }
 
+  if (!projectColumnNames.includes('default_agent')) {
+    logger.info('Migrating projects table: adding default_agent column')
+    db.exec(`ALTER TABLE projects ADD COLUMN default_agent TEXT`)
+  }
+
   if (!projectColumnNames.includes('workspace_root_dir')) {
     logger.info('Migrating projects table: adding workspace_root_dir column')
     db.exec(`ALTER TABLE projects ADD COLUMN workspace_root_dir TEXT`)
@@ -291,6 +296,7 @@ function runMigrations(db: Database.Database): void {
       step_output TEXT,
       params TEXT,
       pending_choices TEXT,
+      sub_group TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
@@ -309,6 +315,100 @@ function runMigrations(db: Database.Database): void {
     logger.info('Migrating workflow_executions table: adding pending_choices column')
     db.exec(`ALTER TABLE workflow_executions ADD COLUMN pending_choices TEXT`)
   }
+
+  // Migration: Add sub_group column (the sub-group slice a slice run belongs to)
+  if (!workflowExecColumnNames.includes('sub_group')) {
+    logger.info('Migrating workflow_executions table: adding sub_group column')
+    db.exec(`ALTER TABLE workflow_executions ADD COLUMN sub_group TEXT`)
+  }
+
+  // ------------------------------------------------------------------
+  // Project tasks (kanban board) tables
+  // ------------------------------------------------------------------
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS tasks (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      prompt TEXT NOT NULL DEFAULT '',
+      attachments TEXT NOT NULL DEFAULT '[]',
+      status TEXT NOT NULL DEFAULT 'todo',
+      run_state TEXT,
+      position INTEGER NOT NULL DEFAULT 0,
+      version INTEGER NOT NULL DEFAULT 0,
+      agent_id TEXT,
+      provider_id TEXT,
+      model TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    )
+  `)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id, status)`)
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_links (
+      task_id TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (task_id, session_id),
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+    )
+  `)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_task_links_session ON task_links(session_id)`)
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_gates (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      required INTEGER NOT NULL DEFAULT 1,
+      variant TEXT NOT NULL DEFAULT 'done',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    )
+  `)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_task_gates_project ON task_gates(project_id)`)
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_gate_values (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      gate_id TEXT NOT NULL,
+      value TEXT NOT NULL,
+      actor TEXT NOT NULL,
+      actor_name TEXT,
+      session_id TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+    )
+  `)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_task_gate_values_task ON task_gate_values(task_id)`)
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_audit (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      actor TEXT NOT NULL,
+      actor_name TEXT,
+      action TEXT NOT NULL,
+      detail TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+    )
+  `)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_task_audit_task ON task_audit(task_id)`)
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS project_task_settings (
+      project_id TEXT PRIMARY KEY,
+      slot_limit INTEGER NOT NULL DEFAULT 1,
+      queue_paused INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    )
+  `)
 
   logger.info('Database migrations completed')
 }

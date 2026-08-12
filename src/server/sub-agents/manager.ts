@@ -76,8 +76,8 @@ export function buildSubAgentResult(
 // Agent Definition Resolution
 // ============================================================================
 
-async function resolveAgentDef(agentId: string): Promise<AgentDefinition> {
-  const allAgents = await loadAllAgentsDefault()
+async function resolveAgentDef(agentId: string, projectDir?: string): Promise<AgentDefinition> {
+  const allAgents = await loadAllAgentsDefault(projectDir)
   const def = findAgentById(agentId, allAgents)
   if (!def) throw new Error(`Unknown sub-agent type: ${agentId}`)
   if (!def.metadata.subagent) throw new Error(`Agent '${agentId}' is not a sub-agent`)
@@ -149,7 +149,7 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
     onMessage,
   } = options
 
-  const agentDef = await resolveAgentDef(subAgentType)
+  const agentDef = await resolveAgentDef(subAgentType, sessionManager.getProjectWorkdir(sessionId))
   const eventStore = getEventStore()
   const subAgentId = crypto.randomUUID()
   const session = sessionManager.requireSession(sessionId)
@@ -266,7 +266,7 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
   const { content: instructionContent } = await getAllInstructions(effectiveWorkdir, session.projectId)
   const config = getRuntimeConfig()
   const configDir = getGlobalConfigDir(config.mode ?? 'production')
-  const skills = await getEnabledSkillMetadata(configDir, effectiveWorkdir)
+  const skills = await getEnabledSkillMetadata(configDir, session.workdir)
 
   const hasRunCommand = agentDef.metadata.allowedTools?.includes('run_command') ?? false
   const gitignoreSection = hasRunCommand ? await loadGitIgnoreRules(effectiveWorkdir) : ''

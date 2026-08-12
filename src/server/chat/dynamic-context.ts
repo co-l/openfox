@@ -120,12 +120,12 @@ async function loadSessionContext(
   const { content: instructionContent } = await getAllInstructions(session.workdir, session.projectId)
   const runtimeConfig = getRuntimeConfig()
   const configDir = getGlobalConfigDir(runtimeConfig.mode ?? 'production')
-  const skills = await getEnabledSkillMetadata(configDir, sessionManager.getEffectiveWorkdir(sessionId))
+  const skills = await getEnabledSkillMetadata(configDir, sessionManager.getProjectWorkdir(sessionId))
   return { instructionContent: instructionContent ?? '', skills }
 }
 
 function resolveAgentDef(sessionManager: SessionManager, sessionId: string): Promise<AgentDefinition> {
-  return loadAllAgentsDefault().then((allAgents) => {
+  return loadAllAgentsDefault(sessionManager.getProjectWorkdir(sessionId)).then((allAgents) => {
     const session = sessionManager.requireSession(sessionId)
     return findAgentById(session.mode, allAgents) ?? findAgentById(resolveDefaultAgentId(), allAgents)!
   })
@@ -148,7 +148,7 @@ export async function buildCachedPrompt(
   const tools = getToolRegistryForAgent(agentDef, sessionId).definitions
   const toolFingerprint = getToolFingerprint(tools)
 
-  const allAgents = await loadAllAgentsDefault()
+  const allAgents = await loadAllAgentsDefault(sessionManager.getProjectWorkdir(sessionId))
   const subAgentDefs = getSubAgents(allAgents)
   const session = sessionManager.requireSession(sessionId)
   const systemPrompt = buildTopLevelSystemPrompt(
@@ -189,7 +189,7 @@ export async function applyDynamicContext(
   modelName?: string,
 ): Promise<void> {
   const session = sessionManager.requireSession(sessionId)
-  const allAgents = await loadAllAgentsDefault()
+  const allAgents = await loadAllAgentsDefault(sessionManager.getProjectWorkdir(sessionId))
   const agentDef = findAgentById(session.mode, allAgents) ?? findAgentById(resolveDefaultAgentId(), allAgents)!
   const { systemPrompt, tools, hash } = await buildCachedPrompt(sessionManager, sessionId, agentDef, modelName)
 

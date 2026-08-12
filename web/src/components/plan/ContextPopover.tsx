@@ -2,10 +2,10 @@ import { useState } from 'react'
 import { useSessionStore } from '../../stores/session'
 import { ProgressBar, LowTokenWarning } from '../shared/ProgressBar'
 import { formatTokens } from '../../lib/format-stats'
-import { wsClient } from '../../lib/ws'
 import { MoreIcon } from '../shared/icons'
 import { getTextColor } from './token-utils'
 import { DynamicContextPreviewModal } from './DynamicContextPreviewModal'
+import { useApplyDynamicContext, useScopedContext } from '../../stores/session/session-scope'
 
 interface ContextPopoverProps {
   variant?: 'popover' | 'sidebar'
@@ -13,10 +13,9 @@ interface ContextPopoverProps {
 }
 
 export function ContextPopover({ variant = 'popover', onUpdateSystemPrompt }: ContextPopoverProps) {
-  const contextState = useSessionStore((state) => state.contextState)
-  const currentSession = useSessionStore((state) => state.currentSession)
+  const { sessionId, contextState, currentSession } = useScopedContext()
   const compactContext = useSessionStore((state) => state.compactContext)
-  const queueUpdate = useSessionStore((state) => state.queueUpdate)
+  const applyDynamicContext = useApplyDynamicContext()
 
   const [showApplyModal, setShowApplyModal] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -28,11 +27,7 @@ export function ContextPopover({ variant = 'popover', onUpdateSystemPrompt }: Co
   const isRunning = currentSession.isRunning
 
   const handleApplyDynamic = () => {
-    if (isRunning) {
-      queueUpdate()
-    } else {
-      wsClient.send('context.applyDynamic', {})
-    }
+    applyDynamicContext(isRunning)
     setShowApplyModal(false)
   }
 
@@ -69,7 +64,7 @@ export function ContextPopover({ variant = 'popover', onUpdateSystemPrompt }: Co
           <div className="absolute right-0 top-full mt-1.5 z-50 bg-bg-secondary border border-border rounded-lg shadow-xl py-1 min-w-[160px]">
             <button
               onClick={() => {
-                if (!isRunning) compactContext()
+                if (!isRunning && sessionId) compactContext(sessionId)
                 setMenuOpen(false)
               }}
               disabled={isRunning}
@@ -131,7 +126,7 @@ export function ContextPopover({ variant = 'popover', onUpdateSystemPrompt }: Co
       <div className="space-y-1">
         <button
           onClick={() => {
-            if (!isRunning) compactContext()
+            if (!isRunning && sessionId) compactContext(sessionId)
           }}
           disabled={isRunning}
           className="w-full px-3 py-1.5 text-left text-sm hover:bg-bg-tertiary transition-colors disabled:opacity-40 disabled:cursor-not-allowed rounded"

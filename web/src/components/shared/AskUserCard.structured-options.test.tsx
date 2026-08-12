@@ -63,6 +63,7 @@ describe('AskUserCard — structured ChoiceOption[] reload parity', () => {
     const answerQuestion = vi.fn()
     const options: ChoiceOption[] = [{ value: 'yes-v', label: 'Oui', description: 'Accepter' }]
     useSessionStore.setState({
+      currentSession: { id: 'session-1', projectId: 'p1' } as never,
       pendingQuestions: [{ callId: 'call-1', question: 'Pick:', type: 'choice', options }],
       answerQuestion,
     })
@@ -72,7 +73,7 @@ describe('AskUserCard — structured ChoiceOption[] reload parity', () => {
     expect(button).toBeDefined()
     fireEvent.click(button!)
     expect(answerQuestion).toHaveBeenCalledTimes(1)
-    const [, value] = answerQuestion.mock.calls[0]!
+    const [, , value] = answerQuestion.mock.calls[0]!
     expect(typeof value).toBe('string')
     expect(value).toBe('yes-v') // <- the `value`, NOT the `label`
   })

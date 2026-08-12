@@ -14,7 +14,12 @@ interface ProjectState {
   loadProject: (projectId: string) => Promise<Project | null>
   updateProject: (
     projectId: string,
-    updates: { name?: string; customInstructions?: string | null; dangerLevel?: string | null },
+    updates: {
+      name?: string
+      customInstructions?: string | null
+      dangerLevel?: string | null
+      defaultAgent?: string | null
+    },
   ) => Promise<Project | null>
   deleteProject: (projectId: string) => Promise<boolean>
   toggleStar: (projectId: string, isStarred: boolean) => Promise<boolean>

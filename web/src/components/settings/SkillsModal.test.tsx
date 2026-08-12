@@ -72,7 +72,7 @@ describe('SkillsContent', () => {
     expect(fetchSkills).toHaveBeenCalled()
   })
 
-  it('loads skills from the session workspace when it differs from workdir', () => {
+  it('loads skills from the session project workdir even when a workspace is active', () => {
     const setWorkdir = vi.fn()
     const fetchSkills = vi.fn(async () => undefined)
     useSkillsStore.setState({ setWorkdir, fetchSkills })
@@ -90,7 +90,7 @@ describe('SkillsContent', () => {
 
     render(<SkillsContent isOpen={true} />)
 
-    expect(setWorkdir).toHaveBeenCalledWith('/workspaces/openfox/review-branch')
-    expect(fetchSkills).toHaveBeenCalledWith('/workspaces/openfox/review-branch')
+    expect(setWorkdir).toHaveBeenCalledWith('/original/project')
+    expect(fetchSkills).toHaveBeenCalledWith('/original/project')
   })
 })

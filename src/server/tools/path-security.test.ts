@@ -419,10 +419,40 @@ describe('path-security', () => {
         expect(paths).toContain('/path/with spaces/file')
       })
 
-      it('extracts quoted tilde path', () => {
-        const home = homedir()
+      it('does not expand a tilde inside double quotes (literal in bash)', () => {
         const paths = extractAbsolutePathsFromCommand('cat "~/Documents/file"')
-        expect(paths).toContain(join(home, 'Documents/file'))
+        expect(paths).toEqual([])
+      })
+    })
+
+    describe('quoted tilde literals', () => {
+      it('does not expand a ~ inside a single-quoted awk program (match operator)', () => {
+        const paths = extractAbsolutePathsFromCommand("awk '$1 ~ /x/' file")
+        expect(paths).toEqual([])
+      })
+
+      it('does not expand a ~ in an awk pattern with an escaped slash', () => {
+        const paths = extractAbsolutePathsFromCommand("awk '$1 ~ /\\/etc/' file")
+        expect(paths).toEqual([])
+      })
+
+      it('does not expand a ~ inside a perl program', () => {
+        const paths = extractAbsolutePathsFromCommand("perl -ne 'print if $_ ~ /x/' file")
+        expect(paths).toEqual([])
+      })
+
+      it('does not expand a quoted literal ~', () => {
+        expect(extractAbsolutePathsFromCommand("echo '~'")).toEqual([])
+        expect(extractAbsolutePathsFromCommand('echo "~"')).toEqual([])
+      })
+
+      it('does not expand a quoted assignment value', () => {
+        expect(extractAbsolutePathsFromCommand("VAR='~' && echo $VAR")).toEqual([])
+      })
+
+      it('still expands unquoted standalone tildes', () => {
+        expect(extractAbsolutePathsFromCommand('echo ~')).toContain(homedir())
+        expect(extractAbsolutePathsFromCommand('echo a ~ b')).toContain(homedir())
       })
     })
 
@@ -576,6 +606,163 @@ describe('path-security', () => {
       })
     })
 
+    describe('sandbox escape paths', () => {
+      it('flags the root filesystem as a path for find /', () => {
+        const paths = extractAbsolutePathsFromCommand('find / -name passwd -exec cat {} \\;')
+        expect(paths).toContain('/')
+      })
+
+      it('flags a bare root for ls /', () => {
+        const paths = extractAbsolutePathsFromCommand('ls /')
+        expect(paths).toContain('/')
+      })
+
+      it('flags cd / pivots', () => {
+        const paths = extractAbsolutePathsFromCommand('cd / && cat etc/passwd')
+        expect(paths).toContain('/')
+      })
+
+      it('flags absolute find search roots', () => {
+        const paths = extractAbsolutePathsFromCommand('find /etc -name passwd -exec cat {} \\;')
+        expect(paths).toContain('/etc')
+      })
+
+      it('flags relative .. traversal tokens', () => {
+        expect(extractAbsolutePathsFromCommand('cat ../../.bashrc')).toContain('../../.bashrc')
+        expect(extractAbsolutePathsFromCommand('cat ../src/file.ts')).toContain('../src/file.ts')
+        expect(extractAbsolutePathsFromCommand('cat sub/../../secret')).toContain('sub/../../secret')
+      })
+
+      it('flags quoted relative .. traversal tokens', () => {
+        expect(extractAbsolutePathsFromCommand('cat "../../.bashrc"')).toContain('../../.bashrc')
+      })
+
+      it('does not flag relative paths that stay inside the workdir', () => {
+        expect(extractAbsolutePathsFromCommand('cat ./file.txt')).toEqual([])
+        expect(extractAbsolutePathsFromCommand('cat src/main.ts')).toEqual([])
+      })
+
+      it('does not flag git revision ranges with ..', () => {
+        expect(extractAbsolutePathsFromCommand('git diff HEAD~1..HEAD')).toEqual([])
+      })
+
+      it('does not flag dot-prefixed filenames or globs', () => {
+        expect(extractAbsolutePathsFromCommand('cat ..foo')).toEqual([])
+        expect(extractAbsolutePathsFromCommand("find . -name '..*'")).toEqual([])
+      })
+
+      it('does not flag ../.. inside commit messages', () => {
+        const paths = extractAbsolutePathsFromCommand('git commit -m "fix ../../paths"')
+        expect(paths).not.toContain('../../paths')
+      })
+
+      it('flags find search roots even with -exec and a trailing redirect', () => {
+        expect(extractAbsolutePathsFromCommand('find /etc -name passwd -exec cat {} \\; 2>/dev/null')).toContain('/etc')
+        expect(extractAbsolutePathsFromCommand('find /usr -name passwd -exec cat {} \\; 2>/tmp/err.txt')).toContain(
+          '/usr',
+        )
+        expect(extractAbsolutePathsFromCommand('find /etc -name passwd -exec cat {} \\; >/tmp/out.txt')).toContain(
+          '/etc',
+        )
+      })
+
+      it('flags /var/log find roots with a redirect (no false masking)', () => {
+        const paths = extractAbsolutePathsFromCommand('find /var/log -name x 2>/dev/null')
+        expect(paths).toContain('/var/log')
+      })
+    })
+
+    describe('sed/awk/perl/ruby regex address false positives', () => {
+      it('does not extract sed single addresses with action letters', () => {
+        const paths = extractAbsolutePathsFromCommand("sed -n '/error/p' log.txt")
+        expect(paths).toEqual([])
+      })
+
+      it('does not extract sed delete addresses', () => {
+        const paths = extractAbsolutePathsFromCommand("sed -i '/PATTERN/d' file.txt")
+        expect(paths).toEqual([])
+      })
+
+      it('does not extract sed address ranges with embedded quotes', () => {
+        const paths = extractAbsolutePathsFromCommand('sed -n \'/heading "Add session"/,/Add all running/p\' output')
+        expect(paths).toEqual([])
+      })
+
+      it('does not extract false paths from the reported sed-range command', () => {
+        const cmd =
+          'cd /home/conrad/.local/share/openfox/workspaces/openfox/split-view && npx -y @playwright/cli snapshot 2>&1 | sed -n \'/heading "Add session"/,/Add all running/p\' | grep -E "button|paragraph" | head -30'
+        const paths = extractAbsolutePathsFromCommand(cmd)
+        expect(paths).toEqual(['/home/conrad/.local/share/openfox/workspaces/openfox/split-view'])
+      })
+
+      it('does not extract awk pattern-only addresses', () => {
+        const paths = extractAbsolutePathsFromCommand("awk '/error/ {print $0}' file.txt")
+        expect(paths).toEqual([])
+      })
+
+      it('does not extract awk address ranges', () => {
+        const paths = extractAbsolutePathsFromCommand("awk '/start/,/end/p' file.txt")
+        expect(paths).toEqual([])
+      })
+
+      it('does not extract perl regex addresses', () => {
+        const paths = extractAbsolutePathsFromCommand("perl -ne 'print if /foo/' file.txt")
+        expect(paths).toEqual([])
+      })
+
+      it('does not extract ruby regex addresses or the =~ home-directory leak', () => {
+        const paths = extractAbsolutePathsFromCommand("ruby -e 'puts 1 if ARGV =~ /x/' a")
+        expect(paths).toEqual([])
+      })
+
+      it('does not extract compact ruby regex addresses (=~ /re/)', () => {
+        const paths = extractAbsolutePathsFromCommand("ruby -e 'x=~/y/' a")
+        expect(paths).toEqual([])
+      })
+
+      it('does not extract numeric or step sed ranges', () => {
+        expect(extractAbsolutePathsFromCommand("sed -n '1,/marker/p' file")).toEqual([])
+        expect(extractAbsolutePathsFromCommand("sed -n '/a/,+5p' file")).toEqual([])
+      })
+
+      it('still extracts the real file path alongside a sed address', () => {
+        const paths = extractAbsolutePathsFromCommand("sed -n '/foo/p' /etc/passwd")
+        expect(paths).toContain('/etc/passwd')
+        expect(paths).not.toContain('/foo')
+      })
+
+      it('keeps real paths when a regex tool is also present', () => {
+        const paths = extractAbsolutePathsFromCommand("cat /data/x/ && sed -n '/p/q' f")
+        expect(paths).toContain('/data/x/')
+        expect(paths).not.toContain('/p/q')
+      })
+
+      it('still extracts directory paths with a trailing slash when no regex tool is involved', () => {
+        const paths = extractAbsolutePathsFromCommand('ls /var/log/')
+        expect(paths).toContain('/var/log/')
+      })
+
+      it('still extracts dotted path components that follow a slash', () => {
+        const paths = extractAbsolutePathsFromCommand('cat /var/log/proxy.log')
+        expect(paths).toContain('/var/log/proxy.log')
+      })
+
+      it('still extracts quoted paths when grep appears in the command', () => {
+        const paths = extractAbsolutePathsFromCommand("grep ERROR '/var/log/messages'")
+        expect(paths).toContain('/var/log/messages')
+      })
+
+      it('still extracts quoted paths when node appears in the command', () => {
+        const paths = extractAbsolutePathsFromCommand("node script.js '/etc/config.json'")
+        expect(paths).toContain('/etc/config.json')
+      })
+
+      it('still expands VAR=~/path tilde assignments', () => {
+        const paths = extractAbsolutePathsFromCommand('CFG=~/config && echo $CFG')
+        expect(paths).toContain(join(homedir(), 'config'))
+      })
+    })
+
     describe('cd and directory changes', () => {
       it('extracts path from cd command', () => {
         const paths = extractAbsolutePathsFromCommand('cd /outside/workdir')
@@ -637,7 +824,7 @@ describe('path-security', () => {
 
       it('returns empty array for relative paths only', () => {
         const paths = extractAbsolutePathsFromCommand('cat ./file.txt ../other.txt')
-        expect(paths).toEqual([])
+        expect(paths).toEqual(['../other.txt'])
       })
 
       it('handles empty command', () => {

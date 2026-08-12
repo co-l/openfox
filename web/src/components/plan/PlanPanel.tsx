@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useSessionStore, useIsRunning } from '../../stores/session'
 import { useDisplaySettings } from '../../stores/settings'
-
 import { type TurnStats } from '../../lib/types'
 import type { Message } from '@shared/types.js'
 
@@ -19,6 +18,7 @@ import { WorkflowsModal } from '../settings/WorkflowsModal'
 import { QuickActionModal } from '../QuickActionModal'
 import { MessageSearchModal } from './MessageSearchModal'
 import { ChatInput } from './ChatInput'
+import { FeedTaskPreview } from '../tasks/FeedTaskPreview'
 import { WorkflowParamModal } from './WorkflowParamModal'
 import { extractTemplateParams } from '../../lib/parse-slash-command'
 import { resolveWorkflowForLaunch } from '../../lib/workflow-scope'
@@ -34,12 +34,15 @@ import { useViewport } from '../../hooks/useViewport'
 import type { OverlayScrollbarsComponentRef } from 'overlayscrollbars-react'
 import { useScrolledSend } from '@/hooks/useScrolledSend.ts'
 import { useKeybindings, useBinding, useAgentSwitchingBindings } from '../../hooks/useKeybindings'
+import { SessionScopeProvider, useScopedPaneState } from '../../stores/session/session-scope'
 
 interface PlanPanelProps {
   criteriaSidebarOpen?: boolean
   onCriteriaSidebarToggle?: () => void
   rawMessages?: Message[]
   hiddenCount?: number
+  /** Render a specific pane's content (split view). Omit for the focused session. */
+  sessionId?: string | null
 }
 
 export function PlanPanel({
@@ -47,6 +50,7 @@ export function PlanPanel({
   onCriteriaSidebarToggle,
   rawMessages: propRawMessages,
   hiddenCount: propHiddenCount,
+  sessionId: scopedSessionId,
 }: PlanPanelProps = {}) {
   const criteriaSidebarOpen = externalCriteriaSidebarOpen ?? true
   const [input, setInput] = useState('')
@@ -63,11 +67,33 @@ export function PlanPanel({
 
   const getViewport = useViewport(scrollContainerRef)
 
-  const session = useSessionStore((state) => state.currentSession)
-  const storeMessages = useSessionStore((state) => state.messages)
-  const storeHiddenCount = useSessionStore((state) => state.hiddenCount)
+  const focusedSessionId = useSessionStore((state) => state.focusedSessionId ?? state.currentSession?.id ?? null)
+  const targetSessionId = scopedSessionId ?? focusedSessionId
+
+  const scoped = scopedSessionId != null
+  // In split view only the focused pane owns window-level keybindings and
+  // shortcuts; background panes stay silent so a single keystroke acts once.
+  const isFocusedPane = !scoped || focusedSessionId === scopedSessionId
+  const session = useScopedPaneState(
+    scoped ? scopedSessionId : null,
+    (pane) => pane.session ?? null,
+    (state) => state.currentSession,
+    null,
+  )
+  const storeMessages = useScopedPaneState(
+    scoped ? scopedSessionId : null,
+    (pane) => pane.messages,
+    (state) => state.messages,
+    [],
+  )
+  const storeHiddenCount = useScopedPaneState(
+    scoped ? scopedSessionId : null,
+    (pane) => pane.hiddenCount ?? 0,
+    (state) => state.hiddenCount,
+    0,
+  )
   const sessions = useSessionStore((state) => state.sessions)
-  const isRunning = useIsRunning()
+  const isRunning = useIsRunning(scoped ? scopedSessionId : null)
   const stopGeneration = useSessionStore((state) => state.stopGeneration)
 
   const messages = propRawMessages ?? storeMessages
@@ -82,13 +108,14 @@ export function PlanPanel({
     usePromptHistory(messages, sessions, session?.id)
 
   useEffect(() => {
+    if (!isFocusedPane) return
     const handler = (e: Event) => {
       const customEvent = e as CustomEvent<{ stats: TurnStats }>
       setTurnStatsModal(customEvent.detail.stats)
     }
     window.addEventListener('open-turn-stats', handler)
     return () => window.removeEventListener('open-turn-stats', handler)
-  }, [])
+  }, [isFocusedPane])
 
   // Scope project workflows to the active session's project so project-scoped
   // items are listed, edited, and launched from the correct project.
@@ -105,6 +132,7 @@ export function PlanPanel({
   }, [])
 
   useEffect(() => {
+    if (!isFocusedPane) return
     const handler = (e: KeyboardEvent) => {
       if (shouldCaptureMessageSearchShortcut(e)) {
         e.preventDefault()
@@ -113,7 +141,7 @@ export function PlanPanel({
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [])
+  }, [isFocusedPane])
 
   const previousDisplayItemsRef = useRef<DisplayItem[]>([])
 
@@ -140,7 +168,7 @@ export function PlanPanel({
     session,
     getViewport,
   )
-  const { sendMessage, launchWorkflow } = useScrolledSend(setAutoScroll)
+  const { sendMessage, launchWorkflow } = useScrolledSend(setAutoScroll, targetSessionId)
 
   useEffect(() => {
     const handler = () => setAutoScroll(true)
@@ -210,11 +238,12 @@ export function PlanPanel({
   )
 
   useEffect(() => {
+    if (!isFocusedPane) return
     const handleEscape = (e: KeyboardEvent) => {
       const popupOpen =
         showQuickAction || showCommandsModal || showWorkflowsModal || showMessageSearch || turnStatsModal
-      if (e.key === 'Escape' && isRunning && !popupOpen) {
-        stopGeneration()
+      if (e.key === 'Escape' && isRunning && !popupOpen && targetSessionId) {
+        stopGeneration(targetSessionId)
       }
       if (e.key === 'ScrollLock') {
         setAutoScroll(!isAutoScrollActive)
@@ -223,6 +252,7 @@ export function PlanPanel({
     window.addEventListener('keydown', handleEscape)
     return () => window.removeEventListener('keydown', handleEscape)
   }, [
+    isFocusedPane,
     isRunning,
     stopGeneration,
     isAutoScrollActive,
@@ -234,17 +264,23 @@ export function PlanPanel({
   ])
 
   const keybindings = useKeybindings()
-  useBinding(keybindings.quickAction, () => {
+  useBinding(isFocusedPane ? keybindings.quickAction : null, () => {
     setShowQuickAction(true)
   })
 
-  useBinding(keybindings.criteriaSidebar, () => {
+  useBinding(isFocusedPane ? keybindings.criteriaSidebar : null, () => {
     onCriteriaSidebarToggle?.()
   })
 
-  useAgentSwitchingBindings(keybindings.agentSwitching, topLevelAgents, (agentId) => {
-    useSessionStore.getState().switchMode(agentId)
-  })
+  useAgentSwitchingBindings(
+    isFocusedPane ? keybindings.agentSwitching : [],
+    isFocusedPane ? topLevelAgents : [],
+    (agentId) => {
+      if (targetSessionId) {
+        useSessionStore.getState().switchMode(targetSessionId, agentId)
+      }
+    },
+  )
 
   const handleSelectWorkflow = (workflowId: string, scope?: WorkflowLaunchScope) => {
     launchOrShowParams(workflowId, undefined, undefined, scope)
@@ -275,8 +311,8 @@ export function PlanPanel({
       if (paramKeys.length > 0) {
         setPendingCommandParams({ prompt: content, paramKeys, agentMode, textareaContent, attachments })
       } else {
-        if (agentMode && session?.mode !== agentMode) {
-          await useSessionStore.getState().switchMode(agentMode)
+        if (agentMode && targetSessionId && session?.mode !== agentMode) {
+          await useSessionStore.getState().switchMode(targetSessionId, agentMode)
         }
         const combinedContent =
           textareaContent && textareaContent.trim() ? `${textareaContent.trim()}\n\n${content}` : content
@@ -291,11 +327,12 @@ export function PlanPanel({
   )
 
   return (
-    <>
+    <SessionScopeProvider value={targetSessionId}>
       <SessionLayout
         criteriaSidebarOpen={criteriaSidebarOpen}
         onCriteriaSidebarToggle={onCriteriaSidebarToggle}
         messages={messages}
+        sessionId={targetSessionId}
       >
         <SidebarSummaryHeader visible={!criteriaSidebarOpen} />
 
@@ -316,6 +353,9 @@ export function PlanPanel({
           onScrollToTop={() => setAutoScroll(false)}
           hiddenCount={hiddenCount}
           onScrollbarGesture={handleScrollbarGesture}
+          emptyState={
+            messages.length === 0 && session?.projectId ? <FeedTaskPreview projectId={session.projectId} /> : undefined
+          }
         />
 
         <ChatInput
@@ -328,7 +368,7 @@ export function PlanPanel({
           errorMessage={errorMessage}
           setErrorMessage={setErrorMessage}
           scrollToBottom={() => getViewport()?.scrollTo({ top: getViewport()?.scrollHeight ?? 0, behavior: 'smooth' })}
-          sessionId={session?.id}
+          sessionId={targetSessionId}
           showHistory={showHistory}
           history={history}
           selectedIndex={selectedIndex}
@@ -347,7 +387,11 @@ export function PlanPanel({
           onSendCommand={handleSendCommand}
           clearInput={clearInput}
         />
-        <CommandsModal isOpen={showCommandsModal} onClose={() => setShowCommandsModal(false)} />
+        <CommandsModal
+          isOpen={showCommandsModal}
+          onClose={() => setShowCommandsModal(false)}
+          projectDir={session?.workdir}
+        />
         <WorkflowsModal
           isOpen={showWorkflowsModal}
           onClose={() => setShowWorkflowsModal(false)}
@@ -363,7 +407,7 @@ export function PlanPanel({
           onCloseComplete={focusChatTextarea}
           onCloseCompleteAction={() => window.dispatchEvent(new CustomEvent('open-session-dropdown'))}
           onSelectCommand={async (commandId, textareaContent) => {
-            const full = await useCommandsStore.getState().fetchCommand(commandId)
+            const full = await useCommandsStore.getState().fetchCommand(commandId, session?.workdir)
             if (full) {
               handleSendCommand(full.prompt, full.metadata.agentMode, textareaContent)
             }
@@ -413,8 +457,8 @@ export function PlanPanel({
                 prompt = prompt.replaceAll(`{{${key}}}`, value)
               }
               const { agentMode, textareaContent, attachments } = pendingCommandParams
-              if (agentMode && session?.mode !== agentMode) {
-                useSessionStore.getState().switchMode(agentMode)
+              if (agentMode && targetSessionId && session?.mode !== agentMode) {
+                useSessionStore.getState().switchMode(targetSessionId, agentMode)
               }
               const combinedContent =
                 textareaContent && textareaContent.trim() ? `${textareaContent.trim()}\n\n${prompt}` : prompt
@@ -441,7 +485,7 @@ export function PlanPanel({
           onNavigate={handleTimelineNavigate}
         />
       )}
-    </>
+    </SessionScopeProvider>
   )
 }
 

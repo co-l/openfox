@@ -273,4 +273,81 @@ describe('file tracking integration', () => {
       expect(hashAfter).not.toBe(hashBefore)
     })
   })
+
+  describe('cross-workspace read tracking', () => {
+    it('allows writing to a file in a new workspace after reading it in the original', async () => {
+      const originalDir = join(testDir, 'original')
+      const workspaceDir = join(testDir, 'workspace')
+      await mkdir(join(originalDir, 'src'), { recursive: true })
+      await mkdir(join(workspaceDir, 'src'), { recursive: true })
+
+      const content = 'shared original content'
+      await writeFile(join(originalDir, 'src', 'app.ts'), content)
+      await writeFile(join(workspaceDir, 'src', 'app.ts'), content)
+
+      // Read in the original workspace
+      const originalContext = createTestContext(sessionManager, sessionId, originalDir)
+      const readResult = await readFileTool.execute({ path: 'src/app.ts' }, originalContext)
+      expect(readResult.success).toBe(true)
+
+      // Switch to the new workspace (same session, different workdir)
+      const workspaceContext = createTestContext(sessionManager, sessionId, workspaceDir)
+      const writeResult = await writeFileTool.execute(
+        { path: 'src/app.ts', content: 'updated content' },
+        workspaceContext,
+      )
+
+      expect(writeResult.success).toBe(true)
+    })
+
+    it('allows editing a file in a new workspace after reading it in the original', async () => {
+      const originalDir = join(testDir, 'original')
+      const workspaceDir = join(testDir, 'workspace')
+      await mkdir(originalDir, { recursive: true })
+      await mkdir(workspaceDir, { recursive: true })
+
+      await writeFile(join(originalDir, 'app.ts'), 'hello world')
+      await writeFile(join(workspaceDir, 'app.ts'), 'hello world')
+
+      // Read in the original workspace
+      const originalContext = createTestContext(sessionManager, sessionId, originalDir)
+      const readResult = await readFileTool.execute({ path: 'app.ts' }, originalContext)
+      expect(readResult.success).toBe(true)
+
+      // Switch to the new workspace (same session, different workdir)
+      const workspaceContext = createTestContext(sessionManager, sessionId, workspaceDir)
+      const editResult = await editFileTool.execute(
+        { path: 'app.ts', old_string: 'hello', new_string: 'hi' },
+        workspaceContext,
+      )
+
+      expect(editResult.success).toBe(true)
+      expect(editResult.output).toContain('Successfully replaced')
+    })
+
+    it('still rejects writing in the new workspace when content differs from what was read', async () => {
+      const originalDir = join(testDir, 'original')
+      const workspaceDir = join(testDir, 'workspace')
+      await mkdir(originalDir, { recursive: true })
+      await mkdir(workspaceDir, { recursive: true })
+
+      await writeFile(join(originalDir, 'app.ts'), 'original content')
+      await writeFile(join(workspaceDir, 'app.ts'), 'diverged content')
+
+      // Read in the original workspace
+      const originalContext = createTestContext(sessionManager, sessionId, originalDir)
+      const readResult = await readFileTool.execute({ path: 'app.ts' }, originalContext)
+      expect(readResult.success).toBe(true)
+
+      // Switch to the new workspace (same session, different workdir)
+      const workspaceContext = createTestContext(sessionManager, sessionId, workspaceDir)
+      const writeResult = await writeFileTool.execute({ path: 'app.ts', content: 'agent update' }, workspaceContext)
+
+      expect(writeResult.success).toBe(false)
+      // The agent only ever read the original copy; the workspace copy is unknown,
+      // so it is a "not read" failure, not an external modification.
+      expect(writeResult.error).toContain('Use read_file first')
+      expect(writeResult.error).not.toContain('modified externally')
+    })
+  })
 })

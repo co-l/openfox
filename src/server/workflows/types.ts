@@ -104,7 +104,11 @@ export interface Transition {
   when: TransitionCondition
   /** Step ID, or "$done" / "$blocked" for terminal states */
   goto: string
-  /** Optional sub-group label — only used when running this sub-group */
+  /**
+   * Sub-group slice escape tag. When running a slice of this sub-group (or one that
+   * entered it via escape), a transition tagged with it may leave the active slice
+   * and pull its `goto` step into the run. Ignored on full runs and for other slices.
+   */
   subGroup?: string
 }
 

@@ -323,12 +323,30 @@ workflow):
 
 - Running a sub-group executes **only** steps whose `subGroup` matches, starting at the
   group's first step.
-- Within a group, only transitions with no `subGroup` **or** the same `subGroup` are
-  considered.
-- A transition pointing to a step **outside** the active group is treated as `$done` (the
-  slice completes).
+- Only untagged transitions and transitions tagged with the running sub-group (or a
+  sub-group already entered via escape) are candidates, evaluated first-match-wins.
+- A candidate transition pointing to a step **outside** the active group is treated as
+  `$done` (the slice completes) — **unless** it is tagged with an entered sub-group.
+  Such a transition **escapes**: its target step is pulled into the slice and executes,
+  and the target's own sub-group tag becomes eligible too, so a slice can loop into
+  another sub-group and back (e.g. `verify` failure → `build` → `verify` → … →
+  all passed → `$done`).
 
-On a full run, `subGroup` is purely organizational (used for display/grouping).
+Escaping example from the bundled "Build & Verify" workflow:
+
+- `verify` step: `always → build` tagged `subGroup: "verify"` — lets the "verify" slice
+  pull the builder back in on failure.
+
+Untagged transitions keep slices closed: in the "build" slice, the `build` step's
+untagged `metadata_all_in → verify` edge is clamped to `$done`, so implementing alone
+finishes without escalating into the verifier (verification is the "verify" slice's job).
+
+Because only tagged transitions may leave the slice, a foreign-group-tagged transition
+cannot preempt an in-slice one: transitions tagged with a sub-group that was never
+entered are not evaluated at all in a slice run.
+
+On a full run, `subGroup` (on steps and transitions) is purely organizational; transition
+tags are ignored and every step's transitions apply as written.
 
 ---
 

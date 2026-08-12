@@ -6,8 +6,21 @@ import { AgentsModal } from '../settings/AgentsModal'
 import { useKeybindings } from '../../hooks/useKeybindings'
 import { useClickOutside } from '../../hooks/useClickOutside'
 import { formatKeybinding } from '../../lib/keybindings'
+import { useSessionScope, useScopedPaneState } from '../../stores/session/session-scope'
 export function AgentSelector() {
-  const currentMode = useSessionStore((state) => state.currentSession?.mode)
+  const sessionId = useSessionScope()
+  const currentMode = useScopedPaneState(
+    sessionId,
+    (pane) => pane.session?.mode ?? null,
+    (state) => state.currentSession?.mode ?? null,
+    null,
+  )
+  const currentWorkdir = useScopedPaneState(
+    sessionId,
+    (pane) => pane.session?.workdir ?? undefined,
+    (state) => state.currentSession?.workdir,
+    undefined,
+  )
   const switchMode = useSessionStore((state) => state.switchMode)
   const defaults = useAgentsStore((state) => state.defaults)
   const userItems = useAgentsStore((state) => state.userItems)
@@ -20,8 +33,8 @@ export function AgentSelector() {
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    fetchAgents()
-  }, [fetchAgents])
+    fetchAgents(currentWorkdir)
+  }, [fetchAgents, currentWorkdir])
 
   // Close dropdown when clicking outside
   useClickOutside(dropdownRef, () => setIsOpen(false))
@@ -66,7 +79,7 @@ export function AgentSelector() {
                 <button
                   type="button"
                   onClick={() => {
-                    if (!isActive) switchMode(agent.id)
+                    if (!isActive && sessionId) switchMode(sessionId, agent.id)
                     setIsOpen(false)
                   }}
                   className="flex-1 text-left flex items-center gap-2 min-w-0"
@@ -108,6 +121,7 @@ export function AgentSelector() {
           setEditId(null)
         }}
         initialEditId={editId}
+        projectDir={currentWorkdir}
       />
     </div>
   )

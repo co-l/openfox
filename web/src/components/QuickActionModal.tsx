@@ -12,6 +12,7 @@ import { useCommandsStore } from '../stores/commands'
 import { useWorkflowsStore } from '../stores/workflows'
 import { useAgentsStore } from '../stores/agents'
 import { useSessionStore } from '../stores/session'
+import { useSessionScope, useScopedPaneState } from '../stores/session/session-scope'
 import { dedupById, fuzzyMatch, handleModalNavigation } from '../lib/modal-utils'
 import type { WorkflowScope } from '@shared/types.js'
 import { shouldAutofocus } from '../lib/device'
@@ -61,11 +62,33 @@ export function QuickActionModal({
   const agentDefaults = useAgentsStore((state) => state.defaults)
   const agentUserItems = useAgentsStore((state) => state.userItems)
   const agentProjectItems = useAgentsStore((state) => state.projectItems)
-  const currentMode = useSessionStore((state) => state.currentSession?.mode)
-  const currentDangerLevel = useSessionStore((state) => state.currentSession?.dangerLevel ?? 'normal')
+  const sessionId = useSessionScope()
+  const currentMode = useScopedPaneState(
+    sessionId,
+    (pane) => pane.session?.mode ?? null,
+    (state) => state.currentSession?.mode ?? null,
+    null,
+  )
+  const currentDangerLevel = useScopedPaneState(
+    sessionId,
+    (pane) => pane.session?.dangerLevel ?? 'normal',
+    (state) => state.currentSession?.dangerLevel ?? 'normal',
+    'normal',
+  )
   const switchMode = useSessionStore((state) => state.switchMode)
   const switchDangerLevel = useSessionStore((state) => state.switchDangerLevel)
-  const currentProjectId = useSessionStore((state) => state.currentSession?.projectId)
+  const currentProjectId = useScopedPaneState(
+    sessionId,
+    (pane) => pane.session?.projectId ?? null,
+    (state) => state.currentSession?.projectId ?? null,
+    null,
+  )
+  const currentWorkdir = useScopedPaneState(
+    sessionId,
+    (pane) => pane.session?.workdir ?? undefined,
+    (state) => state.currentSession?.workdir,
+    undefined,
+  )
   const closeCompleteAction = useRef<(() => void) | undefined>(undefined)
 
   const [search, setSearch] = useState('')
@@ -79,9 +102,9 @@ export function QuickActionModal({
 
   useEffect(() => {
     if (isOpen) {
-      fetchCommands()
-      fetchWorkflows()
-      fetchAgents()
+      fetchCommands(currentWorkdir)
+      fetchWorkflows(currentWorkdir)
+      fetchAgents(currentWorkdir)
       setSearch('')
       setSelectedIndex(0)
       const timer = setTimeout(() => {
@@ -89,7 +112,7 @@ export function QuickActionModal({
       }, 50)
       return () => clearTimeout(timer)
     }
-  }, [isOpen, fetchCommands, fetchWorkflows, fetchAgents])
+  }, [isOpen, fetchCommands, fetchWorkflows, fetchAgents, currentWorkdir])
 
   useEffect(() => {
     if (!isOpen && wasOpenRef.current) {
@@ -138,7 +161,12 @@ export function QuickActionModal({
     },
     ...dedupById(dedupById(agentDefaults, agentUserItems), agentProjectItems)
       .filter((a) => !a.subagent && a.id !== currentMode)
-      .map((a) => ({ id: a.id, name: a.name, prefix: 'Agent > Switch to', action: () => switchMode(a.id) })),
+      .map((a) => ({
+        id: a.id,
+        name: a.name,
+        prefix: 'Agent > Switch to',
+        action: () => sessionId && switchMode(sessionId, a.id),
+      })),
     ...dedupById(dedupById(commandDefaults, commandUserItems), commandProjectItems).map((c) => ({
       id: c.id,
       name: c.name,
@@ -157,7 +185,7 @@ export function QuickActionModal({
         id: m,
         name: m.charAt(0).toUpperCase() + m.slice(1),
         prefix: 'Mode > Switch to',
-        action: () => switchDangerLevel(m),
+        action: () => sessionId && switchDangerLevel(sessionId, m),
       })),
   ]
 

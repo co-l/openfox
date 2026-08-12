@@ -1,4 +1,5 @@
 import type { Config } from 'tailwindcss'
+import containerQueries from '@tailwindcss/container-queries'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
@@ -10,6 +11,17 @@ export default {
   darkMode: 'class',
   theme: {
     extend: {
+      // Container-query breakpoints mirror the viewport screens so @md: keeps
+      // the exact semantics of md: — just scoped to the nearest @container.
+      // Split-view panes become their own containers and therefore respond to
+      // their own width instead of the viewport.
+      containers: {
+        sm: '640px',
+        md: '768px',
+        lg: '1024px',
+        xl: '1280px',
+        '2xl': '1536px',
+      },
       colors: {
         bg: {
           primary: 'rgb(var(--color-bg-primary) / <alpha-value>)',
@@ -67,5 +79,5 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [containerQueries],
 } satisfies Config

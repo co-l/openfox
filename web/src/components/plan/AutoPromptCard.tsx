@@ -26,6 +26,7 @@ export function AutoPromptCard({ message }: AutoPromptCardProps) {
     subagent: 'instructions',
     workspace: `${metadata?.workspaceName ?? ''} · ${metadata?.branchName ?? ''}`,
     branch: `🌿 ${metadata?.branchName ?? ''}`,
+    task: '🗂 task',
   }
   const label = typeLabels[metaType] ?? 'injected'
 

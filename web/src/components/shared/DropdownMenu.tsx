@@ -18,6 +18,8 @@ interface DropdownMenuProps {
   footerItems?: DropdownMenuItem[]
   trigger: React.ReactNode
   minWidth?: string
+  /** Which edge of the trigger the menu's corresponding edge aligns to. */
+  align?: 'left' | 'right'
   isOpen?: boolean
   onOpenChange?: (open: boolean) => void
   labelActionClassName?: string
@@ -28,6 +30,7 @@ export function DropdownMenu({
   footerItems = [],
   trigger,
   minWidth = '120px',
+  align = 'left',
   isOpen: controlledIsOpen,
   onOpenChange,
   labelActionClassName,
@@ -57,16 +60,17 @@ export function DropdownMenu({
 
     const triggerRect = triggerRef.current.getBoundingClientRect()
     const menuHeight = 200
+    const menuWidth = Number.parseInt(minWidth, 10) || 120
 
     const spaceBelow = window.innerHeight - triggerRect.bottom
     const alignToTop = spaceBelow < menuHeight
 
     setPosition({
       top: alignToTop ? triggerRect.top - menuHeight - 4 : triggerRect.bottom + 4,
-      left: triggerRect.left,
+      left: align === 'right' ? triggerRect.right - menuWidth : triggerRect.left,
       alignToTop,
     })
-  }, [])
+  }, [align, minWidth])
 
   useEffect(() => {
     allItemsRef.current = allItems

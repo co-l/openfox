@@ -4,6 +4,7 @@ import { wsClient } from '../../lib/ws'
 import { Modal } from '../shared/SelfContainedModal'
 import { UnifiedDiffViewer } from '../shared/DiffView'
 import type { DiffLine } from '@shared/protocol.js'
+import { useSessionScope } from '../../stores/session/session-scope'
 
 interface DynamicContextPreviewModalProps {
   isOpen: boolean
@@ -13,13 +14,14 @@ interface DynamicContextPreviewModalProps {
 }
 
 export function DynamicContextPreviewModal({ isOpen, onClose, isRunning, onApply }: DynamicContextPreviewModalProps) {
+  const sessionId = useSessionScope()
   const [diffPreview, setDiffPreview] = useState<DiffLine[] | null>(null)
   const [isLoadingPreview, setIsLoadingPreview] = useState(false)
   const pendingPreviewRequestId = useRef<string | null>(null)
 
   const fetchPreview = useCallback(() => {
     setIsLoadingPreview(true)
-    const requestId = wsClient.send('context.applyDynamic.preview', {})
+    const requestId = wsClient.send('context.applyDynamic.preview', { ...(sessionId ? { sessionId } : {}) })
     pendingPreviewRequestId.current = requestId
 
     const unsubscribe = wsClient.subscribe((message) => {

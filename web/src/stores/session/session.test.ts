@@ -1405,7 +1405,7 @@ describe('useSessionStore session isolation', () => {
       ],
     })
 
-    await useSessionStore.getState().answerQuestion('call-123', 'My name is Conrad')
+    await useSessionStore.getState().answerQuestion('session-1', 'call-123', 'My name is Conrad')
 
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/sessions/session-1/answer',
@@ -1585,7 +1585,7 @@ describe('useSessionStore session isolation', () => {
       ],
     })
 
-    await useSessionStore.getState().answerQuestion('call-456', '', true)
+    await useSessionStore.getState().answerQuestion('session-1', 'call-456', '', true)
 
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/sessions/session-1/answer',
@@ -1615,7 +1615,7 @@ describe('useSessionStore session isolation', () => {
     })
 
     // Content only
-    await useSessionStore.getState().sendMessage('hello', undefined)
+    await useSessionStore.getState().sendMessage('session-1', 'hello', undefined)
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
       '/api/sessions/session-1/message',
@@ -1629,7 +1629,7 @@ describe('useSessionStore session isolation', () => {
     const attachments = [
       { id: 'att-1', filename: 'img.png', data: 'base64', mimeType: 'image/png' as const, size: 512 },
     ]
-    await useSessionStore.getState().sendMessage('', attachments)
+    await useSessionStore.getState().sendMessage('session-1', '', attachments)
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
       '/api/sessions/session-1/message',
@@ -1640,7 +1640,7 @@ describe('useSessionStore session isolation', () => {
     )
 
     // Both
-    await useSessionStore.getState().sendMessage('look', attachments)
+    await useSessionStore.getState().sendMessage('session-1', 'look', attachments)
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
       '/api/sessions/session-1/message',
@@ -1651,7 +1651,7 @@ describe('useSessionStore session isolation', () => {
     )
 
     // Neither (empty body)
-    await useSessionStore.getState().sendMessage('', undefined)
+    await useSessionStore.getState().sendMessage('session-1', '', undefined)
     expect(fetchMock).toHaveBeenNthCalledWith(
       4,
       '/api/sessions/session-1/message',
@@ -1662,7 +1662,7 @@ describe('useSessionStore session isolation', () => {
     )
 
     // With messageKind
-    await useSessionStore.getState().sendMessage('hello', undefined, { messageKind: 'command' })
+    await useSessionStore.getState().sendMessage('session-1', 'hello', undefined, { messageKind: 'command' })
     expect(fetchMock).toHaveBeenNthCalledWith(
       5,
       '/api/sessions/session-1/message',
@@ -2124,7 +2124,7 @@ describe('confirmPath error handling', () => {
       json: () => Promise.resolve({ success: false, error: 'No pending path confirmation with that ID' }),
     })
 
-    await useSessionStore.getState().confirmPath('call-123', true, false)
+    await useSessionStore.getState().confirmPath('session-1', 'call-123', true, false)
 
     // BUG: confirmPath doesn't check res.ok, so errors are silently swallowed.
     // The confirmation should remain in pendingPathConfirmations when the

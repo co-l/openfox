@@ -20,5 +20,31 @@ describe('formatToolArgsWithMetadata', () => {
 
       expect(result).toBe('{"foo":"bar"}')
     })
+
+    it('formats project_tasks list as just the action', () => {
+      const result = formatToolArgsWithMetadata('project_tasks', { action: 'list' }, undefined)
+
+      expect(result).toBe('list')
+    })
+
+    it('formats project_tasks mutations as action: taskId with the destination column', () => {
+      const result = formatToolArgsWithMetadata(
+        'project_tasks',
+        { action: 'move', taskId: 'tk_02', to: 'in_progress' },
+        undefined,
+      )
+
+      expect(result).toBe('move: tk_02 → in_progress')
+    })
+
+    it('formats project_tasks set_gate_value with the gate being filled', () => {
+      const result = formatToolArgsWithMetadata(
+        'project_tasks',
+        { action: 'set_gate_value', taskId: 'tk_02', gateId: 'commit', value: 'abc123' },
+        undefined,
+      )
+
+      expect(result).toBe('set_gate_value: tk_02 (commit)')
+    })
   })
 })

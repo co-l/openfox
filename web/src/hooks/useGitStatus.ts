@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useSessionStore } from '../stores/session'
+import { useScopedContext, useScopedPaneState } from '../stores/session/session-scope'
 
 interface GitDiffFile {
   path: string
@@ -18,8 +18,13 @@ interface UseGitStatusResult {
 }
 
 export function useGitStatus(): UseGitStatusResult {
-  const gitStatus = useSessionStore((s) => s.gitStatus)
-  const currentSession = useSessionStore((s) => s.currentSession)
+  const { sessionId, currentSession } = useScopedContext()
+  const gitStatus = useScopedPaneState(
+    sessionId,
+    (pane) => pane.gitStatus,
+    (state) => state.gitStatus,
+    null,
+  )
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {

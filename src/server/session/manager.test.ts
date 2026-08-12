@@ -26,7 +26,7 @@ vi.mock('../git/workspace.js', async (importOriginal) => {
 import { loadConfig } from '../config.js'
 import { closeDatabase, getDatabase, initDatabase } from '../db/index.js'
 import { createProject } from '../db/projects.js'
-import { getSession } from '../db/sessions.js'
+import { getSession, updateSessionWorkdir } from '../db/sessions.js'
 import { initEventStore, getCurrentContextWindowId, emitContextCompacted, getEventStore } from '../events/index.js'
 import { setAgentModelOverride } from '../agents/model-overrides.js'
 import { SessionManager } from './manager.js'
@@ -121,6 +121,17 @@ describe('SessionManager', () => {
 
     expect(manager.getLspManager(session.id)).toEqual({ name: 'mock-lsp' })
     expect(getLspManagerMock).toHaveBeenCalledWith(session.id, workdir)
+  })
+
+  it('getProjectWorkdir returns the project root even when a workspace is active', () => {
+    const session = manager.createSession(projectId)
+    const wsPath = join(workdir, '.worktrees', 'feature-x')
+    // Mirrors what switchWorkspace does: workdir stays at the project root,
+    // the workspace path goes into the separate workspace column.
+    updateSessionWorkdir(session.id, workdir, wsPath)
+
+    expect(manager.getEffectiveWorkdir(session.id)).toBe(wsPath)
+    expect(manager.getProjectWorkdir(session.id)).toBe(workdir)
   })
 
   it('updates mode, phase, and running state while emitting events', () => {

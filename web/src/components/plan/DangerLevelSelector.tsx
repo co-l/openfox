@@ -1,18 +1,23 @@
 import { useSessionStore } from '../../stores/session'
+import { useSessionScope, useScopedPaneState } from '../../stores/session/session-scope'
 
 export function DangerLevelSelector() {
-  const currentSession = useSessionStore((state) => state.currentSession)
+  const sessionId = useSessionScope()
+  const dangerLevel = useScopedPaneState(
+    sessionId,
+    (pane) => pane.session?.dangerLevel ?? 'normal',
+    (state) => state.currentSession?.dangerLevel ?? 'normal',
+    'normal',
+  )
   const switchDangerLevel = useSessionStore((state) => state.switchDangerLevel)
 
-  if (!currentSession) return null
-
-  const dangerLevel = currentSession.dangerLevel ?? 'normal'
+  if (!sessionId) return null
 
   return (
     <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-bg-tertiary/50">
       <button
         type="button"
-        onClick={() => switchDangerLevel('normal')}
+        onClick={() => switchDangerLevel(sessionId, 'normal')}
         className={`px-2 py-0.5 text-xs font-medium rounded transition-colors ${
           dangerLevel === 'normal'
             ? 'bg-accent-success/20 text-accent-success'
@@ -24,7 +29,7 @@ export function DangerLevelSelector() {
       </button>
       <button
         type="button"
-        onClick={() => switchDangerLevel('dangerous')}
+        onClick={() => switchDangerLevel(sessionId, 'dangerous')}
         className={`px-2 py-0.5 text-xs font-medium rounded transition-colors ${
           dangerLevel === 'dangerous'
             ? 'bg-red-500/20 text-red-400'

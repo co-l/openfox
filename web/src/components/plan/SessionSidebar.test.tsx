@@ -3,6 +3,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { Mock } from 'vitest'
 import { SessionSidebar } from './SessionSidebar'
+import { SessionScopeProvider } from '../../stores/session/session-scope'
 
 /* ------------------------------------------------------------------ */
 /*  Store mocks — shared across all tests                             */
@@ -116,5 +117,50 @@ describe('SessionSidebar — git repo guards', () => {
 
     expect(html).toContain('my-app')
     expect(html).not.toContain('C:\\Users\\me\\projects\\my-app')
+  })
+})
+
+describe('SessionSidebar — split view pane isolation', () => {
+  it('renders the scoped pane workspace, not the focused session', () => {
+    mockUseGitStatus.mockReturnValue({ branch: 'feature-a', diff: { files: [], loading: false, error: null } })
+    mockSessionStore.mockReturnValue({
+      focusedSessionId: 'B',
+      currentSession: {
+        id: 'B',
+        projectId: 'p1',
+        metadataEntries: {},
+        workspace: '/repo/workspace-b',
+        workdir: '/repo',
+      },
+      panes: {
+        A: {
+          session: {
+            id: 'A',
+            projectId: 'p1',
+            metadataEntries: {},
+            workspace: '/repo/workspace-a',
+            workdir: '/repo',
+          },
+        },
+        B: {
+          session: {
+            id: 'B',
+            projectId: 'p1',
+            metadataEntries: {},
+            workspace: '/repo/workspace-b',
+            workdir: '/repo',
+          },
+        },
+      },
+    })
+
+    const html = renderToStaticMarkup(
+      <SessionScopeProvider value="A">
+        <SessionSidebar messages={[]} />
+      </SessionScopeProvider>,
+    )
+
+    expect(html).toContain('workspace-a')
+    expect(html).not.toContain('workspace-b')
   })
 })

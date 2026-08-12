@@ -24,6 +24,8 @@ import type {
   ChatMessageUpdatedPayload,
   ChatDonePayload,
   ChatErrorPayload,
+  ChatLLMRetryPayload,
+  ChatLLMRetryFailedPayload,
   ChatPathConfirmationPayload,
   ChatAskUserPayload,
   PathConfirmPayload,
@@ -286,6 +288,17 @@ export function createChatDoneMessage(
 
 export function createChatErrorMessage(error: string, recoverable: boolean): ServerMessage<ChatErrorPayload> {
   return createServerMessage('chat.error', { error, recoverable })
+}
+
+export function createChatLLMRetryMessage(attempt: number, retryInMs: number): ServerMessage<ChatLLMRetryPayload> {
+  return createServerMessage('chat.llm_retry', { attempt, retryInMs })
+}
+
+export function createChatLLMRetryFailedMessage(
+  error: string,
+  attempts: number,
+): ServerMessage<ChatLLMRetryFailedPayload> {
+  return createServerMessage('chat.llm_retry_failed', { error, attempts })
 }
 
 // Path confirmation messages

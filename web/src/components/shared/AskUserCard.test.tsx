@@ -159,6 +159,7 @@ describe('AskUserCard', () => {
   it('submits the label string (not the object) when an object option is clicked', () => {
     const answerQuestion = vi.fn()
     useSessionStore.setState({
+      currentSession: { id: 'session-1', projectId: 'p1' } as never,
       pendingQuestions: [
         {
           callId: 'call-1',
@@ -184,7 +185,7 @@ describe('AskUserCard', () => {
     fireEvent.click(target!)
     // answerQuestion must be called with a stable SCALAR value (string), never the object.
     expect(answerQuestion).toHaveBeenCalledTimes(1)
-    const [, value] = answerQuestion.mock.calls[0]!
+    const [, , value] = answerQuestion.mock.calls[0]!
     expect(typeof value).toBe('string')
     expect(value).toBe('Continuer')
   })
@@ -283,6 +284,7 @@ describe('AskUserCard', () => {
   it('submits answer on Enter', () => {
     const answerQuestion = vi.fn()
     useSessionStore.setState({
+      currentSession: { id: 'session-1', projectId: 'p1' } as never,
       pendingQuestions: [{ callId: 'call-1', question: 'Proceed?', type: 'text', options: undefined }],
       answerQuestion,
     })
@@ -291,7 +293,7 @@ describe('AskUserCard', () => {
     const textarea = container.querySelector('textarea')!
     fireEvent.change(textarea, { target: { value: 'my answer' } })
     fireEvent.keyDown(textarea, { key: 'Enter' })
-    expect(answerQuestion).toHaveBeenCalledWith('call-1', 'my answer')
+    expect(answerQuestion).toHaveBeenCalledWith('session-1', 'call-1', 'my answer')
   })
 
   it('does not submit on Shift+Enter', () => {
@@ -311,6 +313,7 @@ describe('AskUserCard', () => {
   it('skips question on Escape', () => {
     const answerQuestion = vi.fn()
     useSessionStore.setState({
+      currentSession: { id: 'session-1', projectId: 'p1' } as never,
       pendingQuestions: [{ callId: 'call-1', question: 'Proceed?', type: 'text', options: undefined }],
       answerQuestion,
     })
@@ -318,7 +321,7 @@ describe('AskUserCard', () => {
     const container = render(<AskUserCard toolCall={tc} />)
     const textarea = container.querySelector('textarea')!
     fireEvent.keyDown(textarea, { key: 'Escape' })
-    expect(answerQuestion).toHaveBeenCalledWith('call-1', '', true)
+    expect(answerQuestion).toHaveBeenCalledWith('session-1', 'call-1', '', true)
   })
 
   it('renders duplicate-value options without duplicate React key warnings', () => {
