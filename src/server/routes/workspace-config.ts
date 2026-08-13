@@ -4,6 +4,7 @@ import { constants } from 'node:fs'
 import { resolve, isAbsolute, join, win32 } from 'node:path'
 import { loadWorkspaceConfig, saveWorkspaceConfig } from '../git/workspace-config.js'
 import { getGlobalDataDir } from '../git/workspace.js'
+import { isDirectoryEntry } from '../utils/fs.js'
 import { getProjectByWorkdir, updateProject } from '../db/projects.js'
 import { setSessionDisabledServers } from '../mcp/session-overrides.js'
 import { logger } from '../utils/logger.js'
@@ -55,7 +56,7 @@ async function findOrphanedWorkspaces(dir: string): Promise<{ name: string }[]> 
   try {
     const entries = await readdir(dir, { withFileTypes: true })
     for (const entry of entries) {
-      if (entry.isDirectory()) {
+      if (await isDirectoryEntry(dir, entry)) {
         try {
           const gitStat = await stat(join(dir, entry.name, '.git'))
           if (gitStat.isDirectory()) {

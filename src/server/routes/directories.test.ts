@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import express from 'express'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createDirectoryRoutes } from './directories.js'
@@ -49,5 +49,27 @@ describe('GET /api/directories', () => {
     const body = (await res.json()) as { directories: Array<{ name: string }> }
     const names = body.directories.map((d) => d.name)
     expect(names).toContain('.hidden')
+  })
+
+  it('returns symlinked directories', async () => {
+    const linkType = process.platform === 'win32' ? 'junction' : 'dir'
+    await symlink(join(testDir, 'visible'), join(testDir, 'linked'), linkType)
+    const res = await fetch(`${baseUrl}/api/directories?path=${encodeURIComponent(testDir)}`)
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { directories: Array<{ name: string; path: string }> }
+    const linked = body.directories.find((d) => d.name === 'linked')
+    expect(linked).toBeDefined()
+    expect(linked!.path).toBe(join(testDir, 'linked'))
+  })
+
+  describe.skipIf(process.platform === 'win32')('broken symlinks', () => {
+    it('excludes broken symlinks', async () => {
+      await symlink(join(testDir, 'nonexistent'), join(testDir, 'broken'), 'dir')
+      const res = await fetch(`${baseUrl}/api/directories?path=${encodeURIComponent(testDir)}`)
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as { directories: Array<{ name: string }> }
+      const names = body.directories.map((d) => d.name)
+      expect(names).not.toContain('broken')
+    })
   })
 })

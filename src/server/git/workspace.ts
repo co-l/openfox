@@ -3,6 +3,7 @@ import { mkdir, rm } from 'node:fs/promises'
 import { resolve, join, isAbsolute } from 'node:path'
 import { homedir, platform } from 'node:os'
 import { logger } from '../utils/logger.js'
+import { isDirectoryEntry } from '../utils/fs.js'
 import { gitSpawnEnv } from './env.js'
 import { loadWorkspaceConfig } from './workspace-config.js'
 import { getProjectByWorkdir } from '../db/projects.js'
@@ -248,7 +249,7 @@ export async function listWorkspaces(projectName: string, projectDir: string): P
     const entries = await readdir(dir, { withFileTypes: true })
     const workspaces: WorkspaceInfo[] = []
     for (const entry of entries) {
-      if (entry.isDirectory()) {
+      if (await isDirectoryEntry(dir, entry)) {
         const wsPath = resolve(dir, entry.name)
         const branch = await getGitBranch(wsPath)
         workspaces.push({ path: wsPath, name: entry.name, branch })

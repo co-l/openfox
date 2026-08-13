@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { readdir } from 'node:fs/promises'
 import { resolve, join, dirname, basename } from 'node:path'
+import { isDirectoryEntry } from '../utils/fs.js'
 
 export function createDirectoryRoutes(): Router {
   const router = Router()
@@ -13,12 +14,15 @@ export function createDirectoryRoutes(): Router {
     try {
       const resolvedPath = resolve(path)
       const entries = await readdir(resolvedPath, { withFileTypes: true })
-      const directories = entries
-        .filter((entry) => entry.isDirectory())
-        .map((entry) => ({
-          name: entry.name,
-          path: join(resolvedPath, entry.name),
-        }))
+      const dirs = await Promise.all(
+        entries.map(async (entry) =>
+          (await isDirectoryEntry(resolvedPath, entry))
+            ? { name: entry.name, path: join(resolvedPath, entry.name) }
+            : null,
+        ),
+      )
+      const directories = dirs
+        .filter((d): d is { name: string; path: string } => d !== null)
         .sort((a, b) => a.name.localeCompare(b.name))
 
       const parent = dirname(resolvedPath)

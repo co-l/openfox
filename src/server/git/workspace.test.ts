@@ -156,9 +156,9 @@ describe('getWorkspacesDir', () => {
 describe('listWorkspaces', () => {
   it('returns sorted workspace directories', async () => {
     vi.mocked(readdir).mockResolvedValue([
-      { name: 'fix-bug', isDirectory: () => true },
-      { name: 'add-feature', isDirectory: () => true },
-      { name: 'readme.md', isDirectory: () => false },
+      { name: 'fix-bug', isDirectory: () => true, isSymbolicLink: () => false },
+      { name: 'add-feature', isDirectory: () => true, isSymbolicLink: () => false },
+      { name: 'readme.md', isDirectory: () => false, isSymbolicLink: () => false },
     ] as any)
 
     vi.mocked(spawn).mockReturnValue(makeMockProc('main\n') as any)
@@ -167,6 +167,30 @@ describe('listWorkspaces', () => {
     expect(result[0]?.name).toBe('add-feature')
     expect(result[1]?.name).toBe('fix-bug')
     expect(result[0]?.branch).toBe('main')
+  })
+
+  it('includes symlinked workspace directories', async () => {
+    vi.mocked(readdir).mockResolvedValue([
+      { name: 'fix-bug', isDirectory: () => true, isSymbolicLink: () => false },
+      { name: 'linked-ws', isDirectory: () => false, isSymbolicLink: () => true },
+      { name: 'readme.md', isDirectory: () => false, isSymbolicLink: () => false },
+    ] as any)
+
+    vi.mocked(stat).mockResolvedValue({ isDirectory: () => true } as any)
+    vi.mocked(spawn).mockReturnValue(makeMockProc('main\n') as any)
+    const result = await listWorkspaces(PROJECT_NAME, CWD)
+    expect(result).toHaveLength(2)
+    expect(result.map((w) => w.name)).toContain('linked-ws')
+  })
+
+  it('excludes broken symlinked workspace directories', async () => {
+    vi.mocked(readdir).mockResolvedValue([
+      { name: 'broken-ws', isDirectory: () => false, isSymbolicLink: () => true },
+    ] as any)
+
+    vi.mocked(stat).mockRejectedValue({ code: 'ENOENT' })
+    const result = await listWorkspaces(PROJECT_NAME, CWD)
+    expect(result).toEqual([])
   })
 
   it('returns empty on error', async () => {

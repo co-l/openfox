@@ -8,6 +8,7 @@ import { promisify } from 'node:util'
 import type { ProviderPluginRegistry } from '../../provider/index.js'
 import type { ProviderPluginDiagnostic } from '../providers/plugins/index.js'
 import { getGlobalConfigDir } from '../../cli/paths.js'
+import { isDirectoryEntry } from '../utils/fs.js'
 import type { ProviderRegistry } from '../providers/plugins/registry.js'
 import type { Config } from '../../shared/types.js'
 
@@ -189,7 +190,7 @@ export function createPluginRoutes(options: {
       const entries = await readdir(pluginsDir, { withFileTypes: true })
       const installed: { name: string; version: string | null }[] = []
       for (const entry of entries) {
-        if (!entry.isDirectory()) continue
+        if (!(await isDirectoryEntry(pluginsDir, entry))) continue
         const pkgPath = join(pluginsDir, entry.name, 'package.json')
         let version: string | null = null
         try {
