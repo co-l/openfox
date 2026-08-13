@@ -376,7 +376,7 @@ export function createLLMClient(config: Config, initialBackend: Backend = 'unkno
           },
         }
       } catch (error) {
-        logger.error('LLM stream error', { error })
+        logger.error('LLM stream error', { error: String(error) })
         yield {
           type: 'error',
           error: error instanceof Error ? error.message : 'Unknown LLM error',
