@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { computeUnifiedDiff, computeDynamicContextHash } from './dynamic-context.js'
+import {
+  computeUnifiedDiff,
+  computeDynamicContextHash,
+  computeToolDiff,
+  computePreviewToolDiff,
+} from './dynamic-context.js'
 
 describe('computeUnifiedDiff', () => {
   it('returns unchanged lines when texts are identical', () => {
@@ -176,6 +181,90 @@ Respond concisely and clearly.
       { type: 'removed', content: 'old' },
       { type: 'added', content: 'new' },
     ])
+  })
+})
+
+describe('computeToolDiff', () => {
+  const tool = (name: string) => ({
+    type: 'function' as const,
+    function: { name, description: `desc ${name}`, parameters: { type: 'object', properties: {} } },
+  })
+
+  it('returns empty array when tool sets are identical', () => {
+    const tools = [tool('read_file'), tool('write_file')]
+    expect(computeToolDiff(tools, [...tools])).toEqual([])
+  })
+
+  it('detects removed tools', () => {
+    const oldTools = [tool('read_file'), tool('write_file')]
+    const newTools = [tool('read_file')]
+    expect(computeToolDiff(oldTools, newTools)).toEqual([{ type: 'removed', content: 'write_file' }])
+  })
+
+  it('detects added tools', () => {
+    const oldTools = [tool('read_file')]
+    const newTools = [tool('read_file'), tool('write_file')]
+    expect(computeToolDiff(oldTools, newTools)).toEqual([{ type: 'added', content: 'write_file' }])
+  })
+
+  it('detects both additions and removals with removals first', () => {
+    const oldTools = [tool('a'), tool('b')]
+    const newTools = [tool('b'), tool('c')]
+    expect(computeToolDiff(oldTools, newTools)).toEqual([
+      { type: 'removed', content: 'a' },
+      { type: 'added', content: 'c' },
+    ])
+  })
+})
+
+describe('computePreviewToolDiff', () => {
+  const tool = (name: string) => ({
+    type: 'function' as const,
+    function: { name, description: `desc ${name}`, parameters: { type: 'object', properties: {} } },
+  })
+
+  it('uses cached tools as baseline when a cached prompt exists', () => {
+    const cached = [tool('read_file'), tool('write_file')]
+    const unfiltered = [tool('read_file'), tool('write_file'), tool('chrome_click')]
+    const fresh = [tool('read_file'), tool('write_file')]
+    expect(computePreviewToolDiff(cached, unfiltered, fresh)).toEqual([])
+  })
+
+  it('uses cached tools as baseline and detects removals when MCP is toggled off', () => {
+    const cached = [tool('read_file'), tool('chrome_click')]
+    const unfiltered = [tool('read_file'), tool('chrome_click')]
+    const fresh = [tool('read_file')]
+    expect(computePreviewToolDiff(cached, unfiltered, fresh)).toEqual([{ type: 'removed', content: 'chrome_click' }])
+  })
+
+  it('falls back to unfiltered registry when no cached prompt exists', () => {
+    const unfiltered = [tool('read_file'), tool('chrome_click')]
+    const fresh = [tool('read_file')]
+    expect(computePreviewToolDiff(undefined, unfiltered, fresh)).toEqual([{ type: 'removed', content: 'chrome_click' }])
+  })
+
+  it('falls back to unfiltered registry when cached tools are empty', () => {
+    const unfiltered = [tool('read_file'), tool('chrome_click')]
+    const fresh = [tool('read_file')]
+    expect(computePreviewToolDiff([], unfiltered, fresh)).toEqual([{ type: 'removed', content: 'chrome_click' }])
+  })
+
+  it('reports no additions without a cached prompt since the baseline already includes all MCP tools', () => {
+    const unfiltered = [tool('read_file'), tool('chrome_click')]
+    const fresh = [tool('read_file'), tool('chrome_click')]
+    expect(computePreviewToolDiff(undefined, unfiltered, fresh)).toEqual([])
+  })
+
+  it('detects additions when a cached prompt was built with MCP off and it is toggled on', () => {
+    const cached = [tool('read_file')]
+    const unfiltered = [tool('read_file'), tool('chrome_click')]
+    const fresh = [tool('read_file'), tool('chrome_click')]
+    expect(computePreviewToolDiff(cached, unfiltered, fresh)).toEqual([{ type: 'added', content: 'chrome_click' }])
+  })
+
+  it('reports no change when both baselines match the fresh tool set', () => {
+    const unfiltered = [tool('read_file')]
+    expect(computePreviewToolDiff(undefined, unfiltered, [tool('read_file')])).toEqual([])
   })
 })
 

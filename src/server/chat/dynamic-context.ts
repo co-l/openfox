@@ -112,6 +112,40 @@ export function getToolFingerprint(tools: LLMToolDefinition[]): string {
     .join('|')
 }
 
+/**
+ * Compute a diff of tool names between two tool lists.
+ * Returns added/removed lines (removals first) for tools present in only one list.
+ */
+export function computeToolDiff(oldTools: LLMToolDefinition[], newTools: LLMToolDefinition[]): DiffLine[] {
+  const oldNames = oldTools.map((t) => t.function.name).sort()
+  const newNames = newTools.map((t) => t.function.name).sort()
+  const oldSet = new Set(oldNames)
+  const newSet = new Set(newNames)
+  const result: DiffLine[] = []
+  for (const name of oldNames) {
+    if (!newSet.has(name)) result.push({ type: 'removed', content: name })
+  }
+  for (const name of newNames) {
+    if (!oldSet.has(name)) result.push({ type: 'added', content: name })
+  }
+  return result
+}
+
+/**
+ * Compute the tool diff shown in the apply-dynamic-context preview.
+ * Baseline: cached prompt tools if present, otherwise the unfiltered registry
+ * (all MCP tools, no session overrides) so tool add/remove is visible even
+ * before a cached prompt exists.
+ */
+export function computePreviewToolDiff(
+  oldCachedTools: LLMToolDefinition[] | undefined,
+  unfilteredTools: LLMToolDefinition[],
+  newTools: LLMToolDefinition[],
+): DiffLine[] {
+  const baseline = oldCachedTools && oldCachedTools.length > 0 ? oldCachedTools : unfilteredTools
+  return computeToolDiff(baseline, newTools)
+}
+
 async function loadSessionContext(
   sessionManager: SessionManager,
   sessionId: string,

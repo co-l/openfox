@@ -435,6 +435,7 @@ export interface ContextPreviewPayload {
   oldHash?: string
   newHash: string
   diff: DiffLine[]
+  toolDiff?: DiffLine[]
 }
 
 // Provider payloads (server → client)
