@@ -32,8 +32,22 @@ describe('permissionRuleSchema', () => {
     expect(() => permissionRuleSchema.parse({ effect: 'MAYBE', tool: 'read_file' })).toThrow()
   })
 
-  it('accepts unknown tool names (forward-compat with MCP/future tools)', () => {
-    const rule = { effect: 'DENY', tool: 'mcp_custom_tool', pattern: '*' }
+  it('accepts unknown tool names (forward-compat with MCP/future tools) without pattern', () => {
+    const rule = { effect: 'DENY', tool: 'mcp_custom_tool' }
+    expect(permissionRuleSchema.parse(rule)).toEqual(rule)
+  })
+
+  it('rejects non-DENY effect on non-pattern tools (web_fetch)', () => {
+    expect(() => permissionRuleSchema.parse({ effect: 'ALLOW', tool: 'web_fetch' })).toThrow()
+    expect(() => permissionRuleSchema.parse({ effect: 'ASK', tool: 'web_fetch' })).toThrow()
+  })
+
+  it('rejects pattern on non-pattern tools (web_fetch)', () => {
+    expect(() => permissionRuleSchema.parse({ effect: 'DENY', tool: 'web_fetch', pattern: '*' })).toThrow()
+  })
+
+  it('accepts DENY without pattern on non-pattern tools', () => {
+    const rule = { effect: 'DENY', tool: 'web_fetch' }
     expect(permissionRuleSchema.parse(rule)).toEqual(rule)
   })
 

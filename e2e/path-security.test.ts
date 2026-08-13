@@ -8,7 +8,7 @@
  * The path security system:
  * 1. Detects operations on paths outside workdir or sensitive files
  * 2. Emits chat.path_confirmation event to client
- * 3. Waits for user approval via path.confirm message
+ * 3. Waits for user approval via REST API
  * 4. Proceeds or aborts based on user response
  */
 
@@ -239,9 +239,10 @@ describe('Path Security', () => {
 
       if (confirmationEvent) {
         const payload = confirmationEvent.payload as PathConfirmationPayload
+        const session = client.getSession()!
 
         // Approve
-        await client.answerPathConfirmation(payload.callId, true)
+        await answerPathConfirmation(server.url, session.id, payload.callId, true)
         await client.waitFor('chat.done').catch(() => null)
 
         client.clearEvents()

@@ -4,6 +4,8 @@ export type { PermissionEffect, PermissionRule, PermissionConfig } from '../../s
 
 export const permissionEffectSchema = z.enum(['ALLOW', 'DENY', 'ASK'])
 
+const PATTERN_TOOLS = new Set(['read_file', 'write_file', 'edit_file', 'run_command'])
+
 export const permissionRuleSchema = z
   .object({
     effect: permissionEffectSchema,
@@ -12,6 +14,24 @@ export const permissionRuleSchema = z
     description: z.string().optional(),
   })
   .strict()
+  .superRefine((rule, ctx) => {
+    if (!PATTERN_TOOLS.has(rule.tool)) {
+      if (rule.effect !== 'DENY') {
+        ctx.addIssue({
+          code: 'custom',
+          message: `Tool "${rule.tool}" only supports DENY rules (no path/command target to match patterns against)`,
+          path: ['effect'],
+        })
+      }
+      if (rule.pattern !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `Tool "${rule.tool}" does not support patterns (no path/command target)`,
+          path: ['pattern'],
+        })
+      }
+    }
+  })
 
 export const permissionConfigSchema = z
   .object({

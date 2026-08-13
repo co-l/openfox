@@ -10,8 +10,6 @@ import { loadAllAgentsDefault, getSubAgents, findAgentById, resolveDefaultAgentI
 import { getRuntimeConfig } from '../runtime-config.js'
 import { getGlobalConfigDir } from '../../cli/paths.js'
 import { logger } from '../utils/logger.js'
-import type { PermissionRule } from '../permissions/schema.js'
-import { loadMergedRules } from '../permissions/registry.js'
 
 export interface DiffLine {
   type: 'unchanged' | 'added' | 'removed'
@@ -97,18 +95,12 @@ export function computeDynamicContextHash(
   skills: SkillMetadata[],
   toolFingerprint?: string,
   modelName?: string,
-  permissionRules?: PermissionRule[],
 ): string {
   const dynamicInputs = JSON.stringify({
     instructions: instructionContent,
     skills: skills.map((s) => s.id).sort(),
     ...(toolFingerprint ? { tools: toolFingerprint } : {}),
     ...(modelName ? { model: modelName } : {}),
-    ...(permissionRules && permissionRules.length > 0
-      ? {
-          permissions: permissionRules.map((r) => `${r.effect}:${r.tool}:${r.pattern ?? ''}`).sort(),
-        }
-      : {}),
   })
   return createHash('sha256').update(dynamicInputs).digest('hex')
 }
@@ -123,15 +115,14 @@ export function getToolFingerprint(tools: LLMToolDefinition[]): string {
 export async function loadSessionContext(
   sessionManager: SessionManager,
   sessionId: string,
-): Promise<{ instructionContent: string; skills: SkillMetadata[]; permissionRules: PermissionRule[] }> {
+): Promise<{ instructionContent: string; skills: SkillMetadata[] }> {
   const session = sessionManager.requireSession(sessionId)
   const { content: instructionContent } = await getAllInstructions(session.workdir, session.projectId)
   const runtimeConfig = getRuntimeConfig()
   const configDir = getGlobalConfigDir(runtimeConfig.mode ?? 'production')
   const workdir = sessionManager.getProjectWorkdir(sessionId)
   const skills = await getEnabledSkillMetadata(configDir, workdir)
-  const permissionRules = await loadMergedRules(configDir, workdir)
-  return { instructionContent: instructionContent ?? '', skills, permissionRules }
+  return { instructionContent: instructionContent ?? '', skills }
 }
 
 function resolveAgentDef(sessionManager: SessionManager, sessionId: string): Promise<AgentDefinition> {
@@ -152,7 +143,7 @@ export async function buildCachedPrompt(
   agentDef: AgentDefinition,
   modelName?: string,
 ): Promise<{ systemPrompt: string; tools: LLMToolDefinition[]; hash: string }> {
-  const { instructionContent, skills, permissionRules } = await loadSessionContext(sessionManager, sessionId)
+  const { instructionContent, skills } = await loadSessionContext(sessionManager, sessionId)
 
   const { getToolRegistryForAgent } = await import('../tools/index.js')
   const tools = getToolRegistryForAgent(agentDef, sessionId).definitions
@@ -167,10 +158,9 @@ export async function buildCachedPrompt(
     skills,
     subAgentDefs,
     modelName,
-    permissionRules,
   )
 
-  const hash = computeDynamicContextHash(instructionContent, skills, toolFingerprint, modelName, permissionRules)
+  const hash = computeDynamicContextHash(instructionContent, skills, toolFingerprint, modelName)
 
   return { systemPrompt, tools, hash }
 }
@@ -184,14 +174,14 @@ export async function computeSessionHash(
   sessionId: string,
   modelName?: string,
 ): Promise<string> {
-  const { instructionContent, skills, permissionRules } = await loadSessionContext(sessionManager, sessionId)
+  const { instructionContent, skills } = await loadSessionContext(sessionManager, sessionId)
   const agentDef = await resolveAgentDef(sessionManager, sessionId)
 
   const { getToolRegistryForAgent } = await import('../tools/index.js')
   const tools = getToolRegistryForAgent(agentDef, sessionId).definitions
   const toolFingerprint = getToolFingerprint(tools)
 
-  return computeDynamicContextHash(instructionContent, skills, toolFingerprint, modelName, permissionRules)
+  return computeDynamicContextHash(instructionContent, skills, toolFingerprint, modelName)
 }
 
 export async function applyDynamicContext(

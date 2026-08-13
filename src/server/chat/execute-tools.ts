@@ -9,10 +9,27 @@ import type { StatsIdentity } from '../../shared/types.js'
 import type { ProviderManager } from '../provider-manager.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { DangerLevel } from '../../shared/types.js'
-import type { PermissionRule } from '../permissions/schema.js'
 import { createToolProgressHandler } from './tool-streaming.js'
 import { createToolCallEvent, createToolResultEvent, createChatDoneEvent } from './stream-pure.js'
 import { PathAccessDeniedError, AskUserInterrupt } from '../tools/index.js'
+import { evaluateRulesWithMatch } from '../permissions/rules.js'
+import type { PermissionRule } from '../permissions/schema.js'
+
+const PATH_ENFORCING_TOOLS = new Set(['read_file', 'write_file', 'edit_file', 'run_command'])
+
+function evaluateToolGate(rules: PermissionRule[], toolName: string): PathAccessDeniedError | null {
+  if (PATH_ENFORCING_TOOLS.has(toolName)) return null
+  const match = evaluateRulesWithMatch(rules, toolName, '')
+  if (match.effect === 'DENY') {
+    return new PathAccessDeniedError(
+      [toolName],
+      toolName,
+      'rule_denied',
+      `Permission rule DENY blocked tool: "${toolName}"`,
+    )
+  }
+  return null
+}
 import { loadAllAgentsDefault, findAgentById } from '../agents/registry.js'
 import { logger } from '../utils/logger.js'
 import { sanitizeUtf8 } from '../utils/utf8.js'
@@ -236,6 +253,12 @@ export async function executeTools(
     const startTime = Date.now()
     let toolResult: ToolResult
     try {
+      if (ctx.permissionRules && ctx.permissionRules.length > 0) {
+        const gateResult = evaluateToolGate(ctx.permissionRules, toolCall.name)
+        if (gateResult) {
+          throw gateResult
+        }
+      }
       toolResult = await ctx.toolRegistry.execute(toolCall.name, toolCall.arguments, toolContext)
     } catch (error) {
       toolResult = await handleToolExecutionError(error, ctx.sessionId, startTime)

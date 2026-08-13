@@ -218,32 +218,11 @@ describe('computeDynamicContextHash', () => {
     expect(a).toBe(b)
   })
 
-  it('empty/undefined permissionRules produces same hash (cache-safe)', () => {
+  it('permissionRules no longer affect the hash (cache-safe)', () => {
     const without = computeDynamicContextHash('do foo', skills, 'tool-fp')
-    const withEmpty = computeDynamicContextHash('do foo', skills, 'tool-fp', undefined, [])
-    const withUndefined = computeDynamicContextHash('do foo', skills, 'tool-fp', undefined, undefined)
+    const withEmpty = computeDynamicContextHash('do foo', skills, 'tool-fp', undefined)
+    const withUndefined = computeDynamicContextHash('do foo', skills, 'tool-fp')
     expect(withEmpty).toBe(without)
     expect(withUndefined).toBe(without)
-  })
-
-  it('non-empty permissionRules changes the hash', () => {
-    const without = computeDynamicContextHash('do foo', skills, 'tool-fp')
-    const rules = [{ effect: 'DENY' as const, tool: 'run_command', pattern: 'rm -rf *' }]
-    const withRules = computeDynamicContextHash('do foo', skills, 'tool-fp', undefined, rules)
-    expect(withRules).not.toBe(without)
-  })
-
-  it('same rules in different order produce same hash (sorted before hashing)', () => {
-    const rulesA = [
-      { effect: 'DENY' as const, tool: 'run_command', pattern: 'rm -rf *' },
-      { effect: 'ALLOW' as const, tool: 'read_file', pattern: '/x/**' },
-    ]
-    const rulesB = [
-      { effect: 'ALLOW' as const, tool: 'read_file', pattern: '/x/**' },
-      { effect: 'DENY' as const, tool: 'run_command', pattern: 'rm -rf *' },
-    ]
-    const hashA = computeDynamicContextHash('do foo', skills, 'tool-fp', undefined, rulesA)
-    const hashB = computeDynamicContextHash('do foo', skills, 'tool-fp', undefined, rulesB)
-    expect(hashA).toBe(hashB)
   })
 })

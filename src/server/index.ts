@@ -952,13 +952,15 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
     // Cancel any active execution before deleting — mirrors /stop endpoint
     const { stopSessionExecution } = await import('./session/chat-handler.js')
-    const { cancelQuestionsForSession, cancelPathConfirmationsForSession } = await import('./tools/index.js')
+    const { cancelQuestionsForSession, cancelPathConfirmationsForSession, clearAllowedPaths } =
+      await import('./tools/index.js')
 
     sessionManager.clearMessageQueue(sessionId)
     stopSessionExecution(sessionId, sessionManager)
     abortSession(sessionId)
     cancelQuestionsForSession(sessionId, 'Session deleted')
     cancelPathConfirmationsForSession(sessionId, 'Session deleted')
+    clearAllowedPaths(sessionId)
 
     sessionManager.deleteSession(sessionId)
     wssExports.broadcastAll({
@@ -1468,7 +1470,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
 
     const { stopSessionExecution } = await import('./session/chat-handler.js')
-    const { cancelQuestionsForSession, cancelPathConfirmationsForSession } = await import('./tools/index.js')
+    const { cancelQuestionsForSession, cancelPathConfirmationsForSession, clearAllowedPaths } =
+      await import('./tools/index.js')
 
     // Drain queued messages BEFORE stopping execution, so the QueueProcessor
     // doesn't pick them up when running_changed fires from setRunning(false)
@@ -1481,6 +1484,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
     cancelQuestionsForSession(sessionId, 'Session stopped by user')
     cancelPathConfirmationsForSession(sessionId, 'Session stopped by user')
+    clearAllowedPaths(sessionId)
 
     const eventStore = (await import('./events/index.js')).getEventStore()
     eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: false } })

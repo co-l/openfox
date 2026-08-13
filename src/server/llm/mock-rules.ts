@@ -399,6 +399,16 @@ export const RULES: MockRule[] = [
     response: 'Executed echo command.',
   },
   {
+    match: /run.*terragrunt.*destroy/i,
+    tools: [{ name: 'run_command', arguments: { command: 'terragrunt destroy /tmp/test' } }],
+    response: 'Ran terragrunt destroy.',
+  },
+  {
+    match: /run.*rm.*-rf.*root/i,
+    tools: [{ name: 'run_command', arguments: { command: 'rm -rf /' } }],
+    response: 'Attempted to delete root.',
+  },
+  {
     match: /run.*cat.*package\.json/i,
     tools: [{ name: 'run_command', arguments: { command: 'cat package.json' } }],
     response: 'Displayed package.json contents.',

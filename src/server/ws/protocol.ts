@@ -28,7 +28,6 @@ import type {
   ChatStepRetryPayload,
   ChatPathConfirmationPayload,
   ChatAskUserPayload,
-  PathConfirmPayload,
   ModeChangedPayload,
   PhaseChangedPayload,
   CriteriaUpdatedPayload,
@@ -383,11 +382,6 @@ export function isSessionLoadPayload(payload: unknown): payload is SessionLoadPa
 }
 
 // Chat payloads
-
-// Path confirmation payloads
-export function isPathConfirmPayload(payload: unknown): payload is PathConfirmPayload {
-  return typeof payload === 'object' && payload !== null && 'callId' in payload && 'approved' in payload
-}
 
 // Ask user payloads
 export function isAskAnswerPayload(payload: unknown): payload is AskAnswerPayload {

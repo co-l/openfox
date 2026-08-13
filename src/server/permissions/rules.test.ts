@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { evaluateRules, matchPathPattern, matchCommandPattern } from './rules.js'
+import { evaluateRules, evaluateRulesWithMatch, matchPathPattern, matchCommandPattern } from './rules.js'
 import type { PermissionRule } from './schema.js'
 
 describe('matchPathPattern', () => {
@@ -135,5 +135,56 @@ describe('evaluateRules', () => {
   it('command patterns: ALLOW does not block', () => {
     const rules = [rule('ALLOW', 'run_command', 'git push *')]
     expect(evaluateRules(rules, 'run_command', 'git push origin main')).toBe('ALLOW')
+  })
+})
+
+describe('evaluateRulesWithMatch', () => {
+  const rule = (effect: PermissionRule['effect'], tool: string, pattern?: string): PermissionRule => ({
+    effect,
+    tool,
+    ...(pattern !== undefined ? { pattern } : {}),
+  })
+
+  it('returns null effect and null rule when no rules match', () => {
+    const result = evaluateRulesWithMatch([], 'read_file', '/path')
+    expect(result.effect).toBeNull()
+    expect(result.rule).toBeNull()
+  })
+
+  it('returns the matched rule for DENY', () => {
+    const r = rule('DENY', 'read_file', '/secret/**')
+    const result = evaluateRulesWithMatch([r], 'read_file', '/secret/key.pem')
+    expect(result.effect).toBe('DENY')
+    expect(result.rule).toBe(r)
+  })
+
+  it('returns the matched rule for ASK', () => {
+    const r = rule('ASK', 'run_command', 'terragrunt destroy *')
+    const result = evaluateRulesWithMatch([r], 'run_command', 'terragrunt destroy -auto-approve')
+    expect(result.effect).toBe('ASK')
+    expect(result.rule).toBe(r)
+  })
+
+  it('returns the matched rule for ALLOW', () => {
+    const r = rule('ALLOW', 'read_file', '/x/**')
+    const result = evaluateRulesWithMatch([r], 'read_file', '/x/a')
+    expect(result.effect).toBe('ALLOW')
+    expect(result.rule).toBe(r)
+  })
+
+  it('DENY rule wins and is returned over ALLOW', () => {
+    const allowRule = rule('ALLOW', 'read_file', '/x/**')
+    const denyRule = rule('DENY', 'read_file', '/x/secrets/**')
+    const result = evaluateRulesWithMatch([allowRule, denyRule], 'read_file', '/x/secrets/key')
+    expect(result.effect).toBe('DENY')
+    expect(result.rule).toBe(denyRule)
+  })
+
+  it('returns the highest-precedence rule even if a lower one appears later', () => {
+    const askRule = rule('ASK', 'read_file', '/x/**')
+    const denyRule = rule('DENY', 'read_file', '/x/**')
+    const result = evaluateRulesWithMatch([askRule, denyRule], 'read_file', '/x/a')
+    expect(result.effect).toBe('DENY')
+    expect(result.rule).toBe(denyRule)
   })
 })

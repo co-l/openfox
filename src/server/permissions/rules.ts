@@ -65,8 +65,18 @@ function matchesRule(rule: PermissionRule, tool: string, target: string): boolea
 }
 
 export function evaluateRules(rules: PermissionRule[], tool: string, target: string): PermissionEffect | null {
+  return evaluateRulesWithMatch(rules, tool, target).effect
+}
+
+export interface RuleMatchResult {
+  effect: PermissionEffect | null
+  rule: PermissionRule | null
+}
+
+export function evaluateRulesWithMatch(rules: PermissionRule[], tool: string, target: string): RuleMatchResult {
   let best: PermissionEffect | null = null
   let bestPrecedence = 0
+  let bestRule: PermissionRule | null = null
 
   for (const rule of rules) {
     if (!matchesRule(rule, tool, target)) continue
@@ -74,8 +84,9 @@ export function evaluateRules(rules: PermissionRule[], tool: string, target: str
     if (precedence > bestPrecedence) {
       best = rule.effect
       bestPrecedence = precedence
+      bestRule = rule
     }
   }
 
-  return best
+  return { effect: best, rule: bestRule }
 }

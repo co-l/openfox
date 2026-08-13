@@ -256,11 +256,16 @@ export async function answerPathConfirmation(
   sessionId: string,
   callId: string,
   approved: boolean,
+  alwaysAllow?: boolean,
 ): Promise<{ success: boolean }> {
+  const body: Record<string, unknown> = { callId, approved }
+  if (alwaysAllow !== undefined) {
+    body['alwaysAllow'] = alwaysAllow
+  }
   const response = await fetch(`${baseUrl}/api/sessions/${sessionId}/confirm-path`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ callId, approved }),
+    body: JSON.stringify(body),
   })
 
   if (!response.ok) {

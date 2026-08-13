@@ -8,6 +8,7 @@ import {
   hasPendingPathConfirmation,
   clearAllowedPaths,
   cancelPathConfirmationsForSession,
+  getSessionAllowedRules,
 } from './path-security.js'
 import type { PermissionRule } from '../permissions/schema.js'
 
@@ -330,5 +331,283 @@ describe('requestPathAccess with permission rules', () => {
         rules,
       ),
     ).resolves.toBeUndefined()
+  })
+})
+
+describe('requestPathAccess: Allow for this session (rule ASK → ALLOW ephemeral)', () => {
+  it('ASK rule → allow for session → 2nd call same pattern: no prompt', async () => {
+    const rules = [rule('ASK', 'run_command', 'terragrunt destroy *')]
+    const cmd = 'terragrunt destroy -auto-approve'
+    const callId1 = 's1'
+    const promise1 = requestPathAccess(
+      [],
+      WORKDIR,
+      'rules-session',
+      callId1,
+      'run_command',
+      noOpEvent,
+      'normal',
+      cmd,
+      false,
+      rules,
+    )
+    for (let i = 0; i < 20 && !hasPendingPathConfirmation(callId1); i++) {
+      await new Promise((r) => setTimeout(r, 5))
+    }
+    expect(hasPendingPathConfirmation(callId1)).toBe(true)
+    providePathConfirmation(callId1, true, true)
+    await expect(promise1).resolves.toBeUndefined()
+
+    noOpEvent.mockClear()
+    const sessionRules = [...rules, ...getSessionAllowedRules('rules-session')]
+    const callId2 = 's2'
+    await expect(
+      requestPathAccess(
+        [],
+        WORKDIR,
+        'rules-session',
+        callId2,
+        'run_command',
+        noOpEvent,
+        'normal',
+        cmd,
+        false,
+        sessionRules,
+      ),
+    ).resolves.toBeUndefined()
+    expect(noOpEvent).not.toHaveBeenCalled()
+  })
+
+  it('ASK rule → deny → 2nd call: re-prompts (no clone)', async () => {
+    const rules = [rule('ASK', 'run_command', 'terragrunt destroy *')]
+    const cmd = 'terragrunt destroy -auto-approve'
+    const callId1 = 'd1'
+    const promise1 = requestPathAccess(
+      [],
+      WORKDIR,
+      'rules-session',
+      callId1,
+      'run_command',
+      noOpEvent,
+      'normal',
+      cmd,
+      false,
+      rules,
+    )
+    for (let i = 0; i < 20 && !hasPendingPathConfirmation(callId1); i++) {
+      await new Promise((r) => setTimeout(r, 5))
+    }
+    expect(hasPendingPathConfirmation(callId1)).toBe(true)
+    providePathConfirmation(callId1, false)
+    await expect(promise1).rejects.toMatchObject({ name: 'PathAccessDeniedError', reason: 'rule_ask' })
+
+    expect(getSessionAllowedRules('rules-session')).toHaveLength(0)
+  })
+
+  it('ASK rule → allow one-shot (alwaysAllow=false) → 2nd call: re-prompts', async () => {
+    const rules = [rule('ASK', 'run_command', 'terragrunt destroy *')]
+    const cmd = 'terragrunt destroy -auto-approve'
+    const callId1 = 'o1'
+    const promise1 = requestPathAccess(
+      [],
+      WORKDIR,
+      'rules-session',
+      callId1,
+      'run_command',
+      noOpEvent,
+      'normal',
+      cmd,
+      false,
+      rules,
+    )
+    for (let i = 0; i < 20 && !hasPendingPathConfirmation(callId1); i++) {
+      await new Promise((r) => setTimeout(r, 5))
+    }
+    expect(hasPendingPathConfirmation(callId1)).toBe(true)
+    providePathConfirmation(callId1, true, false)
+    await expect(promise1).resolves.toBeUndefined()
+
+    expect(getSessionAllowedRules('rules-session')).toHaveLength(0)
+  })
+
+  it('DENY disk rule + ALLOW ephemeral session rule on same pattern: DENY wins (3>2)', async () => {
+    const denyRule = rule('DENY', 'run_command', 'terragrunt destroy *')
+    const askRule = rule('ASK', 'run_command', 'terragrunt destroy *')
+    const cmd = 'terragrunt destroy -auto-approve'
+    const callId1 = 'p1'
+    const promise1 = requestPathAccess(
+      [],
+      WORKDIR,
+      'rules-session',
+      callId1,
+      'run_command',
+      noOpEvent,
+      'normal',
+      cmd,
+      false,
+      [askRule],
+    )
+    for (let i = 0; i < 20 && !hasPendingPathConfirmation(callId1); i++) {
+      await new Promise((r) => setTimeout(r, 5))
+    }
+    expect(hasPendingPathConfirmation(callId1)).toBe(true)
+    providePathConfirmation(callId1, true, true)
+    await expect(promise1).resolves.toBeUndefined()
+
+    const sessionRules = [denyRule, ...getSessionAllowedRules('rules-session')]
+    const callId2 = 'p2'
+    await expect(
+      requestPathAccess(
+        [],
+        WORKDIR,
+        'rules-session',
+        callId2,
+        'run_command',
+        noOpEvent,
+        'normal',
+        cmd,
+        false,
+        sessionRules,
+      ),
+    ).rejects.toMatchObject({ name: 'PathAccessDeniedError', reason: 'rule_denied' })
+  })
+
+  it('clearAllowedRules → 2nd call re-prompts', async () => {
+    const rules = [rule('ASK', 'run_command', 'terragrunt destroy *')]
+    const cmd = 'terragrunt destroy -auto-approve'
+    const callId1 = 'cl1'
+    const promise1 = requestPathAccess(
+      [],
+      WORKDIR,
+      'rules-session',
+      callId1,
+      'run_command',
+      noOpEvent,
+      'normal',
+      cmd,
+      false,
+      rules,
+    )
+    for (let i = 0; i < 20 && !hasPendingPathConfirmation(callId1); i++) {
+      await new Promise((r) => setTimeout(r, 5))
+    }
+    expect(hasPendingPathConfirmation(callId1)).toBe(true)
+    providePathConfirmation(callId1, true, true)
+    await expect(promise1).resolves.toBeUndefined()
+
+    clearAllowedPaths('rules-session')
+    expect(getSessionAllowedRules('rules-session')).toHaveLength(0)
+
+    const callId2 = 'cl2'
+    const promise2 = requestPathAccess(
+      [],
+      WORKDIR,
+      'rules-session',
+      callId2,
+      'run_command',
+      noOpEvent,
+      'normal',
+      cmd,
+      false,
+      rules,
+    )
+    for (let i = 0; i < 20 && !hasPendingPathConfirmation(callId2); i++) {
+      await new Promise((r) => setTimeout(r, 5))
+    }
+    expect(hasPendingPathConfirmation(callId2)).toBe(true)
+    providePathConfirmation(callId2, false)
+    await expect(promise2).rejects.toMatchObject({ name: 'PathAccessDeniedError', reason: 'rule_ask' })
+  })
+
+  it('ASK rule on read_file path → allow for session → 2nd read same path: no prompt', async () => {
+    const rules = [rule('ASK', 'read_file', '/tmp/**')]
+    const target = '/tmp/foo.txt'
+    const callId1 = 'rp1'
+    const promise1 = requestPathAccess(
+      [target],
+      WORKDIR,
+      'rules-session',
+      callId1,
+      'read_file',
+      noOpEvent,
+      'normal',
+      undefined,
+      false,
+      rules,
+    )
+    for (let i = 0; i < 20 && !hasPendingPathConfirmation(callId1); i++) {
+      await new Promise((r) => setTimeout(r, 5))
+    }
+    expect(hasPendingPathConfirmation(callId1)).toBe(true)
+    providePathConfirmation(callId1, true, true)
+    await expect(promise1).resolves.toBeUndefined()
+
+    noOpEvent.mockClear()
+    const sessionRules = [...rules, ...getSessionAllowedRules('rules-session')]
+    const callId2 = 'rp2'
+    await expect(
+      requestPathAccess(
+        [target],
+        WORKDIR,
+        'rules-session',
+        callId2,
+        'read_file',
+        noOpEvent,
+        'normal',
+        undefined,
+        false,
+        sessionRules,
+      ),
+    ).resolves.toBeUndefined()
+    expect(noOpEvent).not.toHaveBeenCalled()
+  })
+
+  it('clearAllowedPaths purges session-allowed rules (ephemeral cleanup on session delete)', async () => {
+    const rules = [rule('ASK', 'run_command', 'terragrunt destroy *')]
+    const cmd = 'terragrunt destroy /tmp/x'
+    const callId = 'purge-1'
+    const promise = requestPathAccess(
+      [],
+      WORKDIR,
+      'rules-session',
+      callId,
+      'run_command',
+      noOpEvent,
+      'normal',
+      cmd,
+      false,
+      rules,
+    )
+    for (let i = 0; i < 20 && !hasPendingPathConfirmation(callId); i++) {
+      await new Promise((r) => setTimeout(r, 5))
+    }
+    providePathConfirmation(callId, true, true)
+    await expect(promise).resolves.toBeUndefined()
+    expect(getSessionAllowedRules('rules-session')).toHaveLength(1)
+
+    clearAllowedPaths('rules-session')
+
+    expect(getSessionAllowedRules('rules-session')).toHaveLength(0)
+
+    // After purge, the same command re-prompts (no lingering ALLOW)
+    const callId2 = 'purge-2'
+    const promise2 = requestPathAccess(
+      [],
+      WORKDIR,
+      'rules-session',
+      callId2,
+      'run_command',
+      noOpEvent,
+      'normal',
+      cmd,
+      false,
+      rules,
+    )
+    for (let i = 0; i < 20 && !hasPendingPathConfirmation(callId2); i++) {
+      await new Promise((r) => setTimeout(r, 5))
+    }
+    expect(hasPendingPathConfirmation(callId2)).toBe(true)
+    providePathConfirmation(callId2, false)
+    await expect(promise2).rejects.toMatchObject({ name: 'PathAccessDeniedError', reason: 'rule_ask' })
   })
 })

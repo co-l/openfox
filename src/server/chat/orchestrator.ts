@@ -362,10 +362,7 @@ export async function runAgentTurn(
     injectAgentReminder(options.sessionId, agentDef)
   }
 
-  const { instructionContent, skills, permissionRules } = await loadSessionContext(
-    options.sessionManager,
-    options.sessionId,
-  )
+  const { instructionContent, skills } = await loadSessionContext(options.sessionManager, options.sessionId)
 
   return runTopLevelAgentLoop(
     {
@@ -388,7 +385,6 @@ export async function runAgentTurn(
             skills,
             toolFingerprint,
             agentLlmClient.getModel(),
-            permissionRules,
           )
           if (cached.hash !== currentHash) {
             logger.debug('assembleRequest: hash mismatch', {

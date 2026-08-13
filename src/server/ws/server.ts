@@ -1394,19 +1394,8 @@ async function handleClientMessage(
     }
 
     // =========================================================================
-    // Path Confirmation
+    // Ask User
     // =========================================================================
-
-    case 'path.confirm': {
-      send(
-        createErrorMessage(
-          'DEPRECATED',
-          'path.confirm removed. Use REST API: POST /api/sessions/:id/confirm-path',
-          message.id,
-        ),
-      )
-      break
-    }
 
     // =========================================================================
     // Ask User

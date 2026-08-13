@@ -31,8 +31,6 @@ export type ClientMessageType =
   | 'runner.launch' // Start the auto-loop runner (build → verify → done)
   // Workflow
   | 'workflow.exit' // Exit/cancel a paused workflow
-  // Path confirmation
-  | 'path.confirm' // User response to path confirmation request
   // Ask user
   | 'ask.answer' // User response to ask_user question
 
@@ -350,13 +348,6 @@ export interface ChatPathConfirmationPayload {
   paths: string[] // The paths requiring confirmation
   workdir: string // For context in UI
   reason: PathConfirmationReason // Why confirmation is needed
-}
-
-// Client payload for path confirmation response
-export interface PathConfirmPayload {
-  callId: string
-  approved: boolean
-  alwaysAllow?: boolean // If true, add paths to session allowlist permanently
 }
 
 // Ask user payloads

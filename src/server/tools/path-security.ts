@@ -6,7 +6,7 @@ import { createChatPathConfirmationMessage } from '../ws/protocol.js'
 import { getEventStore } from '../events/index.js'
 import { getPlatformShell } from '../utils/platform.js'
 import type { PermissionRule } from '../permissions/schema.js'
-import { evaluateRules } from '../permissions/rules.js'
+import { evaluateRules, evaluateRulesWithMatch } from '../permissions/rules.js'
 
 // ===========================================================================
 // Constants
@@ -77,6 +77,9 @@ export function isSensitivePath(path: string): boolean {
 /** Per-session set of paths that user has approved for access */
 const sessionAllowedPaths = new Map<string, Set<string>>()
 
+/** Per-session set of ALLOW rules promoted from ASK rules (Allow for this session) */
+const sessionAllowedRules = new Map<string, PermissionRule[]>()
+
 /**
  * Add a path to the session's allowlist (user approved it)
  */
@@ -106,10 +109,32 @@ export function isPathAllowed(sessionId: string, path: string): boolean {
 }
 
 /**
- * Clear the session's allowlist (e.g., on session delete)
+ * Add a session-scoped ALLOW rule (promoted from an ASK rule via "Allow for this session").
+ * The rule is ephemeral — lives only for the session, not persisted to disk.
+ */
+export function addSessionAllowedRule(sessionId: string, rule: PermissionRule): void {
+  const existing = sessionAllowedRules.get(sessionId)
+  if (existing) {
+    existing.push(rule)
+  } else {
+    sessionAllowedRules.set(sessionId, [rule])
+  }
+}
+
+/**
+ * Get the session-scoped ALLOW rules for a session.
+ * Returns an empty array if none.
+ */
+export function getSessionAllowedRules(sessionId: string): PermissionRule[] {
+  return sessionAllowedRules.get(sessionId) ?? []
+}
+
+/**
+ * Clear the session's allowlist and session-scoped rules (e.g., on session delete)
  */
 export function clearAllowedPaths(sessionId: string): void {
   sessionAllowedPaths.delete(sessionId)
+  sessionAllowedRules.delete(sessionId)
 }
 
 // ===========================================================================
@@ -979,13 +1004,29 @@ export async function requestPathAccess(
     // Sub-agents can't render dialogs: fail closed in normal mode so the ASK
     // rule is respected instead of being silently bypassed by the sub-agent
     // shortcut below. In dangerous mode, ASK is skipped (same as top-level).
-    const askTargets = allTargets.filter((t) => evaluateRules(rules, tool, t) === 'ASK')
+    const askTargets: string[] = []
+    let matchedAskRule: PermissionRule | null = null
+    for (const target of allTargets) {
+      const match = evaluateRulesWithMatch(rules, tool, target)
+      if (match.effect === 'ASK') {
+        askTargets.push(target)
+        if (match.rule) matchedAskRule = match.rule
+      }
+    }
     if (askTargets.length > 0 && dangerLevel !== 'dangerous') {
       if (isSubAgent) {
         throw new PathAccessDeniedError(askTargets, tool, 'rule_ask')
       }
       emitPendingEvent(askTargets, 'rule_ask')
-      const confirmationPromise = registerPathConfirmation(callId, askTargets, sessionId, tool, workdir, 'rule_ask')
+      const confirmationPromise = registerPathConfirmation(
+        callId,
+        askTargets,
+        sessionId,
+        tool,
+        workdir,
+        'rule_ask',
+        matchedAskRule ?? undefined,
+      )
       onEvent(createChatPathConfirmationMessage(callId, tool, askTargets, workdir, 'rule_ask'))
       const approved = await confirmationPromise
       if (!approved) {
@@ -1121,6 +1162,7 @@ const pendingConfirmations = new Map<
     workdir: string
     reason:
       'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify' | 'rule_denied' | 'rule_ask'
+    matchedRule?: PermissionRule | undefined
   }
 >()
 
@@ -1136,9 +1178,19 @@ export function registerPathConfirmation(
   workdir: string,
   reason:
     'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify' | 'rule_denied' | 'rule_ask',
+  matchedRule?: PermissionRule,
 ): Promise<boolean> {
   return new Promise((resolve, reject) => {
-    pendingConfirmations.set(callId, { resolve, reject, paths, sessionId, tool, workdir, reason })
+    pendingConfirmations.set(callId, {
+      resolve,
+      reject,
+      paths,
+      sessionId,
+      tool,
+      workdir,
+      reason,
+      ...(matchedRule ? { matchedRule } : {}),
+    })
   })
 }
 
@@ -1184,6 +1236,16 @@ export function providePathConfirmation(
     // Skip non-path confirmations (dangerous_command, git_no_verify).
     if (pending.reason !== 'dangerous_command' && pending.reason !== 'git_no_verify') {
       addAllowedPaths(pending.sessionId, pending.paths)
+    }
+    // For rule_ask confirmations with alwaysAllow, promote the matched ASK rule
+    // to a session-scoped ALLOW rule so the same pattern won't re-prompt.
+    if (pending.reason === 'rule_ask' && pending.matchedRule) {
+      const promoted: PermissionRule = {
+        effect: 'ALLOW',
+        tool: pending.matchedRule.tool,
+        ...(pending.matchedRule.pattern !== undefined ? { pattern: pending.matchedRule.pattern } : {}),
+      }
+      addSessionAllowedRule(pending.sessionId, promoted)
     }
   }
 

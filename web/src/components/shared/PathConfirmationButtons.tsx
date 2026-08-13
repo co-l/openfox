@@ -57,11 +57,18 @@ export function PathConfirmationButtons({ confirmation }: PathConfirmationButton
   const bgColor = isSensitive ? 'bg-red-500/10' : 'bg-amber-500/10'
 
   const isGitNoVerify = confirmation.reason === 'git_no_verify'
+  const isDangerousCommand = confirmation.reason === 'dangerous_command'
+  const canAllowForSession = !isGitNoVerify && !isDangerousCommand
 
   const handleEnableDangerousAndAllow = () => {
     if (!sessionId) return
     switchDangerLevel(sessionId, 'dangerous')
     confirmPath(sessionId, confirmation.callId, true, false)
+  }
+
+  const handleAllowForSession = () => {
+    if (!sessionId) return
+    confirmPath(sessionId, confirmation.callId, true, true)
   }
 
   return (
@@ -100,6 +107,13 @@ export function PathConfirmationButtons({ confirmation }: PathConfirmationButton
           className="flex-1 px-3 py-1.5 text-xs font-medium rounded bg-accent-primary hover:bg-accent-primary/80 text-text-primary transition-colors"
         >
           Allow
+        </button>
+        <button
+          onClick={handleAllowForSession}
+          className={`flex-1 px-3 py-1.5 text-xs font-medium rounded transition-colors ${canAllowForSession ? 'bg-green-600 hover:bg-green-700 text-white' : 'hidden'}`}
+          title="Allow for this session (won't ask again until session ends)"
+        >
+          Allow for this session
         </button>
         <button
           onClick={handleEnableDangerousAndAllow}

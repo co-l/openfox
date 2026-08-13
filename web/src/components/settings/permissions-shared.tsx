@@ -19,8 +19,7 @@ export const EFFECTS: PermissionEffect[] = ['DENY', 'ALLOW', 'ASK']
 
 const FALLBACK_TOOLS = ['read_file', 'write_file', 'edit_file', 'run_command']
 
-// Only tools that call checkPathAccess enforce permission rules.
-const ENFORCING_TOOLS = new Set(FALLBACK_TOOLS)
+const PATTERN_TOOLS = new Set(['read_file', 'write_file', 'edit_file', 'run_command'])
 
 export function EffectBadge({ effect }: { effect: PermissionEffect }) {
   return <span className={`text-xs font-medium px-2 py-0.5 rounded border ${EFFECT_COLORS[effect]}`}>{effect}</span>
@@ -58,7 +57,7 @@ export function RuleForm({
     authFetch('/api/tools')
       .then((r) => r.json())
       .then((d: { tools?: { name: string }[] }) => {
-        const names = (d.tools ?? []).map((t) => t.name).filter((n) => ENFORCING_TOOLS.has(n))
+        const names = (d.tools ?? []).map((t) => t.name)
         if (names.length > 0) setTools(names)
       })
       .catch(() => {
@@ -76,6 +75,10 @@ export function RuleForm({
     onSave(rule, scope)
   }
 
+  const isCommandTool = tool === 'run_command'
+  const isPatternTool = PATTERN_TOOLS.has(tool)
+  const allowedEffects: PermissionEffect[] = isPatternTool ? EFFECTS : ['DENY']
+
   return (
     <div className="space-y-3 p-3 border border-border rounded-lg bg-bg-tertiary">
       <div className={hideScope ? 'grid grid-cols-2 gap-3' : 'grid grid-cols-3 gap-3'}>
@@ -86,7 +89,7 @@ export function RuleForm({
             onChange={(e) => setEffect(e.target.value as PermissionEffect)}
             className="w-full px-2 py-1 text-sm text-text-primary bg-bg-primary border border-border rounded"
           >
-            {EFFECTS.map((e) => (
+            {allowedEffects.map((e) => (
               <option key={e} value={e}>
                 {e}
               </option>
@@ -97,7 +100,14 @@ export function RuleForm({
           <label className="text-xs text-text-muted block mb-1">Tool</label>
           <select
             value={tool}
-            onChange={(e) => setTool(e.target.value)}
+            onChange={(e) => {
+              const newTool = e.target.value
+              setTool(newTool)
+              if (!PATTERN_TOOLS.has(newTool)) {
+                setEffect('DENY')
+                setPattern('')
+              }
+            }}
             className="w-full px-2 py-1 text-sm text-text-primary bg-bg-primary border border-border rounded"
           >
             {tools.map((t) => (
@@ -125,14 +135,20 @@ export function RuleForm({
       </div>
       <div>
         <label className="text-xs text-text-muted block mb-1">
-          Pattern <span className="text-text-muted/60">(optional, glob: ** for any depth, * for one segment)</span>
+          Pattern{' '}
+          <span className="text-text-muted/60">
+            {isPatternTool
+              ? `(optional, glob: ${isCommandTool ? '`*` matches anything' : '`**` for any depth, `*` for one segment'})`
+              : '(not applicable — this tool has no path/command target)'}
+          </span>
         </label>
         <input
           type="text"
           value={pattern}
           onChange={(e) => setPattern(e.target.value)}
-          placeholder="/path/** or rm -rf *"
-          className="w-full px-2 py-1 text-sm font-mono text-text-primary bg-bg-primary border border-border rounded"
+          disabled={!isPatternTool}
+          placeholder={isCommandTool ? 'terragrunt destroy *' : isPatternTool ? '/path/** or **/.env*' : 'N/A'}
+          className="w-full px-2 py-1 text-sm font-mono text-text-primary bg-bg-primary border border-border rounded disabled:opacity-50 disabled:cursor-not-allowed"
         />
       </div>
       <div>
@@ -173,6 +189,11 @@ export function RuleRow({
       <span className="text-sm text-text-primary">{rule.tool}</span>
       {rule.pattern && <span className="text-xs font-mono text-text-muted flex-1 truncate">{rule.pattern}</span>}
       {!rule.pattern && <span className="text-xs text-text-muted/60 flex-1 italic">(all calls)</span>}
+      {rule.description && (
+        <span className="text-xs text-text-muted/80 truncate max-w-[200px]" title={rule.description}>
+          — {rule.description}
+        </span>
+      )}
       <div className="flex gap-1 ml-auto">
         <button onClick={onEdit} title="Edit" className="p-1 text-text-muted hover:text-text-primary">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

@@ -189,4 +189,111 @@ describe('PermissionsTab', () => {
       expect(screen.getByText(/Retry/i)).toBeDefined()
     })
   })
+
+  it('displays description in RuleRow when present', async () => {
+    const globalConfig: PermissionConfig = {
+      version: 1,
+      rules: [{ effect: 'DENY', tool: 'run_command', pattern: 'rm -rf *', description: 'Never delete recursively' }],
+    }
+    mockConfigByScope(globalConfig)
+    render(<PermissionsTab />)
+    await waitFor(() => {
+      expect(screen.getByText(/Never delete recursively/)).toBeDefined()
+    })
+  })
+
+  it('does not render description text when absent', async () => {
+    const globalConfig: PermissionConfig = {
+      version: 1,
+      rules: [{ effect: 'DENY', tool: 'run_command', pattern: 'rm -rf *' }],
+    }
+    mockConfigByScope(globalConfig)
+    render(<PermissionsTab />)
+    await waitFor(() => {
+      expect(screen.getByText('rm -rf *')).toBeDefined()
+    })
+    expect(screen.queryByText(/Never delete recursively/)).toBeNull()
+  })
+
+  it('shows command-specific pattern hint for run_command', async () => {
+    mockAuthFetch.mockResolvedValue(createJsonResponse({ config: { version: 1, rules: [] } }))
+    render(<PermissionsTab />)
+    await waitFor(() => {
+      expect(screen.getByText(/No permission rules/i)).toBeDefined()
+    })
+    const user = userEvent.setup()
+    await user.click(screen.getByText(/Add Rule/i))
+    await waitFor(() => {
+      expect(screen.getByText('Effect')).toBeDefined()
+    })
+    const toolSelect = screen.getByDisplayValue('read_file')
+    await user.selectOptions(toolSelect, 'run_command')
+    await waitFor(() => {
+      expect(screen.getByText(/matches anything/i)).toBeDefined()
+    })
+  })
+
+  it('shows path-specific pattern hint for read_file', async () => {
+    mockAuthFetch.mockResolvedValue(createJsonResponse({ config: { version: 1, rules: [] } }))
+    render(<PermissionsTab />)
+    await waitFor(() => {
+      expect(screen.getByText(/No permission rules/i)).toBeDefined()
+    })
+    const user = userEvent.setup()
+    await user.click(screen.getByText(/Add Rule/i))
+    const toolSelect = screen.getByDisplayValue('read_file')
+    await user.click(toolSelect)
+    await waitFor(() => {
+      expect(screen.getByText(/any depth/i)).toBeDefined()
+    })
+  })
+
+  it('restricts effect to DENY-only for non-pattern tools (web_fetch)', async () => {
+    mockAuthFetch.mockImplementation(async (url: string) => {
+      if (url.includes('/api/tools')) {
+        return createJsonResponse({ tools: [{ name: 'read_file' }, { name: 'run_command' }, { name: 'web_fetch' }] })
+      }
+      return createJsonResponse({ config: { version: 1, rules: [] } })
+    })
+    render(<PermissionsTab />)
+    await waitFor(() => {
+      expect(screen.getByText(/No permission rules/i)).toBeDefined()
+    })
+    const user = userEvent.setup()
+    await user.click(screen.getByText(/Add Rule/i))
+    await waitFor(() => {
+      expect(screen.getByText('Effect')).toBeDefined()
+    })
+    const toolSelect = screen.getByDisplayValue('read_file')
+    await user.selectOptions(toolSelect, 'web_fetch')
+    await waitFor(() => {
+      const effectSelect = screen.getByDisplayValue('DENY') as HTMLSelectElement
+      const options = Array.from(effectSelect.options).map((o) => o.value)
+      expect(options).toEqual(['DENY'])
+    })
+  })
+
+  it('disables pattern input for non-pattern tools (web_fetch)', async () => {
+    mockAuthFetch.mockImplementation(async (url: string) => {
+      if (url.includes('/api/tools')) {
+        return createJsonResponse({ tools: [{ name: 'read_file' }, { name: 'run_command' }, { name: 'web_fetch' }] })
+      }
+      return createJsonResponse({ config: { version: 1, rules: [] } })
+    })
+    render(<PermissionsTab />)
+    await waitFor(() => {
+      expect(screen.getByText(/No permission rules/i)).toBeDefined()
+    })
+    const user = userEvent.setup()
+    await user.click(screen.getByText(/Add Rule/i))
+    await waitFor(() => {
+      expect(screen.getByText('Effect')).toBeDefined()
+    })
+    const toolSelect = screen.getByDisplayValue('read_file')
+    await user.selectOptions(toolSelect, 'web_fetch')
+    await waitFor(() => {
+      const patternInput = screen.getByPlaceholderText('N/A') as HTMLInputElement
+      expect(patternInput.disabled).toBe(true)
+    })
+  })
 })

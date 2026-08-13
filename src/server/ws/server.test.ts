@@ -860,7 +860,7 @@ describe('createWebSocketServer', () => {
     await harness.close()
   })
 
-  it('handles mode.accept, runner.launch, context.compact, and path confirmation', async () => {
+  it('handles mode.accept, runner.launch, and context.compact', async () => {
     const sessionState: any = {
       id: 'session-1',
       projectId: 'project-1',
@@ -938,16 +938,6 @@ describe('createWebSocketServer', () => {
       type: 'context.state',
     })
 
-    harness.send({ id: 'path-missing', type: 'path.confirm', payload: { callId: 'call-1', approved: true } })
-    expect(await harness.nextMessage((message) => message.id === 'path-missing')).toMatchObject({
-      payload: { code: 'DEPRECATED' },
-    })
-
-    harness.send({ id: 'path-ok', type: 'path.confirm', payload: { callId: 'call-2', approved: false } })
-    expect(await harness.nextMessage((message) => message.id === 'path-ok')).toMatchObject({
-      payload: { code: 'DEPRECATED' },
-    })
-
     await harness.close()
   })
 
@@ -983,11 +973,6 @@ describe('createWebSocketServer', () => {
       payload: { code: 'NO_SESSION' },
     })
 
-    harness.send({ id: 'path-none', type: 'path.confirm', payload: { callId: 'x', approved: true } })
-    expect(await harness.nextMessage((message) => message.id === 'path-none')).toMatchObject({
-      payload: { code: 'DEPRECATED' },
-    })
-
     harness.send({ id: 'sl-ok', type: 'session.load', payload: { sessionId: 'session-1' } })
     await harness.nextMessage((message) => message.id === 'sl-ok')
 
@@ -1016,11 +1001,6 @@ describe('createWebSocketServer', () => {
     harness.send({ id: 'runner-no-work', type: 'runner.launch', payload: {} })
     expect(await harness.nextMessage((message) => message.id === 'runner-no-work')).toMatchObject({
       payload: { code: 'NO_WORK' },
-    })
-
-    harness.send({ id: 'path-invalid', type: 'path.confirm', payload: {} })
-    expect(await harness.nextMessage((message) => message.id === 'path-invalid')).toMatchObject({
-      payload: { code: 'DEPRECATED' },
     })
 
     await harness.close()

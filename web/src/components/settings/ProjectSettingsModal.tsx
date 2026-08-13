@@ -8,6 +8,8 @@ import { useProjectStore } from '../../stores/project'
 import { useAgentsStore } from '../../stores/agents'
 import { useWorkspaceConfigStore, type WorkspaceConfigResponse } from '../../stores/workspace-config'
 import { useMcpStore } from '../../stores/mcp'
+import { usePermissionsStore } from '../../stores/permissions'
+import { PermissionsList } from './permissions-shared'
 import { mcpStatusColor, mcpStatusDot } from '../../lib/mcp-utils'
 import { wsClient } from '../../lib/ws'
 import { authFetch } from '../../lib/api'
@@ -30,6 +32,15 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
   const userAgents = useAgentsStore((s) => s.userItems)
   const projectAgents = useAgentsStore((s) => s.projectItems)
   const fetchAgents = useAgentsStore((s) => s.fetchAgents)
+  const {
+    projectConfig,
+    saving: permsSaving,
+    fetchConfig: fetchPermsConfig,
+    addRule,
+    updateRule,
+    deleteRule,
+  } = usePermissionsStore()
+  const projectRules = (projectConfig?.rules ?? []).map((r) => ({ ...r, scope: 'project' as const }))
   const topLevelByScope = {
     builtin: defaultAgents.filter((a) => !a.subagent),
     user: userAgents.filter((a) => !a.subagent),
@@ -101,8 +112,9 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
       setExpandedServers(new Set())
       fetchWsConfig(project.workdir)
       fetchAgents(project.workdir).catch(() => {})
+      fetchPermsConfig('project', project.workdir).catch(() => {})
     }
-  }, [isOpen, project, fetchWsConfig, fetchAgents])
+  }, [isOpen, project, fetchWsConfig, fetchAgents, fetchPermsConfig])
 
   useEffect(() => {
     if (wsConfig?.setup && wsConfig.setup.length > 0) {
@@ -566,6 +578,30 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
             </div>
           </div>
         )}
+
+        <div>
+          <label className="block text-sm font-medium text-text-primary mb-1 flex-shrink-0">Permission Rules</label>
+          <p className="text-sm text-text-muted mb-3">
+            Deterministic rules (not LLM-managed) that allow, deny, or force-ask for tool actions in this project. DENY
+            always wins. ALLOW skips sandbox and sensitive-file checks. ASK always prompts. Stored in{' '}
+            <code className="text-xs bg-bg-tertiary px-1 rounded">.openfox/permissions.json</code>.
+          </p>
+          <PermissionsList
+            rules={projectRules}
+            saving={permsSaving}
+            hideScope
+            allowProject
+            onAdd={async (rule) => {
+              await addRule('project', rule, project.workdir)
+            }}
+            onUpdate={async (index, rule) => {
+              await updateRule('project', index, rule, project.workdir)
+            }}
+            onDelete={async (index) => {
+              await deleteRule('project', index, project.workdir)
+            }}
+          />
+        </div>
 
         {saveError && (
           <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded px-3 py-2">
