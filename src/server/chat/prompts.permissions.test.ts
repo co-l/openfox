@@ -1,25 +1,26 @@
 import { describe, it, expect } from 'vitest'
 import { buildTopLevelSystemPrompt } from './prompts.js'
+import type { SkillMetadata } from '../skills/types.js'
+import type { AgentDefinition } from '../agents/types.js'
 
-describe('buildTopLevelSystemPrompt without permissions', () => {
-  it('is byte-identical with or without rules (cache safety)', () => {
-    const without = buildTopLevelSystemPrompt('/tmp', undefined, undefined, undefined)
-    const withEmpty = buildTopLevelSystemPrompt('/tmp', undefined, undefined, undefined, undefined)
-    const withUndefined = buildTopLevelSystemPrompt('/tmp', undefined, undefined, undefined, undefined)
-    const withRules = buildTopLevelSystemPrompt('/tmp', undefined, undefined, undefined, undefined)
-    expect(withEmpty).toBe(without)
-    expect(withUndefined).toBe(without)
-    expect(withRules).toBe(without)
+describe('buildTopLevelSystemPrompt — cache-safety contract', () => {
+  const skills: SkillMetadata[] = []
+  const subAgentDefs: AgentDefinition[] = []
+
+  it('does not include a PERMISSIONS section in the prompt', () => {
+    const prompt = buildTopLevelSystemPrompt('/tmp', undefined, skills, subAgentDefs)
+    expect(prompt).not.toContain('## PERMISSIONS')
+    expect(prompt).not.toMatch(/PERMISSIONS/)
   })
 
-  it('does not include a PERMISSIONS section even when rules would have been provided', () => {
-    const prompt = buildTopLevelSystemPrompt('/tmp', undefined, undefined, undefined, undefined)
-    expect(prompt).not.toContain('## PERMISSIONS')
-    expect(prompt).not.toContain('PERMISSIONS')
+  it('is byte-identical whether modelName is omitted or undefined', () => {
+    const a = buildTopLevelSystemPrompt('/tmp', undefined, skills, subAgentDefs)
+    const b = buildTopLevelSystemPrompt('/tmp', undefined, skills, subAgentDefs, undefined)
+    expect(b).toBe(a)
   })
 
   it('preserves base prompt contract (working directory, system-reminder override)', () => {
-    const prompt = buildTopLevelSystemPrompt('/old/workdir', undefined, undefined, undefined, undefined)
+    const prompt = buildTopLevelSystemPrompt('/old/workdir', undefined, skills, subAgentDefs)
     expect(prompt).toContain('Working directory: /old/workdir')
     expect(prompt).toMatch(/working directory[^.\n]*\b(may|can)\b[^.\n]*change/i)
     expect(prompt).toMatch(/<system-reminder>[^]*?trust[^]*?(workspace|that value|over this)/i)
@@ -27,8 +28,8 @@ describe('buildTopLevelSystemPrompt without permissions', () => {
     expect(prompt).toContain('operational constraints')
   })
 
-  it('sub-agents section still present (permissions section no longer appended)', () => {
-    const subAgent = {
+  it('sub-agents section still present (no permissions section appended)', () => {
+    const subAgent: AgentDefinition = {
       metadata: {
         id: 'verifier',
         name: 'Verifier',
@@ -38,7 +39,7 @@ describe('buildTopLevelSystemPrompt without permissions', () => {
       },
       prompt: 'Verify.',
     }
-    const prompt = buildTopLevelSystemPrompt('/tmp', undefined, undefined, [subAgent], undefined)
+    const prompt = buildTopLevelSystemPrompt('/tmp', undefined, skills, [subAgent])
     expect(prompt).toContain('AVAILABLE SUB-AGENTS')
     expect(prompt).not.toContain('## PERMISSIONS')
   })

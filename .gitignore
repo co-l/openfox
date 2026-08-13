@@ -45,6 +45,7 @@ e2e-playwright/.openfox/
 e2e/.openfox-test/
 e2e/**/.openfox-test/
 .openfox/pr-description.md
+.openfox/permissions.json
 
 # Logs
 *.log
