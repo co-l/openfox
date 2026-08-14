@@ -20,6 +20,8 @@ export interface ModelProbeResult {
   nonThinkingConfig: Record<string, unknown> | null
   /** Set to false when the provider rejects reasoning in assistant history. */
   sendReasoningInMessages?: boolean
+  /** Top-level request body params rejected by the model (to be stripped at request time). */
+  rejectedParams?: string[]
 }
 
 export interface AutoConfigInput {
@@ -303,6 +305,144 @@ async function probeReasoningInMessages(
 }
 
 // ============================================================================
+// Rejected-params probing
+// ============================================================================
+
+/** Standard top-level sampling params that some models reject. */
+const STANDARD_PARAMS = ['temperature', 'top_p', 'max_tokens', 'top_k', 'reasoning_effort']
+
+/** Sampling values used when probing whether a param is accepted. */
+const PARAM_VALUES: Record<string, number | string> = {
+  temperature: 0.7,
+  top_p: 0.9,
+  max_tokens: 50,
+  top_k: 40,
+  reasoning_effort: 'high',
+}
+
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+const REJECTED_PARAM_PATTERNS = STANDARD_PARAMS.map((param) => ({
+  param,
+  pattern: new RegExp(`\\b${escapeRegExp(param)}\\b`, 'i'),
+}))
+
+/** Extract the rejected param name from a 400 error message, if any.
+ *  Word-boundary matching avoids attributing errors about e.g.
+ *  "max_tokens_budget" to "max_tokens". */
+function extractRejectedParam(errorText: string): string | undefined {
+  for (const { param, pattern } of REJECTED_PARAM_PATTERNS) {
+    if (pattern.test(errorText)) return param
+  }
+  return undefined
+}
+
+/** Dummy tool matching the agentic loop's tool schema, so rejection probing
+ *  catches params that are only rejected when tools are present (e.g. some
+ *  models reject reasoning_effort with function tools). */
+const DUMMY_TOOL = {
+  type: 'function',
+  function: {
+    name: 'noop',
+    description: 'No-op tool for probing',
+    parameters: { type: 'object', properties: {}, required: [] },
+  },
+}
+
+/** Send a single rejection-probe request with the given sampling params and
+ *  the agentic loop's tool payload. Returns status + error text for parsing. */
+async function probeChatCompletions(
+  baseUrl: string,
+  headers: Record<string, string>,
+  model: string,
+  samplingParams: string[],
+): Promise<{ ok: boolean; status: number; errorText: string }> {
+  const body: Record<string, unknown> = {
+    model,
+    messages: [{ role: 'user', content: 'say hi in one word' }],
+    tools: [DUMMY_TOOL],
+    tool_choice: 'auto',
+  }
+  for (const param of samplingParams) {
+    body[param] = PARAM_VALUES[param]
+  }
+  try {
+    const response = await fetch(`${ensureVersionPrefix(baseUrl)}/chat/completions`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15000),
+    })
+    if (response.ok) return { ok: true, status: response.status, errorText: '' }
+    return { ok: false, status: response.status, errorText: await response.text() }
+  } catch {
+    return { ok: false, status: 0, errorText: '' }
+  }
+}
+
+/**
+ * Probe a model with a baseline request containing all standard sampling params
+ * and a dummy tool (matching the agentic loop). On HTTP 400 mentioning a param,
+ * drop it and retry. Returns the list of rejected params so the builder can
+ * strip them at request time.
+ */
+async function probeRejectedParams(
+  baseUrl: string,
+  apiKey: string | undefined,
+  model: string,
+  backend: string,
+): Promise<string[]> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+
+  // Start from all standard params; drop top_k for backends that don't support it.
+  const candidates = [...STANDARD_PARAMS]
+  if (['openai', 'anthropic', 'ollama'].includes(backend)) {
+    const idx = candidates.indexOf('top_k')
+    if (idx !== -1) candidates.splice(idx, 1)
+  }
+
+  // Control probe: same agentic-loop shape but without any sampling params.
+  // If the backend rejects even that (e.g. no function-tool support), 400s
+  // cannot be attributed to specific params — bail out instead of letting
+  // substring matches strip healthy params off unrelated errors.
+  const control = await probeChatCompletions(baseUrl, headers, model, [])
+  if (!control.ok) {
+    logger.debug('Auto-config: rejection-probe control failed, skipping param detection', {
+      model,
+      status: control.status,
+    })
+    return []
+  }
+
+  const rejected: string[] = []
+  const remaining = [...candidates]
+
+  while (remaining.length > 0) {
+    const probe = await probeChatCompletions(baseUrl, headers, model, remaining)
+    if (probe.ok) break
+    if (probe.status === 400) {
+      const rejectedParam = extractRejectedParam(probe.errorText)
+      if (rejectedParam && remaining.includes(rejectedParam)) {
+        rejected.push(rejectedParam)
+        remaining.splice(remaining.indexOf(rejectedParam), 1)
+        logger.debug('Auto-config: param rejected, retrying without', { model, rejectedParam })
+        continue
+      }
+      // Unknown 400 — stop probing to avoid loops.
+      break
+    }
+    // Non-400 error — stop probing.
+    break
+  }
+
+  if (rejected.length > 0) {
+    logger.info('Auto-config: detected rejected params', { model, rejected })
+  }
+  return rejected
+}
+
+// ============================================================================
 // Main entry point
 // ============================================================================
 
@@ -321,9 +461,10 @@ export async function autoConfig(input: AutoConfigInput): Promise<AutoConfigOutp
       supportsVision,
     } = await detectModelInfo(baseUrl, apiKey, backend, model.id)
 
-    const [thinkingConfig, nonThinkingConfig] = await Promise.all([
+    const [thinkingConfig, nonThinkingConfig, rejectedParams] = await Promise.all([
       probeCombos(baseUrl, apiKey, model.id, THINKING_COMBOS),
       probeCombos(baseUrl, apiKey, model.id, NON_THINKING_COMBOS),
+      probeRejectedParams(baseUrl, apiKey, model.id, backend),
     ])
 
     const sendReasoningInMessages = thinkingConfig
@@ -338,6 +479,7 @@ export async function autoConfig(input: AutoConfigInput): Promise<AutoConfigOutp
       thinkingConfig,
       nonThinkingConfig,
       ...(sendReasoningInMessages !== undefined ? { sendReasoningInMessages } : {}),
+      ...(rejectedParams.length > 0 ? { rejectedParams } : {}),
     })
   }
 

@@ -246,3 +246,243 @@ describe('Reasoning message compatibility', () => {
     expect(result.models[0]?.sendReasoningInMessages).toBeUndefined()
   })
 })
+
+describe('Rejected-params probing', () => {
+  it('detects rejected params from HTTP 400 mentioning the param name', async () => {
+    const { autoConfig } = await import('./auto-config.js')
+
+    const chatCalls: Array<Record<string, unknown>> = []
+    const originalFetch = globalThis.fetch
+    try {
+      globalThis.fetch = (async (input: string | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input.toString()
+        // /models endpoint — return empty so detectModelInfo falls back to default
+        if (url.endsWith('/models')) {
+          return new Response(JSON.stringify({ data: [] }), { status: 200 })
+        }
+
+        // /chat/completions endpoint
+        const body = init?.body ? (JSON.parse(init.body as string) as Record<string, unknown>) : {}
+        chatCalls.push(body)
+
+        // The rejection-probe baseline sends tools + all standard params.
+        // Combo probes don't send tools.
+        const isRejectionProbe = Array.isArray(body['tools'])
+
+        if (isRejectionProbe && 'temperature' in body) {
+          return new Response(
+            JSON.stringify({
+              error_code: 'BAD_REQUEST',
+              message: 'BAD_REQUEST: Model does not support the temperature parameter.',
+            }),
+            { status: 400 },
+          )
+        }
+        // All other requests (combo probes, rejection retry without temperature) → 200
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: 'hi' } }],
+          }),
+          { status: 200 },
+        )
+      }) as typeof globalThis.fetch
+
+      const result = await autoConfig({
+        url: 'http://localhost:8000/v1',
+        backend: 'unknown',
+        models: [{ id: 'test-model' }],
+      })
+
+      const model = result.models[0]!
+      expect(model.rejectedParams).toEqual(['temperature'])
+      // The retry call (after dropping temperature) should NOT include temperature
+      const retryCall = chatCalls.find(
+        (c) => 'top_p' in c && 'max_tokens' in c && 'top_k' in c && !('temperature' in c),
+      )
+      expect(retryCall).toBeDefined()
+      expect(retryCall).not.toHaveProperty('temperature')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('returns no rejectedParams when baseline succeeds', async () => {
+    const { autoConfig } = await import('./auto-config.js')
+
+    const originalFetch = globalThis.fetch
+    try {
+      globalThis.fetch = (async (input: string | URL) => {
+        const url = typeof input === 'string' ? input : input.toString()
+        if (url.endsWith('/models')) {
+          return new Response(JSON.stringify({ data: [] }), { status: 200 })
+        }
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: 'hi' } }],
+          }),
+          { status: 200 },
+        )
+      }) as typeof globalThis.fetch
+
+      const result = await autoConfig({
+        url: 'http://localhost:8000/v1',
+        backend: 'unknown',
+        models: [{ id: 'test-model' }],
+      })
+
+      const model = result.models[0]!
+      expect(model.rejectedParams).toBeUndefined()
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('detects reasoning_effort rejection when tools are present', async () => {
+    const { autoConfig } = await import('./auto-config.js')
+
+    const originalFetch = globalThis.fetch
+    try {
+      globalThis.fetch = (async (input: string | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input.toString()
+        if (url.endsWith('/models')) {
+          return new Response(JSON.stringify({ data: [] }), { status: 200 })
+        }
+
+        const body = init?.body ? (JSON.parse(init.body as string) as Record<string, unknown>) : {}
+        const isRejectionProbe = Array.isArray(body['tools'])
+
+        // Rejection probe with reasoning_effort + tools → 400
+        if (isRejectionProbe && 'reasoning_effort' in body) {
+          return new Response(
+            JSON.stringify({
+              error: {
+                message:
+                  'Function tools with reasoning_effort are not supported for this model in /v1/chat/completions.',
+                type: 'invalid_request_error',
+                param: 'reasoning_effort',
+              },
+            }),
+            { status: 400 },
+          )
+        }
+        // Everything else → 200
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: 'hi' } }],
+          }),
+          { status: 200 },
+        )
+      }) as typeof globalThis.fetch
+
+      const result = await autoConfig({
+        url: 'http://localhost:8000/v1',
+        backend: 'unknown',
+        models: [{ id: 'probe-model' }],
+      })
+
+      const model = result.models[0]!
+      expect(model.rejectedParams).toContain('reasoning_effort')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('skips rejected-params detection when the control probe fails (structural rejection)', async () => {
+    const { autoConfig } = await import('./auto-config.js')
+
+    const originalFetch = globalThis.fetch
+    try {
+      globalThis.fetch = (async (input: string | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input.toString()
+        if (url.endsWith('/models')) {
+          return new Response(JSON.stringify({ data: [] }), { status: 200 })
+        }
+
+        const body = init?.body ? (JSON.parse(init.body as string) as Record<string, unknown>) : {}
+        const isRejectionProbe = Array.isArray(body['tools'])
+        const hasSamplingParams = ['temperature', 'top_p', 'max_tokens', 'top_k', 'reasoning_effort'].some(
+          (p) => p in body,
+        )
+
+        // Control probe: tools but no sampling params → structural 400 (e.g. no tool support)
+        if (isRejectionProbe && !hasSamplingParams) {
+          return new Response(JSON.stringify({ error: { message: 'This model does not support tools.' } }), {
+            status: 400,
+          })
+        }
+        // A param-attributed 400 that would otherwise trigger stripping must be ignored
+        if (isRejectionProbe && 'temperature' in body) {
+          return new Response(JSON.stringify({ error: { message: 'unsupported parameter: temperature' } }), {
+            status: 400,
+          })
+        }
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: 'hi' } }],
+          }),
+          { status: 200 },
+        )
+      }) as typeof globalThis.fetch
+
+      const result = await autoConfig({
+        url: 'http://localhost:8000/v1',
+        backend: 'unknown',
+        models: [{ id: 'probe-model' }],
+      })
+
+      const model = result.models[0]!
+      expect(model.rejectedParams).toBeUndefined()
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('matches rejected param names on word boundaries to avoid prefix false positives', async () => {
+    const { autoConfig } = await import('./auto-config.js')
+
+    const originalFetch = globalThis.fetch
+    try {
+      globalThis.fetch = (async (input: string | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input.toString()
+        if (url.endsWith('/models')) {
+          return new Response(JSON.stringify({ data: [] }), { status: 200 })
+        }
+
+        const body = init?.body ? (JSON.parse(init.body as string) as Record<string, unknown>) : {}
+        const isRejectionProbe = Array.isArray(body['tools'])
+        const hasSamplingParams = ['temperature', 'top_p', 'max_tokens', 'top_k', 'reasoning_effort'].some(
+          (p) => p in body,
+        )
+
+        if (isRejectionProbe && !hasSamplingParams) {
+          return new Response(JSON.stringify({ choices: [{ message: { content: 'hi' } }] }), { status: 200 })
+        }
+        // Message mentions a DIFFERENT param (max_tokens_budget) whose prefix
+        // contains 'max_tokens' — must not be attributed to max_tokens.
+        if (isRejectionProbe && 'max_tokens' in body) {
+          return new Response(
+            JSON.stringify({ error: { message: 'max_tokens_budget exceeds server limit of 512000.' } }),
+            { status: 400 },
+          )
+        }
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: 'hi' } }],
+          }),
+          { status: 200 },
+        )
+      }) as typeof globalThis.fetch
+
+      const result = await autoConfig({
+        url: 'http://localhost:8000/v1',
+        backend: 'unknown',
+        models: [{ id: 'probe-model' }],
+      })
+
+      const model = result.models[0]!
+      expect(model.rejectedParams).toBeUndefined()
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+})

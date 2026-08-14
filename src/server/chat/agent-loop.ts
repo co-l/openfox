@@ -127,6 +127,7 @@ export interface TopLevelLoopConfig {
     supportsVision?: boolean
     chatTemplateKwargs?: Record<string, unknown>
     queryParams?: Record<string, unknown>
+    omitParams?: string[]
   }
   signal?: AbortSignal | undefined
   onMessage?: ((msg: ServerMessage) => void) | undefined

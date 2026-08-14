@@ -102,6 +102,36 @@ describe('stream-pure', () => {
     })
   })
 
+  it('excludes omitted params from result.modelParams so stats reflect the wire request', async () => {
+    const client = createMockClient([
+      { type: 'text_delta', content: 'hi' },
+      {
+        type: 'done',
+        response: {
+          id: 'resp-omit',
+          content: 'hi',
+          toolCalls: [],
+          finishReason: 'stop',
+          usage: { promptTokens: 5, completionTokens: 5, totalTokens: 10 },
+        },
+      },
+    ])
+
+    const gen = streamLLMPure({
+      messageId: 'msg-omit',
+      systemPrompt: 'system',
+      llmClient: client,
+      messages: [{ role: 'user', content: 'hello' }],
+      modelSettings: { omitParams: ['temperature', 'max_tokens'] },
+    })
+
+    const result = await consumeStreamGenerator(gen, () => {})
+
+    expect(result.modelParams).not.toHaveProperty('temperature')
+    expect(result.modelParams).not.toHaveProperty('maxTokens')
+    expect(result.modelParams).toHaveProperty('topP')
+  })
+
   it('streams partial arguments for run_command', async () => {
     const client = createMockClient([
       { type: 'tool_call_delta', index: 0, name: 'run_command' },

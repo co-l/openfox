@@ -39,6 +39,8 @@ export interface LLMCompletionRequest {
     supportsVision?: boolean
     chatTemplateKwargs?: Record<string, unknown>
     queryParams?: Record<string, unknown>
+    /** Top-level request body params to strip from outgoing requests. */
+    omitParams?: string[]
   }
   /** When true, include the raw API response body in the result */
   returnRaw?: boolean

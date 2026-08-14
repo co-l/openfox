@@ -53,8 +53,8 @@ export interface PureStreamOptions {
   toolChoice?: 'auto' | 'none' | 'required'
   signal?: AbortSignal | undefined
   reasoningEffort?: ReasoningEffort
-  /** User-configured model settings (temperature, topP, topK, maxTokens, supportsVision) */
-  modelSettings?: ModelParams & { supportsVision?: boolean }
+  /** User-configured model settings (temperature, topP, topK, maxTokens, supportsVision, omitParams) */
+  modelSettings?: ModelParams & { supportsVision?: boolean; omitParams?: string[] }
   /** Retry patterns to check mid-stream */
   retryPatterns?: RetryPatternConfig[]
   /** Set of tool names that are sub-agent aliases (e.g. "explorer").
@@ -179,7 +179,15 @@ export async function* streamLLMPure(options: PureStreamOptions): AsyncGenerator
   const maxTokens = userMaxTokens ?? profile.defaultMaxTokens
   const topP = userTopP ?? profile.topP
   const topK = userTopK ?? (backend.supportsTopK ? profile.topK : undefined)
-  const modelParams = buildModelParams({ temperature, topP, topK, maxTokens })
+  // Omitted params (stripped from the wire request in client-pure) must not be
+  // reported in stats/truncation-retry modelParams either.
+  const modelParams = buildModelParams({
+    temperature,
+    topP,
+    topK,
+    maxTokens,
+    ...(options.modelSettings?.omitParams !== undefined && { omitParams: options.modelSettings.omitParams }),
+  })
 
   // Log model settings for debugging
   logger.debug('LLM request settings', {

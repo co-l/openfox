@@ -41,6 +41,7 @@ interface ModelConfig {
   nonThinkingExtraKwargs?: string
   thinkingQueryParams?: string
   nonThinkingQueryParams?: string
+  omitParams?: string[]
   temperature?: number
   topP?: number
   topK?: number
@@ -121,6 +122,13 @@ function ModelConfigPanel({
   onTestParams: (id: string, mode: 'thinking' | 'non-thinking') => void
   onShowRaw: (data: string) => void
 }) {
+  function toggleOmitParam(modelId: string, paramKey: string) {
+    const current = modelConfigs[modelId]?.omitParams ?? []
+    const isOmitted = current.includes(paramKey)
+    const next = isOmitted ? current.filter((p) => p !== paramKey) : [...current, paramKey]
+    onUpdateConfig(modelId, { omitParams: next.length > 0 ? next : undefined })
+  }
+
   return (
     <div className="px-4 pb-4 border-t border-border pt-3 space-y-3">
       <div className="flex items-center gap-3">
@@ -279,83 +287,75 @@ function ModelConfigPanel({
               />
             </div>
           )}
+          {(modelConfigs[model.id]?.omitParams ?? []).includes('reasoning_effort') && (
+            <label className="flex items-center gap-1.5 text-xs text-text-warning cursor-pointer select-none">
+              <input
+                type="checkbox"
+                data-testid="re-enable-reasoning_effort"
+                checked={false}
+                onChange={() => toggleOmitParam(model.id, 'reasoning_effort')}
+                className="accent-accent-primary"
+              />
+              Re-enable reasoning_effort
+            </label>
+          )}
         </div>
 
         <div className="border-t border-border pt-3 mt-3">
           <p className="text-xs text-text-muted mb-2">Sampling parameters</p>
           <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="text-xs text-text-secondary block mb-0.5">Temperature</label>
-              <input
-                type="number"
-                step="0.1"
-                value={modelConfigs[model.id]?.temperature ?? ''}
-                onChange={(e) =>
-                  onUpdateConfig(model.id, {
-                    temperature: e.target.value ? parseFloat(e.target.value) : undefined,
-                  })
-                }
-                placeholder={modelConfigs[model.id]?.defaultTemperature?.toString() ?? 'Using default'}
-                className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-primary"
-              />
-              {modelConfigs[model.id]?.defaultTemperature !== undefined && (
-                <p className="text-xs text-text-muted mt-0.5">default: {modelConfigs[model.id]?.defaultTemperature}</p>
-              )}
-            </div>
-            <div>
-              <label className="text-xs text-text-secondary block mb-0.5">Top P</label>
-              <input
-                type="number"
-                step="0.05"
-                value={modelConfigs[model.id]?.topP ?? ''}
-                onChange={(e) =>
-                  onUpdateConfig(model.id, {
-                    topP: e.target.value ? parseFloat(e.target.value) : undefined,
-                  })
-                }
-                placeholder={modelConfigs[model.id]?.defaultTopP?.toString() ?? 'Using default'}
-                className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-primary"
-              />
-              {modelConfigs[model.id]?.defaultTopP !== undefined && (
-                <p className="text-xs text-text-muted mt-0.5">default: {modelConfigs[model.id]?.defaultTopP}</p>
-              )}
-            </div>
+            <SamplingParamField
+              modelId={model.id}
+              paramKey="temperature"
+              label="Temperature"
+              step={0.1}
+              value={modelConfigs[model.id]?.temperature}
+              defaultValue={modelConfigs[model.id]?.defaultTemperature}
+              omitParams={modelConfigs[model.id]?.omitParams}
+              onUpdateConfig={onUpdateConfig}
+              onToggleOmit={toggleOmitParam}
+              parseValue={(v) => (v ? parseFloat(v) : undefined)}
+              valueField="temperature"
+            />
+            <SamplingParamField
+              modelId={model.id}
+              paramKey="top_p"
+              label="Top P"
+              step={0.05}
+              value={modelConfigs[model.id]?.topP}
+              defaultValue={modelConfigs[model.id]?.defaultTopP}
+              omitParams={modelConfigs[model.id]?.omitParams}
+              onUpdateConfig={onUpdateConfig}
+              onToggleOmit={toggleOmitParam}
+              parseValue={(v) => (v ? parseFloat(v) : undefined)}
+              valueField="topP"
+            />
           </div>
           <div className="grid grid-cols-2 gap-2 mt-2">
-            <div>
-              <label className="text-xs text-text-secondary block mb-0.5">Top K</label>
-              <input
-                type="number"
-                value={modelConfigs[model.id]?.topK ?? ''}
-                onChange={(e) =>
-                  onUpdateConfig(model.id, {
-                    topK: e.target.value ? parseInt(e.target.value) : undefined,
-                  })
-                }
-                placeholder={modelConfigs[model.id]?.defaultTopK?.toString() ?? 'Using default'}
-                className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-primary"
-              />
-              {modelConfigs[model.id]?.defaultTopK !== undefined && (
-                <p className="text-xs text-text-muted mt-0.5">default: {modelConfigs[model.id]?.defaultTopK}</p>
-              )}
-            </div>
-            <div>
-              <label className="text-xs text-text-secondary block mb-0.5">Max tokens</label>
-              <input
-                type="number"
-                value={modelConfigs[model.id]?.maxTokens ?? ''}
-                onChange={(e) =>
-                  onUpdateConfig(model.id, {
-                    maxTokens: e.target.value ? parseInt(e.target.value) : undefined,
-                  })
-                }
-                placeholder={modelConfigs[model.id]?.defaultMaxTokens?.toString() ?? 'Using default'}
-                className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-primary"
-              />
-              {modelConfigs[model.id]?.defaultMaxTokens !== undefined && (
-                <p className="text-xs text-text-muted mt-0.5">default: {modelConfigs[model.id]?.defaultMaxTokens}</p>
-              )}
-            </div>
+            <SamplingParamField
+              modelId={model.id}
+              paramKey="top_k"
+              label="Top K"
+              value={modelConfigs[model.id]?.topK}
+              defaultValue={modelConfigs[model.id]?.defaultTopK}
+              omitParams={modelConfigs[model.id]?.omitParams}
+              onUpdateConfig={onUpdateConfig}
+              onToggleOmit={toggleOmitParam}
+              parseValue={(v) => (v ? parseInt(v) : undefined)}
+              valueField="topK"
+            />
+            <SamplingParamField
+              modelId={model.id}
+              paramKey="max_tokens"
+              label="Max tokens"
+              value={modelConfigs[model.id]?.maxTokens}
+              defaultValue={modelConfigs[model.id]?.defaultMaxTokens}
+              omitParams={modelConfigs[model.id]?.omitParams}
+              onUpdateConfig={onUpdateConfig}
+              onToggleOmit={toggleOmitParam}
+              parseValue={(v) => (v ? parseInt(v) : undefined)}
+              valueField="maxTokens"
+            />
           </div>
         </div>
         <div className="pt-3 border-t border-border">
@@ -366,6 +366,64 @@ function ModelConfigPanel({
           />
         </div>
       </details>
+    </div>
+  )
+}
+
+function SamplingParamField({
+  modelId,
+  paramKey,
+  label,
+  value,
+  defaultValue,
+  omitParams,
+  onUpdateConfig,
+  onToggleOmit,
+  parseValue,
+  valueField,
+  step,
+}: {
+  modelId: string
+  paramKey: string
+  label: string
+  value: number | undefined
+  defaultValue: number | undefined
+  omitParams: string[] | undefined
+  onUpdateConfig: (id: string, partial: Partial<ModelConfig>) => void
+  onToggleOmit: (modelId: string, paramKey: string) => void
+  parseValue: (v: string) => number | undefined
+  valueField: keyof ModelConfig
+  step?: number
+}) {
+  const isOmitted = omitParams?.includes(paramKey) ?? false
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-0.5">
+        <label className="text-xs text-text-secondary">{label}</label>
+        <label className="flex items-center gap-1 text-xs text-text-muted cursor-pointer select-none">
+          <input
+            type="checkbox"
+            data-testid={`send-${paramKey}`}
+            checked={!isOmitted}
+            onChange={() => onToggleOmit(modelId, paramKey)}
+            className="accent-accent-primary"
+          />
+          Send
+        </label>
+      </div>
+      <input
+        type="number"
+        data-testid={`param-${paramKey}`}
+        step={step}
+        value={isOmitted ? '' : (value ?? '')}
+        disabled={isOmitted}
+        onChange={(e) => onUpdateConfig(modelId, { [valueField]: parseValue(e.target.value) } as Partial<ModelConfig>)}
+        placeholder={isOmitted ? 'Not sent' : (defaultValue?.toString() ?? 'Using default')}
+        className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-primary disabled:opacity-40"
+      />
+      {!isOmitted && defaultValue !== undefined && (
+        <p className="text-xs text-text-muted mt-0.5">default: {defaultValue}</p>
+      )}
     </div>
   )
 }
@@ -620,6 +678,7 @@ export function ProviderModal({
             nonThinkingEnabled: m.nonThinkingEnabled,
             thinkingQueryParams: m.thinkingQueryParams,
             nonThinkingQueryParams: m.nonThinkingQueryParams,
+            omitParams: m.omitParams,
             defaultTemperature: m.defaultTemperature,
             defaultTopP: m.defaultTopP,
             defaultTopK: m.defaultTopK,
@@ -845,6 +904,7 @@ export function ProviderModal({
           thinkingConfig: Record<string, unknown> | null
           nonThinkingConfig: Record<string, unknown> | null
           sendReasoningInMessages?: boolean
+          rejectedParams?: string[]
         }>
       }
       for (const m of data.models) {
@@ -864,6 +924,9 @@ export function ProviderModal({
         }
         if (m.sendReasoningInMessages === false) {
           setSendReasoningInMessages(false)
+        }
+        if (m.rejectedParams && m.rejectedParams.length > 0) {
+          config.omitParams = m.rejectedParams
         }
         updateModelConfig(m.id, config)
         setAutoConfigState((prev) => ({
@@ -910,6 +973,7 @@ export function ProviderModal({
             nonThinkingEnabled: config?.nonThinkingEnabled,
             thinkingQueryParams: config?.thinkingQueryParams,
             nonThinkingQueryParams: config?.nonThinkingQueryParams,
+            omitParams: config?.omitParams,
           },
         }),
       })
@@ -979,6 +1043,7 @@ export function ProviderModal({
         nonThinkingEnabled: modelConfigs[m.id]?.nonThinkingEnabled,
         thinkingQueryParams: modelConfigs[m.id]?.thinkingQueryParams,
         nonThinkingQueryParams: modelConfigs[m.id]?.nonThinkingQueryParams,
+        omitParams: modelConfigs[m.id]?.omitParams,
         temperature: modelConfigs[m.id]?.temperature,
         topP: modelConfigs[m.id]?.topP,
         topK: modelConfigs[m.id]?.topK,

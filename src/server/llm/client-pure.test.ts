@@ -457,4 +457,120 @@ describe('llm client pure helpers', () => {
     // chat_template_kwargs must NOT be here — the modelSettings don't request it
     expect(result.params).not.toHaveProperty('chat_template_kwargs')
   })
+
+  it('strips params listed in modelSettings.omitParams from the final request', async () => {
+    const profile = {
+      temperature: 0.7,
+      defaultMaxTokens: 4096,
+      topP: 0.9,
+      supportsVision: false,
+    }
+
+    // omitParams=['temperature'] removes temperature even though profile sets it
+    const result = await buildNonStreamingCreateParams({
+      model: 'claude-opus-5',
+      request: {
+        messages: [{ role: 'user' as const, content: 'hi' }],
+        modelSettings: { omitParams: ['temperature'] },
+      },
+      profile,
+      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false },
+    })
+    expect(result.params).not.toHaveProperty('temperature')
+    expect(result.params).toHaveProperty('top_p', 0.9)
+    expect(result.params).toHaveProperty('max_tokens', 4096)
+  })
+
+  it('strips top_p when listed in omitParams', async () => {
+    const profile = {
+      temperature: 0.7,
+      defaultMaxTokens: 4096,
+      topP: 0.9,
+      supportsVision: false,
+    }
+    const result = await buildNonStreamingCreateParams({
+      model: 'test-model',
+      request: {
+        messages: [{ role: 'user' as const, content: 'hi' }],
+        modelSettings: { omitParams: ['top_p'] },
+      },
+      profile,
+      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false },
+    })
+    expect(result.params).not.toHaveProperty('top_p')
+    expect(result.params).toHaveProperty('temperature', 0.7)
+  })
+
+  it('omitParams wins over queryParams additions (runs after merge)', async () => {
+    const profile = {
+      temperature: 0.7,
+      defaultMaxTokens: 4096,
+      topP: 0.9,
+      supportsVision: false,
+    }
+    // queryParams adds temperature: 0.2, but omitParams strips it
+    const result = await buildNonStreamingCreateParams({
+      model: 'test-model',
+      request: {
+        messages: [{ role: 'user' as const, content: 'hi' }],
+        modelSettings: {
+          queryParams: { temperature: 0.2, custom_param: true },
+          omitParams: ['temperature'],
+        },
+      },
+      profile,
+      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false },
+    })
+    expect(result.params).not.toHaveProperty('temperature')
+    expect(result.params).toHaveProperty('custom_param', true)
+  })
+
+  it('does not change params when omitParams is empty or undefined', async () => {
+    const profile = {
+      temperature: 0.7,
+      defaultMaxTokens: 4096,
+      topP: 0.9,
+      supportsVision: false,
+    }
+    const baseReq = { messages: [{ role: 'user' as const, content: 'hi' }] }
+
+    const withoutOmit = await buildNonStreamingCreateParams({
+      model: 'test-model',
+      request: baseReq,
+      profile,
+      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false },
+    })
+    expect(withoutOmit.params).toHaveProperty('temperature', 0.7)
+
+    const withEmpty = await buildNonStreamingCreateParams({
+      model: 'test-model',
+      request: { ...baseReq, modelSettings: { omitParams: [] } },
+      profile,
+      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false },
+    })
+    expect(withEmpty.params).toHaveProperty('temperature', 0.7)
+  })
+
+  it('omits stripped params from modelParams so stats and retries reflect the wire request', async () => {
+    const profile = {
+      temperature: 0.7,
+      defaultMaxTokens: 4096,
+      topP: 0.9,
+      supportsVision: false,
+    }
+    const result = await buildNonStreamingCreateParams({
+      model: 'test-model',
+      request: {
+        messages: [{ role: 'user' as const, content: 'hi' }],
+        modelSettings: { omitParams: ['temperature', 'max_tokens'] },
+      },
+      profile,
+      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false },
+    })
+    expect(result.params).not.toHaveProperty('temperature')
+    expect(result.params).not.toHaveProperty('max_tokens')
+    expect(result.modelParams).not.toHaveProperty('temperature')
+    expect(result.modelParams).not.toHaveProperty('maxTokens')
+    expect(result.modelParams).toHaveProperty('topP', 0.9)
+  })
 })

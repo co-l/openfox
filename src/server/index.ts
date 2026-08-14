@@ -1817,6 +1817,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       ...(m.nonThinkingExtraKwargs !== undefined && { nonThinkingExtraKwargs: m.nonThinkingExtraKwargs }),
       ...(m.thinkingQueryParams !== undefined && { thinkingQueryParams: m.thinkingQueryParams }),
       ...(m.nonThinkingQueryParams !== undefined && { nonThinkingQueryParams: m.nonThinkingQueryParams }),
+      ...(m.omitParams !== undefined && { omitParams: m.omitParams }),
       ...(m.temperature !== undefined && { temperature: m.temperature }),
       ...(m.topP !== undefined && { topP: m.topP }),
       ...(m.topK !== undefined && { topK: m.topK }),
@@ -2046,6 +2047,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
           nonThinkingEnabled?: boolean
           thinkingQueryParams?: string
           nonThinkingQueryParams?: string
+          omitParams?: string[]
         }
       }
     if (!url) return res.status(400).json({ error: 'url is required' })
@@ -2086,6 +2088,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       if (modelConfig?.topK !== undefined) modelSettings['topK'] = modelConfig.topK
       if (modelConfig?.maxTokens !== undefined) modelSettings['maxTokens'] = modelConfig.maxTokens
       if (modelConfig?.supportsVision !== undefined) modelSettings['supportsVision'] = modelConfig.supportsVision
+      if (modelConfig?.omitParams !== undefined) modelSettings['omitParams'] = modelConfig.omitParams
 
       const rawQP = mode === 'thinking' ? modelConfig?.thinkingQueryParams : modelConfig?.nonThinkingQueryParams
       if (rawQP) {

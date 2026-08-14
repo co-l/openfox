@@ -260,6 +260,7 @@ export interface ModelSettingsUpdate {
   nonThinkingExtraKwargs?: string
   thinkingQueryParams?: string
   nonThinkingQueryParams?: string
+  omitParams?: string[]
 }
 
 export interface ProviderManager {
@@ -302,6 +303,7 @@ export interface ProviderManager {
         supportsVision?: boolean
         chatTemplateKwargs?: Record<string, unknown>
         queryParams?: Record<string, unknown>
+        omitParams?: string[]
       }
     | undefined
 }
@@ -789,6 +791,11 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
           : existingModel?.nonThinkingQueryParams !== undefined
             ? { nonThinkingQueryParams: existingModel.nonThinkingQueryParams }
             : {}),
+        ...(settings.omitParams !== undefined
+          ? { omitParams: settings.omitParams }
+          : existingModel?.omitParams !== undefined
+            ? { omitParams: existingModel.omitParams }
+            : {}),
       })
 
       if (existingModel) {
@@ -814,6 +821,7 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
       if (model['topK'] !== undefined) baseSettings['topK'] = model['topK']
       if (model['maxTokens'] !== undefined) baseSettings['maxTokens'] = model['maxTokens']
       if (model['supportsVision'] !== undefined) baseSettings['supportsVision'] = model['supportsVision']
+      if (model['omitParams'] !== undefined) baseSettings['omitParams'] = model['omitParams']
 
       // User-configured queryParams take priority
       const rawQueryParams = mode === 'thinking' ? model.thinkingQueryParams : model.nonThinkingQueryParams
@@ -835,6 +843,9 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
       if (fallbackRawQP) {
         return { ...baseSettings, queryParams: JSON.parse(fallbackRawQP) as Record<string, unknown> }
       }
+
+      // Return base settings only when omitParams is configured (no thinking config)
+      if (model['omitParams'] !== undefined) return baseSettings
 
       return undefined
     },
@@ -863,9 +874,12 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
       })
 
       if (modelsWithContext.length === 0) {
-        providerStatus.set(providerId, 'disconnected')
-        // Keep existing user models when backend is unavailable
+        // When the backend doesn't expose /v1/models but the user has
+        // configured models manually, keep them and stay 'unknown' instead
+        // of marking the provider 'disconnected' — chat/completions may
+        // still work fine.
         if (userModels.length > 0) {
+          providerStatus.set(providerId, 'unknown')
           logger.debug('Backend unavailable, preserving user models', {
             providerId,
             userModels: userModels.map((m) => ({ id: m.id, contextWindow: m.contextWindow })),
@@ -873,6 +887,7 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
           providers = providers.map((p) => (p.id === providerId ? { ...p, models: userModels } : p))
           return { success: true }
         }
+        providerStatus.set(providerId, 'disconnected')
         return { success: false, error: 'No models returned from backend' }
       }
 

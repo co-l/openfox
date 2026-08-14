@@ -576,3 +576,170 @@ describe('ProviderModal - thinkingLevel persistence', () => {
     expect(savedData.sendReasoningInMessages).toBe(false)
   })
 })
+
+describe('ProviderModal - sampling param Send checkboxes', () => {
+  let container: HTMLElement
+  let root: ReturnType<typeof createRoot>
+  let onSaveMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    onSaveMock = vi.fn()
+  })
+
+  afterEach(() => {
+    root.unmount()
+    document.body.removeChild(container)
+  })
+
+  async function renderModal(models: Array<Record<string, unknown>>, editModelId?: string) {
+    await new Promise<void>((resolve) => {
+      root.render(
+        <ProviderModal
+          isOpen={true}
+          onClose={vi.fn()}
+          onSave={onSaveMock as (provider: ProviderFormData) => void}
+          initialStep={2}
+          editProvider={{
+            id: 'test-provider',
+            name: 'Test Provider',
+            url: 'http://localhost:8000/v1',
+            backend: 'vllm' as const,
+            models: models as never,
+          }}
+          editModelId={editModelId}
+        />,
+      )
+      setTimeout(resolve, 200)
+    })
+  }
+
+  function getSendCheckbox(paramKey: string): HTMLInputElement | null {
+    return container.querySelector(`input[data-testid="send-${paramKey}"]`) as HTMLInputElement | null
+  }
+
+  function getParamInput(paramKey: string): HTMLInputElement | null {
+    return container.querySelector(`input[data-testid="param-${paramKey}"]`) as HTMLInputElement | null
+  }
+
+  function save() {
+    const saveButton = container.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
+    saveButton?.click()
+  }
+
+  it('renders Send checkboxes for Temperature, Top P, Top K, Max tokens checked by default', async () => {
+    await renderModal([{ id: 'test-model', contextWindow: 200000 }], 'test-model')
+
+    for (const key of ['temperature', 'top_p', 'top_k', 'max_tokens']) {
+      const cb = getSendCheckbox(key)
+      expect(cb, `checkbox for ${key} should exist`).toBeTruthy()
+      expect(cb?.checked, `checkbox for ${key} should be checked by default`).toBe(true)
+    }
+  })
+
+  it('unchecking Temperature adds temperature to omitParams and dims the input', async () => {
+    await renderModal([{ id: 'test-model', contextWindow: 200000, temperature: 0.7 }], 'test-model')
+
+    const cb = getSendCheckbox('temperature')
+    expect(cb).toBeTruthy()
+    cb!.click()
+
+    const input = getParamInput('temperature')
+    expect(input?.disabled).toBe(true)
+    expect(input?.value).toBe('')
+
+    save()
+    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
+    const savedModel = savedData.models.find((m) => m.id === 'test-model')
+    expect(savedModel?.omitParams).toEqual(['temperature'])
+  })
+
+  it('re-checking Temperature removes it from omitParams', async () => {
+    await renderModal([{ id: 'test-model', contextWindow: 200000 }], 'test-model')
+
+    const cb = getSendCheckbox('temperature')!
+    cb.click()
+    cb.click()
+
+    save()
+    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
+    const savedModel = savedData.models.find((m) => m.id === 'test-model')
+    expect(savedModel?.omitParams).toBeUndefined()
+  })
+
+  it('preserves pre-existing omitParams entries (e.g. reasoning_effort) when toggling Temperature', async () => {
+    await renderModal([{ id: 'test-model', contextWindow: 200000, omitParams: ['reasoning_effort'] }], 'test-model')
+
+    const tempCb = getSendCheckbox('temperature')!
+    expect(tempCb.checked).toBe(true)
+    tempCb.click()
+
+    save()
+    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
+    const savedModel = savedData.models.find((m) => m.id === 'test-model')
+    expect(savedModel?.omitParams).toEqual(expect.arrayContaining(['reasoning_effort', 'temperature']))
+    expect(savedModel?.omitParams).toHaveLength(2)
+  })
+
+  it('reflects auto-config omitParams as unchecked boxes on modal open', async () => {
+    await renderModal(
+      [{ id: 'test-model', contextWindow: 200000, omitParams: ['temperature', 'top_p', 'top_k', 'reasoning_effort'] }],
+      'test-model',
+    )
+
+    expect(getSendCheckbox('temperature')?.checked).toBe(false)
+    expect(getSendCheckbox('top_p')?.checked).toBe(false)
+    expect(getSendCheckbox('top_k')?.checked).toBe(false)
+    expect(getSendCheckbox('max_tokens')?.checked).toBe(true)
+
+    const tempInput = getParamInput('temperature')
+    expect(tempInput?.disabled).toBe(true)
+
+    save()
+    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
+    const savedModel = savedData.models.find((m) => m.id === 'test-model')
+    expect(savedModel?.omitParams).toEqual(['temperature', 'top_p', 'top_k', 'reasoning_effort'])
+  })
+
+  it('shows a re-enable checkbox for reasoning_effort when auto-config omitted it, and re-checking removes it', async () => {
+    await renderModal(
+      [{ id: 'test-model', contextWindow: 200000, thinkingEnabled: true, omitParams: ['reasoning_effort'] }],
+      'test-model',
+    )
+
+    const reEnableCb = container.querySelector(
+      'input[data-testid="re-enable-reasoning_effort"]',
+    ) as HTMLInputElement | null
+    expect(reEnableCb).toBeTruthy()
+    expect(reEnableCb?.checked).toBe(false)
+
+    reEnableCb!.click()
+
+    save()
+    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
+    const savedModel = savedData.models.find((m) => m.id === 'test-model')
+    expect(savedModel?.omitParams).toBeUndefined()
+  })
+
+  it('shows re-enable reasoning_effort checkbox even when thinking is disabled', async () => {
+    await renderModal(
+      [{ id: 'test-model', contextWindow: 200000, thinkingEnabled: false, omitParams: ['reasoning_effort'] }],
+      'test-model',
+    )
+
+    const reEnableCb = container.querySelector(
+      'input[data-testid="re-enable-reasoning_effort"]',
+    ) as HTMLInputElement | null
+    expect(reEnableCb).toBeTruthy()
+    expect(reEnableCb?.checked).toBe(false)
+
+    reEnableCb!.click()
+
+    save()
+    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
+    const savedModel = savedData.models.find((m) => m.id === 'test-model')
+    expect(savedModel?.omitParams).toBeUndefined()
+  })
+})

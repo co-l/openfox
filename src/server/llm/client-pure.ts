@@ -57,12 +57,15 @@ export function buildModelParams(params: {
   topP?: number
   topK?: number | undefined
   maxTokens?: number
+  /** Sampling params stripped from the wire request — excluded from modelParams too. */
+  omitParams?: string[]
 }): ModelParams {
+  const isOmitted = (key: string): boolean => params.omitParams?.includes(key) ?? false
   return {
-    ...(params.temperature !== undefined && { temperature: params.temperature }),
-    ...(params.topP !== undefined && { topP: params.topP }),
-    ...(params.topK !== undefined && { topK: params.topK }),
-    ...(params.maxTokens !== undefined && { maxTokens: params.maxTokens }),
+    ...(!isOmitted('temperature') && params.temperature !== undefined && { temperature: params.temperature }),
+    ...(!isOmitted('top_p') && params.topP !== undefined && { topP: params.topP }),
+    ...(!isOmitted('top_k') && params.topK !== undefined && { topK: params.topK }),
+    ...(!isOmitted('max_tokens') && params.maxTokens !== undefined && { maxTokens: params.maxTokens }),
   }
 }
 
@@ -302,7 +305,25 @@ async function buildChatCompletionCreateParams(
     }
   }
 
-  const modelParams = buildModelParams({ temperature, topP, topK, maxTokens })
+  // Strip params the model rejects (some hosted models reject certain sampling params).
+  // Runs after all merges so it wins over queryParams additions.
+  const omitParams = request.modelSettings?.omitParams
+  if (omitParams && omitParams.length > 0) {
+    const paramRecord = params as unknown as Record<string, unknown>
+    for (const key of omitParams) {
+      delete paramRecord[key]
+    }
+  }
+
+  // modelParams feed stats and the truncation-retry budget — align them with
+  // the actual wire request so omitted params aren't reported as sent.
+  const modelParams = buildModelParams({
+    temperature,
+    topP,
+    topK,
+    maxTokens,
+    ...(omitParams !== undefined && { omitParams }),
+  })
 
   return { params, modelParams }
 }

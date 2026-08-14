@@ -364,8 +364,8 @@ describe('ProviderManager - Model Selection', () => {
       const transport = {
         id: 'example-transport',
         listModels: vi.fn(async () => [
-          { id: 'gpt-5.4', contextWindow: 1050000, source: 'backend' as const },
-          { id: 'gpt-5.5', contextWindow: 1050000, source: 'backend' as const },
+          { id: 'catalog-a', contextWindow: 1050000, source: 'backend' as const },
+          { id: 'catalog-b', contextWindow: 1050000, source: 'backend' as const },
         ]),
         complete: vi.fn(),
         stream: vi.fn(),
@@ -382,13 +382,13 @@ describe('ProviderManager - Model Selection', () => {
             transportAdapter: 'example-transport',
             models: [
               { id: 'model-large', contextWindow: 1050000, source: 'user' },
-              { id: 'gpt-5.4', contextWindow: 900000, source: 'user' },
+              { id: 'catalog-a', contextWindow: 900000, source: 'user' },
             ],
             isActive: true,
             createdAt: new Date().toISOString(),
           },
         ],
-        defaultModelSelection: 'external/gpt-5.4',
+        defaultModelSelection: 'external/catalog-a',
       }
       const manager = createProviderManager(chatConfig, { adapters: adapters as never })
 
@@ -396,7 +396,7 @@ describe('ProviderManager - Model Selection', () => {
 
       expect(result).toEqual({ success: true })
       const models = manager.getProviders()[0]!.models
-      expect(models.map((model) => model.id)).toEqual(['gpt-5.4', 'gpt-5.5'])
+      expect(models.map((model) => model.id)).toEqual(['catalog-a', 'catalog-b'])
       expect(models[0]!.contextWindow).toBe(900000)
     })
 
@@ -431,6 +431,23 @@ describe('ProviderManager - Model Selection', () => {
       const result = await providerManager.refreshProviderModels('provider-1')
 
       expect(result).toEqual({ success: false, error: 'No models returned from backend' })
+    })
+
+    it('preserves user models and stays unknown when backend returns empty', async () => {
+      // model-a becomes a user model after updateModelSettings
+      await providerManager.updateModelSettings('provider-1', 'model-a', { temperature: 0.5 })
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: [] }),
+      })
+
+      const result = await providerManager.refreshProviderModels('provider-1')
+      expect(result).toEqual({ success: true })
+
+      const provider = providerManager.getProviders().find((p) => p.id === 'provider-1')
+      expect(provider?.status).toBe('unknown')
+      expect(provider?.models.map((m) => m.id)).toContain('model-a')
     })
 
     it('fetches OpenCode Go models from /zen/go/v1/models', async () => {
@@ -571,6 +588,28 @@ describe('ProviderManager - Model Selection', () => {
       const settings = providerManager.getModelSettings('provider-1', 'model-b')
       expect(settings).toBeUndefined()
     })
+
+    it('surfaces omitParams in modelSettings even without thinking config', async () => {
+      await providerManager.updateModelSettings('provider-1', 'model-a', {
+        omitParams: ['temperature'],
+      })
+
+      const settings = providerManager.getModelSettings('provider-1', 'model-a')
+      expect(settings).toBeDefined()
+      expect(settings?.omitParams).toEqual(['temperature'])
+    })
+
+    it('surfaces omitParams alongside queryParams', async () => {
+      await providerManager.updateModelSettings('provider-1', 'model-a', {
+        thinkingEnabled: true,
+        thinkingQueryParams: '{"reasoning_effort":"high"}',
+        omitParams: ['top_p'],
+      })
+
+      const settings = providerManager.getModelSettings('provider-1', 'model-a', 'thinking')
+      expect(settings?.queryParams).toEqual({ reasoning_effort: 'high' })
+      expect(settings?.omitParams).toEqual(['top_p'])
+    })
   })
 
   describe('automatic model resolution', () => {
@@ -656,7 +695,7 @@ describe('ProviderManager - Model Selection', () => {
             backend: 'openai',
             models: [
               { id: 'model-large', contextWindow: 1050000, source: 'backend' },
-              { id: 'gpt-5.4', contextWindow: 1050000, source: 'backend' },
+              { id: 'catalog-a', contextWindow: 1050000, source: 'backend' },
             ],
             isActive: true,
             createdAt: new Date().toISOString(),
