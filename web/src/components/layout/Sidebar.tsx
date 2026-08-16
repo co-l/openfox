@@ -11,18 +11,65 @@ import { CloseButton } from '../shared/CloseButton'
 import { ConfirmModal } from '../shared/ConfirmModal'
 import { Modal } from '../shared/Modal'
 import { ModalFooter } from '../shared/ModalFooter'
-import { EllipsisIcon, SpinIcon, StopIcon, SearchIcon, XCloseIcon, StarIcon, StarFilledIcon } from '../shared/icons'
+import {
+  EllipsisIcon,
+  SpinIcon,
+  StopIcon,
+  SearchIcon,
+  XCloseIcon,
+  StarIcon,
+  StarFilledIcon,
+  ServerIcon,
+} from '../shared/icons'
 import { groupSessionsByDate, formatDateHeader, formatTime } from '../../lib/format-date.js'
 import { fuzzyMatch, highlightMatches } from '../../lib/modal-utils.js'
 import { shouldAutofocus } from '../../lib/device'
 import { useBinding, useKeybindings } from '../../hooks/useKeybindings.js'
 import { useResizable } from '../../hooks/useResizable'
 import { ResizeHandle } from '../shared/ResizeHandle'
+import { useDevServerStore, useDevServerEntry } from '../../stores/dev-server'
+import type { DevServerState } from '@shared/dev-server.js'
 
 interface SidebarProps {
   projectId: string
   isOpen?: boolean
   onClose?: () => void
+}
+
+const DEV_SERVER_STATE_TOOLTIP: Record<Exclude<DevServerState, 'off'>, string> = {
+  running: 'Dev server running',
+  warning: 'Dev server warning',
+  error: 'Dev server error',
+}
+
+const DEV_SERVER_STATE_COLOR: Record<Exclude<DevServerState, 'off'>, string> = {
+  running: 'text-accent-success',
+  warning: 'text-accent-warning',
+  error: 'text-accent-error',
+}
+
+function DevServerRowIndicator({ workdir }: { workdir: string }) {
+  const { status } = useDevServerEntry(workdir)
+  const state = status?.state
+  if (!state || state === 'off') return null
+  const colorClass = DEV_SERVER_STATE_COLOR[state]
+  const baseTooltip = DEV_SERVER_STATE_TOOLTIP[state]
+  const detail = state === 'running' && status?.url ? ` at ${status.url}` : ''
+  const errorSuffix =
+    state === 'warning' || state === 'error' ? (status?.errorMessage ? `: ${status.errorMessage}` : '') : ''
+  const tooltip = `${baseTooltip}${detail}${errorSuffix}`
+  return (
+    <span
+      role="img"
+      aria-label={tooltip}
+      title={tooltip}
+      data-testid="sidebar-devserver-indicator"
+      data-state={state}
+      className={`absolute top-2.5 right-2 flex-shrink-0 ${colorClass}`}
+    >
+      <ServerIcon className="w-3 h-3" />
+    </span>
+  )
 }
 
 export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
@@ -101,6 +148,26 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
 
   // Filter sessions to those belonging to the current project by ID
   const projectSessions = sessions.filter((session) => session.projectId === currentProject?.id)
+
+  const fetchDevServerStatus = useDevServerStore((state) => state.fetchStatus)
+
+  // Stable signature of unique workdirs so hydration re-runs on semantic change,
+  // not merely on session count change.
+  const uniqueWorkdirSignature = useMemo(() => {
+    const set = new Set<string>()
+    for (const session of projectSessions) {
+      if (session.workdir) set.add(session.workspace ?? session.workdir)
+    }
+    return Array.from(set).sort().join('|')
+  }, [projectSessions])
+
+  // Hydrate dev-server status once per unique workdir referenced by visible sessions.
+  useEffect(() => {
+    if (!uniqueWorkdirSignature) return
+    for (const workdir of uniqueWorkdirSignature.split('|')) {
+      void fetchDevServerStatus(workdir)
+    }
+  }, [currentProject?.id, uniqueWorkdirSignature, fetchDevServerStatus])
 
   const [favoriteSessions, otherSessions] = useMemo(() => {
     const favs: SessionSummary[] = []
@@ -452,7 +519,7 @@ function renderSessionList(
       <div
         key={session.id}
         data-sidx={idx}
-        className={`w-full px-4 py-3 text-left hover:bg-bg-tertiary/50 transition-colors group ${
+        className={`relative w-full px-4 py-3 text-left hover:bg-bg-tertiary/50 transition-colors group ${
           isActive ? 'bg-bg-tertiary' : ''
         } ${isFocused ? 'bg-accent-primary/10' : ''}`}
       >
@@ -525,6 +592,7 @@ function renderSessionList(
             <span className="text-text-muted text-xs flex-shrink-0">{session.messageCount} messages</span>
           </div>
         </Link>
+        {session.workdir && <DevServerRowIndicator workdir={session.workspace ?? session.workdir} />}
       </div>
     )
   }
