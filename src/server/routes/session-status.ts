@@ -1,29 +1,23 @@
-import type { Session, SessionPhase } from '../../shared/types.js'
+import type { Session } from '../../shared/types.js'
+import {
+  SESSION_STATUS_SCHEMA_VERSION,
+  type SessionStatus,
+  type SessionStatusState,
+} from '../../shared/session-status.js'
 
-export const SESSION_STATUS_SCHEMA_VERSION = 1 as const
-
-export type SessionStatusState = 'waiting' | 'blocked' | 'completed' | 'running' | null
-
-export interface SessionStatus {
-  schemaVersion: typeof SESSION_STATUS_SCHEMA_VERSION
-  sessionId: string
-  state: SessionStatusState
-  phase: SessionPhase
-  workflowStep: string | null
-  waitingForUser: boolean
-  lastActivityAt: string
-  links: { ui: string }
-}
+export { SESSION_STATUS_SCHEMA_VERSION }
+export type { SessionStatus, SessionStatusState }
 
 export interface ProjectSessionStatusInputs {
   session: Session
   pendingQuestionsCount: number
   pendingConfirmationsCount: number
   activeWorkflowStepName: string | null
+  lastProgressAt: string | null
 }
 
 export function projectSessionStatus(inputs: ProjectSessionStatusInputs): SessionStatus {
-  const { session, pendingQuestionsCount, pendingConfirmationsCount, activeWorkflowStepName } = inputs
+  const { session, pendingQuestionsCount, pendingConfirmationsCount, activeWorkflowStepName, lastProgressAt } = inputs
 
   let state: SessionStatusState = null
   if (session.phase === 'waiting' || pendingQuestionsCount > 0 || pendingConfirmationsCount > 0) {
@@ -46,6 +40,7 @@ export function projectSessionStatus(inputs: ProjectSessionStatusInputs): Sessio
     workflowStep: activeWorkflowStepName,
     waitingForUser,
     lastActivityAt: session.updatedAt,
+    lastProgressAt,
     links: {
       ui: `/?sessionId=${encodeURIComponent(session.id)}`,
     },

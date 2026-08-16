@@ -11,6 +11,7 @@ import type {
   WorkflowExecution,
 } from '@shared/types.js'
 import type { ServerMessage, QueuedMessage, ChoiceOption } from '@shared/protocol.js'
+import type { SessionStatus } from '@shared/session-status.js'
 import type { ConnectionStatus } from '../../lib/ws'
 
 export interface PendingPathConfirmation {
@@ -84,6 +85,7 @@ export interface SessionState {
   showPasswordModal: boolean
   passwordModalRetry: boolean
   sessions: SessionSummary[]
+  sessionStatuses: Record<string, SessionStatus>
   searchSessions: SessionSummary[] | null
   currentSession: Session | null
   unreadSessionIds: string[]

@@ -44,6 +44,7 @@ export {
   foldPhase,
   foldIsRunning,
   foldPendingConfirmations,
+  foldLastProgressAt,
   foldSessionState,
   foldWaitingWorkflow,
   buildSnapshot,

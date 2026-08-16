@@ -918,6 +918,7 @@ describe('event folding', () => {
       currentContextWindowId: 'legacy-window-1', // No session.initialized event, uses fallback
       todos: [],
       readFiles: [],
+      lastProgressAt: null,
       snapshotSeq: 42,
       snapshotAt: 999,
     })

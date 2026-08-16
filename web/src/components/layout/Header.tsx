@@ -28,6 +28,8 @@ import { TasksModal } from '../tasks/TasksModal'
 import { useTasksStore } from '../../stores/tasks'
 import { TasksIcon, ArrowRightIcon } from '../shared/icons'
 import { useIsSplit } from '../../lib/splitPersistence'
+import { formatTime } from '../../lib/format-date'
+import { formatRelativeTime, useRelativeTimeNow } from '../../hooks/useRelativeTime'
 
 interface HeaderProps {
   onMenuClick?: () => void
@@ -57,6 +59,10 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
   const openSessionCount = useSessionStore((state) => state.openSessionIds.length)
   const session = useSessionStore((state) => state.currentSession)
   const sessions = useSessionStore((state) => state.sessions)
+  const sessionStatus = useSessionStore((state) =>
+    state.currentSession ? state.sessionStatuses[state.currentSession.id] : undefined,
+  )
+  const relativeTimeNow = useRelativeTimeNow(sessionStatus?.state === 'running')
   const project = useProjectStore((state) => state.currentProject)
   const projects = useProjectStore((state) => state.projects)
   const startAutoRefresh = useConfigStore((state) => state.startAutoRefresh)
@@ -65,6 +71,14 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
   const terminalIsOpen = useTerminalStore((state) => state.isOpen)
   const updateAvailable = useUpdateStore((state) => state.status === 'available')
   const checkForUpdate = useUpdateStore((state) => state.check)
+
+  const lastProgressLabel = sessionStatus
+    ? sessionStatus.lastProgressAt
+      ? sessionStatus.state === 'running'
+        ? `Last progress ${formatRelativeTime(sessionStatus.lastProgressAt, relativeTimeNow)}`
+        : `Last progress ${formatTime(sessionStatus.lastProgressAt)}`
+      : 'No factual progress yet'
+    : null
 
   useEffect(() => {
     if (useUpdateStore.getState().status === 'idle') {
@@ -151,6 +165,16 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
         {!isSplit && !project && (
           <span className="hidden md:inline">
             <ProjectDropdown projects={projects} />
+          </span>
+        )}
+
+        {!isSplit && isSessionPage && lastProgressLabel && (
+          <span
+            data-testid="header-last-progress"
+            className="hidden lg:inline min-w-0 truncate text-[11px] text-text-muted"
+            title={sessionStatus?.lastProgressAt ?? undefined}
+          >
+            {lastProgressLabel}
           </span>
         )}
       </div>

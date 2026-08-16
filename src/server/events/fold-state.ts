@@ -47,6 +47,108 @@ export function foldCriteria(events: EventLike[]): Criterion[] {
   return criteria
 }
 
+function criterionStatusType(status: unknown): string | undefined {
+  if (typeof status === 'string') return status
+  if (typeof status === 'object' && status !== null && 'type' in status) {
+    const type = (status as { type?: unknown }).type
+    return typeof type === 'string' ? type : undefined
+  }
+  return undefined
+}
+
+function criterionEmbeddedTimestamp(status: unknown): number | null {
+  if (typeof status !== 'object' || status === null) return null
+  const typedStatus = status as { type?: unknown; completedAt?: unknown; verifiedAt?: unknown }
+  const timestamp = typedStatus.type === 'completed' ? typedStatus.completedAt : typedStatus.verifiedAt
+  if (typeof timestamp !== 'string') return null
+  const parsed = Date.parse(timestamp)
+  return Number.isNaN(parsed) ? null : parsed
+}
+
+function updateProgressFromStatuses(
+  statuses: Array<{ id: string; status: unknown }>,
+  previous: Map<string, string>,
+  timestamp: number,
+): number | null {
+  let latest: number | null = null
+  for (const entry of statuses) {
+    const next = criterionStatusType(entry.status)
+    if ((next === 'completed' || next === 'passed') && previous.get(entry.id) !== next) {
+      latest = Math.max(latest ?? 0, timestamp)
+    }
+    if (next !== undefined) previous.set(entry.id, next)
+  }
+  return latest
+}
+
+export function foldLastProgressAt(events: EventLike[]): string | null {
+  let latest: number | null = null
+  const criteria = new Map<string, string>()
+  const metadataCriteria = new Map<string, string>()
+
+  for (const event of events) {
+    const timestamp = getTimestamp(event)
+    let candidate: number | null = null
+    switch (event.type) {
+      case 'turn.snapshot': {
+        const snapshot = event.data as SessionSnapshot
+        if (snapshot.lastProgressAt !== undefined && snapshot.lastProgressAt !== null) {
+          const parsed = Date.parse(snapshot.lastProgressAt)
+          if (!Number.isNaN(parsed)) candidate = parsed
+        } else {
+          for (const criterion of snapshot.criteria) {
+            const type = criterionStatusType(criterion.status)
+            if (type === 'completed' || type === 'passed') {
+              const parsed = criterionEmbeddedTimestamp(criterion.status)
+              if (parsed !== null) candidate = Math.max(candidate ?? 0, parsed)
+            }
+          }
+        }
+        for (const criterion of snapshot.criteria) {
+          const type = criterionStatusType(criterion.status)
+          if (type !== undefined) criteria.set(criterion.id, type)
+        }
+        for (const entry of snapshot.metadataEntries?.['criteria'] ?? []) {
+          const type = criterionStatusType(entry.status)
+          if (type !== undefined) metadataCriteria.set(entry.id, type)
+        }
+        break
+      }
+      case 'criteria.set': {
+        const data = event.data as Extract<TurnEvent, { type: 'criteria.set' }>['data']
+        candidate = updateProgressFromStatuses(data.criteria, criteria, timestamp)
+        break
+      }
+      case 'criterion.updated': {
+        const data = event.data as Extract<TurnEvent, { type: 'criterion.updated' }>['data']
+        candidate = updateProgressFromStatuses([{ id: data.criterionId, status: data.status }], criteria, timestamp)
+        break
+      }
+      case 'metadata.set': {
+        const data = event.data as Extract<TurnEvent, { type: 'metadata.set' }>['data']
+        if (data.key === 'criteria') candidate = updateProgressFromStatuses(data.entries, metadataCriteria, timestamp)
+        break
+      }
+      case 'chat.done': {
+        const data = event.data as Extract<TurnEvent, { type: 'chat.done' }>['data']
+        if (data.reason === 'step_done') candidate = timestamp
+        break
+      }
+      case 'workflow.execution_changed': {
+        const data = event.data as Extract<TurnEvent, { type: 'workflow.execution_changed' }>['data']
+        if (data.status === 'completed') candidate = timestamp
+        break
+      }
+      case 'task.completed':
+        candidate = timestamp
+        break
+    }
+    if (candidate !== null) latest = Math.max(latest ?? 0, candidate)
+  }
+
+  return latest === null ? null : new Date(latest).toISOString()
+}
+
 export function foldTodos(events: EventLike[]): Todo[] {
   let todos: Todo[] = []
   for (const event of events) {
@@ -225,6 +327,7 @@ export function foldSessionState(
   let metadataEntries = foldMetadata(events)
   const contextResult = foldContextState(events, initialWindowId)
   const pendingConfirmations = foldPendingConfirmations(events)
+  const lastProgressAt = foldLastProgressAt(events)
 
   const baseContextState = contextResult.latestContextState ?? {
     currentTokens: 0,
@@ -370,6 +473,7 @@ export function foldSessionState(
     contextState,
     currentContextWindowId: contextResult.currentContextWindowId,
     readFiles: contextResult.readFiles,
+    lastProgressAt,
     ...(cachedSystemPrompt !== undefined && { cachedSystemPrompt }),
     ...(dynamicContextHash !== undefined && { dynamicContextHash }),
     pendingConfirmations,
@@ -490,6 +594,7 @@ export function buildSnapshot(
     readFiles: foldedState.readFiles,
     ...(foldedState.cachedSystemPrompt !== undefined && { cachedSystemPrompt: foldedState.cachedSystemPrompt }),
     ...(foldedState.dynamicContextHash !== undefined && { dynamicContextHash: foldedState.dynamicContextHash }),
+    lastProgressAt: foldedState.lastProgressAt,
     snapshotSeq: latestSeq,
     snapshotAt,
     ...(foldedState.sessionInit !== undefined && { sessionInit: foldedState.sessionInit }),
@@ -563,6 +668,7 @@ export function buildSnapshotFromSessionState(input: {
     currentContextWindowId: foldedState.currentContextWindowId,
     todos: foldedState.todos,
     readFiles: foldedState.readFiles,
+    lastProgressAt: foldedState.lastProgressAt,
     snapshotSeq: latestSeq,
     snapshotAt,
     ...(foldedState.sessionInit !== undefined && { sessionInit: foldedState.sessionInit }),

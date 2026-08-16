@@ -64,6 +64,31 @@ async function loadSessionStore(): Promise<SessionStoreModule['useSessionStore']
   return module.useSessionStore
 }
 
+describe('session.status handler', () => {
+  it('stores the canonical server projection without deriving progress client-side', async () => {
+    const useSessionStore = await loadSessionStore()
+    const status = {
+      schemaVersion: 2 as const,
+      sessionId: 'session-1',
+      state: 'running' as const,
+      phase: 'build' as const,
+      workflowStep: 'Build UI',
+      waitingForUser: false,
+      lastActivityAt: '2024-01-01T00:05:00.000Z',
+      lastProgressAt: '2024-01-01T00:04:00.000Z',
+      links: { ui: '/?sessionId=session-1' },
+    }
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'session.status',
+      sessionId: 'session-1',
+      payload: status,
+    })
+
+    expect(useSessionStore.getState().sessionStatuses['session-1']).toEqual(status)
+  })
+})
+
 describe('session.name_generated handler', () => {
   beforeEach(() => {
     wsSendMock.mockClear()

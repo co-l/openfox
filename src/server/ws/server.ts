@@ -29,6 +29,7 @@ import { buildMessagesFromStoredEvents, foldPendingConfirmations } from '../even
 import { getPendingQuestionsForSession } from '../tools/index.js'
 import { generateSessionNameForSession, needsNameGeneration } from '../session/name-generator.js'
 import { getSessionMessageCount } from '../utils/session-utils.js'
+import { getSessionStatus } from '../routes/session-status-reader.js'
 
 // Resolved once initial MCP connections settle — checkDynamic awaits this
 let resolveMcpReady: (() => void) | null = null
@@ -310,9 +311,20 @@ interface ClientConnection {
   sendQueue: Array<{ data: string; seq: number }>
   isSending: boolean
   lastSentSeq: number
+  lastSessionStatuses: Map<string, string>
 }
 
 const MAX_SEND_QUEUE_SIZE = 1000 // Maximum messages to queue before dropping
+const SESSION_STATUS_EVENT_TYPES = new Set([
+  'running.changed',
+  'phase.changed',
+  'criteria.set',
+  'criterion.updated',
+  'metadata.set',
+  'chat.done',
+  'workflow.execution_changed',
+  'task.completed',
+])
 
 /**
  * WebSocket Message Ordering Implementation
@@ -723,6 +735,7 @@ export function createWebSocketServer(
       sendQueue: [],
       isSending: false,
       lastSentSeq: 0,
+      lastSessionStatuses: new Map(),
     })
 
     // Subscribe to ALL session events (global subscription)
@@ -743,6 +756,24 @@ export function createWebSocketServer(
               serializeServerMessage({ ...serverMsg, seq: storedEvent.seq, sessionId: storedEvent.sessionId }),
               storedEvent.seq,
             )
+          }
+          const status = SESSION_STATUS_EVENT_TYPES.has(storedEvent.type)
+            ? getSessionStatus(sessionManager, storedEvent.sessionId)
+            : null
+          if (status) {
+            const client = clients.get(ws)!
+            const serializedStatus = JSON.stringify(status)
+            if (client.lastSessionStatuses.get(storedEvent.sessionId) !== serializedStatus) {
+              client.lastSessionStatuses.set(storedEvent.sessionId, serializedStatus)
+              enqueueSend(
+                client,
+                serializeServerMessage({
+                  ...createServerMessage('session.status', status),
+                  sessionId: storedEvent.sessionId,
+                }),
+                storedEvent.seq,
+              )
+            }
           }
         }
       } catch (error) {

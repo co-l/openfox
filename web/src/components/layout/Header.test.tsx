@@ -43,6 +43,7 @@ vi.mock('../../stores/session', () => ({
     messages: [],
     openSessionIds: [],
     focusedSessionId: null,
+    sessionStatuses: {},
     agentMode: 'planner',
     planMode: false,
     status: 'idle',
@@ -251,6 +252,76 @@ describe('Header', () => {
     expect(btn!.textContent).toBe('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...')
     // Title attribute should still contain the full name
     expect(btn!.getAttribute('title')).toBe(longTitle)
+  })
+
+  it('shows current session factual progress without duplicating Running', async () => {
+    vi.setSystemTime(new Date('2024-01-01T00:08:00.000Z'))
+    const { useProjectStore } = await import('../../stores/project')
+    ;(useProjectStore as unknown as MockStore).setState({
+      currentProject: { id: 'p1', name: 'P', workdir: '/tmp' },
+      projects: [{ id: 'p1', name: 'P', workdir: '/tmp' }],
+    })
+    const { useSessionStore } = await import('../../stores/session')
+    ;(useSessionStore as unknown as MockStore).setState({
+      currentSession: { id: 's1', projectId: 'p1', isRunning: true, metadata: { title: 'Session' } },
+      sessions: [{ id: 's1', projectId: 'p1', title: 'Session', isRunning: true }],
+      sessionStatuses: {
+        s1: {
+          schemaVersion: 2,
+          sessionId: 's1',
+          state: 'running',
+          phase: 'build',
+          workflowStep: null,
+          waitingForUser: false,
+          lastActivityAt: '2024-01-01T00:07:00.000Z',
+          lastProgressAt: '2024-01-01T00:04:00.000Z',
+          links: { ui: '/?sessionId=s1' },
+        },
+      },
+    })
+    const { useLocation } = await import('wouter')
+    vi.mocked(useLocation).mockReturnValue(['/p/p1/s/s1', vi.fn()])
+
+    const { Header } = await import('./Header')
+    const container = render(<Header />)
+    const progress = container.querySelector('[data-testid="header-last-progress"]')
+    expect(progress?.textContent).toBe('Last progress 4m ago')
+    expect(progress?.textContent).not.toContain('Running')
+    expect(container.textContent).not.toContain('stalled')
+  })
+
+  it('shows a fixed factual progress timestamp for an inactive session', async () => {
+    const { useProjectStore } = await import('../../stores/project')
+    ;(useProjectStore as unknown as MockStore).setState({
+      currentProject: { id: 'p1', name: 'P', workdir: '/tmp' },
+      projects: [{ id: 'p1', name: 'P', workdir: '/tmp' }],
+    })
+    const { useSessionStore } = await import('../../stores/session')
+    ;(useSessionStore as unknown as MockStore).setState({
+      currentSession: { id: 's1', projectId: 'p1', isRunning: false, metadata: { title: 'Session' } },
+      sessions: [{ id: 's1', projectId: 'p1', title: 'Session', isRunning: false }],
+      sessionStatuses: {
+        s1: {
+          schemaVersion: 2,
+          sessionId: 's1',
+          state: 'completed',
+          phase: 'done',
+          workflowStep: null,
+          waitingForUser: false,
+          lastActivityAt: '2024-01-01T00:07:00.000Z',
+          lastProgressAt: '2024-01-01T00:04:00.000Z',
+          links: { ui: '/?sessionId=s1' },
+        },
+      },
+    })
+    const { useLocation } = await import('wouter')
+    vi.mocked(useLocation).mockReturnValue(['/p/p1/s/s1', vi.fn()])
+
+    const { Header } = await import('./Header')
+    const container = render(<Header />)
+    expect(container.querySelector('[data-testid="header-last-progress"]')?.textContent).toBe(
+      `Last progress ${new Date('2024-01-01T00:04:00.000Z').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}`,
+    )
   })
 
   it('shows only the running task count in the green badge', async () => {

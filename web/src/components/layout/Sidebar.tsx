@@ -4,6 +4,7 @@ import { useSessionStore } from '../../stores/session'
 import type { PendingPathConfirmation } from '../../stores/session/types'
 import { useProjectStore } from '../../stores/project'
 import type { SessionSummary } from '@shared/types.js'
+import type { SessionStatus } from '@shared/session-status.js'
 import { ProjectSettingsModal } from '../settings/ProjectSettingsModal'
 import { DropdownMenu } from '../shared/DropdownMenu'
 import { ScrollArea } from '../shared/ScrollArea'
@@ -18,6 +19,7 @@ import { shouldAutofocus } from '../../lib/device'
 import { useBinding, useKeybindings } from '../../hooks/useKeybindings.js'
 import { useResizable } from '../../hooks/useResizable'
 import { ResizeHandle } from '../shared/ResizeHandle'
+import { formatRelativeTime, useRelativeTimeNow } from '../../hooks/useRelativeTime'
 
 interface SidebarProps {
   projectId: string
@@ -34,6 +36,7 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
   const [showDeleteAll, setShowDeleteAll] = useState(false)
 
   const sessions = useSessionStore((state) => state.sessions)
+  const sessionStatuses = useSessionStore((state) => state.sessionStatuses)
   const currentSession = useSessionStore((state) => state.currentSession)
   const unreadSessionIds = useSessionStore((state) => state.unreadSessionIds)
   const deleteSession = useSessionStore((state) => state.deleteSession)
@@ -101,6 +104,7 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
 
   // Filter sessions to those belonging to the current project by ID
   const projectSessions = sessions.filter((session) => session.projectId === currentProject?.id)
+  const relativeTimeNow = useRelativeTimeNow(projectSessions.some((session) => session.isRunning))
 
   const [favoriteSessions, otherSessions] = useMemo(() => {
     const favs: SessionSummary[] = []
@@ -388,6 +392,8 @@ export function Sidebar({ projectId, isOpen = true, onClose }: SidebarProps) {
                       pendingPathConfirmations,
                       searchQuery,
                       focusedIndex,
+                      sessionStatuses,
+                      relativeTimeNow,
                     )}
                   </div>
                   {sessionsPaginationLoading && (
@@ -435,6 +441,8 @@ function renderSessionList(
   pendingPathConfirmations: PendingPathConfirmation[],
   searchQuery: string,
   focusedIndex: number,
+  sessionStatuses: Record<string, SessionStatus>,
+  relativeTimeNow: number,
 ) {
   let flatIdx = 0
 
@@ -444,6 +452,12 @@ function renderSessionList(
     const isFocused = idx === focusedIndex
     const hasUnread = unreadSessionIds.includes(session.id)
     const isRunning = session.isRunning
+    const status = sessionStatuses?.[session.id]
+    const progressText = isRunning
+      ? status?.lastProgressAt
+        ? `last progress ${formatRelativeTime(status.lastProgressAt, relativeTimeNow)}`
+        : 'no factual progress yet'
+      : null
     const isFavorite = session.isFavorite
     const hasPendingConfirmation =
       sessionsWithPendingConfirmations.includes(session.id) || (isActive && pendingPathConfirmations.length > 0)
@@ -523,6 +537,11 @@ function renderSessionList(
             )}
             {/* Message count in muted style */}
             <span className="text-text-muted text-xs flex-shrink-0">{session.messageCount} messages</span>
+            {progressText && (
+              <span className="text-text-muted text-xs truncate" title={status?.lastProgressAt ?? undefined}>
+                · {progressText}
+              </span>
+            )}
           </div>
         </Link>
       </div>

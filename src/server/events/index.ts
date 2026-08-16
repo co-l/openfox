@@ -58,6 +58,7 @@ export {
   foldMode,
   foldPhase,
   foldIsRunning,
+  foldLastProgressAt,
   foldContextState,
   buildSnapshot,
   buildSnapshotFromSessionState,
