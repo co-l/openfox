@@ -274,7 +274,11 @@ function normalizeExtracted(path: string): string {
  */
 function isPlaceholderToken(str: string): boolean {
   return (
-    str.includes('__URL__') || str.includes('__FILEURL__') || str.includes('__SED__') || str.includes('__COMMIT_MSG__')
+    str.includes('__URL__') ||
+    str.includes('__FILEURL__') ||
+    str.includes('__SED__') ||
+    str.includes('__COMMIT_MSG__') ||
+    str.includes('__PATTERN__')
   )
 }
 
@@ -335,6 +339,202 @@ function isRegexAddress(
  * honoring shell quoting: inner quotes in a pattern (e.g. the `"Add session"`
  * inside '/heading "Add session"/') are literal and must not split the scan.
  */
+/** Tools whose first non-option operand is a PATTERN, not a file. */
+const SEARCH_TOOL_RE = /^(?:grep|egrep|fgrep|rg|ag|ack)$/
+
+/** Search-tool options that consume the next argument as their value. */
+const SEARCH_OPTS_WITH_VALUE = new Set([
+  '-e',
+  '--regexp',
+  '-f',
+  '--file',
+  '-m',
+  '--max-count',
+  '-A',
+  '--after-context',
+  '-B',
+  '--before-context',
+  '-C',
+  '--context',
+  '-d',
+  '--directories',
+  '-D',
+  '--devices',
+  '--include',
+  '--exclude',
+  '--exclude-dir',
+  '--binary-files',
+  '--color',
+  '--colour',
+  '--label',
+  '-g',
+  '--glob',
+  '-t',
+  '--type',
+])
+
+/** Options whose value IS the pattern (mask it, and no operand is a pattern). */
+const PATTERN_VALUE_OPTS = new Set(['-e', '--regexp'])
+
+/** Options that supply the pattern from a file (keep the file, no operand is a pattern). */
+const PATTERN_FILE_OPTS = new Set(['-f', '--file'])
+
+interface ShellToken {
+  text: string
+  start: number
+  end: number
+  isOperator: boolean
+}
+
+/**
+ * Split a command into words and operators, honouring quotes so a quoted
+ * operand stays one token (spans include the quotes, so masking is exact).
+ */
+function tokenizeShell(command: string): ShellToken[] {
+  const out: ShellToken[] = []
+  const n = command.length
+  let i = 0
+  while (i < n) {
+    const ch = command[i]!
+    if (/\s/.test(ch)) {
+      i += 1
+      continue
+    }
+    if (/[|&;()<>]/.test(ch)) {
+      let j = i + 1
+      if ((ch === '|' && command[j] === '|') || (ch === '&' && command[j] === '&')) j += 1
+      out.push({ text: command.slice(i, j), start: i, end: j, isOperator: true })
+      i = j
+      continue
+    }
+    const start = i
+    let quote: string | null = null
+    while (i < n) {
+      const c = command[i]!
+      if (quote !== null) {
+        if (c === '\\' && quote !== "'") {
+          i += 2
+          continue
+        }
+        if (c === quote) {
+          quote = null
+          i += 1
+          continue
+        }
+        i += 1
+        continue
+      }
+      if (c === "'" || c === '"' || c === '`') {
+        quote = c
+        i += 1
+        continue
+      }
+      if (/[\s|&;()<>]/.test(c)) break
+      if (c === '\\') {
+        i += 2
+        continue
+      }
+      i += 1
+    }
+    out.push({ text: command.slice(start, i), start, end: i, isOperator: false })
+  }
+  return out
+}
+
+/** Strip surrounding quotes and any directory prefix: "/usr/bin/grep" -> grep. */
+function commandBasename(token: string): string {
+  const bare = token.replace(/^["'`]|["'`]$/g, '')
+  const slash = bare.lastIndexOf('/')
+  return slash >= 0 ? bare.slice(slash + 1) : bare
+}
+
+/**
+ * Mask the PATTERN operand of search tools so it is not mistaken for a path.
+ *
+ * `grep [OPTIONS] PATTERN [FILE...]`: the first non-option operand is the
+ * pattern. Agents grepping their own codebase for a route (`grep -rn
+ * "/api/users" src/`) otherwise trigger an outside-workdir confirmation for a
+ * string that never touches the filesystem — and in headless runs nobody
+ * answers it. File operands after the pattern are untouched, so
+ * `grep ERROR '/var/log/messages'` still asks for confirmation.
+ *
+ * `-e PATTERN` supplies the pattern by option: its value is masked and every
+ * operand is then a file. `-f FILE` reads patterns from a file: the file is a
+ * genuine read and stays visible, but no operand is a pattern either.
+ */
+function maskSearchToolPatterns(command: string): string {
+  if (!command.includes('/')) return command
+  const tokens = tokenizeShell(command)
+  const spans: Array<[number, number]> = []
+  let atCommandStart = true
+  let i = 0
+
+  while (i < tokens.length) {
+    const tok = tokens[i]!
+    if (tok.isOperator) {
+      atCommandStart = true
+      i += 1
+      continue
+    }
+    if (!atCommandStart || !SEARCH_TOOL_RE.test(commandBasename(tok.text))) {
+      // A leading VAR=value assignment keeps the command start alive
+      // (LC_ALL=C grep …); anything else means the command word is behind us.
+      atCommandStart = atCommandStart && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tok.text)
+      i += 1
+      continue
+    }
+
+    let patternSupplied = false
+    let patternSpan: [number, number] | null = null
+    let j = i + 1
+    while (j < tokens.length && !tokens[j]!.isOperator) {
+      const arg = tokens[j]!
+      if (arg.text.startsWith('-') && arg.text !== '-' && arg.text !== '--') {
+        const eq = arg.text.indexOf('=')
+        if (eq > 0) {
+          const name = arg.text.slice(0, eq)
+          if (PATTERN_VALUE_OPTS.has(name)) {
+            patternSupplied = true
+            spans.push([arg.start + eq + 1, arg.end])
+          } else if (PATTERN_FILE_OPTS.has(name)) {
+            patternSupplied = true
+          }
+          j += 1
+          continue
+        }
+        if (SEARCH_OPTS_WITH_VALUE.has(arg.text)) {
+          const value = tokens[j + 1]
+          if (value && !value.isOperator) {
+            if (PATTERN_VALUE_OPTS.has(arg.text)) {
+              patternSupplied = true
+              spans.push([value.start, value.end])
+            } else if (PATTERN_FILE_OPTS.has(arg.text)) {
+              patternSupplied = true
+            }
+            j += 2
+            continue
+          }
+        }
+        j += 1
+        continue
+      }
+      // First non-option operand: the pattern, unless an option supplied one.
+      if (!patternSupplied) patternSpan = [arg.start, arg.end]
+      break
+    }
+    if (patternSpan) spans.push(patternSpan)
+    atCommandStart = false
+    i = j
+  }
+
+  if (spans.length === 0) return command
+  let out = command
+  for (const [start, end] of spans.sort((a, b) => b[0] - a[0])) {
+    out = `${out.slice(0, start)} __PATTERN__ ${out.slice(end)}`
+  }
+  return out
+}
+
 function maskRegexAddresses(command: string): string {
   // Neutralize the perl/ruby/bash match operators `=~` / `!~` so their `~` is
   // not read as a tilde expansion downstream. Assignments like CFG=~/config
@@ -675,6 +875,10 @@ function maskCommandForPathScan(command: string): string {
   // Strip sed/awk/perl/ruby regex addresses (/pat/, /pat/p, /a/,/b/p), which
   // are otherwise mistaken for absolute paths. Runs after substitution
   // masking so URLs and s/// replacements are already gone.
+  // Mask search-tool PATTERN operands (grep/rg …) before the regex-address
+  // pass: a route-shaped pattern is not a path and must never be confirmed.
+  sanitized = maskSearchToolPatterns(sanitized)
+
   sanitized = maskRegexAddresses(sanitized)
 
   // Strip git commit -m/--message content to avoid treating commit message
