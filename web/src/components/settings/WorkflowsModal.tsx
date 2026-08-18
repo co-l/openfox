@@ -1,5 +1,6 @@
 import { ScrollArea } from '../shared/ScrollArea'
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import type { OverlayScrollbarsComponentRef } from 'overlayscrollbars-react'
 import { Modal } from '../shared/SelfContainedModal'
 import { Button } from '../shared/Button'
 import { EditButton } from '../shared/IconButton'
@@ -11,7 +12,7 @@ import {
   type WorkflowParameter,
 } from '../../stores/workflows'
 import { useAgentsStore } from '../../stores/agents'
-import { ArrowRightIcon, EyeIcon } from '../shared/icons'
+import { ArrowRightIcon, EyeIcon, MinusIcon, PlusIcon, ZoomFitIcon } from '../shared/icons'
 import { CollapsibleSection } from '../shared/CollapsibleSection'
 import {
   ConfirmButton,
@@ -27,6 +28,7 @@ import { WorkflowListSection } from './workflows/WorkflowListItem'
 import { StepPanel } from './workflows/StepPanel'
 import { TransitionPanel } from './workflows/TransitionPanel'
 import { CONDITION_LABELS, CONDITION_TYPES, resolveAgent } from './workflows/layout'
+import { useWorkflowZoom } from './workflows/useWorkflowZoom'
 import type { WorkflowScope } from '@shared/types.js'
 
 interface WorkflowsModalProps {
@@ -340,6 +342,18 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId, projectDir }: W
           ? `${formStartCondition.key ?? '?'} in [${formStartCondition.values?.join(',') ?? '?'}]`
           : (CONDITION_LABELS[formStartCondition.type] ?? formStartCondition.type)
 
+  const diagramScrollRef = useRef<OverlayScrollbarsComponentRef<'div'> | null>(null)
+  const diagramSvgRef = useRef<SVGSVGElement | null>(null)
+
+  const workflowKey = editingId ?? formId ?? 'new'
+  const contentKey = `${formSteps.length}:${formEntryStep}:${startConditionLabel}`
+  const { zoom, zoomIn, zoomOut, fitToScreen, canZoomIn, canZoomOut, isFitted } = useWorkflowZoom(
+    diagramScrollRef,
+    diagramSvgRef,
+    workflowKey,
+    contentKey,
+  )
+
   const addStep = () => {
     const newIndex = formSteps.length
     const id = generateStepId(formSteps)
@@ -651,50 +665,88 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId, projectDir }: W
                 </button>
               )}
             </div>
-            <ScrollArea className="flex-1 min-h-0 p-2">
-              <FlowDiagram
-                steps={formSteps}
-                entryStep={formEntryStep}
-                selectedNodeId={selectedStep?.id ?? null}
-                selectedEdgeKey={selectedEdgeKey}
-                startConditionLabel={startConditionLabel}
-                agentTypes={agentTypes}
-                isReadOnly={isReadOnly}
-                onSelectNode={(id) => {
-                  if (id === null) {
-                    selectNode(null)
-                    return
-                  }
-                  const idx = formSteps.findIndex((s) => s.id === id)
-                  selectNode(idx >= 0 ? String(idx) : null)
-                }}
-                onSelectEdge={selectEdge}
-                onRemoveStep={(id) => {
-                  const idx = formSteps.findIndex((s) => s.id === id)
-                  setFormSteps((prev) => prev.filter((s) => s.id !== id))
-                  if (selectedStepIndex === idx) selectNode(null)
-                  if (formEntryStep === id) {
-                    const remaining = formSteps.filter((s) => s.id !== id)
-                    setFormEntryStep(remaining[0]?.id ?? '')
-                  }
-                }}
-                onCreateTransition={handleCreateTransition}
-                onReconnectTo={handleReconnectTo}
-                onReconnectFrom={handleReconnectFrom}
-                onDeleteTransition={handleDeleteTransition}
-              />
-              {formSteps.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-8 text-text-muted">
-                  <p className="text-xs mb-2">No steps yet</p>
+            <div className="relative flex-1 min-h-0">
+              <ScrollArea ref={diagramScrollRef} both className="absolute inset-0 p-2">
+                <FlowDiagram
+                  ref={diagramSvgRef}
+                  steps={formSteps}
+                  entryStep={formEntryStep}
+                  selectedNodeId={selectedStep?.id ?? null}
+                  selectedEdgeKey={selectedEdgeKey}
+                  startConditionLabel={startConditionLabel}
+                  agentTypes={agentTypes}
+                  isReadOnly={isReadOnly}
+                  zoom={zoom}
+                  onSelectNode={(id) => {
+                    if (id === null) {
+                      selectNode(null)
+                      return
+                    }
+                    const idx = formSteps.findIndex((s) => s.id === id)
+                    selectNode(idx >= 0 ? String(idx) : null)
+                  }}
+                  onSelectEdge={selectEdge}
+                  onRemoveStep={(id) => {
+                    const idx = formSteps.findIndex((s) => s.id === id)
+                    setFormSteps((prev) => prev.filter((s) => s.id !== id))
+                    if (selectedStepIndex === idx) selectNode(null)
+                    if (formEntryStep === id) {
+                      const remaining = formSteps.filter((s) => s.id !== id)
+                      setFormEntryStep(remaining[0]?.id ?? '')
+                    }
+                  }}
+                  onCreateTransition={handleCreateTransition}
+                  onReconnectTo={handleReconnectTo}
+                  onReconnectFrom={handleReconnectFrom}
+                  onDeleteTransition={handleDeleteTransition}
+                />
+                {formSteps.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-8 text-text-muted">
+                    <p className="text-xs mb-2">No steps yet</p>
+                    <button
+                      onClick={addStep}
+                      className="px-3 py-1.5 rounded bg-accent-primary/10 text-accent-primary text-xs hover:bg-accent-primary/20"
+                    >
+                      + Add your first step
+                    </button>
+                  </div>
+                )}
+              </ScrollArea>
+              {formSteps.length > 0 && (
+                <div className="absolute bottom-2 right-2 flex flex-col items-center gap-1 bg-bg-secondary/90 border border-border rounded-md p-1 shadow-sm z-10">
                   <button
-                    onClick={addStep}
-                    className="px-3 py-1.5 rounded bg-accent-primary/10 text-accent-primary text-xs hover:bg-accent-primary/20"
+                    onClick={zoomOut}
+                    disabled={!canZoomOut}
+                    className="p-1 text-text-muted hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    title="Zoom out"
                   >
-                    + Add your first step
+                    <MinusIcon className="w-3.5 h-3.5" />
+                  </button>
+                  <span
+                    className="px-1.5 py-0.5 text-[10px] text-text-muted tabular-nums select-none"
+                    title="Current zoom"
+                  >
+                    {Math.round(zoom * 100)}%
+                  </span>
+                  <button
+                    onClick={zoomIn}
+                    disabled={!canZoomIn}
+                    className="p-1 text-text-muted hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    title="Zoom in"
+                  >
+                    <PlusIcon className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={fitToScreen}
+                    disabled={isFitted}
+                    className="p-1 text-text-muted hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    title="Fit to screen"
+                  >
+                    <ZoomFitIcon className="w-3.5 h-3.5" />
                   </button>
                 </div>
               )}
-            </ScrollArea>
+            </div>
           </div>
 
           <div className="w-[300px] shrink-0 border border-border rounded-lg bg-bg-secondary flex flex-col overflow-hidden">

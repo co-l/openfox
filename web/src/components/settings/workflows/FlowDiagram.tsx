@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
+import { forwardRef, useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import type { WorkflowStep } from '../../../stores/workflows'
 import type { AgentInfo } from '../../../stores/agents'
 import { computeLayout, PORT_R, type LayoutEdge, type LayoutNode, type DragState } from './layout'
@@ -11,6 +11,7 @@ interface FlowDiagramProps {
   startConditionLabel: string
   agentTypes: AgentInfo[]
   isReadOnly: boolean
+  zoom: number
   onSelectNode: (id: string | null) => void
   onSelectEdge: (key: string | null) => void
   onRemoveStep: (id: string) => void
@@ -20,23 +21,35 @@ interface FlowDiagramProps {
   onDeleteTransition: (edgeKey: string) => void
 }
 
-export function FlowDiagram({
-  steps,
-  entryStep,
-  selectedNodeId,
-  selectedEdgeKey,
-  startConditionLabel,
-  agentTypes,
-  isReadOnly,
-  onSelectNode,
-  onSelectEdge,
-  onRemoveStep,
-  onCreateTransition,
-  onReconnectTo,
-  onReconnectFrom,
-  onDeleteTransition,
-}: FlowDiagramProps) {
+export const FlowDiagram = forwardRef<SVGSVGElement, FlowDiagramProps>(function FlowDiagram(
+  {
+    steps,
+    entryStep,
+    selectedNodeId,
+    selectedEdgeKey,
+    startConditionLabel,
+    agentTypes,
+    isReadOnly,
+    zoom,
+    onSelectNode,
+    onSelectEdge,
+    onRemoveStep,
+    onCreateTransition,
+    onReconnectTo,
+    onReconnectFrom,
+    onDeleteTransition,
+  },
+  forwardedRef,
+) {
   const svgRef = useRef<SVGSVGElement>(null)
+  const setSvgRef = useCallback(
+    (instance: SVGSVGElement | null) => {
+      svgRef.current = instance
+      if (typeof forwardedRef === 'function') forwardedRef(instance)
+      else if (forwardedRef) forwardedRef.current = instance
+    },
+    [forwardedRef],
+  )
   const dragEndedRef = useRef(false)
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
   const [dragState, setDragState] = useState<DragState | null>(null)
@@ -410,9 +423,10 @@ export function FlowDiagram({
 
   return (
     <svg
-      ref={svgRef}
+      ref={setSvgRef}
       viewBox={`0 0 ${width} ${height}`}
-      className="block w-full"
+      style={{ width: width * zoom, height: height * zoom }}
+      className="block shrink-0"
       preserveAspectRatio="xMidYMin meet"
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
@@ -645,4 +659,4 @@ export function FlowDiagram({
       {renderEdgeHandles()}
     </svg>
   )
-}
+})
