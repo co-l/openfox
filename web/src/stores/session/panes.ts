@@ -77,6 +77,20 @@ export function effectiveFocusedId(state: SessionState): string | null {
   return state.focusedSessionId ?? state.currentSession?.id ?? null
 }
 
+// Resolve a session's projectId from any source available in state: the
+// sessions list, the live pane, or the current session. Used to scope
+// post-mutation reloads to the right project instead of fetching globally.
+export function resolveSessionProjectId(state: SessionState, sessionId: string): string | undefined {
+  const summary = state.sessions.find((s) => s.id === sessionId)
+  if (summary?.projectId) return summary.projectId
+  const pane = state.panes[sessionId]
+  if (pane?.session?.projectId) return pane.session.projectId
+  if (state.currentSession?.id === sessionId && state.currentSession.projectId) {
+    return state.currentSession.projectId
+  }
+  return undefined
+}
+
 /** True when the session is focused or already an open pane (live updates). */
 export function isLivePane(state: SessionState, sessionId: string | undefined): boolean {
   if (!sessionId) return false

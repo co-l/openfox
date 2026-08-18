@@ -559,7 +559,6 @@ describe('chat.stats handler', () => {
     generationTokens: 10,
     generationSpeed: 5,
   } as any
-
   beforeEach(() => {
     wsSendMock.mockClear()
     wsSubscribeMock.mockClear()
@@ -738,5 +737,214 @@ describe('chat.stats handler', () => {
     })
 
     expect(useSessionStore.getState().liveTurnStats).toEqual(liveStats)
+  })
+})
+
+describe('session.deleted handler', () => {
+  beforeEach(() => {
+    wsSendMock.mockClear()
+    wsSubscribeMock.mockClear()
+    wsConnectMock.mockClear()
+    wsDisconnectMock.mockClear()
+    wsStatusMock.mockClear()
+    playNotificationMock.mockClear()
+    playAchievementMock.mockClear()
+    playInterventionMock.mockClear()
+    playWaitingForUserMock.mockClear()
+    playNewMessageMock.mockClear()
+    fetchMock.mockClear()
+  })
+
+  it('removes the deleted session from state.sessions immediately and reloads scoped to its project', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState((state: any) => ({
+      ...state,
+      sessions: [
+        {
+          id: 'a1',
+          projectId: 'project-a',
+          workdir: '/tmp/a',
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          isFavorite: false,
+          createdAt: 'a',
+          updatedAt: 'b',
+          criteriaCount: 0,
+          criteriaCompleted: 0,
+          messageCount: 0,
+        },
+        {
+          id: 'a2',
+          projectId: 'project-a',
+          workdir: '/tmp/a',
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          isFavorite: false,
+          createdAt: 'a',
+          updatedAt: 'b',
+          criteriaCount: 0,
+          criteriaCompleted: 0,
+          messageCount: 0,
+        },
+        {
+          id: 'b1',
+          projectId: 'project-b',
+          workdir: '/tmp/b',
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          isFavorite: false,
+          createdAt: 'a',
+          updatedAt: 'b',
+          criteriaCount: 0,
+          criteriaCompleted: 0,
+          messageCount: 0,
+        },
+      ],
+    }))
+
+    // Scoped reload returns the 1 remaining project-a session
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          sessions: [
+            {
+              id: 'a2',
+              projectId: 'project-a',
+              workdir: '/tmp/a',
+              mode: 'planner',
+              phase: 'plan',
+              isRunning: false,
+              isFavorite: false,
+              createdAt: 'a',
+              updatedAt: 'b',
+              criteriaCount: 0,
+              criteriaCompleted: 0,
+              messageCount: 0,
+            },
+          ],
+          hasMore: false,
+          pendingConfirmationsBySession: {},
+        }),
+    } as never)
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'session.deleted',
+      sessionId: 'a1',
+      payload: { sessionId: 'a1' },
+    } as any)
+
+    // Wait for the async listSessions reload
+    await new Promise((resolve) => setTimeout(resolve, 10))
+
+    const state = useSessionStore.getState()
+    // Deleted session is gone immediately, even before/without the reload
+    expect(state.sessions.find((s: any) => s.id === 'a1')).toBeUndefined()
+    // Reload was scoped to project-a, not a bare global list
+    const urls = fetchMock.mock.calls.map((c) => String((c as unknown[])[0]))
+    expect(urls.some((url) => url.includes('projectId=project-a'))).toBe(true)
+    expect(urls.some((url) => url === '/api/sessions?limit=20')).toBe(false)
+    // project-b session preserved
+    expect(state.sessions.find((s: any) => s.id === 'b1')).toBeDefined()
+  })
+})
+
+describe('session.deletedAll handler', () => {
+  beforeEach(() => {
+    wsSendMock.mockClear()
+    wsSubscribeMock.mockClear()
+    wsConnectMock.mockClear()
+    wsDisconnectMock.mockClear()
+    wsStatusMock.mockClear()
+    playNotificationMock.mockClear()
+    playAchievementMock.mockClear()
+    playInterventionMock.mockClear()
+    playWaitingForUserMock.mockClear()
+    playNewMessageMock.mockClear()
+    fetchMock.mockClear()
+  })
+
+  it('removes the project sessions immediately and reloads scoped to the project id, not globally', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState((state: any) => ({
+      ...state,
+      sessions: [
+        {
+          id: 'a1',
+          projectId: 'project-a',
+          workdir: '/tmp/a',
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          isFavorite: false,
+          createdAt: 'a',
+          updatedAt: 'b',
+          criteriaCount: 0,
+          criteriaCompleted: 0,
+          messageCount: 0,
+        },
+        {
+          id: 'a2',
+          projectId: 'project-a',
+          workdir: '/tmp/a',
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          isFavorite: false,
+          createdAt: 'a',
+          updatedAt: 'b',
+          criteriaCount: 0,
+          criteriaCompleted: 0,
+          messageCount: 0,
+        },
+        {
+          id: 'b1',
+          projectId: 'project-b',
+          workdir: '/tmp/b',
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          isFavorite: false,
+          createdAt: 'a',
+          updatedAt: 'b',
+          criteriaCount: 0,
+          criteriaCompleted: 0,
+          messageCount: 0,
+        },
+      ],
+    }))
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ sessions: [], hasMore: false, pendingConfirmationsBySession: {} }),
+    } as never)
+
+    // The server broadcasts sessionId = projectId for deletedAll
+    useSessionStore.getState().handleServerMessage({
+      type: 'session.deletedAll',
+      sessionId: 'project-a',
+      payload: {},
+    } as any)
+
+    // Immediate removal: project-a sessions are gone synchronously, before the
+    // async reload resolves.
+    const stateAfterSet = useSessionStore.getState()
+    expect(stateAfterSet.sessions.find((s: any) => s.id === 'a1')).toBeUndefined()
+    expect(stateAfterSet.sessions.find((s: any) => s.id === 'a2')).toBeUndefined()
+    // Other projects are preserved
+    expect(stateAfterSet.sessions.find((s: any) => s.id === 'b1')).toBeDefined()
+
+    await new Promise((resolve) => setTimeout(resolve, 10))
+
+    const urls = fetchMock.mock.calls.map((c) => String((c as unknown[])[0]))
+    expect(urls.some((url) => url.includes('projectId=project-a'))).toBe(true)
+    expect(urls.some((url) => url === '/api/sessions?limit=20')).toBe(false)
   })
 })

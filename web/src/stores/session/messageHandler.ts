@@ -47,6 +47,7 @@ import {
   replacePane,
   updatePane,
   updatePaneSession,
+  resolveSessionProjectId,
 } from './panes'
 
 const triggeredNewMessageSound = new Set<string>()
@@ -309,23 +310,33 @@ export function handleServerMessage(
 
     case 'session.deleted': {
       const payload = message.payload as { sessionId: string }
+      const deletedId = payload.sessionId
+      // Resolve the deleted session's projectId before removing it, so the
+      // reload can be scoped to its project instead of fetching globally.
+      const projectId = resolveSessionProjectId(get(), deletedId)
       set((state) => {
         const panes = { ...state.panes }
-        delete panes[payload.sessionId]
+        delete panes[deletedId]
         return {
           panes,
-          openSessionIds: state.openSessionIds.filter((id) => id !== payload.sessionId),
-          unreadSessionIds: removeUnreadSessionId(state.unreadSessionIds, payload.sessionId),
+          sessions: state.sessions.filter((s) => s.id !== deletedId),
+          openSessionIds: state.openSessionIds.filter((id) => id !== deletedId),
+          unreadSessionIds: removeUnreadSessionId(state.unreadSessionIds, deletedId),
           searchSessions: null,
         }
       })
-      get().listSessions()
+      get().listSessions(projectId)
       break
     }
 
     case 'session.deletedAll': {
-      set({ searchSessions: null })
-      get().listSessions()
+      // The server broadcasts sessionId = projectId for deletedAll
+      const projectId = message.sessionId
+      set((state) => ({
+        searchSessions: null,
+        sessions: projectId !== undefined ? state.sessions.filter((s) => s.projectId !== projectId) : state.sessions,
+      }))
+      get().listSessions(projectId)
       break
     }
 

@@ -2379,8 +2379,12 @@ describe('toggleFavorite', () => {
         body: JSON.stringify({ isFavorite: true }),
       }),
     )
-    // listSessions refresh
-    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/sessions?limit=20', expect.objectContaining({}))
+    // listSessions refresh — scoped to the session's project, not global
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/api/sessions?limit=20&projectId=project-1',
+      expect.objectContaining({}),
+    )
   })
 
   it('returns false, reverts the optimistic update, and does not refresh the list when the API fails', async () => {
@@ -2509,6 +2513,91 @@ describe('homepage session loading', () => {
     expect(urls).not.toContain('/api/sessions')
   })
 
+  it('listHomeSessions REPLACES the list so sessions falling out of the curated set are removed', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    // Seed the store with several sessions across projects (as if a prior
+    // home poll populated them).
+    useSessionStore.setState((state: any) => ({
+      ...state,
+      sessions: [
+        {
+          id: 'old-a1',
+          projectId: 'pa',
+          workdir: '/tmp/a',
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          isFavorite: false,
+          createdAt: 'a',
+          updatedAt: 'b',
+          criteriaCount: 0,
+          criteriaCompleted: 0,
+          messageCount: 0,
+        },
+        {
+          id: 'old-a2',
+          projectId: 'pa',
+          workdir: '/tmp/a',
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          isFavorite: false,
+          createdAt: 'a',
+          updatedAt: 'b',
+          criteriaCount: 0,
+          criteriaCompleted: 0,
+          messageCount: 0,
+        },
+        {
+          id: 'old-b1',
+          projectId: 'pb',
+          workdir: '/tmp/b',
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          isFavorite: false,
+          createdAt: 'a',
+          updatedAt: 'b',
+          criteriaCount: 0,
+          criteriaCompleted: 0,
+          messageCount: 0,
+        },
+      ],
+    }))
+
+    // The curated home poll now returns only a1 (a2 fell out of top-5, b1 removed)
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          sessions: [
+            {
+              id: 'old-a1',
+              projectId: 'pa',
+              workdir: '/tmp/a',
+              mode: 'planner',
+              phase: 'plan',
+              isRunning: false,
+              messageCount: 1,
+              createdAt: '2024-01-01T00:00:00.000Z',
+              updatedAt: '2024-01-01T00:00:00.000Z',
+            },
+          ],
+        }),
+    } as never)
+
+    await useSessionStore.getState().listHomeSessions()
+
+    const state = useSessionStore.getState()
+    // REPLACE semantics: only the curated session remains; stale ones dropped
+    expect(state.sessions).toHaveLength(1)
+    expect(state.sessions[0]!.id).toBe('old-a1')
+    expect(state.sessions.find((s: any) => s.id === 'old-a2')).toBeUndefined()
+    expect(state.sessions.find((s: any) => s.id === 'old-b1')).toBeUndefined()
+  })
+
   it('ensureFullSessionList loads the full corpus once and caches it for later calls', async () => {
     const useSessionStore = await loadSessionStore()
     fetchMock.mockResolvedValue({
@@ -2584,6 +2673,270 @@ describe('homepage session loading', () => {
     await useSessionStore.getState().deleteSession('s1')
 
     expect(useSessionStore.getState().searchSessions).toBeNull()
+  })
+})
+
+describe('cross-project session list stability after mutation', () => {
+  beforeEach(() => {
+    fetchMock.mockClear()
+  })
+
+  // Build N sessions for project A and M sessions for project B in the store.
+  function seedCrossProjectSessions(useSessionStore: any, n: number, m: number): void {
+    const sessions: any[] = []
+    for (let i = 0; i < n; i++) {
+      sessions.push({
+        id: `a${i}`,
+        projectId: 'project-a',
+        workdir: '/tmp/a',
+        mode: 'planner',
+        phase: 'plan',
+        isRunning: false,
+        isFavorite: false,
+        createdAt: 'a',
+        updatedAt: 'b',
+        criteriaCount: 0,
+        criteriaCompleted: 0,
+        messageCount: 0,
+      })
+    }
+    for (let i = 0; i < m; i++) {
+      sessions.push({
+        id: `b${i}`,
+        projectId: 'project-b',
+        workdir: '/tmp/b',
+        mode: 'planner',
+        phase: 'plan',
+        isRunning: false,
+        isFavorite: false,
+        createdAt: 'a',
+        updatedAt: 'b',
+        criteriaCount: 0,
+        criteriaCompleted: 0,
+        messageCount: 0,
+      })
+    }
+    useSessionStore.setState((state: any) => ({ ...state, sessions }))
+  }
+
+  it('deleteSession reloads scoped to the deleted session project and does not drop other projects', async () => {
+    const useSessionStore = await loadSessionStore()
+    seedCrossProjectSessions(useSessionStore, 10, 8)
+
+    // DELETE succeeds
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve({}) } as never)
+    // Scoped reload returns the 9 remaining project-a sessions
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          sessions: Array.from({ length: 9 }, (_, i) => ({
+            id: `a${i}`,
+            projectId: 'project-a',
+            workdir: '/tmp/a',
+            mode: 'planner',
+            phase: 'plan',
+            isRunning: false,
+            isFavorite: false,
+            createdAt: 'a',
+            updatedAt: 'b',
+            criteriaCount: 0,
+            criteriaCompleted: 0,
+            messageCount: 0,
+          })),
+          hasMore: false,
+          pendingConfirmationsBySession: {},
+        }),
+    } as never)
+
+    await useSessionStore.getState().deleteSession('a9')
+
+    const urls = fetchMock.mock.calls.map((c) => String((c as unknown[])[0]))
+    // The reload MUST be scoped to project-a, not a bare global list
+    expect(urls.some((url) => url.includes('projectId=project-a'))).toBe(true)
+    expect(urls.some((url) => url === '/api/sessions?limit=20')).toBe(false)
+
+    const state = useSessionStore.getState()
+    const projectA = state.sessions.filter((s: any) => s.projectId === 'project-a')
+    const projectB = state.sessions.filter((s: any) => s.projectId === 'project-b')
+    // project-a lost exactly the deleted session; project-b is untouched
+    expect(projectA).toHaveLength(9)
+    expect(projectB).toHaveLength(8)
+  })
+
+  it('deleteSession stays scoped even when the session.deleted WS event lands before the DELETE resolves', async () => {
+    const useSessionStore = await loadSessionStore()
+    seedCrossProjectSessions(useSessionStore, 10, 8)
+
+    const scopedPayload = {
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          sessions: Array.from({ length: 9 }, (_, i) => ({
+            id: `a${i}`,
+            projectId: 'project-a',
+            workdir: '/tmp/a',
+            mode: 'planner',
+            phase: 'plan',
+            isRunning: false,
+            isFavorite: false,
+            createdAt: 'a',
+            updatedAt: 'b',
+            criteriaCount: 0,
+            criteriaCompleted: 0,
+            messageCount: 0,
+          })),
+          hasMore: false,
+          pendingConfirmationsBySession: {},
+        }),
+    }
+
+    // The server broadcasts session.deleted BEFORE responding to the DELETE.
+    // Simulate that ordering: the WS handler wipes the session (and its pane)
+    // from state, then the DELETE resolves and deleteSession must still know
+    // which project to scope its reload to.
+    fetchMock.mockImplementationOnce(() => {
+      useSessionStore.getState().handleServerMessage({
+        type: 'session.deleted',
+        sessionId: 'a9',
+        payload: { sessionId: 'a9' },
+      } as any)
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) }) as never
+    })
+    fetchMock.mockResolvedValue(scopedPayload as never)
+
+    await useSessionStore.getState().deleteSession('a9')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+
+    const urls = fetchMock.mock.calls.map((c) => String((c as unknown[])[0]))
+    // No bare global list may ever be issued, even though the session was
+    // already gone from state when deleteSession resolved its projectId.
+    expect(urls.some((url) => url === '/api/sessions?limit=20')).toBe(false)
+    expect(urls.some((url) => url.includes('projectId=project-a'))).toBe(true)
+
+    const state = useSessionStore.getState()
+    expect(state.sessions.filter((s: any) => s.projectId === 'project-a')).toHaveLength(9)
+    expect(state.sessions.filter((s: any) => s.projectId === 'project-b')).toHaveLength(8)
+  })
+
+  it('toggleFavorite reloads scoped to the modified session project', async () => {
+    const useSessionStore = await loadSessionStore()
+    seedCrossProjectSessions(useSessionStore, 3, 5)
+
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve({ success: true }) } as never)
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ sessions: [], hasMore: false, pendingConfirmationsBySession: {} }),
+    } as never)
+
+    await useSessionStore.getState().toggleFavorite('b2', true)
+
+    const urls = fetchMock.mock.calls.map((c) => String((c as unknown[])[0]))
+    expect(urls.some((url) => url.includes('projectId=project-b'))).toBe(true)
+    expect(urls.some((url) => url === '/api/sessions?limit=20')).toBe(false)
+  })
+
+  it('renameSession reloads scoped to the modified session project', async () => {
+    const useSessionStore = await loadSessionStore()
+    seedCrossProjectSessions(useSessionStore, 3, 5)
+
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve({ success: true }) } as never)
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ sessions: [], hasMore: false, pendingConfirmationsBySession: {} }),
+    } as never)
+
+    await useSessionStore.getState().renameSession('a1', 'new title')
+
+    const urls = fetchMock.mock.calls.map((c) => String((c as unknown[])[0]))
+    expect(urls.some((url) => url.includes('projectId=project-a'))).toBe(true)
+    expect(urls.some((url) => url === '/api/sessions?limit=20')).toBe(false)
+  })
+
+  it('deleteAllSessions reloads scoped to the given project', async () => {
+    const useSessionStore = await loadSessionStore()
+    seedCrossProjectSessions(useSessionStore, 3, 5)
+
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve({}) } as never)
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ sessions: [], hasMore: false, pendingConfirmationsBySession: {} }),
+    } as never)
+
+    await useSessionStore.getState().deleteAllSessions('project-a')
+
+    const urls = fetchMock.mock.calls.map((c) => String((c as unknown[])[0]))
+    expect(urls.some((url) => url.includes('projectId=project-a'))).toBe(true)
+    expect(urls.some((url) => url === '/api/sessions?limit=20')).toBe(false)
+  })
+
+  it('listSessions scoped to a project does not drop other projects already in state (union merge)', async () => {
+    const useSessionStore = await loadSessionStore()
+    seedCrossProjectSessions(useSessionStore, 3, 5)
+
+    // Scoped reload returns only project-a sessions
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          sessions: [
+            {
+              id: 'a0',
+              projectId: 'project-a',
+              workdir: '/tmp/a',
+              mode: 'planner',
+              phase: 'plan',
+              isRunning: false,
+              isFavorite: false,
+              createdAt: 'a',
+              updatedAt: 'b',
+              criteriaCount: 0,
+              criteriaCompleted: 0,
+              messageCount: 0,
+            },
+          ],
+          hasMore: false,
+          pendingConfirmationsBySession: {},
+        }),
+    } as never)
+
+    await useSessionStore.getState().listSessions('project-a')
+
+    const state = useSessionStore.getState()
+    const projectA = state.sessions.filter((s: any) => s.projectId === 'project-a')
+    const projectB = state.sessions.filter((s: any) => s.projectId === 'project-b')
+    // project-a refreshed (1 returned), project-b preserved (not dropped)
+    expect(projectA).toHaveLength(1)
+    expect(projectB).toHaveLength(5)
+  })
+
+  it('loadMoreSessions offsets by the target project count, not the global sessions length', async () => {
+    const useSessionStore = await loadSessionStore()
+    seedCrossProjectSessions(useSessionStore, 20, 8)
+
+    // Mark that there are more sessions to load
+    useSessionStore.setState({ sessionsHasMore: true })
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ sessions: [], hasMore: false }),
+    } as never)
+
+    await useSessionStore.getState().loadMoreSessions('project-a')
+
+    const urls = fetchMock.mock.calls.map((c) => String((c as unknown[])[0]))
+    const loadMoreUrl = urls.find((u) => u.includes('projectId=project-a') && u.includes('offset='))
+    expect(loadMoreUrl).toBeDefined()
+    // project-a has 20 sessions in state; offset must be 20, NOT 28 (20+8 preserved)
+    expect(loadMoreUrl!).toContain('offset=20')
+    expect(loadMoreUrl!).not.toContain('offset=28')
   })
 })
 
