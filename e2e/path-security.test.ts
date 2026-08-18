@@ -118,6 +118,32 @@ describe('Path Security', () => {
       const payload = confirmationEvent!.payload as PathConfirmationPayload
       expect(payload.paths.some((p: string) => p.includes('home'))).toBe(true)
     })
+
+    it('emits path_confirmation for a path nested in quotes inside run_command', async () => {
+      client.clearEvents()
+
+      // The path lives in single quotes nested inside a double-quoted program
+      // string. Without quote-aware extraction no path is detected at all and
+      // the command would run unconfirmed, so this assertion stays unconditional.
+      await client.send('chat.send', {
+        content: `Run the exact command: python3 -c "print(open('/home/test/nested.txt').read())"`,
+      })
+
+      const confirmationEvent = await client.waitFor('chat.path_confirmation', undefined, 500).catch(() => null)
+
+      expect(confirmationEvent).not.toBeNull()
+
+      const payload = confirmationEvent!.payload as PathConfirmationPayload
+      expect(payload.tool).toBe('run_command')
+      expect(payload.reason).toBe('outside_workdir')
+      expect(payload.paths.some((p: string) => p.includes('/home/test/nested.txt'))).toBe(true)
+
+      // Resolve the confirmation: an unanswered one leaves the tool call
+      // suspended for the rest of the file's shared server.
+      const session = client.getSession()!
+      await answerPathConfirmation(server.url, session.id, payload.callId, false)
+      await client.waitFor('chat.done').catch(() => null)
+    })
   })
 
   describe('Sensitive File Detection', () => {

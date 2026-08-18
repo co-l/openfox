@@ -781,7 +781,14 @@ export function extractAbsolutePathsFromCommand(command: string): string[] {
     }
   }
   if (posixShell) {
-    const absolutePattern = /(?:^|[\s=(])(\/[^\s"'|&;<>`()]+)/g
+    // A quote can precede a real path operand. Nested quoting puts the path
+    // right after a quote (python3 -c "open('/etc/passwd')", bash -c "cat
+    // '/etc/passwd'"), and the quoted-string pass above cannot see it: pairing
+    // quotes without regard to type makes the path a delimiter between two
+    // pseudo-strings. The path's own character class stops at the closing quote,
+    // so the captured span stays exact. Regex-tool operands are unaffected: they
+    // are already masked upstream by maskRegexAddresses.
+    const absolutePattern = /(?:^|([\s=('"]))(\/[^\s"'|&;<>`()]+)/g
 
     // A lone `/` token is the root filesystem — flag it (find /, ls /, cd /).
     // `//` comment lines and JSX `/>` self-closing tags are not roots.
@@ -803,7 +810,12 @@ export function extractAbsolutePathsFromCommand(command: string): string[] {
     }
 
     while ((match = absolutePattern.exec(scanCommand)) !== null) {
-      const candidate = match[1]!
+      const opener = match[1] ?? ''
+      const candidate = match[2]!
+
+      // A quoted span that both opens and closes with `/` is a regex address
+      // (grep '/foo/'), never a path — same rule the quoted-string pass applies.
+      if ((opener === "'" || opener === '"') && candidate.endsWith('/')) continue
 
       // Skip placeholder markers left by sanitization
       if (isPlaceholderToken(candidate)) continue

@@ -674,6 +674,30 @@ describe('path-security', () => {
         const paths = extractAbsolutePathsFromCommand('find /var/log -name x 2>/dev/null')
         expect(paths).toContain('/var/log')
       })
+
+      // Nested quotes: a path in single quotes inside a double-quoted argument
+      // (python -c, node -e, bash -c ...). The quote scanner must pair quotes by
+      // type, otherwise the path becomes a delimiter between two pseudo-strings
+      // and is never inspected — an unconfirmed read/write outside the workdir.
+      it('flags a single-quoted path nested in a double-quoted python -c program', () => {
+        const paths = extractAbsolutePathsFromCommand(`python3 -c "print(open('/etc/passwd').read())"`)
+        expect(paths).toContain('/etc/passwd')
+      })
+
+      it('flags a single-quoted path nested in a double-quoted node -e program', () => {
+        const paths = extractAbsolutePathsFromCommand(`node -e "require('fs').readFileSync('/etc/passwd')"`)
+        expect(paths).toContain('/etc/passwd')
+      })
+
+      it('flags a single-quoted path nested in a double-quoted bash -c command', () => {
+        const paths = extractAbsolutePathsFromCommand(`bash -c "cat '/etc/passwd'"`)
+        expect(paths).toContain('/etc/passwd')
+      })
+
+      it('flags a nested-quote write outside the workdir', () => {
+        const paths = extractAbsolutePathsFromCommand(`python3 -c "open('/etc/evil.conf','w').write('x')"`)
+        expect(paths).toContain('/etc/evil.conf')
+      })
     })
 
     describe('sed/awk/perl/ruby regex address false positives', () => {
