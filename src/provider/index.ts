@@ -1,5 +1,6 @@
 import type { ModelConfig } from '../shared/types.js'
 import type { LLMCompletionRequest, LLMCompletionResponse, LLMStreamEvent } from '../server/llm/types.js'
+import type { TransitionHandler } from '../server/workflows/transition-handlers.js'
 
 // ============================================================================
 // Auth Types
@@ -105,6 +106,12 @@ export interface ProviderPluginRegistry {
   registerAuth(adapter: ProviderAuthAdapter): void
   registerTransport(adapter: ProviderTransportAdapter): void
   registerPreset(preset: ProviderPreset): void
+  /**
+   * Register a custom workflow transition handler. A workflow step declares a
+   * transition with `when: { type: 'custom', handler: '<handlerId>' }` and the
+   * executor invokes the registered handler to decide whether it fires.
+   */
+  registerTransitionHandler(handlerId: string, handler: TransitionHandler): void
   readonly runtime: ProviderPluginRuntime
 }
 
@@ -170,3 +177,4 @@ export type {
   LLMToolDefinition,
 } from '../server/llm/types.js'
 export type { ModelConfig, ToolCall } from '../shared/types.js'
+export type { TransitionHandler, TransitionHandlerContext } from '../server/workflows/transition-handlers.js'

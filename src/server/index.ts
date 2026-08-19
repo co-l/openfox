@@ -3382,6 +3382,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
           ...(statsEffort ? { reasoningEffort: statsEffort } : {}),
         },
         broadcastForSession: wssExports.broadcastForSession,
+        transitionHandlers: providerAdapters.getTransitionHandlers(),
       },
       {
         workflowId: launch.workflowId,

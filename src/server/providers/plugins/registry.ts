@@ -5,14 +5,26 @@ import type {
   ProviderPluginRuntime,
   ProviderPreset,
   ProviderTransportAdapter,
+  TransitionHandler,
 } from '../../../provider/index.js'
+import { TransitionHandlerRegistry } from '../../workflows/transition-handlers.js'
 
 export class ProviderRegistry implements ProviderPluginRegistry {
   private readonly authAdapters = new Map<string, ProviderAuthAdapter>()
   private readonly transportAdapters = new Map<string, ProviderTransportAdapter>()
   private readonly presets = new Map<string, ProviderPreset>()
+  private readonly transitionHandlers = new TransitionHandlerRegistry()
 
   constructor(readonly runtime: ProviderPluginRuntime) {}
+
+  registerTransitionHandler(handlerId: string, handler: TransitionHandler): void {
+    this.transitionHandlers.register(handlerId, handler)
+  }
+
+  /** The registry of custom workflow transition handlers contributed by plugins. */
+  getTransitionHandlers(): TransitionHandlerRegistry {
+    return this.transitionHandlers
+  }
 
   registerAuth(adapter: ProviderAuthAdapter): void {
     this.register(this.authAdapters, adapter.id, adapter, 'auth adapter')

@@ -10,6 +10,7 @@ import type { ServerMessage } from '../../shared/protocol.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { StreamTiming } from '../llm/streaming.js'
 import type { SessionManager } from '../session/index.js'
+import type { TransitionHandlerRegistry } from '../workflows/transition-handlers.js'
 
 // ============================================================================
 // Decision Types - What the state machine decides to do next
@@ -59,6 +60,12 @@ export interface OrchestratorOptions {
   getSessionLLMClient?: () => LLMClientWithModel
   /** Overrides for the LLM-failure retry backoff policy. */
   llmRetryPolicy?: Partial<LLMRetryPolicy>
+  /**
+   * Registry of custom transition handlers contributed by plugins. Enables
+   * `when: { type: 'custom', handler: '<id>' }` transitions in workflows.
+   * Undefined = only built-in condition types are evaluated.
+   */
+  transitionHandlers?: TransitionHandlerRegistry
 }
 
 export interface OrchestratorResult {

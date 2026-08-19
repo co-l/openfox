@@ -145,6 +145,7 @@ export function createPluginRoutes(options: {
                 authAdapters: [],
                 transportAdapters: [],
                 presets: [],
+                transitionHandlers: [],
               }
               const trackingRegistry: ProviderPluginRegistry = {
                 runtime: providerAdapters.runtime,
@@ -159,6 +160,10 @@ export function createPluginRoutes(options: {
                 registerPreset(preset) {
                   providerAdapters.registerPreset(preset)
                   diagnostic.presets.push(preset.id)
+                },
+                registerTransitionHandler(handlerId, handler) {
+                  providerAdapters.registerTransitionHandler(handlerId, handler)
+                  diagnostic.transitionHandlers.push(handlerId)
                 },
               }
               await mod.register(trackingRegistry)
