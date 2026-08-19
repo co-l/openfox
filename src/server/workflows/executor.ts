@@ -643,6 +643,7 @@ export async function executeWorkflow(
               sessionManager,
               sessionId,
               llmClient,
+              stepContext: { workflowId: workflow.metadata.id, stepId: step.id },
               ...(options.getSessionLLMClient ? { getSessionLLMClient: options.getSessionLLMClient } : {}),
               ...(options.statsIdentity ? { statsIdentity: options.statsIdentity } : {}),
               ...(signal ? { signal } : {}),
@@ -743,6 +744,7 @@ export async function executeWorkflow(
           llmClient,
           toolRegistry: filteredToolRegistry,
           turnMetrics,
+          stepContext: { workflowId: workflow.metadata.id, stepId: step.id },
           statsIdentity: options.statsIdentity ?? {
             providerId: '',
             providerName: '',

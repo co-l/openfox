@@ -42,6 +42,7 @@ export const SETTINGS_KEYS = {
   PROXY_URL: 'network.proxyUrl',
   DEFAULT_AGENT: 'agent.defaultAgent',
   AGENT_MODEL_OVERRIDES: 'agent.modelOverrides',
+  STEP_MODEL_OVERRIDES: 'step.modelOverrides',
 } as const
 
 export const SETTINGS_DEFAULTS: Record<string, string> = {

@@ -12,6 +12,7 @@ import type { LLMClientWithModel } from '../llm/client.js'
 import type { ProviderManager } from '../provider-manager.js'
 
 export const AGENT_MODEL_OVERRIDES_KEY = SETTINGS_KEYS.AGENT_MODEL_OVERRIDES
+export const STEP_MODEL_OVERRIDES_KEY = SETTINGS_KEYS.STEP_MODEL_OVERRIDES
 
 const overrideSchema = z.object({
   providerId: z.string().min(1),
@@ -21,8 +22,23 @@ const overrideSchema = z.object({
 
 export type AgentModelOverride = z.infer<typeof overrideSchema>
 export type AgentModelOverrides = Record<string, AgentModelOverride>
+export type StepModelOverrides = Record<string, AgentModelOverride>
+
+/** Compose the storage key for a per-step override: `${workflowId}:${stepId}`. */
+export function stepOverrideKey(workflowId: string, stepId: string): string {
+  return `${workflowId}:${stepId}`
+}
 
 export function parseAgentModelOverrides(raw: string | null | undefined): AgentModelOverrides {
+  return parseOverridesMap(raw)
+}
+
+export function parseStepModelOverrides(raw: string | null | undefined): StepModelOverrides {
+  return parseOverridesMap(raw)
+}
+
+/** Shared parser for an override map keyed by an arbitrary string id. */
+function parseOverridesMap(raw: string | null | undefined): Record<string, AgentModelOverride> {
   if (!raw) return {}
   let parsed: unknown
   try {
@@ -32,11 +48,11 @@ export function parseAgentModelOverrides(raw: string | null | undefined): AgentM
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {}
 
-  const result: AgentModelOverrides = {}
-  for (const [agentId, value] of Object.entries(parsed)) {
+  const result: Record<string, AgentModelOverride> = {}
+  for (const [id, value] of Object.entries(parsed)) {
     const validated = overrideSchema.safeParse(value)
     if (validated.success) {
-      result[agentId] = validated.data
+      result[id] = validated.data
     }
   }
   return result
@@ -58,6 +74,25 @@ export function setAgentModelOverride(agentId: string, override: AgentModelOverr
     overrides[agentId] = override
   }
   setSetting(AGENT_MODEL_OVERRIDES_KEY, JSON.stringify(overrides))
+}
+
+export function getStepModelOverrides(): StepModelOverrides {
+  return parseStepModelOverrides(getSetting(STEP_MODEL_OVERRIDES_KEY))
+}
+
+export function getStepModelOverride(workflowId: string, stepId: string): AgentModelOverride | undefined {
+  return getStepModelOverrides()[stepOverrideKey(workflowId, stepId)]
+}
+
+export function setStepModelOverride(workflowId: string, stepId: string, override: AgentModelOverride | null): void {
+  const overrides = getStepModelOverrides()
+  const key = stepOverrideKey(workflowId, stepId)
+  if (override === null) {
+    delete overrides[key]
+  } else {
+    overrides[key] = override
+  }
+  setSetting(STEP_MODEL_OVERRIDES_KEY, JSON.stringify(overrides))
 }
 
 export interface AgentClientResolution {
@@ -104,5 +139,45 @@ export function resolveLLMClientForAgent(
     client,
     usedOverride: true,
     override: effectiveEffort ? { ...override, reasoningEffort: effectiveEffort } : override,
+  }
+}
+
+/**
+ * Resolve the LLM client for a single workflow step. Precedence:
+ *   1. step override (`workflowId:stepId`) — wins over everything when present.
+ *      A configured-but-unresolvable step override is a hard error for that
+ *      step: it falls back to the session model with a warning and does NOT
+ *      silently pick up the agent override.
+ *   2. agent override (`agentId`) — delegated to `resolveLLMClientForAgent`.
+ *   3. session/global fallback.
+ */
+export function resolveLLMClientForStep(
+  workflowId: string,
+  stepId: string,
+  agentId: string,
+  fallbackClient: LLMClientWithModel,
+  providerManager: ProviderManager,
+  pinnedEffort?: string,
+): AgentClientResolution {
+  const stepOverride = getStepModelOverride(workflowId, stepId)
+  if (!stepOverride) {
+    return resolveLLMClientForAgent(agentId, fallbackClient, providerManager, pinnedEffort)
+  }
+
+  const effectiveEffort = pinnedEffort ?? stepOverride.reasoningEffort
+  const client = providerManager.createClient(stepOverride.providerId, stepOverride.model, effectiveEffort)
+  if (!client) {
+    return {
+      client: fallbackClient,
+      usedOverride: false,
+      override: stepOverride,
+      warning: `Step '${stepOverrideKey(workflowId, stepId)}' is configured to use model '${stepOverride.model}' from provider '${stepOverride.providerId}', but it is no longer available. Falling back to the session model.`,
+    }
+  }
+
+  return {
+    client,
+    usedOverride: true,
+    override: effectiveEffort ? { ...stepOverride, reasoningEffort: effectiveEffort } : stepOverride,
   }
 }

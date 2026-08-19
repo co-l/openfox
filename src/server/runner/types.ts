@@ -68,6 +68,15 @@ export interface OrchestratorOptions {
   transitionHandlers?: TransitionHandlerRegistry
 }
 
+/**
+ * Identifies a workflow step for per-step model override resolution.
+ * The override key is `${workflowId}:${stepId}`.
+ */
+export interface StepContext {
+  workflowId: string
+  stepId: string
+}
+
 export interface OrchestratorResult {
   finalAction: NextAction
   iterations: number
