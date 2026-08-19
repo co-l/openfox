@@ -120,6 +120,7 @@ function createMockOptions(extra?: Partial<OrchestratorOptions>): OrchestratorOp
       })),
       setMode: vi.fn(),
       setPhase: vi.fn(),
+      createClientForAgent: vi.fn((_s: string, _a: string, fb: unknown) => fb),
       getEffectiveWorkdir: vi.fn().mockReturnValue('/tmp/test'),
       getProjectWorkdir: vi.fn().mockReturnValue('/tmp/test'),
       addMessage: vi.fn(),

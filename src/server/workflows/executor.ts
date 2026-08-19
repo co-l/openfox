@@ -421,6 +421,7 @@ export async function executeWorkflow(
         workflowId: workflow.metadata.id,
         stepId: workflow.entryStep,
         signal,
+        llmClient,
       },
     )
     if (!conditionMet) {
@@ -885,6 +886,17 @@ export async function executeWorkflow(
     const candidates = subGroup
       ? step.transitions.filter((t) => !t.subGroup || activeSubGroups.has(t.subGroup))
       : step.transitions
+    // Resolve the step's LLM client so custom handlers (e.g. llm_decision) can
+    // route with the same model the step ran under (per-step/team overrides).
+    const decisionClient =
+      step.type === 'agent'
+        ? sessionManager.createClientForAgent(
+            sessionId,
+            (step as AgentStep).agentId ?? resolveDefaultAgentId(),
+            llmClient,
+            { workflowId: workflow.metadata.id, stepId: step.id },
+          )
+        : llmClient
     const fired = await findMatchingTransitionAsync(
       candidates,
       stepOutcome,
@@ -896,6 +908,7 @@ export async function executeWorkflow(
         workflowId: workflow.metadata.id,
         stepId: step.id,
         signal,
+        llmClient: decisionClient,
       },
     )
     let nextStepId = fired ? fired.goto : TERMINAL_BLOCKED

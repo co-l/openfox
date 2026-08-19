@@ -53,6 +53,7 @@ import { createProviderAuthRoutes } from './routes/provider-auth.js'
 import { devServerManager } from './dev-server/manager.js'
 import { getGlobalConfigDir } from '../cli/paths.js'
 import { ProviderRegistry, loadProviderPlugins } from './providers/plugins/index.js'
+import { createLlmDecisionHandler } from './workflows/llm-decision-handler.js'
 import { createPluginRoutes } from './routes/plugins.js'
 import { registerSessionFavoriteRoute } from './routes/session-favorite.js'
 import { logger, setLogLevel } from './utils/logger.js'
@@ -121,6 +122,10 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     mode: config.mode === 'development' ? 'development' : 'production',
     configDirectory: configDir,
   })
+  // Register the built-in `llm_decision` transition handler before plugins
+  // load, so a plugin registering the same id still wins (last write).
+  providerAdapters.registerTransitionHandler('llm_decision', createLlmDecisionHandler())
+
   const pluginDiagnostics = await loadProviderPlugins({ registry: providerAdapters, configDirectory: configDir })
   for (const diagnostic of pluginDiagnostics) {
     if (!diagnostic.loaded) logger.warn('Provider plugin failed to load', { ...diagnostic })

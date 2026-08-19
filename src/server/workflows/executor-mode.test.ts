@@ -185,6 +185,7 @@ describe('executeWorkflow mode changes', () => {
       })),
       setMode,
       setPhase,
+      createClientForAgent: vi.fn((_sessionId: string, _agentId: string, fallbackClient: unknown) => fallbackClient),
       getEffectiveWorkdir: vi.fn().mockReturnValue('/tmp/test'),
       getProjectWorkdir: vi.fn().mockReturnValue('/tmp/test'),
       addMessage: vi.fn(),

@@ -12,6 +12,7 @@
  */
 
 import type { MetadataEntry } from '../../shared/types.js'
+import type { LLMClientWithModel } from '../llm/client.js'
 
 /** Structural twin of executor's StepOutcome — avoids a circular import. */
 export interface StepOutcomeLike {
@@ -32,6 +33,13 @@ export interface TransitionHandlerContext {
   config?: Record<string, unknown> | undefined
   /** Abort signal forwarded from the orchestrator. */
   signal?: AbortSignal | undefined
+  /**
+   * LLM client a custom handler may call to make a routing decision (e.g. the
+   * built-in `llm_decision` handler). For step transitions this is the
+   * step's resolved client (honoring per-step/team overrides); for the start
+   * condition it is the session client. Undefined when no client is available.
+   */
+  llmClient?: LLMClientWithModel | undefined
 }
 
 /** A transition handler returns true to fire the transition, false to skip it. */
