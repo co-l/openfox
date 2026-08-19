@@ -43,6 +43,8 @@ export const SETTINGS_KEYS = {
   DEFAULT_AGENT: 'agent.defaultAgent',
   AGENT_MODEL_OVERRIDES: 'agent.modelOverrides',
   STEP_MODEL_OVERRIDES: 'step.modelOverrides',
+  TEAMS: 'teams',
+  WORKFLOW_TEAM: 'workflow.team',
 } as const
 
 export const SETTINGS_DEFAULTS: Record<string, string> = {

@@ -39,6 +39,7 @@ import { setRuntimeConfig } from './runtime-config.js'
 import { createSkillRoutes } from './routes/skills.js'
 import { createCommandRoutes } from './routes/commands.js'
 import { createAgentRoutes } from './routes/agents.js'
+import { createTeamRoutes } from './routes/teams.js'
 import { loadAllAgentsDefault, getTopLevelAgents } from './agents/registry.js'
 import { createWorkflowRoutes } from './routes/workflows.js'
 import { createDevServerRoutes } from './routes/dev-server.js'
@@ -3114,6 +3115,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   app.use('/api/commands', createCommandRoutes(configDir, projectDir))
   app.use('/api/agents', createAgentRoutes(configDir, projectDir))
   app.use('/api/workflows', createWorkflowRoutes(configDir, config, projectDir))
+  app.use('/api/teams', createTeamRoutes())
   app.use('/api/dev-server', createDevServerRoutes())
   app.use('/api/workspace', createWorkspaceConfigRoutes(sessionManager))
   app.use('/api/terminals', createTerminalRoutes())

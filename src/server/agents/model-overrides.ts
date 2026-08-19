@@ -6,21 +6,19 @@
  * Absence of an override = agent uses the session/global model.
  */
 
-import { z } from 'zod'
 import { getSetting, setSetting, SETTINGS_KEYS } from '../db/settings.js'
+import { getTeam, getWorkflowTeam } from './teams.js'
+import { parseJsonObject } from './settings-json.js'
+import { overrideSchema, type AgentModelOverride } from './override-schema.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { ProviderManager } from '../provider-manager.js'
+
+export { overrideSchema }
+export type { AgentModelOverride }
 
 export const AGENT_MODEL_OVERRIDES_KEY = SETTINGS_KEYS.AGENT_MODEL_OVERRIDES
 export const STEP_MODEL_OVERRIDES_KEY = SETTINGS_KEYS.STEP_MODEL_OVERRIDES
 
-const overrideSchema = z.object({
-  providerId: z.string().min(1),
-  model: z.string().min(1),
-  reasoningEffort: z.string().min(1).optional(),
-})
-
-export type AgentModelOverride = z.infer<typeof overrideSchema>
 export type AgentModelOverrides = Record<string, AgentModelOverride>
 export type StepModelOverrides = Record<string, AgentModelOverride>
 
@@ -39,14 +37,8 @@ export function parseStepModelOverrides(raw: string | null | undefined): StepMod
 
 /** Shared parser for an override map keyed by an arbitrary string id. */
 function parseOverridesMap(raw: string | null | undefined): Record<string, AgentModelOverride> {
-  if (!raw) return {}
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    return {}
-  }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {}
+  const parsed = parseJsonObject(raw)
+  if (!parsed) return {}
 
   const result: Record<string, AgentModelOverride> = {}
   for (const [id, value] of Object.entries(parsed)) {
@@ -147,9 +139,12 @@ export function resolveLLMClientForAgent(
  *   1. step override (`workflowId:stepId`) — wins over everything when present.
  *      A configured-but-unresolvable step override is a hard error for that
  *      step: it falls back to the session model with a warning and does NOT
- *      silently pick up the agent override.
- *   2. agent override (`agentId`) — delegated to `resolveLLMClientForAgent`.
- *   3. session/global fallback.
+ *      silently pick up the team/agent override.
+ *   2. team assignment — when the workflow is bound to a team that has an
+ *      assignment for this step. A broken team assignment is likewise a hard
+ *      error for that step (no fallthrough to the agent override).
+ *   3. agent override (`agentId`) — delegated to `resolveLLMClientForAgent`.
+ *   4. session/global fallback.
  */
 export function resolveLLMClientForStep(
   workflowId: string,
@@ -160,24 +155,45 @@ export function resolveLLMClientForStep(
   pinnedEffort?: string,
 ): AgentClientResolution {
   const stepOverride = getStepModelOverride(workflowId, stepId)
-  if (!stepOverride) {
-    return resolveLLMClientForAgent(agentId, fallbackClient, providerManager, pinnedEffort)
-  }
-
-  const effectiveEffort = pinnedEffort ?? stepOverride.reasoningEffort
-  const client = providerManager.createClient(stepOverride.providerId, stepOverride.model, effectiveEffort)
-  if (!client) {
+  if (stepOverride) {
+    const effectiveEffort = pinnedEffort ?? stepOverride.reasoningEffort
+    const client = providerManager.createClient(stepOverride.providerId, stepOverride.model, effectiveEffort)
+    if (!client) {
+      return {
+        client: fallbackClient,
+        usedOverride: false,
+        override: stepOverride,
+        warning: `Step '${stepOverrideKey(workflowId, stepId)}' is configured to use model '${stepOverride.model}' from provider '${stepOverride.providerId}', but it is no longer available. Falling back to the session model.`,
+      }
+    }
     return {
-      client: fallbackClient,
-      usedOverride: false,
-      override: stepOverride,
-      warning: `Step '${stepOverrideKey(workflowId, stepId)}' is configured to use model '${stepOverride.model}' from provider '${stepOverride.providerId}', but it is no longer available. Falling back to the session model.`,
+      client,
+      usedOverride: true,
+      override: effectiveEffort ? { ...stepOverride, reasoningEffort: effectiveEffort } : stepOverride,
     }
   }
 
-  return {
-    client,
-    usedOverride: true,
-    override: effectiveEffort ? { ...stepOverride, reasoningEffort: effectiveEffort } : stepOverride,
+  // Team assignment: workflow bound to a team that carries this step.
+  const teamId = getWorkflowTeam(workflowId)
+  const team = teamId ? getTeam(teamId) : undefined
+  const teamAssignment = team?.assignments[stepId]
+  if (teamAssignment) {
+    const effectiveEffort = pinnedEffort ?? teamAssignment.reasoningEffort
+    const client = providerManager.createClient(teamAssignment.providerId, teamAssignment.model, effectiveEffort)
+    if (!client) {
+      return {
+        client: fallbackClient,
+        usedOverride: false,
+        override: teamAssignment,
+        warning: `Step '${stepOverrideKey(workflowId, stepId)}' (team '${teamId}') is configured to use model '${teamAssignment.model}' from provider '${teamAssignment.providerId}', but it is no longer available. Falling back to the session model.`,
+      }
+    }
+    return {
+      client,
+      usedOverride: true,
+      override: effectiveEffort ? { ...teamAssignment, reasoningEffort: effectiveEffort } : teamAssignment,
+    }
   }
+
+  return resolveLLMClientForAgent(agentId, fallbackClient, providerManager, pinnedEffort)
 }

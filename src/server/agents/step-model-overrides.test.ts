@@ -217,3 +217,112 @@ describe('resolveLLMClientForStep', () => {
     expect(result.warning).toContain('gone')
   })
 })
+
+describe('resolveLLMClientForStep — team assignment', () => {
+  const fallback = fakeClient('global-model')
+
+  function teamStore(teamId: string, assignments: Record<string, unknown>): string {
+    return JSON.stringify({ [teamId]: { id: teamId, name: teamId, assignments } })
+  }
+
+  it('uses the team assignment when the workflow is bound to a team', () => {
+    getSettingMock.mockImplementation((key: string) => {
+      if (key === 'teams') return teamStore('team-a', { build: { providerId: 'pt', model: 'team-model' } })
+      if (key === 'workflow.team') return JSON.stringify({ wf: 'team-a' })
+      return null
+    })
+    const dedicated = fakeClient('team-model')
+    const pm = fakeProviderManager(dedicated)
+    const result = resolveLLMClientForStep('wf', 'build', 'builder', fallback, pm)
+    expect(result.client).toBe(dedicated)
+    expect(result.usedOverride).toBe(true)
+    expect(result.override).toEqual({ providerId: 'pt', model: 'team-model' })
+    expect(pm.createClient).toHaveBeenCalledWith('pt', 'team-model', undefined)
+  })
+
+  it('explicit step override wins over team assignment', () => {
+    getSettingMock.mockImplementation((key: string) => {
+      if (key === 'step.modelOverrides')
+        return JSON.stringify({ 'wf:build': { providerId: 'ps', model: 'step-model' } })
+      if (key === 'teams') return teamStore('team-a', { build: { providerId: 'pt', model: 'team-model' } })
+      if (key === 'workflow.team') return JSON.stringify({ wf: 'team-a' })
+      return null
+    })
+    const dedicated = fakeClient('step-model')
+    const pm = fakeProviderManager(dedicated)
+    const result = resolveLLMClientForStep('wf', 'build', 'builder', fallback, pm)
+    expect(result.client).toBe(dedicated)
+    expect(result.override).toEqual({ providerId: 'ps', model: 'step-model' })
+  })
+
+  it('team assignment wins over agent override', () => {
+    getSettingMock.mockImplementation((key: string) => {
+      if (key === 'agent.modelOverrides') return JSON.stringify({ builder: { providerId: 'pa', model: 'agent-model' } })
+      if (key === 'teams') return teamStore('team-a', { build: { providerId: 'pt', model: 'team-model' } })
+      if (key === 'workflow.team') return JSON.stringify({ wf: 'team-a' })
+      return null
+    })
+    const dedicated = fakeClient('team-model')
+    const pm = fakeProviderManager(dedicated)
+    const result = resolveLLMClientForStep('wf', 'build', 'builder', fallback, pm)
+    expect(result.client).toBe(dedicated)
+    expect(result.override).toEqual({ providerId: 'pt', model: 'team-model' })
+  })
+
+  it('falls back to agent override when the team has no assignment for the step', () => {
+    getSettingMock.mockImplementation((key: string) => {
+      if (key === 'agent.modelOverrides') return JSON.stringify({ builder: { providerId: 'pa', model: 'agent-model' } })
+      if (key === 'teams') return teamStore('team-a', { verify: { providerId: 'pt', model: 'team-model' } })
+      if (key === 'workflow.team') return JSON.stringify({ wf: 'team-a' })
+      return null
+    })
+    const dedicated = fakeClient('agent-model')
+    const pm = fakeProviderManager(dedicated)
+    const result = resolveLLMClientForStep('wf', 'build', 'builder', fallback, pm)
+    expect(result.client).toBe(dedicated)
+    expect(result.override).toEqual({ providerId: 'pa', model: 'agent-model' })
+  })
+
+  it('falls back to agent override when the bound team no longer exists', () => {
+    getSettingMock.mockImplementation((key: string) => {
+      if (key === 'agent.modelOverrides') return JSON.stringify({ builder: { providerId: 'pa', model: 'agent-model' } })
+      if (key === 'teams') return JSON.stringify({})
+      if (key === 'workflow.team') return JSON.stringify({ wf: 'team-gone' })
+      return null
+    })
+    const dedicated = fakeClient('agent-model')
+    const pm = fakeProviderManager(dedicated)
+    const result = resolveLLMClientForStep('wf', 'build', 'builder', fallback, pm)
+    expect(result.client).toBe(dedicated)
+    expect(result.override).toEqual({ providerId: 'pa', model: 'agent-model' })
+  })
+
+  it('team assignment with a missing provider falls back with warning (no fallthrough to agent)', () => {
+    getSettingMock.mockImplementation((key: string) => {
+      if (key === 'agent.modelOverrides') return JSON.stringify({ builder: { providerId: 'pa', model: 'agent-model' } })
+      if (key === 'teams') return teamStore('team-a', { build: { providerId: 'gone', model: 'm1' } })
+      if (key === 'workflow.team') return JSON.stringify({ wf: 'team-a' })
+      return null
+    })
+    const pm = fakeProviderManager(undefined)
+    const result = resolveLLMClientForStep('wf', 'build', 'builder', fallback, pm)
+    expect(result.client).toBe(fallback)
+    expect(result.usedOverride).toBe(false)
+    expect(result.warning).toContain('gone')
+  })
+
+  it('pinned effort is applied to the team assignment', () => {
+    getSettingMock.mockImplementation((key: string) => {
+      if (key === 'teams')
+        return teamStore('team-a', { build: { providerId: 'pt', model: 'm1', reasoningEffort: 'low' } })
+      if (key === 'workflow.team') return JSON.stringify({ wf: 'team-a' })
+      return null
+    })
+    const dedicated = fakeClient('m1')
+    const pm = fakeProviderManager(dedicated)
+    const result = resolveLLMClientForStep('wf', 'build', 'builder', fallback, pm, 'max')
+    expect(result.usedOverride).toBe(true)
+    expect(result.override).toEqual({ providerId: 'pt', model: 'm1', reasoningEffort: 'max' })
+    expect(pm.createClient).toHaveBeenCalledWith('pt', 'm1', 'max')
+  })
+})
