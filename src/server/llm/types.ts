@@ -19,7 +19,7 @@ export interface LLMToolDefinition {
   }
 }
 
-export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
 export interface LLMCompletionRequest {
   messages: LLMMessage[]
