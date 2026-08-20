@@ -752,6 +752,7 @@ describe('ProviderManager - Model Selection', () => {
 
       expect(createLLMClientMock).toHaveBeenLastCalledWith(
         expect.objectContaining({ llm: expect.objectContaining({ model: 'model-large' }) }),
+        'openai',
       )
     })
 
@@ -777,6 +778,7 @@ describe('ProviderManager - Model Selection', () => {
 
       expect(createLLMClientMock).toHaveBeenLastCalledWith(
         expect.objectContaining({ llm: expect.objectContaining({ model: 'model-large' }) }),
+        'openai',
       )
     })
 
@@ -805,6 +807,7 @@ describe('ProviderManager - Model Selection', () => {
 
       expect(createLLMClientMock).toHaveBeenLastCalledWith(
         expect.objectContaining({ llm: expect.objectContaining({ model: 'model-large' }) }),
+        'openai',
       )
     })
   })
@@ -1054,6 +1057,31 @@ describe('ProviderManager - Model Selection', () => {
       manager.createClient('p', 'model-a')
       const config = createLLMClientMock.mock.calls.at(-1)![0]!
       expect(config.llm.reasoningEffort).toBe('medium')
+    })
+
+    it('passes the provider backend to createLLMClient (session clients must not default to unknown)', () => {
+      const manager = buildManager([
+        providerWith([{ id: 'model-a', contextWindow: 100000, source: 'default' as const }]),
+        {
+          id: 'llama',
+          name: 'Llama',
+          url: 'http://localhost:8000/v1',
+          backend: 'llamacpp',
+          models: [{ id: 'model-b', contextWindow: 100000, source: 'default' as const }],
+          isActive: false,
+          createdAt: new Date().toISOString(),
+        },
+      ])
+      manager.createClient('p', 'model-a')
+      expect(createLLMClientMock.mock.calls.at(-1)).toEqual([
+        expect.objectContaining({ llm: expect.objectContaining({ model: 'model-a' }) }),
+        'vllm',
+      ])
+      manager.createClient('llama', 'model-b')
+      expect(createLLMClientMock.mock.calls.at(-1)).toEqual([
+        expect.objectContaining({ llm: expect.objectContaining({ model: 'model-b' }) }),
+        'llamacpp',
+      ])
     })
 
     it('persists reasoningEfforts and reasoningEffortOverride via updateModelSettings', async () => {

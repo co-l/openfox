@@ -257,7 +257,7 @@ function resolveSessionProvider(
   session: Session,
   providerManager: ProviderManager,
   effective?: { providerId: string | null; model: string | null },
-): { providerId: string; baseUrl: string; apiKey?: string; model: string } | undefined {
+): { providerId: string; baseUrl: string; apiKey?: string; model: string; backend?: string } | undefined {
   const providers = providerManager.getProviders()
   const effectiveProviderId = effective?.providerId ?? session.providerId ?? undefined
   const effectiveModel = effective?.model ?? session.providerModel ?? providerManager.getCurrentModel()
@@ -275,6 +275,7 @@ function resolveSessionProvider(
     baseUrl: provider.url,
     ...(provider.apiKey ? { apiKey: provider.apiKey } : {}),
     model: effectiveModel,
+    ...(provider.backend ? { backend: provider.backend } : {}),
   }
 }
 
@@ -330,13 +331,16 @@ export async function generateSessionNameForSession(
       client.setModel(providerConfig.model)
     } else if (providerConfig) {
       const { createLLMClient } = await import('../llm/client.js')
-      client = createLLMClient({
-        llm: {
-          baseUrl: providerConfig.baseUrl,
-          model: providerConfig.model,
-          ...(providerConfig.apiKey ? { apiKey: providerConfig.apiKey } : {}),
-        },
-      } as never)
+      client = createLLMClient(
+        {
+          llm: {
+            baseUrl: providerConfig.baseUrl,
+            model: providerConfig.model,
+            ...(providerConfig.apiKey ? { apiKey: providerConfig.apiKey } : {}),
+          },
+        } as never,
+        (providerConfig.backend ?? 'unknown') as import('../llm/backend.js').Backend,
+      )
     } else if (deps.getLLMClient) {
       // No session-specific provider — use the global/mock client
       client = deps.getLLMClient()

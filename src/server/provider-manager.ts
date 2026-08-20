@@ -460,7 +460,10 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
     const transport = options.adapters?.getTransport(resolveTransportAdapter(provider))
     return transport
       ? createTransportLLMClient(provider, resolvedModel, transport, reasoningEffort)
-      : createLLMClient(createConfigForProvider(provider, resolvedModel, reasoningEffort))
+      : createLLMClient(
+          createConfigForProvider(provider, resolvedModel, reasoningEffort),
+          provider.backend as import('./llm/backend.js').Backend,
+        )
   }
 
   async function fetchProviderModels(provider: Provider): Promise<ModelConfig[]> {
