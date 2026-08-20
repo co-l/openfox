@@ -37,12 +37,20 @@ describe('backend', () => {
       const caps = getBackendCapabilities('llamacpp')
       expect(caps.supportsChatTemplateKwargs).toBe(false)
       expect(caps.supportsTopK).toBe(true)
+      expect(caps.routesEffortViaChatTemplateKwargs).toBe(true)
     })
 
     it('returns vllm-like capabilities for unknown', () => {
       const caps = getBackendCapabilities('unknown')
       expect(caps.supportsChatTemplateKwargs).toBe(true)
       expect(caps.supportsTopK).toBe(true)
+      expect(caps.routesEffortViaChatTemplateKwargs).toBe(false)
+    })
+
+    it('does not route effort via chat_template_kwargs for other backends', () => {
+      for (const backend of ['vllm', 'sglang', 'openai', 'anthropic', 'ollama', 'lmstudio', 'opencode-go'] as const) {
+        expect(getBackendCapabilities(backend).routesEffortViaChatTemplateKwargs).toBe(false)
+      }
     })
   })
 

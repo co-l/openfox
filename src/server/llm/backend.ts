@@ -13,6 +13,12 @@ export interface BackendCapabilities {
   supportsTopK: boolean
   /** Whether the client uses Ollama's native /api/chat (consumes num_ctx) */
   supportsNumCtx: boolean
+  /**
+   * Whether reasoning effort must be routed through chat_template_kwargs
+   * (llama.cpp only populates Jinja template variables from kwargs; a
+   * top-level reasoning_effort body field is silently ignored).
+   */
+  routesEffortViaChatTemplateKwargs: boolean
 }
 
 const BACKEND_CAPABILITIES: Record<Backend, BackendCapabilities> = {
@@ -20,46 +26,55 @@ const BACKEND_CAPABILITIES: Record<Backend, BackendCapabilities> = {
     supportsChatTemplateKwargs: true,
     supportsTopK: true,
     supportsNumCtx: false,
+    routesEffortViaChatTemplateKwargs: false,
   },
   sglang: {
     supportsChatTemplateKwargs: true,
     supportsTopK: true,
     supportsNumCtx: false,
+    routesEffortViaChatTemplateKwargs: false,
   },
   openai: {
     supportsChatTemplateKwargs: false,
     supportsTopK: false,
     supportsNumCtx: false,
+    routesEffortViaChatTemplateKwargs: false,
   },
   anthropic: {
     supportsChatTemplateKwargs: false,
     supportsTopK: false,
     supportsNumCtx: false,
+    routesEffortViaChatTemplateKwargs: false,
   },
   ollama: {
     supportsChatTemplateKwargs: false,
     supportsTopK: false,
     supportsNumCtx: true,
+    routesEffortViaChatTemplateKwargs: false,
   },
   llamacpp: {
     supportsChatTemplateKwargs: false,
     supportsTopK: true,
     supportsNumCtx: false,
+    routesEffortViaChatTemplateKwargs: true,
   },
   lmstudio: {
     supportsChatTemplateKwargs: false,
     supportsTopK: true,
     supportsNumCtx: false,
+    routesEffortViaChatTemplateKwargs: false,
   },
   'opencode-go': {
     supportsChatTemplateKwargs: false,
     supportsTopK: true,
     supportsNumCtx: false,
+    routesEffortViaChatTemplateKwargs: false,
   },
   unknown: {
     supportsChatTemplateKwargs: true,
     supportsTopK: true,
     supportsNumCtx: false,
+    routesEffortViaChatTemplateKwargs: false,
   },
 }
 

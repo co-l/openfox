@@ -222,6 +222,7 @@ describe('llm client pure helpers', () => {
         request: baseRequest,
         profile,
         capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true, supportsNumCtx: false },
+        capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true, routesEffortViaChatTemplateKwargs: false },
       }),
     ).toEqual({
       params: {
@@ -256,6 +257,7 @@ describe('llm client pure helpers', () => {
         },
         profile,
         capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true, supportsNumCtx: false },
+        capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true, routesEffortViaChatTemplateKwargs: false },
         reasoningEffort: 'high', // client config has reasoning_effort set
       }),
     ).toEqual({
@@ -292,6 +294,7 @@ describe('llm client pure helpers', () => {
         },
         profile,
         capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true, supportsNumCtx: false },
+        capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true, routesEffortViaChatTemplateKwargs: false },
       }),
     ).toEqual({
       params: {
@@ -327,6 +330,7 @@ describe('llm client pure helpers', () => {
         },
         profile,
         capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true, supportsNumCtx: false },
+        capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true, routesEffortViaChatTemplateKwargs: false },
       }),
     ).toEqual({
       params: {
@@ -362,6 +366,7 @@ describe('llm client pure helpers', () => {
         },
         profile,
         capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true, supportsNumCtx: false },
+        capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true, routesEffortViaChatTemplateKwargs: false },
         reasoningEffort: 'max',
       }),
     ).toEqual({
@@ -394,6 +399,7 @@ describe('llm client pure helpers', () => {
         request: { messages: [{ role: 'user' as const, content: 'hi' }], tools: [] },
         profile,
         capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, supportsNumCtx: false },
+        capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, routesEffortViaChatTemplateKwargs: false },
       }),
     ).toEqual({
       params: {
@@ -421,6 +427,7 @@ describe('llm client pure helpers', () => {
         },
         profile,
         capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, supportsNumCtx: false },
+        capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, routesEffortViaChatTemplateKwargs: false },
       }),
     ).toEqual({
       params: {
@@ -453,9 +460,117 @@ describe('llm client pure helpers', () => {
       // reasoningEffort simulates session model's thinking config leaking into override client
       reasoningEffort: 'low',
       capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true, supportsNumCtx: false },
+      capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true, routesEffortViaChatTemplateKwargs: false },
     })
     // chat_template_kwargs must NOT be here — the modelSettings don't request it
     expect(result.params).not.toHaveProperty('chat_template_kwargs')
+  })
+
+  it('routes reasoning effort through chat_template_kwargs for llamacpp (top-level field is ignored by llama.cpp)', async () => {
+    const profile = {
+      temperature: 0.2,
+      defaultMaxTokens: 2000,
+      topP: 0.9,
+      topK: 40,
+      supportsVision: false,
+    }
+    const llamacppCaps = {
+      supportsTopK: true,
+      supportsChatTemplateKwargs: false,
+      routesEffortViaChatTemplateKwargs: true,
+    }
+    const baseRequest = {
+      messages: [{ role: 'user' as const, content: 'hello' }],
+    }
+
+    // No model settings — effort goes into chat_template_kwargs, no top-level reasoning_effort
+    const noSettings = await buildNonStreamingCreateParams({
+      model: 'test-model',
+      request: baseRequest,
+      profile,
+      capabilities: llamacppCaps,
+      reasoningEffort: 'xhigh',
+    })
+    expect(noSettings.params).not.toHaveProperty('reasoning_effort')
+    expect(noSettings.params).toHaveProperty('chat_template_kwargs', { reasoning_effort: 'xhigh' })
+
+    // User queryParams (e.g. thinking:{type:enabled}) are merged, and the
+    // resolved effort is layered into chat_template_kwargs
+    const withQueryParams = await buildNonStreamingCreateParams({
+      model: 'test-model',
+      request: {
+        ...baseRequest,
+        modelSettings: { queryParams: { thinking: { type: 'enabled' } } },
+      },
+      profile,
+      capabilities: llamacppCaps,
+      reasoningEffort: 'low',
+    })
+    const qpParams = withQueryParams.params as unknown as Record<string, unknown>
+    expect(qpParams).not.toHaveProperty('reasoning_effort')
+    expect(qpParams).toHaveProperty('thinking', { type: 'enabled' })
+    expect(qpParams).toHaveProperty('chat_template_kwargs', { reasoning_effort: 'low' })
+
+    // User's explicit chat_template_kwargs in queryParams wins over the resolved effort
+    const explicitKwargs = await buildNonStreamingCreateParams({
+      model: 'test-model',
+      request: {
+        ...baseRequest,
+        modelSettings: { queryParams: { chat_template_kwargs: { reasoning_effort: 'medium' } } },
+      },
+      profile,
+      capabilities: llamacppCaps,
+      reasoningEffort: 'xhigh',
+    })
+    expect(explicitKwargs.params).toHaveProperty('chat_template_kwargs', { reasoning_effort: 'medium' })
+
+    // Effort 'none' is expressed as enable_thinking:false (official Qwen templates
+    // reject reasoning_effort:'none' with a 400)
+    const noneEffort = await buildNonStreamingCreateParams({
+      model: 'test-model',
+      request: baseRequest,
+      profile,
+      capabilities: llamacppCaps,
+      reasoningEffort: 'none',
+    })
+    expect(noneEffort.params).not.toHaveProperty('reasoning_effort')
+    expect(noneEffort.params).toHaveProperty('chat_template_kwargs', { enable_thinking: false })
+
+    // 'none' also overrides a user-provided reasoning_effort in kwargs
+    const noneOverKwargs = await buildNonStreamingCreateParams({
+      model: 'test-model',
+      request: {
+        ...baseRequest,
+        modelSettings: { queryParams: { chat_template_kwargs: { reasoning_effort: 'low' } } },
+      },
+      profile,
+      capabilities: llamacppCaps,
+      reasoningEffort: 'none',
+    })
+    expect(noneOverKwargs.params).toHaveProperty('chat_template_kwargs', { enable_thinking: false })
+
+    // No resolved effort and no kwargs — nothing injected
+    const nothing = await buildNonStreamingCreateParams({
+      model: 'test-model',
+      request: baseRequest,
+      profile,
+      capabilities: llamacppCaps,
+    })
+    expect(nothing.params).not.toHaveProperty('chat_template_kwargs')
+    expect(nothing.params).not.toHaveProperty('reasoning_effort')
+
+    // Streaming path behaves identically
+    const streaming = await buildStreamingCreateParams({
+      model: 'test-model',
+      request: { ...baseRequest, modelSettings: { queryParams: { thinking: { type: 'enabled' } } } },
+      profile,
+      capabilities: llamacppCaps,
+      reasoningEffort: 'medium',
+    })
+    const streamParams = streaming.params as unknown as Record<string, unknown>
+    expect(streamParams).not.toHaveProperty('reasoning_effort')
+    expect(streamParams).toHaveProperty('thinking', { type: 'enabled' })
+    expect(streamParams).toHaveProperty('chat_template_kwargs', { reasoning_effort: 'medium' })
   })
 
   it('strips params listed in modelSettings.omitParams from the final request', async () => {
@@ -475,6 +590,7 @@ describe('llm client pure helpers', () => {
       },
       profile,
       capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, supportsNumCtx: false },
+      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, routesEffortViaChatTemplateKwargs: false },
     })
     expect(result.params).not.toHaveProperty('temperature')
     expect(result.params).toHaveProperty('top_p', 0.9)
@@ -496,6 +612,7 @@ describe('llm client pure helpers', () => {
       },
       profile,
       capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, supportsNumCtx: false },
+      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, routesEffortViaChatTemplateKwargs: false },
     })
     expect(result.params).not.toHaveProperty('top_p')
     expect(result.params).toHaveProperty('temperature', 0.7)
@@ -520,6 +637,7 @@ describe('llm client pure helpers', () => {
       },
       profile,
       capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, supportsNumCtx: false },
+      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, routesEffortViaChatTemplateKwargs: false },
     })
     expect(result.params).not.toHaveProperty('temperature')
     expect(result.params).toHaveProperty('custom_param', true)
@@ -577,6 +695,7 @@ describe('llm client pure helpers', () => {
       request: baseReq,
       profile,
       capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, supportsNumCtx: false },
+      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, routesEffortViaChatTemplateKwargs: false },
     })
     expect(withoutOmit.params).toHaveProperty('temperature', 0.7)
 
@@ -585,6 +704,7 @@ describe('llm client pure helpers', () => {
       request: { ...baseReq, modelSettings: { omitParams: [] } },
       profile,
       capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, supportsNumCtx: false },
+      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, routesEffortViaChatTemplateKwargs: false },
     })
     expect(withEmpty.params).toHaveProperty('temperature', 0.7)
   })
@@ -604,6 +724,7 @@ describe('llm client pure helpers', () => {
       },
       profile,
       capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, supportsNumCtx: false },
+      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, routesEffortViaChatTemplateKwargs: false },
     })
     expect(result.params).not.toHaveProperty('temperature')
     expect(result.params).not.toHaveProperty('max_tokens')

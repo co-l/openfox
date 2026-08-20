@@ -87,7 +87,10 @@ async function buildAttachmentContent(
   return content
 }
 
-type MinimalCapabilities = Pick<BackendCapabilities, 'supportsTopK' | 'supportsChatTemplateKwargs' | 'supportsNumCtx'>
+type MinimalCapabilities = Pick<
+  BackendCapabilities,
+  'supportsTopK' | 'supportsChatTemplateKwargs' | 'supportsNumCtx' | 'routesEffortViaChatTemplateKwargs'
+>
 type MinimalProfile = Pick<ModelProfile, 'temperature' | 'defaultMaxTokens' | 'topP' | 'topK' | 'supportsVision'>
 
 function convertToolCalls(
@@ -283,7 +286,35 @@ async function buildChatCompletionCreateParams(
   const hasQueryParams = queryParams && Object.keys(queryParams).length > 0
   const hasExplicitModelSettings = hasQueryParams || !!request.modelSettings?.chatTemplateKwargs
 
-  if (hasQueryParams) {
+  if (capabilities.routesEffortViaChatTemplateKwargs) {
+    // llama.cpp only reads reasoning_effort from chat_template_kwargs (Jinja
+    // template variables); a top-level body field is silently ignored.
+    let userKwargs: Record<string, unknown> | undefined = request.modelSettings?.chatTemplateKwargs
+    if (hasQueryParams) {
+      // Merge the user's explicit queryParams, but route chat_template_kwargs
+      // separately so the resolved effort can be layered onto it.
+      const { chat_template_kwargs: userKwargsFromQP, ...restQueryParams } = queryParams as Record<
+        string,
+        unknown
+      >
+      Object.assign(params as unknown as Record<string, unknown>, restQueryParams)
+      if (userKwargsFromQP) {
+        userKwargs = userKwargsFromQP as Record<string, unknown>
+      }
+    }
+    const kwargs: Record<string, unknown> = { ...(userKwargs ?? {}) }
+    if (resolvedEffort === 'none') {
+      // 'none' is the universal "thinking off" switch. Official Qwen templates
+      // reject reasoning_effort:'none' (400), so express it as enable_thinking.
+      delete kwargs['reasoning_effort']
+      kwargs['enable_thinking'] = false
+    } else if (resolvedEffort && kwargs['reasoning_effort'] === undefined) {
+      kwargs['reasoning_effort'] = resolvedEffort
+    }
+    if (Object.keys(kwargs).length > 0) {
+      ;(params as unknown as Record<string, unknown>)['chat_template_kwargs'] = kwargs
+    }
+  } else if (hasQueryParams) {
     // queryParams are the user's explicit config — merge into params
     Object.assign(params as unknown as Record<string, unknown>, queryParams)
     // reasoning_effort from client config supersedes queryParams (user-set thinkingLevel wins)

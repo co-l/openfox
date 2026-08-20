@@ -61,6 +61,7 @@ describe('user vision override', () => {
       },
       profile,
       capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, supportsNumCtx: false },
+      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, routesEffortViaChatTemplateKwargs: false },
     })
 
     expect((result.params as any).messages).toEqual([
@@ -90,6 +91,7 @@ describe('user vision override', () => {
       },
       profile,
       capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, supportsNumCtx: false },
+      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, routesEffortViaChatTemplateKwargs: false },
     })
 
     expect((result.params as any).messages).toEqual([
@@ -119,6 +121,7 @@ describe('user vision override', () => {
       },
       profile,
       capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, supportsNumCtx: false },
+      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, routesEffortViaChatTemplateKwargs: false },
     })
 
     expect((result.params as any).messages).toEqual([
@@ -148,6 +151,7 @@ describe('user vision override', () => {
       },
       profile,
       capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, supportsNumCtx: false },
+      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, routesEffortViaChatTemplateKwargs: false },
     })
 
     expect((result.params as any).messages).toEqual([
