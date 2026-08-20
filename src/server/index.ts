@@ -3352,6 +3352,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     sessionManager,
     providerManager,
     () => mcpManager.getAllServers(),
+    () => providerAdapters.getTransitionHandlers(),
   )
   const wss = wssExports.wss
 

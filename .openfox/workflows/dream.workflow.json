@@ -20,7 +20,9 @@
       "prompt": "Implement the requested change. When you are done, call step_done().",
       "transitions": [
         {
-          "when": { "type": "always" },
+          "when": {
+            "type": "always"
+          },
           "goto": "verify"
         }
       ]
@@ -30,7 +32,7 @@
       "name": "Verify & Route",
       "type": "agent",
       "phase": "verification",
-      "agentId": "verifier",
+      "agentId": "dream-verifier",
       "prompt": "Run the tests and lint. Report the outcome via step_done().",
       "transitions": [
         {
@@ -40,9 +42,21 @@
             "config": {
               "prompt": "Given the verification outcome, what should we do next?",
               "candidates": [
-                { "goto": "build", "label": "Retry build", "description": "Tests or lint failed; rebuild after fixes" },
-                { "goto": "review", "label": "Send to review", "description": "Everything passed; have it reviewed" },
-                { "goto": "$done", "label": "Finish", "description": "Nothing left to do" }
+                {
+                  "goto": "build",
+                  "label": "Retry build",
+                  "description": "Tests or lint failed; rebuild after fixes"
+                },
+                {
+                  "goto": "review",
+                  "label": "Send to review",
+                  "description": "Everything passed; have it reviewed"
+                },
+                {
+                  "goto": "$done",
+                  "label": "Finish",
+                  "description": "Nothing left to do"
+                }
               ],
               "thisGoto": "build"
             }
@@ -56,9 +70,21 @@
             "config": {
               "prompt": "Given the verification outcome, what should we do next?",
               "candidates": [
-                { "goto": "build", "label": "Retry build", "description": "Tests or lint failed; rebuild after fixes" },
-                { "goto": "review", "label": "Send to review", "description": "Everything passed; have it reviewed" },
-                { "goto": "$done", "label": "Finish", "description": "Nothing left to do" }
+                {
+                  "goto": "build",
+                  "label": "Retry build",
+                  "description": "Tests or lint failed; rebuild after fixes"
+                },
+                {
+                  "goto": "review",
+                  "label": "Send to review",
+                  "description": "Everything passed; have it reviewed"
+                },
+                {
+                  "goto": "$done",
+                  "label": "Finish",
+                  "description": "Nothing left to do"
+                }
               ],
               "thisGoto": "review"
             }
@@ -72,9 +98,21 @@
             "config": {
               "prompt": "Given the verification outcome, what should we do next?",
               "candidates": [
-                { "goto": "build", "label": "Retry build", "description": "Tests or lint failed; rebuild after fixes" },
-                { "goto": "review", "label": "Send to review", "description": "Everything passed; have it reviewed" },
-                { "goto": "$done", "label": "Finish", "description": "Nothing left to do" }
+                {
+                  "goto": "build",
+                  "label": "Retry build",
+                  "description": "Tests or lint failed; rebuild after fixes"
+                },
+                {
+                  "goto": "review",
+                  "label": "Send to review",
+                  "description": "Everything passed; have it reviewed"
+                },
+                {
+                  "goto": "$done",
+                  "label": "Finish",
+                  "description": "Nothing left to do"
+                }
               ],
               "thisGoto": "$done"
             }
@@ -82,7 +120,9 @@
           "goto": "$done"
         },
         {
-          "when": { "type": "always" },
+          "when": {
+            "type": "always"
+          },
           "goto": "$done"
         }
       ]
@@ -92,11 +132,13 @@
       "name": "Review",
       "type": "agent",
       "phase": "review",
-      "agentId": "reviewer",
+      "agentId": "dream-reviewer",
       "prompt": "Review the change for correctness and style. When done, call step_done().",
       "transitions": [
         {
-          "when": { "type": "always" },
+          "when": {
+            "type": "always"
+          },
           "goto": "$done"
         }
       ]
