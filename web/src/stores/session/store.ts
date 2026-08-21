@@ -4,6 +4,7 @@ import { appUrl } from '../../lib/basePath'
 import { consumePrefetchedSession } from '../../lib/sessionPrefetch'
 import type { SessionSummary, Message, Session, ContextState, WorkflowExecution } from '@shared/types.js'
 import type { QueuedMessage, PendingQuestionPayload } from '@shared/protocol.js'
+import type { SessionStatus } from '@shared/session-status.js'
 import { wsClient } from '../../lib/ws'
 import { useConfigStore } from '../config'
 import { useProjectStore } from '../project'
@@ -41,6 +42,7 @@ interface SessionLoadData {
   pendingConfirmations?: PendingPathConfirmation[]
   pendingQuestions?: PendingQuestionPayload[]
   activeWorkflowExecution?: WorkflowExecution | null
+  status?: SessionStatus
 }
 
 function applyToolOutputs(
@@ -302,6 +304,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
         }
         return {
           ...replacePane(s, sessionId, nextPane),
+          ...(data.status ? { sessionStatuses: { ...s.sessionStatuses, [sessionId]: data.status } } : {}),
           crossSessionConfirmations: crossCleanup2,
           sessionsWithPendingConfirmations: Object.keys(crossCleanup2),
         }
@@ -331,6 +334,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
     showPasswordModal: false,
     passwordModalRetry: false,
     sessions: [],
+    sessionStatuses: {},
     searchSessions: null,
     currentSession: null,
     unreadSessionIds: [],
@@ -630,8 +634,10 @@ export const useSessionStore = create<SessionState>((set, get) => {
           const res = await authFetch(`/api/sessions?${params.toString()}`)
           const data = await res.json()
           const incoming = (data.sessions ?? []) as SessionSummary[]
+          const statuses = (data.statuses ?? {}) as Record<string, SessionStatus>
           set((state) => ({
             sessions: mergeSessionSummaries(incoming, state),
+            sessionStatuses: { ...state.sessionStatuses, ...statuses },
             sessionsHasMore: projectId ? (data.hasMore ?? false) : true,
           }))
 

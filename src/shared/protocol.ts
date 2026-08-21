@@ -1,3 +1,4 @@
+import type { SessionStatus } from './session-status.js'
 import type {
   Project,
   Session,
@@ -86,6 +87,7 @@ export type ServerMessageType =
   | 'session.deleted'
   | 'session.deletedAll'
   | 'session.running' // Real-time running state change
+  | 'session.status' // Canonical factual status projection
   | 'session.name_generated' // Session name was auto-generated
   | 'session.confirmation_pending' // Path confirmation waiting in another session (broadcast to all)
   | 'session.confirmation_resolved' // Path confirmation was answered (broadcast to all)
@@ -221,7 +223,10 @@ export interface PendingPathConfirmationPayload {
 
 export interface SessionListPayload {
   sessions: SessionSummary[]
+  statuses?: Record<string, SessionStatus>
 }
+
+export type SessionStatusPayload = SessionStatus
 
 export interface SessionCreatedPayload {
   session: SessionSummary

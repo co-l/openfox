@@ -5,6 +5,7 @@ import type {
   GitDiffFile,
   SessionListPayload,
   SessionRunningPayload,
+  SessionStatusPayload,
   ChatAskUserPayload,
   ChatDeltaPayload,
   ChatThinkingPayload,
@@ -324,6 +325,14 @@ export function handleServerMessage(
     case 'session.deletedAll': {
       set({ searchSessions: null })
       get().listSessions()
+      break
+    }
+
+    case 'session.status': {
+      const payload = message.payload as SessionStatusPayload
+      set((state) => ({
+        sessionStatuses: { ...state.sessionStatuses, [payload.sessionId]: payload },
+      }))
       break
     }
 

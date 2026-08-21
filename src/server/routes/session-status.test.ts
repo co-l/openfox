@@ -26,15 +26,16 @@ function buildSession(overrides: Partial<Session> = {}): Session {
 }
 
 describe('projectSessionStatus', () => {
-  it('returns schemaVersion 1', () => {
+  it('returns schemaVersion 2', () => {
     const status = projectSessionStatus({
       session: buildSession(),
       pendingQuestionsCount: 0,
       pendingConfirmationsCount: 0,
       activeWorkflowStepName: null,
+      lastProgressAt: null,
     })
     expect(status.schemaVersion).toBe(SESSION_STATUS_SCHEMA_VERSION)
-    expect(status.schemaVersion).toBe(1)
+    expect(status.schemaVersion).toBe(2)
   })
 
   it('returns state "waiting" when phase is "waiting"', () => {
@@ -43,6 +44,7 @@ describe('projectSessionStatus', () => {
       pendingQuestionsCount: 0,
       pendingConfirmationsCount: 0,
       activeWorkflowStepName: null,
+      lastProgressAt: null,
     })
     expect(status.state).toBe('waiting')
     expect(status.waitingForUser).toBe(false)
@@ -54,6 +56,7 @@ describe('projectSessionStatus', () => {
       pendingQuestionsCount: 2,
       pendingConfirmationsCount: 0,
       activeWorkflowStepName: null,
+      lastProgressAt: null,
     })
     expect(status.state).toBe('waiting')
     expect(status.waitingForUser).toBe(true)
@@ -65,6 +68,7 @@ describe('projectSessionStatus', () => {
       pendingQuestionsCount: 0,
       pendingConfirmationsCount: 1,
       activeWorkflowStepName: null,
+      lastProgressAt: null,
     })
     expect(status.state).toBe('waiting')
     expect(status.waitingForUser).toBe(true)
@@ -76,6 +80,7 @@ describe('projectSessionStatus', () => {
       pendingQuestionsCount: 1,
       pendingConfirmationsCount: 0,
       activeWorkflowStepName: null,
+      lastProgressAt: null,
     })
     expect(status.state).toBe('waiting')
   })
@@ -86,6 +91,7 @@ describe('projectSessionStatus', () => {
       pendingQuestionsCount: 0,
       pendingConfirmationsCount: 0,
       activeWorkflowStepName: null,
+      lastProgressAt: null,
     })
     expect(status.state).toBe('blocked')
   })
@@ -96,6 +102,7 @@ describe('projectSessionStatus', () => {
       pendingQuestionsCount: 0,
       pendingConfirmationsCount: 0,
       activeWorkflowStepName: null,
+      lastProgressAt: null,
     })
     expect(status.state).toBe('blocked')
   })
@@ -106,6 +113,7 @@ describe('projectSessionStatus', () => {
       pendingQuestionsCount: 0,
       pendingConfirmationsCount: 0,
       activeWorkflowStepName: null,
+      lastProgressAt: null,
     })
     expect(status.state).toBe('completed')
   })
@@ -116,6 +124,7 @@ describe('projectSessionStatus', () => {
       pendingQuestionsCount: 0,
       pendingConfirmationsCount: 0,
       activeWorkflowStepName: null,
+      lastProgressAt: null,
     })
     expect(status.state).toBe('running')
   })
@@ -126,6 +135,7 @@ describe('projectSessionStatus', () => {
       pendingQuestionsCount: 0,
       pendingConfirmationsCount: 0,
       activeWorkflowStepName: null,
+      lastProgressAt: null,
     })
     expect(status.state).toBe('completed')
   })
@@ -136,6 +146,7 @@ describe('projectSessionStatus', () => {
       pendingQuestionsCount: 0,
       pendingConfirmationsCount: 0,
       activeWorkflowStepName: null,
+      lastProgressAt: null,
     })
     expect(status.state).toBe('running')
   })
@@ -146,6 +157,7 @@ describe('projectSessionStatus', () => {
       pendingQuestionsCount: 0,
       pendingConfirmationsCount: 0,
       activeWorkflowStepName: null,
+      lastProgressAt: null,
     })
     expect(status.state).toBeNull()
   })
@@ -156,6 +168,7 @@ describe('projectSessionStatus', () => {
       pendingQuestionsCount: 0,
       pendingConfirmationsCount: 0,
       activeWorkflowStepName: null,
+      lastProgressAt: null,
     })
     expect(status.phase).toBe('verification')
   })
@@ -166,6 +179,7 @@ describe('projectSessionStatus', () => {
       pendingQuestionsCount: 0,
       pendingConfirmationsCount: 0,
       activeWorkflowStepName: 'Build feature',
+      lastProgressAt: null,
     })
     expect(status.workflowStep).toBe('Build feature')
   })
@@ -176,6 +190,7 @@ describe('projectSessionStatus', () => {
       pendingQuestionsCount: 0,
       pendingConfirmationsCount: 0,
       activeWorkflowStepName: null,
+      lastProgressAt: null,
     })
     expect(status.workflowStep).toBeNull()
   })
@@ -186,8 +201,32 @@ describe('projectSessionStatus', () => {
       pendingQuestionsCount: 0,
       pendingConfirmationsCount: 0,
       activeWorkflowStepName: null,
+      lastProgressAt: null,
     })
     expect(status.lastActivityAt).toBe('2024-06-15T12:34:56.000Z')
+  })
+
+  it('exposes factual progress independently from activity', () => {
+    const status = projectSessionStatus({
+      session: buildSession({ updatedAt: '2024-06-15T12:34:56.000Z' }),
+      pendingQuestionsCount: 0,
+      pendingConfirmationsCount: 0,
+      activeWorkflowStepName: null,
+      lastProgressAt: '2024-06-14T10:20:30.000Z',
+    })
+    expect(status.lastActivityAt).toBe('2024-06-15T12:34:56.000Z')
+    expect(status.lastProgressAt).toBe('2024-06-14T10:20:30.000Z')
+  })
+
+  it('returns null when there is no reliable progress evidence', () => {
+    const status = projectSessionStatus({
+      session: buildSession({ phase: 'build', isRunning: true }),
+      pendingQuestionsCount: 0,
+      pendingConfirmationsCount: 0,
+      activeWorkflowStepName: null,
+      lastProgressAt: null,
+    })
+    expect(status.lastProgressAt).toBeNull()
   })
 
   it('exposes a deep link to the UI', () => {
@@ -196,6 +235,7 @@ describe('projectSessionStatus', () => {
       pendingQuestionsCount: 0,
       pendingConfirmationsCount: 0,
       activeWorkflowStepName: null,
+      lastProgressAt: null,
     })
     expect(status.links.ui).toBe('/?sessionId=session%2Fwith-special%20id')
   })
@@ -206,6 +246,7 @@ describe('projectSessionStatus', () => {
       pendingQuestionsCount: 0,
       pendingConfirmationsCount: 0,
       activeWorkflowStepName: null,
+      lastProgressAt: null,
     })
     expect(status.sessionId).toBe('abc-123')
   })
@@ -216,6 +257,7 @@ describe('projectSessionStatus', () => {
       pendingQuestionsCount: 0,
       pendingConfirmationsCount: 0,
       activeWorkflowStepName: 'Step 1',
+      lastProgressAt: null,
     }
     const a = projectSessionStatus(inputs)
     const b = projectSessionStatus(inputs)
@@ -230,6 +272,7 @@ describe('projectSessionStatus', () => {
       pendingQuestionsCount: 0,
       pendingConfirmationsCount: 0,
       activeWorkflowStepName: null,
+      lastProgressAt: null,
     })
     expect(JSON.stringify(session)).toBe(snapshot)
   })
@@ -245,6 +288,7 @@ describe('SessionStatus JSON contract (snapshot)', () => {
           pendingQuestionsCount: 0,
           pendingConfirmationsCount: 0,
           activeWorkflowStepName: 'Implement feature',
+          lastProgressAt: null,
         }),
     },
     {
@@ -255,6 +299,7 @@ describe('SessionStatus JSON contract (snapshot)', () => {
           pendingQuestionsCount: 0,
           pendingConfirmationsCount: 0,
           activeWorkflowStepName: null,
+          lastProgressAt: null,
         }),
     },
     {
@@ -265,6 +310,7 @@ describe('SessionStatus JSON contract (snapshot)', () => {
           pendingQuestionsCount: 1,
           pendingConfirmationsCount: 0,
           activeWorkflowStepName: null,
+          lastProgressAt: null,
         }),
     },
     {
@@ -275,6 +321,7 @@ describe('SessionStatus JSON contract (snapshot)', () => {
           pendingQuestionsCount: 0,
           pendingConfirmationsCount: 0,
           activeWorkflowStepName: null,
+          lastProgressAt: null,
         }),
     },
     {
@@ -285,6 +332,7 @@ describe('SessionStatus JSON contract (snapshot)', () => {
           pendingQuestionsCount: 0,
           pendingConfirmationsCount: 0,
           activeWorkflowStepName: null,
+          lastProgressAt: null,
         }),
     },
     {
@@ -295,6 +343,7 @@ describe('SessionStatus JSON contract (snapshot)', () => {
           pendingQuestionsCount: 0,
           pendingConfirmationsCount: 0,
           activeWorkflowStepName: null,
+          lastProgressAt: null,
         }),
     },
   ]

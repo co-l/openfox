@@ -52,6 +52,19 @@ const sessionStoreState = {
   unreadSessionIds: ['session-3'],
   sessionsWithPendingConfirmations: [],
   pendingPathConfirmations: [],
+  sessionStatuses: {
+    'session-1': {
+      schemaVersion: 2 as const,
+      sessionId: 'session-1',
+      state: 'running' as const,
+      phase: 'build' as const,
+      workflowStep: null,
+      waitingForUser: false,
+      lastActivityAt: '2024-01-01T00:05:00.000Z',
+      lastProgressAt: '2024-01-01T00:04:00.000Z' as string | null,
+      links: { ui: '/?sessionId=session-1' },
+    },
+  },
   createSession: vi.fn(),
   deleteSession: vi.fn(),
   listSessions: vi.fn(),
@@ -97,6 +110,29 @@ describe('Sidebar', () => {
 
     expect(html).toContain('Session running')
     expect(html).toContain('animate-spin')
+  })
+
+  it('shows factual progress for running sessions', () => {
+    vi.setSystemTime(new Date('2024-01-01T00:08:00.000Z'))
+    const html = renderToStaticMarkup(<Sidebar projectId="project-1" />)
+    expect(html).toContain('last progress 4m ago')
+  })
+
+  it('shows a discrete empty state when a running session has no factual progress', () => {
+    sessionStoreStateRef.current = {
+      ...sessionStoreState,
+      sessionStatuses: {
+        'session-1': { ...sessionStoreState.sessionStatuses['session-1'], lastProgressAt: null },
+      },
+    }
+    const html = renderToStaticMarkup(<Sidebar projectId="project-1" />)
+    expect(html).toContain('no factual progress yet')
+  })
+
+  it('does not show factual progress for inactive sessions', () => {
+    const html = renderToStaticMarkup(<Sidebar projectId="project-1" />)
+    expect(html).not.toContain('last progress 4m ago')
+    expect(html).not.toContain('stalled')
   })
 
   it('groups all indicators on the right with proper alignment', () => {

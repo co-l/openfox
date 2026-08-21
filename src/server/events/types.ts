@@ -429,6 +429,7 @@ export interface SessionSnapshot {
   readFiles?: ReadFileEntry[]
   cachedSystemPrompt?: string
   dynamicContextHash?: string
+  lastProgressAt?: string | null
   snapshotSeq: number
   snapshotAt: number
 

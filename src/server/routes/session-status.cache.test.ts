@@ -108,6 +108,7 @@ describe('session status projection — KV-cache invariant (Cache Impact: No)', 
         pendingQuestionsCount: 0,
         pendingConfirmationsCount: 0,
         activeWorkflowStepName: 'Step',
+        lastProgressAt: null,
       })
     }
 
@@ -136,6 +137,7 @@ describe('session status projection — KV-cache invariant (Cache Impact: No)', 
         pendingQuestionsCount: 0,
         pendingConfirmationsCount: 0,
         activeWorkflowStepName: null,
+        lastProgressAt: null,
       })
     }
 
@@ -148,14 +150,47 @@ describe('session status projection — KV-cache invariant (Cache Impact: No)', 
     expect(cacheAfter).toBe(cacheBaseline)
   })
 
-  it('projection module does not import from LLM/context/skills/warmup modules', async () => {
-    // Cache impact: No — verify statically that the projection file does not
-    // import any of the modules that participate in the LLM request path.
-    const forbidden = ['src/server/llm', 'src/server/context', 'src/server/skills', 'src/server/warmup']
+  it('does not derive stalled from lastActivityAt because cache writes update sessions.updatedAt', async () => {
     const fs = await import('fs/promises')
-    const source = await fs.readFile(fileURLToPath(new URL('./session-status.ts', import.meta.url)), 'utf8')
-    for (const needle of forbidden) {
-      expect(source).not.toContain(needle)
+    const projection = await fs.readFile(fileURLToPath(new URL('./session-status.ts', import.meta.url)), 'utf8')
+    const sessionsDb = await fs.readFile(fileURLToPath(new URL('../db/sessions.ts', import.meta.url)), 'utf8')
+    const cacheWriterStart = sessionsDb.indexOf('export function updateSessionCachedPrompt')
+    const cacheWriterEnd = sessionsDb.indexOf('export function getSessionCachedPrompt', cacheWriterStart)
+    expect(cacheWriterStart).toBeGreaterThanOrEqual(0)
+    expect(cacheWriterEnd).toBeGreaterThan(cacheWriterStart)
+    expect(sessionsDb.slice(cacheWriterStart, cacheWriterEnd)).toContain('updated_at = ?')
+    expect(projection).not.toContain('stalled')
+  })
+
+  it('status projection and GET handler stay outside the LLM request path', async () => {
+    const forbidden = [
+      "from '../llm",
+      "from './llm",
+      "import('../llm",
+      "import('./llm",
+      "from '../context",
+      "from './context",
+      "import('../context",
+      "import('./context",
+      "from '../skills",
+      "from './skills",
+      "import('../skills",
+      "import('./skills",
+      "from '../warmup",
+      "from './warmup",
+      "import('../warmup",
+      "import('./warmup",
+    ]
+    const fs = await import('fs/promises')
+    const projection = await fs.readFile(fileURLToPath(new URL('./session-status.ts', import.meta.url)), 'utf8')
+    const server = await fs.readFile(fileURLToPath(new URL('../index.ts', import.meta.url)), 'utf8')
+    const routeStart = server.indexOf("app.get('/api/sessions/:id/status'")
+    const routeEnd = server.indexOf("app.delete('/api/sessions/:id'", routeStart)
+    expect(routeStart).toBeGreaterThanOrEqual(0)
+    expect(routeEnd).toBeGreaterThan(routeStart)
+    const route = server.slice(routeStart, routeEnd)
+    for (const source of [projection, route]) {
+      for (const needle of forbidden) expect(source).not.toContain(needle)
     }
   })
 })

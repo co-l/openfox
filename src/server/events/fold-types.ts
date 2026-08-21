@@ -52,6 +52,7 @@ export interface FoldedSessionState {
   readFiles: ReadFileEntry[]
   cachedSystemPrompt?: string
   dynamicContextHash?: string
+  lastProgressAt: string | null
   pendingConfirmations: PendingPathConfirmation[]
   sessionInit?: {
     projectId: string
