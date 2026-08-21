@@ -154,8 +154,16 @@ export const mcpConfigTool: Tool = createTool<McpConfigArgs>(
         return helpers.success('No MCP servers configured.')
       }
 
+      const { getSessionDisabledServers } = await import('../mcp/session-overrides.js')
+      const disabledForSession = new Set(context.sessionId ? getSessionDisabledServers(context.sessionId) : [])
+
+      const visibleServers = servers.filter((server) => !disabledForSession.has(server.name))
+      if (visibleServers.length === 0) {
+        return helpers.success('No MCP servers configured.')
+      }
+
       const lines: string[] = []
-      for (const server of servers) {
+      for (const server of visibleServers) {
         const connStr = server.status === 'connected' ? '●' : server.status === 'error' ? '✗' : '○'
         const cmdStr = server.config.command
           ? `${server.config.command} ${(server.config.args ?? []).join(' ')}`

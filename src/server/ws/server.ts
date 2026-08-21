@@ -1177,24 +1177,30 @@ async function handleClientMessage(
       const session = sessionManager.requireSession(sessionId)
 
       try {
-        const { buildCachedPrompt } = await import('../chat/dynamic-context.js')
+        const { buildCachedPrompt, computePreviewToolDiff } = await import('../chat/dynamic-context.js')
         const allAgents = await import('../agents/registry.js')
         const agentDef =
           allAgents.findAgentById(session.mode, await allAgents.loadAllAgentsDefault()) ??
           allAgents.findAgentById('planner', await allAgents.loadAllAgentsDefault())!
         const modelName = session.providerModel ?? _providerManager?.getCurrentModel()
-        const { systemPrompt: newPrompt, hash: newHash } = await buildCachedPrompt(
-          sessionManager,
-          sessionId,
-          agentDef,
-          modelName,
-        )
+        const {
+          systemPrompt: newPrompt,
+          tools: newTools,
+          hash: newHash,
+        } = await buildCachedPrompt(sessionManager, sessionId, agentDef, modelName)
 
         const oldCached = sessionManager.getCachedPrompt(sessionId)
         const oldPrompt = oldCached?.systemPrompt
 
         // Compute unified diff
         const diff = oldPrompt ? computeUnifiedDiff(oldPrompt, newPrompt) : []
+
+        // Baseline: cached tools if present, else the unfiltered registry
+        // (all MCP tools, no session overrides) so tool add/remove is visible
+        // even before a cached prompt exists.
+        const { getToolRegistryForAgent } = await import('../tools/index.js')
+        const unfilteredTools = getToolRegistryForAgent(agentDef).definitions
+        const toolDiff = computePreviewToolDiff(oldCached?.tools, unfilteredTools, newTools)
 
         send({
           type: 'context.preview',
@@ -1204,6 +1210,7 @@ async function handleClientMessage(
             oldHash: oldCached?.hash,
             newHash,
             diff,
+            ...(toolDiff.length > 0 ? { toolDiff } : {}),
           },
           id: message.id,
         })

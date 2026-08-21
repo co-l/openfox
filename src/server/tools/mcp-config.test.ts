@@ -53,6 +53,10 @@ vi.mock('./index.js', () => ({
   createToolRegistry: vi.fn(() => ({ definitions: [] })),
 }))
 
+vi.mock('../mcp/session-overrides.js', () => ({
+  getSessionDisabledServers: (sessionId: string) => (sessionId === 's2' ? ['filesystem'] : []),
+}))
+
 vi.mock('../utils/logger.js', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
 }))
@@ -175,6 +179,37 @@ describe('mcpConfigTool', () => {
       expect(result.output).not.toContain('(from cache)')
       expect(result.output).not.toContain('(live)')
       expect(result.output).toContain('0 tools')
+    })
+
+    it('should omit servers disabled for the session', async () => {
+      setMcpManagerForTools(mockManager)
+
+      const { mcpConfigTool } = await import('./mcp-config.js')
+
+      const result = await mcpConfigTool.execute(
+        { action: 'list' },
+        { workdir: '/tmp', sessionId: 's2', sessionManager: mockSessionManager() },
+      )
+
+      expect(result.success).toBe(true)
+      expect(result.output).toBe('No MCP servers configured.')
+      expect(result.output).not.toContain('filesystem')
+    })
+
+    it('should keep servers enabled for the session with their tool listing', async () => {
+      setMcpManagerForTools(mockManager)
+
+      const { mcpConfigTool } = await import('./mcp-config.js')
+
+      const result = await mcpConfigTool.execute(
+        { action: 'list' },
+        { workdir: '/tmp', sessionId: 's1', sessionManager: mockSessionManager() },
+      )
+
+      expect(result.success).toBe(true)
+      expect(result.output).not.toContain('disabled for this session')
+      expect(result.output).toContain('Enabled: read_file')
+      expect(result.output).toContain('Disabled: write_file')
     })
 
     it('should report no servers when none configured', async () => {

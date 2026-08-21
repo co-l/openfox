@@ -289,6 +289,7 @@ function SimpleDiffLine({ type, content }: SimpleDiffLineProps) {
 
 interface UnifiedDiffViewerProps {
   diff: ProtocolDiffLine[]
+  hideHeader?: boolean
 }
 
 /**
@@ -296,7 +297,7 @@ interface UnifiedDiffViewerProps {
  * Groups removed lines before their corresponding added lines at each change location.
  * Used for system prompt diff preview and other text-based diffs.
  */
-export function UnifiedDiffViewer({ diff }: UnifiedDiffViewerProps) {
+export function UnifiedDiffViewer({ diff, hideHeader = false }: UnifiedDiffViewerProps) {
   const changes: Array<{ type: 'removed' | 'added'; content: string }> = []
 
   let i = 0
@@ -336,7 +337,9 @@ export function UnifiedDiffViewer({ diff }: UnifiedDiffViewerProps) {
 
   return (
     <div>
-      <div className="px-2 py-1 text-xs font-semibold text-text-muted uppercase tracking-wide">Changes:</div>
+      {!hideHeader && (
+        <div className="px-2 py-1 text-xs font-semibold text-text-muted uppercase tracking-wide">Changes:</div>
+      )}
       <div className="font-mono text-xs leading-5">
         {changes.map((change, idx) => (
           <SimpleDiffLine key={idx} type={change.type} content={change.content} />
