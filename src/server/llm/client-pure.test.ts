@@ -221,8 +221,12 @@ describe('llm client pure helpers', () => {
         model: 'test-model',
         request: baseRequest,
         profile,
-        capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true, supportsNumCtx: false },
-        capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true, routesEffortViaChatTemplateKwargs: false },
+        capabilities: {
+          supportsTopK: true,
+          supportsChatTemplateKwargs: true,
+          supportsNumCtx: false,
+          routesEffortViaChatTemplateKwargs: false,
+        },
       }),
     ).toEqual({
       params: {
@@ -256,8 +260,12 @@ describe('llm client pure helpers', () => {
           modelSettings: { chatTemplateKwargs: { enable_thinking: false } },
         },
         profile,
-        capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true, supportsNumCtx: false },
-        capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true, routesEffortViaChatTemplateKwargs: false },
+        capabilities: {
+          supportsTopK: true,
+          supportsChatTemplateKwargs: true,
+          supportsNumCtx: false,
+          routesEffortViaChatTemplateKwargs: false,
+        },
         reasoningEffort: 'high', // client config has reasoning_effort set
       }),
     ).toEqual({
@@ -293,8 +301,12 @@ describe('llm client pure helpers', () => {
           modelSettings: { chatTemplateKwargs: { enable_thinking: false } },
         },
         profile,
-        capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true, supportsNumCtx: false },
-        capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true, routesEffortViaChatTemplateKwargs: false },
+        capabilities: {
+          supportsTopK: true,
+          supportsChatTemplateKwargs: true,
+          supportsNumCtx: false,
+          routesEffortViaChatTemplateKwargs: false,
+        },
       }),
     ).toEqual({
       params: {
@@ -329,8 +341,12 @@ describe('llm client pure helpers', () => {
           modelSettings: { queryParams: { disable_thinking: true, skip_special_tokens: false } },
         },
         profile,
-        capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true, supportsNumCtx: false },
-        capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true, routesEffortViaChatTemplateKwargs: false },
+        capabilities: {
+          supportsTopK: true,
+          supportsChatTemplateKwargs: true,
+          supportsNumCtx: false,
+          routesEffortViaChatTemplateKwargs: false,
+        },
       }),
     ).toEqual({
       params: {
@@ -365,8 +381,12 @@ describe('llm client pure helpers', () => {
           modelSettings: { queryParams: { reasoning_effort: 'low' } },
         },
         profile,
-        capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true, supportsNumCtx: false },
-        capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true, routesEffortViaChatTemplateKwargs: false },
+        capabilities: {
+          supportsTopK: true,
+          supportsChatTemplateKwargs: true,
+          supportsNumCtx: false,
+          routesEffortViaChatTemplateKwargs: false,
+        },
         reasoningEffort: 'max',
       }),
     ).toEqual({
@@ -398,8 +418,12 @@ describe('llm client pure helpers', () => {
         model: 'test-model',
         request: { messages: [{ role: 'user' as const, content: 'hi' }], tools: [] },
         profile,
-        capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, supportsNumCtx: false },
-        capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, routesEffortViaChatTemplateKwargs: false },
+        capabilities: {
+          supportsTopK: false,
+          supportsChatTemplateKwargs: false,
+          supportsNumCtx: false,
+          routesEffortViaChatTemplateKwargs: false,
+        },
       }),
     ).toEqual({
       params: {
@@ -426,8 +450,12 @@ describe('llm client pure helpers', () => {
           modelSettings: { maxTokens: 5000, temperature: 0.5, topP: 0.95 },
         },
         profile,
-        capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, supportsNumCtx: false },
-        capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, routesEffortViaChatTemplateKwargs: false },
+        capabilities: {
+          supportsTopK: false,
+          supportsChatTemplateKwargs: false,
+          supportsNumCtx: false,
+          routesEffortViaChatTemplateKwargs: false,
+        },
       }),
     ).toEqual({
       params: {
@@ -459,8 +487,12 @@ describe('llm client pure helpers', () => {
       profile,
       // reasoningEffort simulates session model's thinking config leaking into override client
       reasoningEffort: 'low',
-      capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true, supportsNumCtx: false },
-      capabilities: { supportsTopK: true, supportsChatTemplateKwargs: true, routesEffortViaChatTemplateKwargs: false },
+      capabilities: {
+        supportsTopK: true,
+        supportsChatTemplateKwargs: true,
+        supportsNumCtx: false,
+        routesEffortViaChatTemplateKwargs: false,
+      },
     })
     // chat_template_kwargs must NOT be here — the modelSettings don't request it
     expect(result.params).not.toHaveProperty('chat_template_kwargs')
@@ -477,6 +509,7 @@ describe('llm client pure helpers', () => {
     const llamacppCaps = {
       supportsTopK: true,
       supportsChatTemplateKwargs: false,
+      supportsNumCtx: false,
       routesEffortViaChatTemplateKwargs: true,
     }
     const baseRequest = {
@@ -589,8 +622,12 @@ describe('llm client pure helpers', () => {
         modelSettings: { omitParams: ['temperature'] },
       },
       profile,
-      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, supportsNumCtx: false },
-      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, routesEffortViaChatTemplateKwargs: false },
+      capabilities: {
+        supportsTopK: false,
+        supportsChatTemplateKwargs: false,
+        supportsNumCtx: false,
+        routesEffortViaChatTemplateKwargs: false,
+      },
     })
     expect(result.params).not.toHaveProperty('temperature')
     expect(result.params).toHaveProperty('top_p', 0.9)
@@ -611,8 +648,12 @@ describe('llm client pure helpers', () => {
         modelSettings: { omitParams: ['top_p'] },
       },
       profile,
-      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, supportsNumCtx: false },
-      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, routesEffortViaChatTemplateKwargs: false },
+      capabilities: {
+        supportsTopK: false,
+        supportsChatTemplateKwargs: false,
+        supportsNumCtx: false,
+        routesEffortViaChatTemplateKwargs: false,
+      },
     })
     expect(result.params).not.toHaveProperty('top_p')
     expect(result.params).toHaveProperty('temperature', 0.7)
@@ -636,8 +677,12 @@ describe('llm client pure helpers', () => {
         },
       },
       profile,
-      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, supportsNumCtx: false },
-      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, routesEffortViaChatTemplateKwargs: false },
+      capabilities: {
+        supportsTopK: false,
+        supportsChatTemplateKwargs: false,
+        supportsNumCtx: false,
+        routesEffortViaChatTemplateKwargs: false,
+      },
     })
     expect(result.params).not.toHaveProperty('temperature')
     expect(result.params).toHaveProperty('custom_param', true)
@@ -657,7 +702,12 @@ describe('llm client pure helpers', () => {
         modelSettings: { numCtx: 32768 },
       },
       profile,
-      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, supportsNumCtx: true },
+      capabilities: {
+        supportsTopK: false,
+        supportsChatTemplateKwargs: false,
+        supportsNumCtx: true,
+        routesEffortViaChatTemplateKwargs: false,
+      },
     })
     expect(result.params).toHaveProperty('num_ctx', 32768)
   })
@@ -676,7 +726,12 @@ describe('llm client pure helpers', () => {
         modelSettings: { numCtx: 32768 },
       },
       profile,
-      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, supportsNumCtx: false },
+      capabilities: {
+        supportsTopK: false,
+        supportsChatTemplateKwargs: false,
+        supportsNumCtx: false,
+        routesEffortViaChatTemplateKwargs: false,
+      },
     })
     expect(result.params).not.toHaveProperty('num_ctx')
   })
@@ -694,8 +749,12 @@ describe('llm client pure helpers', () => {
       model: 'test-model',
       request: baseReq,
       profile,
-      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, supportsNumCtx: false },
-      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, routesEffortViaChatTemplateKwargs: false },
+      capabilities: {
+        supportsTopK: false,
+        supportsChatTemplateKwargs: false,
+        supportsNumCtx: false,
+        routesEffortViaChatTemplateKwargs: false,
+      },
     })
     expect(withoutOmit.params).toHaveProperty('temperature', 0.7)
 
@@ -703,8 +762,12 @@ describe('llm client pure helpers', () => {
       model: 'test-model',
       request: { ...baseReq, modelSettings: { omitParams: [] } },
       profile,
-      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, supportsNumCtx: false },
-      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, routesEffortViaChatTemplateKwargs: false },
+      capabilities: {
+        supportsTopK: false,
+        supportsChatTemplateKwargs: false,
+        supportsNumCtx: false,
+        routesEffortViaChatTemplateKwargs: false,
+      },
     })
     expect(withEmpty.params).toHaveProperty('temperature', 0.7)
   })
@@ -723,8 +786,12 @@ describe('llm client pure helpers', () => {
         modelSettings: { omitParams: ['temperature', 'max_tokens'] },
       },
       profile,
-      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, supportsNumCtx: false },
-      capabilities: { supportsTopK: false, supportsChatTemplateKwargs: false, routesEffortViaChatTemplateKwargs: false },
+      capabilities: {
+        supportsTopK: false,
+        supportsChatTemplateKwargs: false,
+        supportsNumCtx: false,
+        routesEffortViaChatTemplateKwargs: false,
+      },
     })
     expect(result.params).not.toHaveProperty('temperature')
     expect(result.params).not.toHaveProperty('max_tokens')

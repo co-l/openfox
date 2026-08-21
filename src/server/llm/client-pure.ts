@@ -293,10 +293,7 @@ async function buildChatCompletionCreateParams(
     if (hasQueryParams) {
       // Merge the user's explicit queryParams, but route chat_template_kwargs
       // separately so the resolved effort can be layered onto it.
-      const { chat_template_kwargs: userKwargsFromQP, ...restQueryParams } = queryParams as Record<
-        string,
-        unknown
-      >
+      const { chat_template_kwargs: userKwargsFromQP, ...restQueryParams } = queryParams as Record<string, unknown>
       Object.assign(params as unknown as Record<string, unknown>, restQueryParams)
       if (userKwargsFromQP) {
         userKwargs = userKwargsFromQP as Record<string, unknown>
