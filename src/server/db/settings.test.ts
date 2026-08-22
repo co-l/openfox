@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { loadConfig } from '../config.js'
 import { closeDatabase, initDatabase } from './index.js'
-import { SETTINGS_KEYS, deleteSetting, getAllSettings, getSetting, setSetting } from './settings.js'
+import { SETTINGS_KEYS, deleteSetting, getAllSettings, getMaxVisibleItems, getSetting, setSetting } from './settings.js'
 
 describe('db settings', () => {
   beforeEach(() => {
@@ -29,6 +29,25 @@ describe('db settings', () => {
     expect(getSetting('theme')).toBeNull()
     expect(getAllSettings()).toEqual({
       [SETTINGS_KEYS.GLOBAL_INSTRUCTIONS]: 'Always test first',
+    })
+  })
+
+  describe('max visible items', () => {
+    it('uses the declared default when the setting is absent', () => {
+      expect(getMaxVisibleItems()).toBe(300)
+    })
+
+    it('preserves explicit limits, including zero for unlimited history', () => {
+      setSetting(SETTINGS_KEYS.DISPLAY_MAX_VISIBLE_ITEMS, '150')
+      expect(getMaxVisibleItems()).toBe(150)
+
+      setSetting(SETTINGS_KEYS.DISPLAY_MAX_VISIBLE_ITEMS, '0')
+      expect(getMaxVisibleItems()).toBe(0)
+    })
+
+    it.each(['', 'not-a-number', '-1', '12.5'])('falls back to the default for invalid value %j', (value) => {
+      setSetting(SETTINGS_KEYS.DISPLAY_MAX_VISIBLE_ITEMS, value)
+      expect(getMaxVisibleItems()).toBe(300)
     })
   })
 

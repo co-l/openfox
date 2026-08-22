@@ -10,7 +10,9 @@ vi.mock('../db/settings.js', () => {
     setSetting: (key: string, value: string) => store.set(key, value),
     getMaxVisibleItems: () => {
       const setting = store.get('display.maxVisibleItems')
-      return setting ? parseInt(setting, 10) : 0
+      if (setting === undefined || setting.trim() === '') return 300
+      const parsed = Number(setting)
+      return Number.isInteger(parsed) && parsed >= 0 ? parsed : 300
     },
     SETTINGS_KEYS: { DISPLAY_MAX_VISIBLE_ITEMS: 'display.maxVisibleItems' },
     __store: store,
@@ -34,14 +36,14 @@ const mockSession = {
   executionState: null,
   metadata: { title: 'Test', totalTokensUsed: 0, totalToolCalls: 0, iterationCount: 0 },
   metadataEntries: {},
-  messageCount: 10,
+  messageCount: 305,
 }
 
-const mockMessages = Array.from({ length: 10 }, (_, i) => ({
+const mockMessages = Array.from({ length: 305 }, (_, i) => ({
   id: `msg-${i + 1}`,
   role: i % 2 === 0 ? 'user' : ('assistant' as 'user' | 'assistant'),
   content: `Message ${i + 1}`,
-  timestamp: new Date(Date.now() - (10 - i) * 60000).toISOString(),
+  timestamp: new Date(Date.now() - (305 - i) * 60000).toISOString(),
   tokenCount: 0,
   isStreaming: false,
 }))
@@ -151,7 +153,7 @@ describe('GET /api/sessions/:id — server-side truncation', () => {
     const res = await fetch(`${baseUrl}/api/sessions/session-1`)
     const data = (await res.json()) as { messages: { id: string }[]; hiddenCount: number }
 
-    expect(data.messages).toHaveLength(10)
+    expect(data.messages).toHaveLength(305)
     expect(data.hiddenCount).toBe(0)
   })
 
@@ -166,10 +168,10 @@ describe('GET /api/sessions/:id — server-side truncation', () => {
     const data = (await res.json()) as { messages: { id: string }[]; hiddenCount: number }
 
     expect(data.messages).toHaveLength(3)
-    expect(data.messages[0]!.id).toBe('msg-8')
-    expect(data.messages[1]!.id).toBe('msg-9')
-    expect(data.messages[2]!.id).toBe('msg-10')
-    expect(data.hiddenCount).toBe(7)
+    expect(data.messages[0]!.id).toBe('msg-303')
+    expect(data.messages[1]!.id).toBe('msg-304')
+    expect(data.messages[2]!.id).toBe('msg-305')
+    expect(data.hiddenCount).toBe(302)
   })
 
   it('[AUTOMATED] returns all messages when messages.length <= maxVisibleItems', async () => {
@@ -177,16 +179,16 @@ describe('GET /api/sessions/:id — server-side truncation', () => {
       __store: Map<string, string>
       setSetting: (k: string, v: string) => void
     }
-    settings.setSetting('display.maxVisibleItems', '50')
+    settings.setSetting('display.maxVisibleItems', '500')
 
     const res = await fetch(`${baseUrl}/api/sessions/session-1`)
     const data = (await res.json()) as { messages: { id: string }[]; hiddenCount: number }
 
-    expect(data.messages).toHaveLength(10)
+    expect(data.messages).toHaveLength(305)
     expect(data.hiddenCount).toBe(0)
   })
 
-  it('[AUTOMATED] returns hiddenCount = 0 when maxVisibleItems is not set (defaults to 0)', async () => {
+  it('[AUTOMATED] applies the default limit when maxVisibleItems is not set', async () => {
     const settings = (await import('../db/settings.js')) as unknown as {
       __store: Map<string, string>
       setSetting: (k: string, v: string) => void
@@ -196,8 +198,9 @@ describe('GET /api/sessions/:id — server-side truncation', () => {
     const res = await fetch(`${baseUrl}/api/sessions/session-1`)
     const data = (await res.json()) as { messages: { id: string }[]; hiddenCount: number }
 
-    expect(data.hiddenCount).toBe(0)
-    expect(data.messages).toHaveLength(10)
+    expect(data.messages).toHaveLength(300)
+    expect(data.messages[0]!.id).toBe('msg-6')
+    expect(data.hiddenCount).toBe(5)
   })
 
   it('[AUTOMATED] returns 404 for non-existent session', async () => {
@@ -216,7 +219,7 @@ describe('GET /api/sessions/:id — server-side truncation', () => {
     const res = await fetch(`${baseUrl}/api/sessions/session-1?full=true`)
     const data = (await res.json()) as { messages: { id: string }[]; hiddenCount: number }
 
-    expect(data.messages).toHaveLength(10)
+    expect(data.messages).toHaveLength(305)
     expect(data.hiddenCount).toBe(0)
   })
 
