@@ -28,6 +28,7 @@ let isSubscribed = false
 let wsUnsubscribe: (() => void) | null = null
 
 const loadingSessionIds = new Set<string>()
+const loadingHistorySessionIds = new Set<string>()
 const loadedSessionIds = new Set<string>()
 const listingSessionsForProject = new Map<string, Promise<void>>()
 let fullSessionListPromise: Promise<void> | null = null
@@ -263,11 +264,11 @@ export const useSessionStore = create<SessionState>((set, get) => {
       const sessionFetch: Promise<SessionLoadData | null> = prefetched
         ? prefetched.then(async (result) => {
             if (result.ok) return result.data as unknown as SessionLoadData
-            const res = await authFetch(`/api/sessions/${sessionId}`)
+            const res = await authFetch(`/api/sessions/${sessionId}?history=recent`)
             if (!res.ok) return null
             return (await res.json()) as SessionLoadData
           })
-        : authFetch(`/api/sessions/${sessionId}`).then(async (res) => {
+        : authFetch(`/api/sessions/${sessionId}?history=recent`).then(async (res) => {
             if (!res.ok) return null
             return (await res.json()) as SessionLoadData
           })
@@ -528,6 +529,44 @@ export const useSessionStore = create<SessionState>((set, get) => {
 
     loadSession: async (sessionId, force = false) => {
       await ensurePane(sessionId, true, force)
+    },
+
+    loadOlderMessages: async (sessionId, requestedMaxItems = 30) => {
+      if (loadingHistorySessionIds.has(sessionId)) return 0
+
+      const currentPane = paneFor(get(), sessionId)
+      const beforeMessageId = currentPane?.messages[0]?.id
+      if (!currentPane || currentPane.hiddenCount <= 0 || !beforeMessageId) return 0
+
+      const maxItems = Number.isInteger(requestedMaxItems) ? Math.max(1, Math.min(requestedMaxItems, 30)) : 30
+      loadingHistorySessionIds.add(sessionId)
+
+      try {
+        const query = new URLSearchParams({ before: beforeMessageId, maxItems: String(maxItems) })
+        const res = await authFetch(`/api/sessions/${sessionId}/messages?${query.toString()}`)
+        if (!res.ok) throw new Error(`Failed to load older messages (${res.status})`)
+
+        const data = (await res.json()) as { messages?: Message[]; hiddenCount?: number }
+        const incoming = data.messages ?? []
+        let loadedCount = 0
+
+        set((state) =>
+          updatePane(state, sessionId, (pane) => {
+            const existingIds = new Set(pane.messages.map((message) => message.id))
+            const older = incoming.filter((message) => !existingIds.has(message.id))
+            loadedCount = older.length
+            return {
+              ...pane,
+              messages: [...older, ...pane.messages],
+              hiddenCount: data.hiddenCount ?? pane.hiddenCount,
+            }
+          }),
+        )
+
+        return loadedCount
+      } finally {
+        loadingHistorySessionIds.delete(sessionId)
+      }
     },
 
     openPane: async (sessionId, opts = {}) => {

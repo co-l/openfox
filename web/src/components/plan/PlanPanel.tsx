@@ -99,6 +99,7 @@ export function PlanPanel({
   const sessions = useSessionStore((state) => state.sessions)
   const isRunning = useIsRunning(scoped ? scopedSessionId : null)
   const stopGeneration = useSessionStore((state) => state.stopGeneration)
+  const loadOlderMessages = useSessionStore((state) => state.loadOlderMessages)
 
   const messages = propRawMessages ?? storeMessages
 
@@ -173,6 +174,10 @@ export function PlanPanel({
   )
   const { sendMessage, launchWorkflow } = useScrolledSend(setAutoScroll, targetSessionId)
   const gatedAgentSwitch = useEffortGatedAgentSwitch(targetSessionId)
+  const handleLoadOlder = useCallback(
+    (maxItems: number) => (targetSessionId ? loadOlderMessages(targetSessionId, maxItems) : Promise.resolve(0)),
+    [loadOlderMessages, targetSessionId],
+  )
 
   useEffect(() => {
     const handler = () => setAutoScroll(true)
@@ -357,6 +362,7 @@ export function PlanPanel({
           onLaunchWorkflow={handleLaunchWorkflow}
           onScrollToTop={() => setAutoScroll(false)}
           hiddenCount={hiddenCount}
+          onLoadOlder={targetSessionId ? handleLoadOlder : undefined}
           onScrollbarGesture={handleScrollbarGesture}
           emptyState={
             messages.length === 0 && session?.projectId ? (
