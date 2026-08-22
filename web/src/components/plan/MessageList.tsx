@@ -220,7 +220,8 @@ export const MessageList = memo(function MessageList({
       const currentTop = viewport.scrollTop
       const movedUp = currentTop < previousScrollTopRef.current - 1
       previousScrollTopRef.current = currentTop
-      if (movedUp && currentTop <= 160) {
+      const hasUnmountedHistory = viewport.querySelector('[data-placeholder]') !== null
+      if (movedUp && currentTop <= 160 && !hasUnmountedHistory) {
         void loadOlder()
       }
     }
@@ -298,6 +299,7 @@ export const MessageList = memo(function MessageList({
             )}
 
             <ChatFeedItems
+              key={sessionId ?? 'unscoped'}
               displayItems={displayItems}
               highlightedMessageId={highlightedMessageId}
               sessionId={sessionId}

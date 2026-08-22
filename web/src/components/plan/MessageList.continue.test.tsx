@@ -294,4 +294,31 @@ describe('MessageList paginated history', () => {
     await waitFor(() => expect(onLoadOlder).toHaveBeenCalledWith(30))
     expect(scrollTop).toBe(500)
   })
+
+  it('reveals locally virtualized items before requesting another server page', async () => {
+    const viewport = document.createElement('div')
+    const placeholder = document.createElement('div')
+    placeholder.dataset.placeholder = ''
+    viewport.appendChild(placeholder)
+    let scrollTop = 500
+    Object.defineProperty(viewport, 'scrollHeight', { get: () => 1_000 })
+    Object.defineProperty(viewport, 'clientHeight', { get: () => 400 })
+    Object.defineProperty(viewport, 'scrollTop', {
+      get: () => scrollTop,
+      set: (value: number) => {
+        scrollTop = value
+      },
+    })
+    const onLoadOlder = vi.fn(async () => 2)
+
+    renderMessageList({ hiddenCount: 8, onLoadOlder, viewport })
+
+    await act(async () => {
+      scrollTop = 100
+      viewport.dispatchEvent(new Event('scroll'))
+      await Promise.resolve()
+    })
+
+    expect(onLoadOlder).not.toHaveBeenCalled()
+  })
 })

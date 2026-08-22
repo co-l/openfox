@@ -98,13 +98,13 @@ describe('ChatFeedItems stable keys', () => {
   })
 })
 
-describe('ChatFeedItems default (virtualization off)', () => {
+describe('ChatFeedItems automatic virtualization', () => {
   beforeEach(() => {
     useSettingsStore.setState({ settings: {} })
   })
 
-  it('mounts every item with no placeholders or sentinel by default', () => {
-    const items = Array.from({ length: 70 }, (_, i) => msg(`m${i}`, 'user', `Content ${i}`))
+  it('mounts every item with no placeholders for a short feed by default', () => {
+    const items = Array.from({ length: 12 }, (_, i) => msg(`m${i}`, 'user', `Content ${i}`))
 
     const container = document.createElement('div')
     document.body.appendChild(container)
@@ -113,11 +113,27 @@ describe('ChatFeedItems default (virtualization off)', () => {
     flushSync(() => root.render(<ChatFeedItems displayItems={items} />))
 
     expect(container.querySelector('[data-message-id="m0"]')).toBeTruthy()
-    expect(container.querySelector('[data-message-id="m69"]')).toBeTruthy()
-    expect(container.querySelectorAll('.feed-item')).toHaveLength(70)
+    expect(container.querySelector('[data-message-id="m11"]')).toBeTruthy()
+    expect(container.querySelectorAll('.feed-item')).toHaveLength(12)
     expect(container.querySelector('[data-placeholder]')).toBeNull()
     expect(container.querySelector('[data-testid="feed-sentinel"]')).toBeNull()
     expect(container.querySelector('[data-testid="feed-unmounted-hint"]')).toBeNull()
+  })
+
+  it('mounts only four recent items when a feed is long', () => {
+    const items = Array.from({ length: 20 }, (_, i) => msg(`m${i}`, 'user', `Content ${i}`))
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    flushSync(() => root.render(<ChatFeedItems displayItems={items} />))
+
+    expect(container.querySelector('[data-message-id="m15"]')).toBeNull()
+    expect(container.querySelector('[data-message-id="m16"]')).toBeTruthy()
+    expect(container.querySelector('[data-message-id="m19"]')).toBeTruthy()
+    expect(container.querySelectorAll('.feed-item')).toHaveLength(4)
+    expect(container.querySelectorAll('[data-placeholder]')).toHaveLength(16)
   })
 })
 
@@ -195,13 +211,38 @@ describe('ChatFeedItems progressive rendering', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root = createRoot(container)
+    const scrollListeners: Array<() => void> = []
+    const wheelListeners: Array<(event: WheelEvent) => void> = []
+    const viewport = {
+      scrollTop: 500,
+      addEventListener: (type: string, cb: (event: WheelEvent) => void) => {
+        if (type === 'scroll') scrollListeners.push(cb as () => void)
+        if (type === 'wheel') wheelListeners.push(cb)
+      },
+      removeEventListener: () => {},
+    }
+    const scrollContainerRef = {
+      current: {
+        osInstance: () => ({ elements: () => ({ viewport }) }),
+        getElement: () => null,
+      },
+    } as never
 
-    flushSync(() => root.render(<ChatFeedItems displayItems={items} />))
+    flushSync(() => root.render(<ChatFeedItems displayItems={items} scrollContainerRef={scrollContainerRef} />))
     expect(container.querySelectorAll('.feed-item')).toHaveLength(30)
     expect(container.querySelector('[data-testid="feed-sentinel"]')).toBeTruthy()
 
-    // Each reveal moves the window up by 20 items
+    // Intersection alone must not reveal history during initial bottom anchoring.
     act(() => {
+      MockIntersectionObserver.instances.at(-1)!.trigger()
+    })
+    expect(container.querySelectorAll('.feed-item')).toHaveLength(30)
+
+    // Once the viewport moves upward, each reveal moves the window by 20 items.
+    act(() => {
+      for (const cb of wheelListeners) cb({ deltaY: -100 } as WheelEvent)
+      viewport.scrollTop = 400
+      for (const cb of scrollListeners) cb()
       MockIntersectionObserver.instances.at(-1)!.trigger()
     })
     expect(container.querySelectorAll('.feed-item')).toHaveLength(50)
@@ -282,9 +323,13 @@ describe('ChatFeedItems progressive rendering', () => {
     const root = createRoot(container)
 
     const scrollListeners: Array<() => void> = []
+    const wheelListeners: Array<(event: WheelEvent) => void> = []
     const viewport = {
       scrollTop: 0,
-      addEventListener: (_: string, cb: () => void) => scrollListeners.push(cb),
+      addEventListener: (type: string, cb: (event: WheelEvent) => void) => {
+        if (type === 'scroll') scrollListeners.push(cb as () => void)
+        if (type === 'wheel') wheelListeners.push(cb)
+      },
       removeEventListener: () => {},
     }
     const scrollContainerRef = {
@@ -309,6 +354,8 @@ describe('ChatFeedItems progressive rendering', () => {
     })
     act(() => {
       viewport.scrollTop = 500
+      for (const cb of scrollListeners) cb()
+      viewport.scrollTop = 400
       for (const cb of scrollListeners) cb()
       MockIntersectionObserver.instances.at(-1)!.trigger()
       MockIntersectionObserver.instances.at(-1)!.trigger()
@@ -345,9 +392,13 @@ describe('ChatFeedItems progressive rendering', () => {
 
     // OS viewport mock: scrollTop > 4 means the user scrolled up
     const scrollListeners: Array<() => void> = []
+    const wheelListeners: Array<(event: WheelEvent) => void> = []
     const viewport = {
       scrollTop: 0,
-      addEventListener: (_: string, cb: () => void) => scrollListeners.push(cb),
+      addEventListener: (type: string, cb: (event: WheelEvent) => void) => {
+        if (type === 'scroll') scrollListeners.push(cb as () => void)
+        if (type === 'wheel') wheelListeners.push(cb)
+      },
       removeEventListener: () => {},
     }
     const scrollContainerRef = {
@@ -369,6 +420,8 @@ describe('ChatFeedItems progressive rendering', () => {
     // User scrolls up (fires the scroll listener) and reveals everything
     act(() => {
       viewport.scrollTop = 500
+      for (const cb of scrollListeners) cb()
+      viewport.scrollTop = 400
       for (const cb of scrollListeners) cb()
       MockIntersectionObserver.instances.at(-1)!.trigger()
       MockIntersectionObserver.instances.at(-1)!.trigger()
