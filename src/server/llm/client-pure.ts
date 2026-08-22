@@ -263,7 +263,7 @@ async function buildChatCompletionCreateParams(
     ...(request.toolChoice ? { tool_choice: request.toolChoice as ChatCompletionToolChoiceOption } : {}),
     temperature,
     max_tokens: maxTokens,
-    top_p: topP,
+    ...(topP !== undefined && { top_p: topP }),
     stream: isStreaming,
     ...(isStreaming ? { stream_options: { include_usage: true } } : {}),
   }

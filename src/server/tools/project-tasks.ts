@@ -90,7 +90,11 @@ export const projectTasksTool = createTool<ProjectTasksArgs>(
           action: { type: 'string', enum: VALID_ACTIONS, description: 'The action to perform' },
           taskId: { type: 'string', description: 'Target task id (edit, move, set_gate_value, delete)' },
           prompt: { type: 'string', description: 'The prompt/instruction executed when the task launches' },
-          attachments: { type: 'array', description: 'Optional attachments (same shape as chat attachments)' },
+          attachments: {
+            type: 'array',
+            description: 'Optional attachments (same shape as chat attachments)',
+            items: {},
+          },
           agentId: { type: 'string', description: 'Selected agent id' },
           providerId: { type: 'string', description: 'Provider id used when a session is spawned' },
           model: { type: 'string', description: 'Model label used when a session is spawned' },
