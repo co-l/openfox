@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
+import { act, render, screen, cleanup, waitFor } from '@testing-library/react'
+import type { PropsWithChildren } from 'react'
 import { MessageList } from './MessageList'
 
 const mockContinueWorkflow = vi.fn()
@@ -97,6 +98,7 @@ vi.mock('../../stores/settings', () => ({
     showStats: true,
     showAgentDefinitions: true,
     showWorkflowBars: true,
+    maxVisibleItems: 300,
   }),
 }))
 
@@ -104,19 +106,33 @@ vi.mock('./ChatFeedItems', () => ({
   ChatFeedItems: () => <div>ChatFeedItems</div>,
 }))
 
-function renderMessageList() {
+vi.mock('../shared/ScrollArea', () => ({
+  ScrollArea: ({ children, ref: _ref, ...props }: PropsWithChildren<Record<string, unknown>>) => (
+    <div {...props}>{children}</div>
+  ),
+}))
+
+function renderMessageList(
+  options: {
+    hiddenCount?: number
+    onLoadOlder?: (maxItems: number) => Promise<number>
+    viewport?: HTMLDivElement
+  } = {},
+) {
   const mockOsRef = {
     current: {
-      osInstance: () => null,
+      osInstance: () => (options.viewport ? { elements: () => ({ viewport: options.viewport }) } : null),
       getElement: () => null,
     },
   }
   return render(
     <MessageList
       displayItems={mockState.displayItems as never}
-      scrollContainerRef={mockOsRef}
+      scrollContainerRef={mockOsRef as never}
       highlightedMessageId={null}
       onLaunchWorkflow={vi.fn()}
+      hiddenCount={options.hiddenCount}
+      onLoadOlder={options.onLoadOlder}
     />,
   )
 }
@@ -218,5 +234,64 @@ describe('MessageList continue workflow button', () => {
     mockState.hasWaitingWorkflow = false
     renderMessageList()
     expect(screen.getAllByTestId('workflow-run-button').length).toBeGreaterThan(0)
+  })
+})
+
+describe('MessageList paginated history', () => {
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+  })
+
+  beforeEach(() => {
+    mockState.phase = 'build'
+    mockState.hasWaitingWorkflow = false
+    mockState.criteriaPending = false
+    mockState.displayItems = [
+      { type: 'message', message: { id: 'message-3', role: 'user', content: 'three' } },
+      { type: 'message', message: { id: 'message-4', role: 'assistant', content: 'four' } },
+    ]
+  })
+
+  it('loads an older page from the history control', async () => {
+    const onLoadOlder = vi.fn(async () => 2)
+    renderMessageList({ hiddenCount: 8, onLoadOlder })
+
+    screen.getByRole('button', { name: 'Load older history (8 remaining)' }).click()
+
+    await waitFor(() => expect(onLoadOlder).toHaveBeenCalledWith(30))
+  })
+
+  it('loads near the top only while the user is scrolling upward and preserves the viewport', async () => {
+    const viewport = document.createElement('div')
+    let scrollHeight = 1_000
+    let scrollTop = 500
+    Object.defineProperty(viewport, 'scrollHeight', { get: () => scrollHeight })
+    Object.defineProperty(viewport, 'clientHeight', { get: () => 400 })
+    Object.defineProperty(viewport, 'scrollTop', {
+      get: () => scrollTop,
+      set: (value: number) => {
+        scrollTop = value
+      },
+    })
+    const onLoadOlder = vi.fn(async () => {
+      scrollHeight = 1_400
+      return 2
+    })
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0)
+      return 1
+    })
+
+    renderMessageList({ hiddenCount: 8, onLoadOlder, viewport })
+
+    await act(async () => {
+      scrollTop = 100
+      viewport.dispatchEvent(new Event('scroll'))
+      await Promise.resolve()
+    })
+
+    await waitFor(() => expect(onLoadOlder).toHaveBeenCalledWith(30))
+    expect(scrollTop).toBe(500)
   })
 })
