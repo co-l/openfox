@@ -140,5 +140,12 @@ export function getAllSettings(): Record<string, string> {
 
 export function getMaxVisibleItems(): number {
   const setting = getSetting(SETTINGS_KEYS.DISPLAY_MAX_VISIBLE_ITEMS)
-  return setting ? parseInt(setting, 10) : 0
+  const defaultValue = Number(SETTINGS_DEFAULTS[SETTINGS_KEYS.DISPLAY_MAX_VISIBLE_ITEMS])
+
+  if (setting === null || setting.trim() === '') {
+    return defaultValue
+  }
+
+  const value = Number(setting)
+  return Number.isInteger(value) && value >= 0 ? value : defaultValue
 }
