@@ -1,14 +1,16 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import type { ComponentProps } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ProviderModal } from './ProviderModal'
 import type { ProviderFormData } from './ProviderModal'
 
-describe('ProviderModal - thinkingLevel persistence', () => {
-  let container: HTMLElement
-  let root: ReturnType<typeof createRoot>
-  let onSaveMock: ReturnType<typeof vi.fn>
+let container: HTMLElement
+let root: ReturnType<typeof createRoot>
+let onSaveMock: ReturnType<typeof vi.fn>
 
+/** Mounts a fresh React root before each test in the calling suite and tears it down after. */
+function setupRoot() {
   beforeEach(() => {
     container = document.createElement('div')
     document.body.appendChild(container)
@@ -21,54 +23,69 @@ describe('ProviderModal - thinkingLevel persistence', () => {
     document.body.removeChild(container)
     vi.unstubAllGlobals()
   })
+}
 
-  function makeEditProvider() {
-    return {
-      id: 'test-provider',
-      name: 'Test Provider',
-      url: 'http://localhost:8000/v1',
-      backend: 'vllm' as const,
-      models: [
-        {
-          id: 'test-model',
-          contextWindow: 200000,
-          thinkingEnabled: true,
-        },
-      ],
-    }
+const tick = (ms = 50) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/** Renders the modal on step 2 with the shared onSave mock, then waits for its effects to settle. */
+async function renderProviderModal(props: Partial<ComponentProps<typeof ProviderModal>> = {}, waitMs = 200) {
+  root.render(
+    <ProviderModal
+      isOpen={true}
+      onClose={vi.fn()}
+      onSave={onSaveMock as (provider: ProviderFormData) => void}
+      initialStep={2}
+      {...props}
+    />,
+  )
+  await tick(waitMs)
+}
+
+function providerWithModels(models: Array<Record<string, unknown>>) {
+  return {
+    id: 'test-provider',
+    name: 'Test Provider',
+    url: 'http://localhost:8000/v1',
+    backend: 'vllm' as const,
+    models: models as never,
   }
+}
+
+function clickSave() {
+  const saveButton = document.body.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
+  saveButton?.click()
+  return saveButton
+}
+
+const savedProvider = (): ProviderFormData => onSaveMock.mock.calls[0]![0]!
+
+const buttonByText = (text: string) =>
+  Array.from(document.body.querySelectorAll('button')).find((button) => button.textContent?.trim() === text) as
+    HTMLButtonElement | undefined
+
+/** React controlled inputs only react to the native value setter followed by an 'input' event. */
+function setInputValue(input: HTMLInputElement, value: string) {
+  Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set?.call(input, value)
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
+describe('ProviderModal - thinkingLevel persistence', () => {
+  setupRoot()
+
+  const makeEditProvider = () =>
+    providerWithModels([{ id: 'test-model', contextWindow: 200000, thinkingEnabled: true }])
 
   async function renderAndSave(thinkingLevel?: string) {
     const modelId = 'test-model'
-    await new Promise<void>((resolve) => {
-      root.render(
-        <ProviderModal
-          isOpen={true}
-          onClose={vi.fn()}
-          onSave={onSaveMock as (provider: ProviderFormData) => void}
-          initialStep={2}
-          editProvider={makeEditProvider()}
-          editModelId={modelId}
-        />,
-      )
-      // Wait for useEffect to initialize modelConfigs from editProvider
-      setTimeout(resolve, 200)
-    })
+    await renderProviderModal({ editProvider: makeEditProvider(), editModelId: modelId })
 
     // Find the reasoning effort input (free-text variant; the select variant is
     // matched via the same aria-label in other tests)
     const effortInput = document.body.querySelector('input[aria-label="Reasoning effort"]') as HTMLInputElement | null
-
-    if (thinkingLevel !== undefined && effortInput) {
-      // React controlled components listen to 'input' event with native setter
-      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
-      nativeInputValueSetter?.call(effortInput, thinkingLevel)
-      effortInput.dispatchEvent(new Event('input', { bubbles: true }))
-    }
+    if (thinkingLevel !== undefined && effortInput) setInputValue(effortInput, thinkingLevel)
 
     // Click "Save Provider" (no separate review step anymore)
-    const saveButton = document.body.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
-    if (saveButton) saveButton.click()
+    clickSave()
 
     return { modelId }
   }
@@ -77,8 +94,7 @@ describe('ProviderModal - thinkingLevel persistence', () => {
     const { modelId } = await renderAndSave('high')
 
     expect(onSaveMock).toHaveBeenCalledTimes(1)
-    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
-    const savedModel = savedData.models.find((m) => m.id === modelId)
+    const savedModel = savedProvider().models.find((m) => m.id === modelId)
     expect(savedModel).toBeDefined()
     expect(savedModel?.thinkingLevel).toBe('high')
   })
@@ -87,39 +103,29 @@ describe('ProviderModal - thinkingLevel persistence', () => {
     const { modelId } = await renderAndSave(undefined)
 
     expect(onSaveMock).toHaveBeenCalledTimes(1)
-    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
-    const savedModel = savedData.models.find((m) => m.id === modelId)
+    const savedModel = savedProvider().models.find((m) => m.id === modelId)
     expect(savedModel).toBeDefined()
     // No default thinkingLevel — auto-config or user sets it explicitly
     expect(savedModel?.thinkingLevel).toBeUndefined()
   })
 
   it('uses a constrained reasoning effort selector with medium as the provider default', async () => {
-    await new Promise<void>((resolve) => {
-      root.render(
-        <ProviderModal
-          isOpen={true}
-          onClose={vi.fn()}
-          onSave={onSaveMock as (provider: ProviderFormData) => void}
-          initialStep={2}
-          editProvider={{
-            id: 'external-provider',
-            name: 'External Account Provider',
-            url: 'http://localhost:8000/v1',
-            backend: 'openai',
-            models: [
-              {
-                id: 'reasoning-model',
-                contextWindow: 1_050_000,
-                thinkingEnabled: true,
-                reasoningEfforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
-              },
-            ],
-          }}
-          editModelId="reasoning-model"
-        />,
-      )
-      setTimeout(resolve, 200)
+    await renderProviderModal({
+      editProvider: {
+        id: 'external-provider',
+        name: 'External Account Provider',
+        url: 'http://localhost:8000/v1',
+        backend: 'openai',
+        models: [
+          {
+            id: 'reasoning-model',
+            contextWindow: 1_050_000,
+            thinkingEnabled: true,
+            reasoningEfforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+          },
+        ],
+      },
+      editModelId: 'reasoning-model',
     })
 
     const effortSelect = document.body.querySelector(
@@ -136,59 +142,44 @@ describe('ProviderModal - thinkingLevel persistence', () => {
       'max',
     ])
 
-    const saveButton = document.body.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
-    saveButton?.click()
+    clickSave()
 
-    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
-    expect(savedData.models.find((model) => model.id === 'reasoning-model')?.thinkingLevel).toBe('medium')
+    expect(savedProvider().models.find((model) => model.id === 'reasoning-model')?.thinkingLevel).toBe('medium')
   })
 
   it('saves a provider reasoning effort selected from the catalog values', async () => {
-    await new Promise<void>((resolve) => {
-      root.render(
-        <ProviderModal
-          isOpen={true}
-          onClose={vi.fn()}
-          onSave={onSaveMock as (provider: ProviderFormData) => void}
-          initialStep={2}
-          editProvider={{
-            id: 'external-provider',
-            name: 'External Account Provider',
-            url: 'http://localhost:8000/v1',
-            backend: 'openai',
-            models: [
-              {
-                id: 'reasoning-model',
-                contextWindow: 1_050_000,
-                thinkingEnabled: true,
-                reasoningEfforts: ['low', 'medium', 'high'],
-              },
-            ],
-          }}
-          editModelId="reasoning-model"
-        />,
-      )
-      setTimeout(resolve, 200)
+    await renderProviderModal({
+      editProvider: {
+        id: 'external-provider',
+        name: 'External Account Provider',
+        url: 'http://localhost:8000/v1',
+        backend: 'openai',
+        models: [
+          {
+            id: 'reasoning-model',
+            contextWindow: 1_050_000,
+            thinkingEnabled: true,
+            reasoningEfforts: ['low', 'medium', 'high'],
+          },
+        ],
+      },
+      editModelId: 'reasoning-model',
     })
 
     const effortSelect = document.body.querySelector('select[aria-label="Reasoning effort"]') as HTMLSelectElement
-    const nativeSelectValueSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set
-    nativeSelectValueSetter?.call(effortSelect, 'high')
+    Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set?.call(effortSelect, 'high')
     effortSelect.dispatchEvent(new Event('change', { bubbles: true }))
 
-    const saveButton = document.body.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
-    saveButton?.click()
+    clickSave()
 
-    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
-    expect(savedData.models.find((model) => model.id === 'reasoning-model')?.thinkingLevel).toBe('high')
+    expect(savedProvider().models.find((model) => model.id === 'reasoning-model')?.thinkingLevel).toBe('high')
   })
 
   it('includes all model fields in save payload', async () => {
     const { modelId } = await renderAndSave(undefined)
 
     expect(onSaveMock).toHaveBeenCalledTimes(1)
-    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
-    const savedModel = savedData.models.find((m) => m.id === modelId)
+    const savedModel = savedProvider().models.find((m) => m.id === modelId)
     expect(savedModel).toBeDefined()
 
     // Every field the UI can set must be present in the save payload.
@@ -214,12 +205,8 @@ describe('ProviderModal - thinkingLevel persistence', () => {
   })
 
   it('preserves previously-saved advanced parameters when reopening the modal', async () => {
-    const editProvider = {
-      id: 'test-provider',
-      name: 'Test Provider',
-      url: 'http://localhost:8000/v1',
-      backend: 'vllm' as const,
-      models: [
+    await renderProviderModal({
+      editProvider: providerWithModels([
         {
           id: 'test-model',
           contextWindow: 200000,
@@ -230,31 +217,16 @@ describe('ProviderModal - thinkingLevel persistence', () => {
           maxTokens: 2048,
           compactionThreshold: 0.7,
         },
-      ],
-    }
-
-    await new Promise<void>((resolve) => {
-      root.render(
-        <ProviderModal
-          isOpen={true}
-          onClose={vi.fn()}
-          onSave={onSaveMock as (provider: ProviderFormData) => void}
-          initialStep={2}
-          editProvider={editProvider}
-          editModelId="test-model"
-        />,
-      )
-      setTimeout(resolve, 200)
+      ]),
+      editModelId: 'test-model',
     })
 
     // Save immediately without touching any field — reopening the modal must not
     // silently reset previously-persisted advanced parameters to undefined/defaults.
-    const saveButton = document.body.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
-    saveButton?.click()
+    clickSave()
 
     expect(onSaveMock).toHaveBeenCalledTimes(1)
-    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
-    const savedModel = savedData.models.find((m) => m.id === 'test-model')
+    const savedModel = savedProvider().models.find((m) => m.id === 'test-model')
     expect(savedModel).toBeDefined()
     expect(savedModel?.temperature).toBe(0.42)
     expect(savedModel?.topP).toBe(0.9)
@@ -264,75 +236,44 @@ describe('ProviderModal - thinkingLevel persistence', () => {
   })
 
   it('does not reset form step when editProvider reference changes (parent re-render)', async () => {
-    await new Promise<void>((resolve) => {
-      root.render(
-        <ProviderModal
-          isOpen={true}
-          onClose={vi.fn()}
-          onSave={onSaveMock as (provider: ProviderFormData) => void}
-          initialStep={2}
-          editProvider={makeEditProvider()}
-          editModelId="test-model"
-        />,
-      )
-      setTimeout(resolve, 200)
-    })
+    await renderProviderModal({ editProvider: makeEditProvider(), editModelId: 'test-model' })
 
     // On step 2, the save button is visible (no separate review step)
-    const saveButton = document.body.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
-    expect(saveButton).toBeTruthy()
+    expect(document.body.querySelector('[data-testid="provider-modal-save"]')).toBeTruthy()
     expect(document.body.querySelector('[data-testid="provider-modal-next"]')).toBeNull()
 
     // Simulate parent re-render with new editProvider reference (identical data)
-    root.render(
-      <ProviderModal
-        isOpen={true}
-        onClose={vi.fn()}
-        onSave={onSaveMock as (provider: ProviderFormData) => void}
-        initialStep={2}
-        editProvider={makeEditProvider()}
-        editModelId="test-model"
-      />,
-    )
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    await renderProviderModal({ editProvider: makeEditProvider(), editModelId: 'test-model' }, 100)
 
     // MUST still be on step 2 — save button still visible
     expect(document.body.querySelector('[data-testid="provider-modal-save"]')).toBeTruthy()
     expect(document.body.querySelector('[data-testid="provider-modal-next"]')).toBeNull()
   })
+
   it('prefills the catalog context window when a model is selected', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response(JSON.stringify({ state: 'connected' }), { status: 200 })),
     )
-    await new Promise<void>((resolve) => {
-      root.render(
-        <ProviderModal
-          isOpen={true}
-          onClose={vi.fn()}
-          onSave={onSaveMock as (provider: ProviderFormData) => void}
-          initialStep={2}
-          editProvider={{
-            id: 'provider-1',
-            name: 'External Provider',
-            url: 'https://provider.example/v1',
-            backend: 'openai',
-            transportAdapter: 'example-transport',
-            models: [
-              { id: 'selected-model', contextWindow: 1050000, selected: true },
-              {
-                id: 'catalog-model',
-                name: 'Catalog model',
-                apiModelId: 'catalog-model',
-                requestBody: { service_tier: 'priority' },
-                reasoningEfforts: ['low', 'high'],
-                contextWindow: 400000,
-              },
-            ],
-          }}
-        />,
-      )
-      setTimeout(resolve, 200)
+    await renderProviderModal({
+      editProvider: {
+        id: 'provider-1',
+        name: 'External Provider',
+        url: 'https://provider.example/v1',
+        backend: 'openai',
+        transportAdapter: 'example-transport',
+        models: [
+          { id: 'selected-model', contextWindow: 1050000, selected: true },
+          {
+            id: 'catalog-model',
+            name: 'Catalog model',
+            apiModelId: 'catalog-model',
+            requestBody: { service_tier: 'priority' },
+            reasoningEfforts: ['low', 'high'],
+            contextWindow: 400000,
+          },
+        ],
+      },
     })
 
     const availableRows = Array.from(document.body.querySelectorAll('[role="checkbox"]'))
@@ -340,13 +281,11 @@ describe('ProviderModal - thinkingLevel persistence', () => {
       HTMLElement | undefined
     expect(catalogRow).toBeTruthy()
     catalogRow?.click()
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await tick()
 
-    const saveButton = document.body.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
-    saveButton?.click()
+    clickSave()
 
-    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
-    expect(savedData.models.find((model) => model.id === 'catalog-model')).toEqual(
+    expect(savedProvider().models.find((model) => model.id === 'catalog-model')).toEqual(
       expect.objectContaining({
         name: 'Catalog model',
         apiModelId: 'catalog-model',
@@ -373,24 +312,18 @@ describe('ProviderModal - thinkingLevel persistence', () => {
       }),
     )
 
-    await new Promise<void>((resolve) => {
-      root.render(
-        <ProviderModal
-          isOpen={true}
-          onClose={vi.fn()}
-          onSave={onSaveMock as (provider: ProviderFormData) => void}
-          initialStep={2}
-          editProvider={{
-            id: 'no-models-provider',
-            name: 'No Models Provider',
-            url: 'http://localhost:8000/v1',
-            backend: 'openai',
-            models: [],
-          }}
-        />,
-      )
-      setTimeout(resolve, 300)
-    })
+    await renderProviderModal(
+      {
+        editProvider: {
+          id: 'no-models-provider',
+          name: 'No Models Provider',
+          url: 'http://localhost:8000/v1',
+          backend: 'openai',
+          models: [],
+        },
+      },
+      300,
+    )
 
     // The manual model input is available even though discovery failed.
     const manualInput = document.body.querySelector(
@@ -398,69 +331,52 @@ describe('ProviderModal - thinkingLevel persistence', () => {
     ) as HTMLInputElement
     expect(manualInput).toBeTruthy()
 
-    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
-    nativeInputValueSetter?.call(manualInput, 'my-cline-model')
-    manualInput.dispatchEvent(new Event('input', { bubbles: true }))
+    setInputValue(manualInput, 'my-cline-model')
 
     const addButton = document.body.querySelector(
       '[data-testid="provider-modal-manual-model-add"]',
     ) as HTMLButtonElement | null
     addButton?.click()
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await tick()
 
-    const saveButton = document.body.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
-    saveButton?.click()
+    clickSave()
 
     expect(onSaveMock).toHaveBeenCalledTimes(1)
-    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
-    const savedModel = savedData.models.find((m) => m.id === 'my-cline-model')
+    const savedModel = savedProvider().models.find((m) => m.id === 'my-cline-model')
     expect(savedModel).toBeDefined()
     expect(savedModel?.selected).toBe(true)
     expect(savedModel?.contextWindow).toBe(200000)
   })
 
   it('rejects a duplicate manual model id and selects the existing one', async () => {
-    await new Promise<void>((resolve) => {
-      root.render(
-        <ProviderModal
-          isOpen={true}
-          onClose={vi.fn()}
-          onSave={onSaveMock as (provider: ProviderFormData) => void}
-          initialStep={2}
-          editProvider={{
-            id: 'dup-provider',
-            name: 'Dup Provider',
-            url: 'http://localhost:8000/v1',
-            backend: 'vllm',
-            models: [{ id: 'existing-model', contextWindow: 200000 }],
-          }}
-        />,
-      )
-      setTimeout(resolve, 200)
+    await renderProviderModal({
+      editProvider: {
+        id: 'dup-provider',
+        name: 'Dup Provider',
+        url: 'http://localhost:8000/v1',
+        backend: 'vllm',
+        models: [{ id: 'existing-model', contextWindow: 200000 }],
+      },
     })
 
     const manualInput = document.body.querySelector(
       '[data-testid="provider-modal-manual-model-input"]',
     ) as HTMLInputElement
-    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
-    nativeInputValueSetter?.call(manualInput, 'existing-model')
-    manualInput.dispatchEvent(new Event('input', { bubbles: true }))
+    setInputValue(manualInput, 'existing-model')
 
     const addButton = document.body.querySelector(
       '[data-testid="provider-modal-manual-model-add"]',
     ) as HTMLButtonElement | null
     addButton?.click()
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await tick()
 
     // An error message is shown and the duplicate was not added.
     expect(document.body.textContent).toContain('already in the list')
 
-    const saveButton = document.body.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
-    saveButton?.click()
+    clickSave()
 
-    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
     // Only the original model is present — no duplicate.
-    expect(savedData.models.filter((m) => m.id === 'existing-model')).toHaveLength(1)
+    expect(savedProvider().models.filter((m) => m.id === 'existing-model')).toHaveLength(1)
   })
 
   it.each([
@@ -498,32 +414,23 @@ describe('ProviderModal - thinkingLevel persistence', () => {
       }),
     )
 
-    await new Promise<void>((resolve) => {
-      root.render(
-        <ProviderModal isOpen={true} onClose={vi.fn()} onSave={onSaveMock as (provider: ProviderFormData) => void} />,
-      )
-      setTimeout(resolve, 100)
-    })
-
-    const buttonByText = (text: string) =>
-      Array.from(document.body.querySelectorAll('button')).find((button) => button.textContent?.trim() === text) as
-        HTMLButtonElement | undefined
+    // Starts on step 1: the engine picker is only reachable from there.
+    await renderProviderModal({ initialStep: undefined }, 100)
 
     buttonByText('Account Provider')?.click()
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await tick(0)
     buttonByText(engineName)?.click()
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await tick(0)
 
     const nextButton = document.body.querySelector('[data-testid="provider-modal-next"]') as HTMLButtonElement | null
     expect(nextButton?.disabled).toBe(false)
     nextButton?.click()
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await tick()
 
-    const saveButton = document.body.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
-    saveButton?.click()
+    clickSave()
 
     expect(onSaveMock).toHaveBeenCalledTimes(1)
-    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
+    const savedData = savedProvider()
     expect(savedData.backend).toBe(expectedBackend)
     expect(savedData.authAdapter).toBeUndefined()
     expect(savedData.transportAdapter).toBeUndefined()
@@ -555,72 +462,22 @@ describe('ProviderModal - thinkingLevel persistence', () => {
       }),
     )
 
-    await new Promise<void>((resolve) => {
-      root.render(
-        <ProviderModal
-          isOpen={true}
-          onClose={vi.fn()}
-          onSave={onSaveMock as (provider: ProviderFormData) => void}
-          initialStep={2}
-          editProvider={makeEditProvider()}
-          editModelId="test-model"
-        />,
-      )
-      setTimeout(resolve, 200)
-    })
+    await renderProviderModal({ editProvider: makeEditProvider(), editModelId: 'test-model' })
 
-    const autoConfigButton = Array.from(document.body.querySelectorAll('button')).find(
-      (button) => button.textContent?.trim() === 'Auto-config',
-    ) as HTMLButtonElement | undefined
-    autoConfigButton?.click()
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    buttonByText('Auto-config')?.click()
+    await tick()
 
-    const saveButton = document.body.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
-    saveButton?.click()
+    clickSave()
 
-    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
-    expect(savedData.sendReasoningInMessages).toBe(false)
+    expect(savedProvider().sendReasoningInMessages).toBe(false)
   })
 })
 
 describe('ProviderModal - sampling param Send checkboxes', () => {
-  let container: HTMLElement
-  let root: ReturnType<typeof createRoot>
-  let onSaveMock: ReturnType<typeof vi.fn>
+  setupRoot()
 
-  beforeEach(() => {
-    container = document.createElement('div')
-    document.body.appendChild(container)
-    root = createRoot(container)
-    onSaveMock = vi.fn()
-  })
-
-  afterEach(() => {
-    root.unmount()
-    document.body.removeChild(container)
-  })
-
-  async function renderModal(models: Array<Record<string, unknown>>, editModelId?: string) {
-    await new Promise<void>((resolve) => {
-      root.render(
-        <ProviderModal
-          isOpen={true}
-          onClose={vi.fn()}
-          onSave={onSaveMock as (provider: ProviderFormData) => void}
-          initialStep={2}
-          editProvider={{
-            id: 'test-provider',
-            name: 'Test Provider',
-            url: 'http://localhost:8000/v1',
-            backend: 'vllm' as const,
-            models: models as never,
-          }}
-          editModelId={editModelId}
-        />,
-      )
-      setTimeout(resolve, 200)
-    })
-  }
+  const renderModal = (models: Array<Record<string, unknown>>, editModelId?: string) =>
+    renderProviderModal({ editProvider: providerWithModels(models), editModelId })
 
   function getSendCheckbox(paramKey: string): HTMLInputElement | null {
     return document.body.querySelector(`input[data-testid="send-${paramKey}"]`) as HTMLInputElement | null
@@ -630,10 +487,7 @@ describe('ProviderModal - sampling param Send checkboxes', () => {
     return document.body.querySelector(`input[data-testid="param-${paramKey}"]`) as HTMLInputElement | null
   }
 
-  function save() {
-    const saveButton = document.body.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
-    saveButton?.click()
-  }
+  const savedTestModel = () => savedProvider().models.find((m) => m.id === 'test-model')
 
   it('renders Send checkboxes for Temperature, Top P, Top K, Max tokens checked by default', async () => {
     await renderModal([{ id: 'test-model', contextWindow: 200000 }], 'test-model')
@@ -656,10 +510,8 @@ describe('ProviderModal - sampling param Send checkboxes', () => {
     expect(input?.disabled).toBe(true)
     expect(input?.value).toBe('')
 
-    save()
-    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
-    const savedModel = savedData.models.find((m) => m.id === 'test-model')
-    expect(savedModel?.omitParams).toEqual(['temperature'])
+    clickSave()
+    expect(savedTestModel()?.omitParams).toEqual(['temperature'])
   })
 
   it('re-checking Temperature removes it from omitParams', async () => {
@@ -669,10 +521,8 @@ describe('ProviderModal - sampling param Send checkboxes', () => {
     cb.click()
     cb.click()
 
-    save()
-    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
-    const savedModel = savedData.models.find((m) => m.id === 'test-model')
-    expect(savedModel?.omitParams).toBeUndefined()
+    clickSave()
+    expect(savedTestModel()?.omitParams).toBeUndefined()
   })
 
   it('preserves pre-existing omitParams entries (e.g. reasoning_effort) when toggling Temperature', async () => {
@@ -682,11 +532,9 @@ describe('ProviderModal - sampling param Send checkboxes', () => {
     expect(tempCb.checked).toBe(true)
     tempCb.click()
 
-    save()
-    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
-    const savedModel = savedData.models.find((m) => m.id === 'test-model')
-    expect(savedModel?.omitParams).toEqual(expect.arrayContaining(['reasoning_effort', 'temperature']))
-    expect(savedModel?.omitParams).toHaveLength(2)
+    clickSave()
+    expect(savedTestModel()?.omitParams).toEqual(expect.arrayContaining(['reasoning_effort', 'temperature']))
+    expect(savedTestModel()?.omitParams).toHaveLength(2)
   })
 
   it('reflects auto-config omitParams as unchecked boxes on modal open', async () => {
@@ -703,50 +551,68 @@ describe('ProviderModal - sampling param Send checkboxes', () => {
     const tempInput = getParamInput('temperature')
     expect(tempInput?.disabled).toBe(true)
 
-    save()
-    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
-    const savedModel = savedData.models.find((m) => m.id === 'test-model')
-    expect(savedModel?.omitParams).toEqual(['temperature', 'top_p', 'top_k', 'reasoning_effort'])
+    clickSave()
+    expect(savedTestModel()?.omitParams).toEqual(['temperature', 'top_p', 'top_k', 'reasoning_effort'])
   })
 
-  it('shows a re-enable checkbox for reasoning_effort when auto-config omitted it, and re-checking removes it', async () => {
-    await renderModal(
-      [{ id: 'test-model', contextWindow: 200000, thinkingEnabled: true, omitParams: ['reasoning_effort'] }],
-      'test-model',
-    )
+  it.each([true, false])(
+    'shows a re-enable checkbox for reasoning_effort omitted by auto-config (thinkingEnabled: %s)',
+    async (thinkingEnabled) => {
+      await renderModal(
+        [{ id: 'test-model', contextWindow: 200000, thinkingEnabled, omitParams: ['reasoning_effort'] }],
+        'test-model',
+      )
 
-    const reEnableCb = document.body.querySelector(
-      'input[data-testid="re-enable-reasoning_effort"]',
-    ) as HTMLInputElement | null
-    expect(reEnableCb).toBeTruthy()
-    expect(reEnableCb?.checked).toBe(false)
+      const reEnableCb = document.body.querySelector(
+        'input[data-testid="re-enable-reasoning_effort"]',
+      ) as HTMLInputElement | null
+      expect(reEnableCb).toBeTruthy()
+      expect(reEnableCb?.checked).toBe(false)
 
-    reEnableCb!.click()
+      // Re-checking it removes the param from omitParams.
+      reEnableCb!.click()
 
-    save()
-    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
-    const savedModel = savedData.models.find((m) => m.id === 'test-model')
-    expect(savedModel?.omitParams).toBeUndefined()
+      clickSave()
+      expect(savedTestModel()?.omitParams).toBeUndefined()
+    },
+  )
+})
+
+describe('ProviderModal - Provider-Level Defaults modal', () => {
+  setupRoot()
+
+  async function renderModalAndOpenDefaults() {
+    await renderProviderModal({ editProvider: providerWithModels([{ id: 'test-model', contextWindow: 200000 }]) })
+
+    const openButton = document.body.querySelector(
+      'button[title="Provider-level defaults"]',
+    ) as HTMLButtonElement | null
+    expect(openButton).toBeTruthy()
+    openButton!.click()
+  }
+
+  it('does not render hardcoded fake mode params fields', async () => {
+    await renderModalAndOpenDefaults()
+
+    const bodyText = document.body.textContent ?? ''
+    expect(bodyText).not.toContain('Thinking mode params')
+    expect(bodyText).not.toContain('Non-thinking mode params')
   })
 
-  it('shows re-enable reasoning_effort checkbox even when thinking is disabled', async () => {
-    await renderModal(
-      [{ id: 'test-model', contextWindow: 200000, thinkingEnabled: false, omitParams: ['reasoning_effort'] }],
-      'test-model',
-    )
+  it('keeps real fields (thinking response field, send reasoning) functional', async () => {
+    await renderModalAndOpenDefaults()
 
-    const reEnableCb = document.body.querySelector(
-      'input[data-testid="re-enable-reasoning_effort"]',
+    const thinkingFieldInput = document.body.querySelector(
+      'input[aria-label="Thinking response field"]',
     ) as HTMLInputElement | null
-    expect(reEnableCb).toBeTruthy()
-    expect(reEnableCb?.checked).toBe(false)
+    expect(thinkingFieldInput).toBeTruthy()
 
-    reEnableCb!.click()
-
-    save()
-    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
-    const savedModel = savedData.models.find((m) => m.id === 'test-model')
-    expect(savedModel?.omitParams).toBeUndefined()
+    const sendReasoningLabel = Array.from(document.body.querySelectorAll('label')).find((l) =>
+      l.textContent?.includes('Send reasoning in messages'),
+    )
+    expect(sendReasoningLabel).toBeTruthy()
+    const sendReasoningCb = sendReasoningLabel?.querySelector('input[type="checkbox"]') as HTMLInputElement | null
+    expect(sendReasoningCb).toBeTruthy()
   })
 })
 

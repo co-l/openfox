@@ -1820,31 +1820,16 @@ export function ProviderModal({
           }
         >
           <div className="space-y-4">
-            <p className="text-xs text-text-muted">These apply to all models unless overridden per-model.</p>
-            <div>
-              <label className="text-xs text-text-secondary block mb-1">Non-thinking mode params</label>
-              <input
-                type="text"
-                defaultValue='{"chat_template_kwargs":{"enable_thinking":false}}'
-                readOnly
-                className="w-full px-3 py-2 bg-bg-primary border border-border rounded text-sm text-text-secondary font-mono"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-text-secondary block mb-1">Thinking mode params</label>
-              <input
-                type="text"
-                defaultValue='reasoning_effort: "low"'
-                readOnly
-                className="w-full px-3 py-2 bg-bg-primary border border-border rounded text-sm text-text-secondary font-mono"
-              />
-            </div>
+            <p className="text-xs text-text-muted">
+              Thinking and reasoning effort are configured per model, in each model&rsquo;s Advanced section.
+            </p>
             <div>
               <label className="text-xs text-text-secondary block mb-1">
                 Thinking response field <span className="text-text-muted">(override)</span>
               </label>
               <input
                 type="text"
+                aria-label="Thinking response field"
                 value={thinkingField}
                 onChange={(e) => setThinkingField(e.target.value)}
                 placeholder="Leave blank for auto-detect"
