@@ -103,7 +103,11 @@ vi.mock('../../stores/settings', () => ({
 }))
 
 vi.mock('./ChatFeedItems', () => ({
-  ChatFeedItems: () => <div>ChatFeedItems</div>,
+  ChatFeedItems: ({ paginatedHistory }: { paginatedHistory?: boolean }) => (
+    <div data-testid="chat-feed" data-paginated-history={String(paginatedHistory)}>
+      ChatFeedItems
+    </div>
+  ),
 }))
 
 vi.mock('../shared/ScrollArea', () => ({
@@ -260,6 +264,13 @@ describe('MessageList paginated history', () => {
     screen.getByRole('button', { name: 'Load older history (8 remaining)' }).click()
 
     await waitFor(() => expect(onLoadOlder).toHaveBeenCalledWith(30))
+    expect(screen.getByTestId('chat-feed').getAttribute('data-paginated-history')).toBe('true')
+  })
+
+  it('does not force virtualization when the full history is already present', () => {
+    renderMessageList({ hiddenCount: 0 })
+
+    expect(screen.getByTestId('chat-feed').getAttribute('data-paginated-history')).toBe('false')
   })
 
   it('loads near the top only while the user is scrolling upward and preserves the viewport', async () => {

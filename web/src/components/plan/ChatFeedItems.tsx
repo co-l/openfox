@@ -11,12 +11,11 @@ const ITEM_CONTAINMENT_STYLE = { contentVisibility: 'auto', containIntrinsicSize
 const PLACEHOLDER_STYLE = { contentVisibility: 'auto', containIntrinsicSize: '160px', minHeight: '160px' } as const
 
 // Bottom-anchored virtualization: only the most recent items are mounted at
-// load, older items are revealed in batches as the user scrolls up. Long feeds
-// opt into a smaller automatic window even when the experimental setting is
-// disabled: a handful of tool-heavy messages can otherwise create thousands
+// load, older items are revealed in batches as the user scrolls up. Paginated
+// history uses a smaller automatic window even when the experimental setting
+// is disabled: a handful of tool-heavy messages can otherwise create thousands
 // of DOM nodes and make session switches block the browser's main thread.
 const INITIAL_RENDER_COUNT = 30
-const AUTO_VIRTUALIZE_THRESHOLD = 12
 const AUTO_INITIAL_RENDER_COUNT = 4
 const REVEAL_BATCH_SIZE = 20
 const REVEAL_MARGIN = 10
@@ -26,6 +25,7 @@ interface ChatFeedItemsProps {
   displayItems: DisplayItem[]
   highlightedMessageId?: string | null
   sessionId?: string | null
+  paginatedHistory?: boolean
   scrollContainerRef?: React.RefObject<OverlayScrollbarsComponentRef<'div'> | null>
   showThinking?: boolean
   showVerboseToolOutput?: boolean
@@ -44,6 +44,7 @@ export const ChatFeedItems = memo(function ChatFeedItems({
   displayItems,
   highlightedMessageId = null,
   sessionId,
+  paginatedHistory = false,
   scrollContainerRef,
   showThinking = true,
   showVerboseToolOutput = true,
@@ -53,7 +54,7 @@ export const ChatFeedItems = memo(function ChatFeedItems({
 }: ChatFeedItemsProps) {
   const totalItems = displayItems.length
   const { feedVirtualization } = useDisplaySettings()
-  const virtualizationEnabled = feedVirtualization || totalItems > AUTO_VIRTUALIZE_THRESHOLD
+  const virtualizationEnabled = feedVirtualization || paginatedHistory
   const initialRenderCount = feedVirtualization ? INITIAL_RENDER_COUNT : AUTO_INITIAL_RENDER_COUNT
   const revealBatchSize = feedVirtualization ? REVEAL_BATCH_SIZE : AUTO_INITIAL_RENDER_COUNT
   // Absolute index of the first mounted item. New items appended at the end

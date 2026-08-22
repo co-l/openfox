@@ -98,13 +98,13 @@ describe('ChatFeedItems stable keys', () => {
   })
 })
 
-describe('ChatFeedItems automatic virtualization', () => {
+describe('ChatFeedItems paginated-history virtualization', () => {
   beforeEach(() => {
     useSettingsStore.setState({ settings: {} })
   })
 
-  it('mounts every item with no placeholders for a short feed by default', () => {
-    const items = Array.from({ length: 12 }, (_, i) => msg(`m${i}`, 'user', `Content ${i}`))
+  it('preserves the full feed when virtualization is disabled', () => {
+    const items = Array.from({ length: 20 }, (_, i) => msg(`m${i}`, 'user', `Content ${i}`))
 
     const container = document.createElement('div')
     document.body.appendChild(container)
@@ -113,21 +113,21 @@ describe('ChatFeedItems automatic virtualization', () => {
     flushSync(() => root.render(<ChatFeedItems displayItems={items} />))
 
     expect(container.querySelector('[data-message-id="m0"]')).toBeTruthy()
-    expect(container.querySelector('[data-message-id="m11"]')).toBeTruthy()
-    expect(container.querySelectorAll('.feed-item')).toHaveLength(12)
+    expect(container.querySelector('[data-message-id="m19"]')).toBeTruthy()
+    expect(container.querySelectorAll('.feed-item')).toHaveLength(20)
     expect(container.querySelector('[data-placeholder]')).toBeNull()
     expect(container.querySelector('[data-testid="feed-sentinel"]')).toBeNull()
     expect(container.querySelector('[data-testid="feed-unmounted-hint"]')).toBeNull()
   })
 
-  it('mounts only four recent items when a feed is long', () => {
+  it('mounts only four recent items for paginated history', () => {
     const items = Array.from({ length: 20 }, (_, i) => msg(`m${i}`, 'user', `Content ${i}`))
 
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root = createRoot(container)
 
-    flushSync(() => root.render(<ChatFeedItems displayItems={items} />))
+    flushSync(() => root.render(<ChatFeedItems displayItems={items} paginatedHistory />))
 
     expect(container.querySelector('[data-message-id="m15"]')).toBeNull()
     expect(container.querySelector('[data-message-id="m16"]')).toBeTruthy()

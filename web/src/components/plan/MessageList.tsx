@@ -303,6 +303,7 @@ export const MessageList = memo(function MessageList({
               displayItems={displayItems}
               highlightedMessageId={highlightedMessageId}
               sessionId={sessionId}
+              paginatedHistory={hiddenCount > 0}
               scrollContainerRef={scrollContainerRef}
               showThinking={showThinking}
               showVerboseToolOutput={showVerboseToolOutput}
