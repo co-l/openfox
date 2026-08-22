@@ -1,0 +1,147 @@
+{
+  "metadata": {
+    "id": "dream",
+    "name": "Dream — Dynamic Orchestration",
+    "description": "Demo workflow for the per-step / team / llm_decision dream: an LLM orchestrator decides which step runs next. Bind a team (Phase 2) or set per-step overrides (Phase 1) so each step runs on its own model; the verify step's resolved model is the one asked to route.",
+    "version": "1.0.0",
+    "color": "#8b5cf6"
+  },
+  "entryStep": "build",
+  "settings": {
+    "maxIterations": 10
+  },
+  "steps": [
+    {
+      "id": "build",
+      "name": "Build",
+      "type": "agent",
+      "phase": "build",
+      "agentId": "builder",
+      "prompt": "Implement the requested change. When you are done, call step_done().",
+      "transitions": [
+        {
+          "when": {
+            "type": "always"
+          },
+          "goto": "verify"
+        }
+      ]
+    },
+    {
+      "id": "verify",
+      "name": "Verify & Route",
+      "type": "agent",
+      "phase": "verification",
+      "agentId": "dream-verifier",
+      "prompt": "Run the tests and lint. Report the outcome via step_done().",
+      "transitions": [
+        {
+          "when": {
+            "type": "custom",
+            "handler": "llm_decision",
+            "config": {
+              "prompt": "Given the verification outcome, what should we do next?",
+              "candidates": [
+                {
+                  "goto": "build",
+                  "label": "Retry build",
+                  "description": "Tests or lint failed; rebuild after fixes"
+                },
+                {
+                  "goto": "review",
+                  "label": "Send to review",
+                  "description": "Everything passed; have it reviewed"
+                },
+                {
+                  "goto": "$done",
+                  "label": "Finish",
+                  "description": "Nothing left to do"
+                }
+              ],
+              "thisGoto": "build"
+            }
+          },
+          "goto": "build"
+        },
+        {
+          "when": {
+            "type": "custom",
+            "handler": "llm_decision",
+            "config": {
+              "prompt": "Given the verification outcome, what should we do next?",
+              "candidates": [
+                {
+                  "goto": "build",
+                  "label": "Retry build",
+                  "description": "Tests or lint failed; rebuild after fixes"
+                },
+                {
+                  "goto": "review",
+                  "label": "Send to review",
+                  "description": "Everything passed; have it reviewed"
+                },
+                {
+                  "goto": "$done",
+                  "label": "Finish",
+                  "description": "Nothing left to do"
+                }
+              ],
+              "thisGoto": "review"
+            }
+          },
+          "goto": "review"
+        },
+        {
+          "when": {
+            "type": "custom",
+            "handler": "llm_decision",
+            "config": {
+              "prompt": "Given the verification outcome, what should we do next?",
+              "candidates": [
+                {
+                  "goto": "build",
+                  "label": "Retry build",
+                  "description": "Tests or lint failed; rebuild after fixes"
+                },
+                {
+                  "goto": "review",
+                  "label": "Send to review",
+                  "description": "Everything passed; have it reviewed"
+                },
+                {
+                  "goto": "$done",
+                  "label": "Finish",
+                  "description": "Nothing left to do"
+                }
+              ],
+              "thisGoto": "$done"
+            }
+          },
+          "goto": "$done"
+        },
+        {
+          "when": {
+            "type": "always"
+          },
+          "goto": "$done"
+        }
+      ]
+    },
+    {
+      "id": "review",
+      "name": "Review",
+      "type": "agent",
+      "phase": "review",
+      "agentId": "dream-reviewer",
+      "prompt": "Review the change for correctness and style. When done, call step_done().",
+      "transitions": [
+        {
+          "when": {
+            "type": "always"
+          },
+          "goto": "$done"
+        }
+      ]
+    }
+  ]
+}

@@ -18,7 +18,7 @@ import type { AgentDefinition } from '../agents/types.js'
 import { readFile, access } from 'node:fs/promises'
 import { join, dirname, isAbsolute } from 'node:path'
 import { loadAllAgentsDefault, findAgentById } from '../agents/registry.js'
-import { resolveLLMClientForAgent } from '../agents/model-overrides.js'
+import { resolveLLMClientForAgent, resolveLLMClientForStep } from '../agents/model-overrides.js'
 import { buildBasePrompt } from '../chat/prompts.js'
 import { TurnMetrics, createMessageStartEvent } from '../chat/stream-pure.js'
 import { runTopLevelAgentLoop } from '../chat/agent-loop.js'
@@ -55,6 +55,12 @@ export interface SubAgentExecutionOptions {
   providerManager?: ProviderManager | undefined
   signal?: AbortSignal
   onMessage?: (msg: ServerMessage) => void
+  /**
+   * When set, resolve a per-step model override (`workflowId:stepId`) before
+   * falling back to the sub-agent override. Set by the workflow executor for
+   * sub-agent steps.
+   */
+  stepContext?: import('../runner/types.js').StepContext
 }
 
 export interface SubAgentResult {
@@ -147,6 +153,7 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
     providerManager,
     signal,
     onMessage,
+    stepContext,
   } = options
 
   const agentDef = await resolveAgentDef(subAgentType, sessionManager.getProjectWorkdir(sessionId))
@@ -165,7 +172,16 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
     // A session-pinned effort ("Keep current reasoning effort") wins over the
     // sub-agent override's own effort, mirroring the top-level agent path.
     const pinnedEffort = session.providerPinnedEffort ?? undefined
-    const resolved = resolveLLMClientForAgent(subAgentType, parentLlmClient, providerManager, pinnedEffort)
+    const resolved = stepContext
+      ? resolveLLMClientForStep(
+          stepContext.workflowId,
+          stepContext.stepId,
+          subAgentType,
+          parentLlmClient,
+          providerManager,
+          pinnedEffort,
+        )
+      : resolveLLMClientForAgent(subAgentType, parentLlmClient, providerManager, pinnedEffort)
     if (resolved.usedOverride && resolved.override) {
       hasOverride = true
       llmClient = resolved.client

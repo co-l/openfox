@@ -14,6 +14,7 @@ import type { ServerMessage } from '../../shared/protocol.js'
 import { createServerMessage } from '../../shared/protocol.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { SessionManager } from '../session/index.js'
+import type { TransitionHandlerRegistry } from '../workflows/transition-handlers.js'
 import { runOrchestrator } from './index.js'
 import { normalizeWorkflowScope } from '../workflows/registry.js'
 import { logger } from '../utils/logger.js'
@@ -45,6 +46,8 @@ export interface LaunchWorkflowRunDeps {
   broadcastForSession: (sessionId: string, msg: ServerMessage) => void
   /** Turn-bookkeeping cleanup after the run settles (queue drain, restart, …). */
   onFinished?: () => void
+  /** Custom workflow transition handlers contributed by plugins. */
+  transitionHandlers?: TransitionHandlerRegistry
 }
 
 const activeRuns = new Map<string, AbortController>()
@@ -67,6 +70,7 @@ export function launchWorkflowRun(deps: LaunchWorkflowRunDeps, payload: Workflow
     statsIdentity,
     broadcastForSession,
     onFinished,
+    transitionHandlers,
   } = deps
   const signal = controller.signal
 
@@ -93,6 +97,7 @@ export function launchWorkflowRun(deps: LaunchWorkflowRunDeps, payload: Workflow
     ...(payload.resumeFrom ? { resumeFromStep: payload.resumeFrom } : {}),
     ...(payload.stepOutput ? { initialStepOutput: payload.stepOutput } : {}),
     ...(payload.userChoice ? { userChoice: payload.userChoice } : {}),
+    ...(transitionHandlers ? { transitionHandlers } : {}),
     ...(payload.resumeFrom
       ? (() => {
           const exec = sessionManager.getLatestWorkflowExecution(sessionId)

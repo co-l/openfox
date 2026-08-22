@@ -117,6 +117,13 @@ export interface OrchestratorOptions {
   /** When true, the agent-definition reminder is not re-injected at turn start
    *  (already present in history — used for workflow retries/resumes). */
   skipAgentReminder?: boolean
+  /**
+   * When set, the agent turn resolves a per-step model override
+   * (`workflowId:stepId`) before falling back to the agent override. Set by
+   * the workflow executor for agent/sub-agent steps so each step can pin a
+   * different model. Undefined on the plain chat path (no step scope).
+   */
+  stepContext?: import('../runner/types.js').StepContext
 }
 
 function resolveStatsIdentity(options: OrchestratorOptions): StatsIdentity {
@@ -366,6 +373,7 @@ export async function runAgentTurn(
       options.sessionId,
       agentId,
       options.getSessionLLMClient ? options.getSessionLLMClient() : options.llmClient,
+      options.stepContext,
     )
   const agentLlmClient = resolveAgentClient()
   const statsIdentity = resolveStatsIdentity({ ...options, llmClient: agentLlmClient })

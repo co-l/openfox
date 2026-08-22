@@ -117,6 +117,7 @@ export type TransitionCondition =
   | { type: 'metadata_all_match'; key: string; field: string; value: string }
   | { type: 'metadata_all_in'; key: string; field: string; values: string[] }
   | { type: 'always' }
+  | { type: 'custom'; handler: string; config?: Record<string, unknown> }
 
 // ============================================================================
 // Terminal state constants

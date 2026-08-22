@@ -212,4 +212,19 @@ describe('ProviderRegistry', () => {
       models: [{ id: 'custom-model' }],
     })
   })
+
+  it('registers transition handlers and exposes them via getTransitionHandlers()', async () => {
+    const value = registry()
+    const handler = async () => true
+    value.registerTransitionHandler('llm_decision', handler)
+    const registryHandlers = value.getTransitionHandlers()
+    expect(registryHandlers.has('llm_decision')).toBe(true)
+    expect(registryHandlers.get('llm_decision')).toBe(handler)
+  })
+
+  it('starts with an empty transition handler registry', () => {
+    const value = registry()
+    const registryHandlers = value.getTransitionHandlers()
+    expect(registryHandlers.list()).toEqual([])
+  })
 })

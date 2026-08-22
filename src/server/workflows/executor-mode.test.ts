@@ -86,6 +86,8 @@ vi.mock('../git/diff.js', () => ({
 
 import { executeWorkflow, userStepChoices } from './executor.js'
 import { runAgentTurn } from '../chat/orchestrator.js'
+import { executeSubAgent } from '../sub-agents/manager.js'
+import { findAgentById } from '../agents/registry.js'
 
 describe('userStepChoices', () => {
   it('maps step_result transitions to choices and appends a Continue choice for always', () => {
@@ -183,6 +185,7 @@ describe('executeWorkflow mode changes', () => {
       })),
       setMode,
       setPhase,
+      createClientForAgent: vi.fn((_sessionId: string, _agentId: string, fallbackClient: unknown) => fallbackClient),
       getEffectiveWorkdir: vi.fn().mockReturnValue('/tmp/test'),
       getProjectWorkdir: vi.fn().mockReturnValue('/tmp/test'),
       addMessage: vi.fn(),
@@ -725,5 +728,44 @@ describe('executeWorkflow mode changes', () => {
 
     // Should complete successfully (reach $done)
     expect(result.finalAction).toHaveProperty('type', 'DONE')
+  })
+
+  it('threads stepContext into runAgentTurn for agent steps', async () => {
+    await executeWorkflow(workflow, options)
+
+    const opts = vi.mocked(runAgentTurn).mock.calls[0]?.[0] as
+      { stepContext?: { workflowId: string; stepId: string } } | undefined
+    expect(opts?.stepContext).toEqual({ workflowId: 'test', stepId: 'build' })
+  })
+
+  it('threads stepContext into executeSubAgent for sub_agent steps', async () => {
+    // findAgentById defaults to undefined (mock) which short-circuits the
+    // sub-agent step before executeSubAgent is reached. Return a minimal def
+    // so the executor proceeds to the executeSubAgent call.
+    vi.mocked(findAgentById).mockReturnValue({
+      metadata: { id: 'verifier', name: 'Verifier', subagent: true },
+    } as any)
+
+    const subAgentWorkflow: WorkflowDefinition = {
+      metadata: { id: 'test', name: 'Test', description: '', version: '1' },
+      entryStep: 'verify',
+      settings: { maxIterations: 10 },
+      steps: [
+        {
+          id: 'verify',
+          name: 'Verifier',
+          type: 'sub_agent',
+          phase: 'verification',
+          subAgentType: 'verifier',
+          transitions: [{ when: { type: 'always' }, goto: '$done' }],
+        },
+      ],
+    }
+
+    await executeWorkflow(subAgentWorkflow, options)
+
+    const opts = vi.mocked(executeSubAgent).mock.calls[0]?.[0] as
+      { stepContext?: { workflowId: string; stepId: string } } | undefined
+    expect(opts?.stepContext).toEqual({ workflowId: 'test', stepId: 'verify' })
   })
 })

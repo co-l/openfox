@@ -15,7 +15,7 @@ import {
 import type { AgentDefinition } from '../agents/types.js'
 import { createCrudRoutes, type CrudRouteConfig } from './crud-helpers.js'
 import { getAgentModelOverride, setAgentModelOverride, getAgentModelOverrides } from '../agents/model-overrides.js'
-import { isReasoningEffortValue } from '../providers/model-catalog.js'
+import { readOverrideFields } from './override-route-helpers.js'
 import { logger } from '../utils/logger.js'
 
 // Pre-load default agent IDs at module init for fast synchronous validation.
@@ -75,14 +75,8 @@ const config: CrudRouteConfig<AgentDefinition> = {
 
     router.put('/:id/model', (req, res) => {
       const { id } = req.params
-      const { providerId, model, reasoningEffort } = req.body as {
-        providerId?: string
-        model?: string
-        reasoningEffort?: string
-      }
-      if (reasoningEffort !== undefined && !isReasoningEffortValue(reasoningEffort)) {
-        return res.status(400).json({ error: `Unsupported reasoningEffort: ${reasoningEffort}` })
-      }
+      const { providerId, model, reasoningEffort, error } = readOverrideFields(req.body)
+      if (error) return res.status(400).json({ error })
       if (providerId && model) {
         setAgentModelOverride(id, {
           providerId,
