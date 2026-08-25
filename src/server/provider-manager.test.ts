@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { createProviderManager } from './provider-manager.js'
+import { createProviderManager, fetchModelsWithContext } from './provider-manager.js'
 import { createLLMClient } from './llm/index.js'
 import type { Config, Provider } from '../shared/types.js'
 
@@ -1116,5 +1116,53 @@ describe('ProviderManager - Model Selection', () => {
       expect(model.reasoningEfforts).toEqual(['low'])
       expect(model.reasoningEffortOverride).toBe('deep')
     })
+  })
+})
+
+describe('fetchModelsWithContext - Ollama vision detection', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('detects vision via vision_start_token_id', async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ models: [{ name: 'llava' }] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ model_info: { vision_start_token_id: 32000 } }),
+      })
+    const models = await fetchModelsWithContext('http://localhost:11434', undefined, 'ollama')
+    expect(models[0]?.supportsVision).toBe(true)
+  })
+
+  it('detects vision via clip.vision_projection metadata key', async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ models: [{ name: 'llava2' }] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ model_info: { 'clip.vision_projection': { type: 'tensor' } } }),
+      })
+    const models = await fetchModelsWithContext('http://localhost:11434', undefined, 'ollama')
+    expect(models[0]?.supportsVision).toBe(true)
+  })
+
+  it('does not flag a text-only model as vision', async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ models: [{ name: 'qwen3' }] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ model_info: { 'general.architecture': 'qwen3' } }),
+      })
+    const models = await fetchModelsWithContext('http://localhost:11434', undefined, 'ollama')
+    expect(models[0]?.supportsVision).toBeUndefined()
   })
 })

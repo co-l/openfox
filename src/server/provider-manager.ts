@@ -3,9 +3,11 @@ import type { ProviderRegistry } from './providers/plugins/registry.js'
 import { createTransportLLMClient } from './providers/adapters/transport-client.js'
 import { createLLMClient, clearModelCache, getModelProfile, type LLMClientWithModel } from './llm/index.js'
 import { logger } from './utils/logger.js'
+
 import { parseLmStudioModels } from './providers/lmstudio.js'
 import { ensureVersionPrefix, stripVersionPrefix, buildModelsUrl } from './llm/url-utils.js'
 import { getCatalogEntry } from './providers/model-catalog.js'
+import { hasVisionEvidence } from './providers/vision.js'
 import { resolveEffortForModel } from '../shared/reasoning-effort.js'
 
 /**
@@ -25,7 +27,7 @@ function normalizeModelId(s: string): string {
 async function fetchModelsFromBackend(
   url: string,
   apiKey?: string,
-): Promise<{ id: string; contextWindow: number | undefined }[]> {
+): Promise<{ id: string; contextWindow: number | undefined; supportsVision?: boolean | undefined }[]> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (apiKey) {
     headers['Authorization'] = `Bearer ${apiKey}`
@@ -37,11 +39,20 @@ async function fetchModelsFromBackend(
       logger.debug('Failed to fetch models', { url, status: response.status })
       return []
     }
-    const data = (await response.json()) as { data?: { id: string; max_model_len?: number }[] }
+    const data = (await response.json()) as {
+      data?: Array<{
+        id: string
+        max_model_len?: number
+        context_length?: number
+        capabilities?: { vision?: boolean }
+        input_modalities?: string[]
+      }>
+    }
     if (data.data && Array.isArray(data.data)) {
       return data.data.map((m) => ({
         id: m.id,
-        contextWindow: m.max_model_len ?? undefined,
+        contextWindow: m.max_model_len ?? m.context_length ?? undefined,
+        supportsVision: m.capabilities?.vision || m.input_modalities?.includes('image') ? true : undefined,
       }))
     }
     return []
@@ -55,6 +66,14 @@ function enrichWithProfileDefaults(model: ModelConfig): ModelConfig {
   const profile = getModelProfile(model.id)
   return {
     ...model,
+    // Only fill supportsVision from the profile when the model lacks it —
+    // a backend-detected value (e.g. Ollama /api/show, a transport plugin's
+    // listModels) must win over the static profile default.
+    ...(model.supportsVision !== undefined
+      ? {}
+      : profile.supportsVision !== undefined
+        ? { supportsVision: profile.supportsVision }
+        : {}),
     defaultTemperature: profile.temperature,
     defaultTopP: profile.topP,
     ...(profile.topK !== undefined && { defaultTopK: profile.topK }),
@@ -148,6 +167,7 @@ export async function fetchModelsWithContext(
   return models.map((m) => ({
     id: m.id,
     contextWindow: m.contextWindow ?? 200000,
+    ...(m.supportsVision !== undefined && { supportsVision: m.supportsVision }),
     source: m.contextWindow ? 'backend' : ('default' as const),
   }))
 }
@@ -189,14 +209,24 @@ async function fetchOllamaModelsWithContext(baseUrl: string, _apiKey?: string): 
             model_info?: {
               llama?: { context_length?: number }
               context_length?: number
+              vision_start_token_id?: unknown
+              [key: string]: unknown
             }
           }
 
-          const contextLength =
-            showData.model_info?.llama?.context_length ?? showData.model_info?.context_length ?? 200000
+          const mi = showData.model_info
+          const contextLength = mi?.llama?.context_length ?? mi?.context_length ?? 200000
+          // vision_start_token_id and known vision modality keys are positive
+          // evidence. Emit `undefined` when there is no such evidence so a
+          // model-profile default can still apply later (enrichWithProfileDefaults
+          // only fills when the value is undefined) — an explicit false would
+          // permanently block the profile from rescuing a vision model whose
+          // heuristic indicator is absent.
+          const isVisionModel = hasVisionEvidence(mi ?? {})
           modelsWithContext.push({
             id: model.name,
             contextWindow: contextLength,
+            ...(isVisionModel ? { supportsVision: true } : {}),
             source: contextLength !== 200000 ? 'backend' : ('default' as const),
           })
         } else {

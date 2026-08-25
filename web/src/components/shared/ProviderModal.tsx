@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { authFetch } from '../../lib/api'
 import type { Backend } from '../../stores/config'
 import type { ModelConfig as SharedModelConfig } from '@shared/types.js'
-import { ChevronDownIcon, SettingsIcon } from './icons'
+import { ChevronDownIcon, EyeIcon, SettingsIcon } from './icons'
 import { QueryParamsInput } from './QueryParamsInput'
 import { formatTokens } from '../../lib/format-stats'
 import { shouldAutofocus } from '../../lib/device'
@@ -967,6 +967,7 @@ export function ProviderModal({
           for (const m of data.models) {
             configs[m.id] = {
               contextWindow: m.contextWindow,
+              supportsVision: m.supportsVision,
               thinkingEnabled: true,
               thinkingLevel: defaultReasoningEffort(m.reasoningEfforts),
               defaultTemperature: (m as { defaultTemperature?: number }).defaultTemperature,
@@ -1596,7 +1597,12 @@ export function ProviderModal({
                                 <span className="text-sm font-medium text-text-primary">
                                   {model.name ?? model.id.split('/').pop()}
                                 </span>
-                                <span className="text-xs text-text-muted bg-bg-tertiary px-2 py-0.5 rounded">
+                                <span className="text-xs text-text-muted bg-bg-tertiary px-2 py-0.5 rounded flex items-center gap-1">
+                                  {(modelConfigs[model.id]?.supportsVision ?? model.supportsVision) && (
+                                    <span data-vision title="Vision model" aria-label="Vision model">
+                                      <EyeIcon className="w-3.5 h-3.5" />
+                                    </span>
+                                  )}
                                   {(modelConfigs[model.id]?.contextWindow ?? model.contextWindow).toLocaleString()} ctx
                                 </span>
                               </div>
@@ -1772,7 +1778,12 @@ export function ProviderModal({
                             <span className="text-sm text-text-primary flex-1 truncate">
                               {model.name ?? model.id.split('/').pop()}
                             </span>
-                            <span className="text-xs text-text-muted flex-shrink-0">
+                            <span className="text-xs text-text-muted flex flex-shrink-0 items-center gap-1">
+                              {(modelConfigs[model.id]?.supportsVision ?? model.supportsVision) && (
+                                <span data-vision title="Vision model" aria-label="Vision model">
+                                  <EyeIcon className="w-3.5 h-3.5" />
+                                </span>
+                              )}
                               {(modelConfigs[model.id]?.contextWindow ?? model.contextWindow).toLocaleString()} ctx
                             </span>
                             {autoConfigState.progress[model.id] === 'probing' && (

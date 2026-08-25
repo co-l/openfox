@@ -27,6 +27,26 @@ function cleanup({ container, root }: { container: HTMLElement; root: ReturnType
   container.remove()
 }
 
+describe('ModelEntryRow vision indicator', () => {
+  it('shows an eye indicator for a vision model', () => {
+    const rendered = renderRow({ id: 'vision-model', contextWindow: 200000, source: 'backend', supportsVision: true })
+    try {
+      expect(rendered.container.querySelector('[data-vision]')).not.toBeNull()
+    } finally {
+      cleanup(rendered)
+    }
+  })
+
+  it('does not show an eye indicator for a non-vision model', () => {
+    const rendered = renderRow({ id: 'text-model', contextWindow: 200000, source: 'backend', supportsVision: false })
+    try {
+      expect(rendered.container.querySelector('[data-vision]')).toBeNull()
+    } finally {
+      cleanup(rendered)
+    }
+  })
+})
+
 describe('ModelEntryRow small-context warning', () => {
   it('shows a warning indicator for a small-context model', () => {
     const rendered = renderRow({ id: 'small-model', contextWindow: 8192, source: 'backend' })

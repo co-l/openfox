@@ -7,6 +7,7 @@ import { logger } from '../utils/logger.js'
 import { findLmStudioModel } from './lmstudio.js'
 import { ensureVersionPrefix } from '../llm/url-utils.js'
 import { getCatalogEntry } from './model-catalog.js'
+import { hasVisionEvidence } from './vision.js'
 
 /** Build the standard JSON headers with optional bearer auth. */
 function buildAuthHeaders(apiKey: string | undefined): Record<string, string> {
@@ -169,8 +170,8 @@ async function detectOllamaInfo(baseUrl: string, modelId: string): Promise<Model
   const ctxKey = Object.keys(mi).find((k) => k.endsWith('.context_length') || k === 'context_length')
   const ctxLen = ctxKey ? Number(mi[ctxKey]) : undefined
 
-  // Vision: indicated by vision_start_token_id or .vision. keys in model_info
-  const supportsVision = !!mi['vision_start_token_id'] || Object.keys(mi).some((k) => k.includes('.vision.'))
+  // Vision: positive evidence in model_info (vision_start_token_id or .vision keys)
+  const supportsVision = hasVisionEvidence(mi)
 
   if (ctxLen && !isNaN(ctxLen)) {
     return { contextWindow: ctxLen, source: 'backend', supportsVision }
