@@ -22,5 +22,11 @@
     "displayName": "xAI Grok (SuperGrok)",
     "description": "Authenticate with an X (xAI) SuperGrok subscription via OAuth. No API key required. | ⚠️ Using this plugin may violate xAI's Terms of Service.",
     "githubUrl": "https://github.com/Olgean-Group/openfox-xai-supergrok"
+  },
+  {
+    "name": "openfox-openrouter-free",
+    "displayName": "OpenRouter (Free Models)",
+    "description": "Provider OpenRouter filteré sur les modèles gratuits uniquement, avec mise à jour horaire automatique (1x/heure) et auth 1-Click OAuth / API key.",
+    "githubUrl": "https://github.com/JamesDAdams/openfox-openrouter-free"
   }
 ]
