@@ -2944,7 +2944,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   /** Rendered on the OAuth callback. The message is always one of ours, never anything the caller sent. */
   function oauthCallbackPage(message: string): string {
-    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>OpenFox</title></head><body style="font-family:system-ui;padding:2rem"><p>${message}</p></body></html>`
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>OpenFox</title></head><body style="font-family:system-ui;padding:2rem"><p>${message}</p><script>try{new BroadcastChannel('openfox-oauth').postMessage({type:'oauth-callback-complete'})}catch{}</script></body></html>`
   }
 
   /** Accepts the whole callback URL or just its query string. Anything else yields no state and is refused. */
@@ -3013,8 +3013,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
     try {
       const { auth } = await import('@modelcontextprotocol/sdk/client/auth.js')
-      const { McpOAuthProvider } = await import('./mcp/oauth-provider.js')
+      const { McpOAuthProvider, rejectStaleOAuthClient } = await import('./mcp/oauth-provider.js')
       const provider = new McpOAuthProvider(name, server.config.url)
+      await rejectStaleOAuthClient(provider)
       const result = await auth(provider, { serverUrl: server.config.url })
       if (result === 'AUTHORIZED') {
         await applyMcpOAuthResult(name)

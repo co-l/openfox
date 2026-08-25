@@ -160,6 +160,16 @@ function McpOAuthPanel({ serverName, onChanged }: McpOAuthPanelProps) {
   const [pasted, setPasted] = useState('')
   const [error, setError] = useState('')
 
+  useEffect(() => {
+    const bc = new BroadcastChannel('openfox-oauth')
+    bc.onmessage = (e) => {
+      if (e.data?.type === 'oauth-callback-complete') {
+        setRedirectUri('')
+      }
+    }
+    return () => bc.close()
+  }, [])
+
   const endpoint = `/api/mcp/servers/${encodeURIComponent(serverName)}/oauth`
 
   const call = async (run: () => Promise<void>) => {

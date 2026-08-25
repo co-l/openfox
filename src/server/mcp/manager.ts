@@ -7,6 +7,7 @@ import type { McpServerConfig, McpServerState, McpToolInfo, McpManagerOptions, C
 import type { LLMToolDefinition } from '../llm/types.js'
 import { logger } from '../utils/logger.js'
 import { McpOAuthProvider } from './oauth-provider.js'
+import { readMcpOAuthEntry } from './oauth-store.js'
 
 /**
  * The SDK merges requestInit headers after the ones it derives from the auth provider, so a static
@@ -92,7 +93,13 @@ export class McpManager {
           httpOpts.requestInit = { headers }
         }
         if (entry.config.oauth) {
-          httpOpts.authProvider = new McpOAuthProvider(name, entry.config.url)
+          // A connection attempt is a probe, never an authorization: it must not touch stored
+          // credentials, or it would clobber an authorization the user has pending in a browser.
+          // But if tokens are already stored, the real provider must be used so they get attached.
+          const stored = await readMcpOAuthEntry(name, entry.config.url)
+          httpOpts.authProvider = stored?.tokens
+            ? new McpOAuthProvider(name, entry.config.url)
+            : McpOAuthProvider.forBackgroundProbe(name, entry.config.url)
         }
         transport = new StreamableHTTPClientTransport(new URL(entry.config.url), httpOpts) as unknown as Transport
       } else {
