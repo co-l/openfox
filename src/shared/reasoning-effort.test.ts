@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveEffortForModel } from './reasoning-effort.js'
+import { resolveEffortForModel, splitModeSuffix, groupModeFamilies } from './reasoning-effort.js'
 
 describe('resolveEffortForModel', () => {
   it('passes an in-list candidate through unchanged', () => {
@@ -56,5 +56,56 @@ describe('resolveEffortForModel', () => {
     expect(resolveEffortForModel({ override: 'deep' })).toBe('deep')
     expect(resolveEffortForModel({ defaultEffort: 'medium' })).toBe('medium')
     expect(resolveEffortForModel({})).toBeUndefined()
+  })
+})
+
+describe('splitModeSuffix', () => {
+  it('strips a trailing low/medium/high/xhigh/max suffix from a model id', () => {
+    expect(splitModeSuffix('gemini-3.6-flash-high')).toEqual({ base: 'gemini-3.6-flash', level: 'high' })
+    expect(splitModeSuffix('claude-sonnet-4-6-low')).toEqual({ base: 'claude-sonnet-4-6', level: 'low' })
+  })
+
+  it('handles prefixed ids and keeps the path segment base', () => {
+    expect(splitModeSuffix('antigravity/gemini-3.6-flash-medium')).toEqual({
+      base: 'antigravity/gemini-3.6-flash',
+      level: 'medium',
+    })
+  })
+
+  it('returns undefined when there is no trailing mode suffix', () => {
+    expect(splitModeSuffix('gemini-3.6-flash')).toBeUndefined()
+    expect(splitModeSuffix('claude-sonnet-4-6')).toBeUndefined()
+  })
+})
+
+describe('groupModeFamilies', () => {
+  it('groups models that differ only by a trailing mode suffix', () => {
+    const groups = groupModeFamilies([
+      { id: 'gemini-3.6-flash-high', name: 'Gemini 3.6 Flash (High)' },
+      { id: 'gemini-3.6-flash-low', name: 'Gemini 3.6 Flash (Low)' },
+      { id: 'gemini-3.6-flash-medium', name: 'Gemini 3.6 Flash (Medium)' },
+    ])
+    expect(groups).toHaveLength(1)
+    expect(groups[0]?.baseId).toBe('gemini-3.6-flash')
+    expect(groups[0]?.members).toHaveLength(3)
+  })
+
+  it('uses the stripped base id as the stable name when no un-suffixed model exists', () => {
+    const groups = groupModeFamilies([{ id: 'claude-sonnet-4-6-low' }, { id: 'claude-sonnet-4-6-high' }])
+    expect(groups[0]?.name).toBe('claude-sonnet-4-6')
+  })
+
+  it('returns empty for a single mode (not a real duplicate family)', () => {
+    expect(groupModeFamilies([{ id: 'gemini-3.6-flash-high' }])).toHaveLength(0)
+  })
+
+  it('keeps separate families distinct', () => {
+    const groups = groupModeFamilies([
+      { id: 'gemini-3.6-flash-low' },
+      { id: 'gemini-3.6-flash-high' },
+      { id: 'claude-opus-4-6-low' },
+      { id: 'claude-opus-4-6-high' },
+    ])
+    expect(groups).toHaveLength(2)
   })
 })

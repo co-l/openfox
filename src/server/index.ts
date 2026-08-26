@@ -1898,6 +1898,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       ...(m.requestBody !== undefined && { requestBody: m.requestBody }),
       ...(m.reasoningEfforts !== undefined && { reasoningEfforts: m.reasoningEfforts }),
       ...(m.reasoningEffortOverride !== undefined && { reasoningEffortOverride: m.reasoningEffortOverride }),
+      ...(m.modes !== undefined && { modes: m.modes }),
       ...(m.supportsVision !== undefined && { supportsVision: m.supportsVision }),
       ...(m.thinkingEnabled !== undefined && { thinkingEnabled: m.thinkingEnabled }),
       ...(m.thinkingLevel !== undefined && { thinkingLevel: m.thinkingLevel }),

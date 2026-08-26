@@ -4,7 +4,7 @@ import { getModelProfile } from '../../llm/profiles.js'
 import type { LLMClientWithModel } from '../../llm/client.js'
 import type { ProviderTransportAdapter } from '../../../provider/index.js'
 import { resolveAttachmentsInMessages } from '../../llm/client-pure.js'
-import { resolveEffortForModel } from '../../../shared/reasoning-effort.js'
+import { resolveEffortForModel, resolveModeModelId } from '../../../shared/reasoning-effort.js'
 
 export function createTransportLLMClient(
   provider: Provider,
@@ -30,11 +30,15 @@ export function createTransportLLMClient(
   let profile = profileFor(model)
   void getBackendCapabilities(backend)
 
-  const context = () => {
+  const context = (resolvedEffort?: string) => {
     const configured = provider.models.find((item) => item.id === model)
+    // A merged mode model sends the concrete per-level apiModelId; the base
+    // model id is only a catalog projection. The resolved effort selects which
+    // mode to emit.
+    const send = resolveModeModelId(configured?.modes, resolvedEffort, configured?.apiModelId, model)
     return {
       providerId: provider.id,
-      model: configured?.apiModelId ?? model,
+      model: send.modelId,
       catalogModel: model,
       ...(configured?.requestBody && { requestBody: configured.requestBody }),
       ...(provider.credentialRef && { credentialRef: provider.credentialRef }),
@@ -67,10 +71,18 @@ export function createTransportLLMClient(
   const resolveRequest = async (request: import('../../llm/types.js').LLMCompletionRequest) => {
     const supportsVision = request.modelSettings?.supportsVision ?? profile.supportsVision ?? false
     const resolvedEffort = resolveEffort(request)
+    const configured = provider.models.find((item) => item.id === model)
+    // A merged mode model encodes the effort in its distinct provider id, so the
+    // effort must not also be sent as a request-level reasoningEffort param.
+    // Mirrors createConfigForProvider via resolveModeModelId.
+    const send = resolveModeModelId(configured?.modes, resolvedEffort, configured?.apiModelId, model)
     return {
-      ...request,
-      messages: await resolveAttachmentsInMessages(request.messages, supportsVision),
-      ...(resolvedEffort ? { reasoningEffort: resolvedEffort } : {}),
+      request: {
+        ...request,
+        messages: await resolveAttachmentsInMessages(request.messages, supportsVision),
+        ...(resolvedEffort && !send.suppressEffort ? { reasoningEffort: resolvedEffort } : {}),
+      },
+      effort: resolvedEffort,
     }
   }
 
@@ -86,9 +98,13 @@ export function createTransportLLMClient(
       backend = next
     },
     getReasoningEffort: () => resolveEffort({}),
-    complete: async (request) => transport.complete(await resolveRequest(request), context()),
+    complete: async (request) => {
+      const resolved = await resolveRequest(request)
+      return transport.complete(resolved.request, context(resolved.effort))
+    },
     stream: async function* (request) {
-      yield* transport.stream(await resolveRequest(request), context())
+      const resolved = await resolveRequest(request)
+      yield* transport.stream(resolved.request, context(resolved.effort))
     },
   }
 }

@@ -8,7 +8,7 @@ import { parseLmStudioModels } from './providers/lmstudio.js'
 import { ensureVersionPrefix, stripVersionPrefix, buildModelsUrl } from './llm/url-utils.js'
 import { getCatalogEntry } from './providers/model-catalog.js'
 import { hasVisionEvidence } from './providers/vision.js'
-import { resolveEffortForModel } from '../shared/reasoning-effort.js'
+import { resolveEffortForModel, resolveModeModelId } from '../shared/reasoning-effort.js'
 
 /**
  * num_ctx is the context window we request from Ollama's native /api/chat
@@ -438,19 +438,30 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
     // model's configured default, clamped to the model's advertised preset
     // list; otherwise the model default applies (override, else thinkingLevel).
     const modelThinking = resolveModelThinkingConfig(provider, model, reasoningEffort)
+    // A merged mode model maps the resolved effort to a concrete provider model
+    // id (e.g. OmniRoute "gemini-3.6-flash-high"). Send that id so the mode is
+    // applied via the catalog's distinct model entries, not a reasoning_effort.
+    const configureModel = provider.models.find((m) => m.id === model)
+    const send = resolveModeModelId(
+      configureModel?.modes,
+      modelThinking.reasoningEffort,
+      configureModel?.apiModelId,
+      model,
+    )
     return {
       ...config,
       llm: {
         ...config.llm,
         baseUrl: ensureVersionPrefix(provider.url),
-        model,
+        model: send.modelId,
         backend: provider.backend as LlmBackend,
         ...(provider.apiKey && { apiKey: provider.apiKey }),
         ...(provider.thinkingField && { thinkingField: provider.thinkingField }),
         ...(provider.sendReasoningInMessages !== undefined
           ? { sendReasoningInMessages: provider.sendReasoningInMessages }
           : {}),
-        ...(modelThinking.reasoningEffort && { reasoningEffort: modelThinking.reasoningEffort }),
+        ...(modelThinking.reasoningEffort &&
+          !send.suppressEffort && { reasoningEffort: modelThinking.reasoningEffort }),
       },
     }
   }
@@ -844,6 +855,9 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
         id: modelId,
         contextWindow: settings.contextWindow ?? existingModel?.contextWindow ?? 200000,
         source: 'user',
+        ...(existingModel?.name !== undefined && { name: existingModel.name }),
+        ...(existingModel?.apiModelId !== undefined && { apiModelId: existingModel.apiModelId }),
+        ...(existingModel?.modes !== undefined && { modes: existingModel.modes }),
         ...(finalTemp !== undefined && { temperature: finalTemp }),
         ...(finalTopP !== undefined && { topP: finalTopP }),
         ...(finalTopK !== undefined && { topK: finalTopK }),

@@ -32,17 +32,26 @@ export function modelMatchesQuery(model: { name?: string; id: string }, query: s
 export function getVisibleModels(provider: Provider): ModelWithConfig[] {
   const hasSelected = provider.models.some((m) => m.selected)
   const source = hasSelected ? provider.models.filter((m) => m.selected) : provider.models
-  return source.map((m) => ({
-    id: m.id,
-    ...(m.name !== undefined ? { name: m.name } : {}),
-    contextWindow: m.contextWindow,
-    source: m.source ?? 'default',
-    ...(m.supportsVision !== undefined ? { supportsVision: m.supportsVision } : {}),
-    ...(m.reasoningEfforts?.length ? { reasoningEfforts: m.reasoningEfforts } : {}),
-    ...(m.reasoningEffortOverride ? { reasoningEffortOverride: m.reasoningEffortOverride } : {}),
-    ...(m.thinkingLevel ? { thinkingLevel: m.thinkingLevel } : {}),
-    ...(m.thinkingEnabled !== undefined ? { thinkingEnabled: m.thinkingEnabled } : {}),
-  }))
+  return source.map((m) => {
+    // A merged mode model exposes its levels via `modes`; surface them as
+    // reasoning efforts so the picker renders mode chips.
+    const reasoningEfforts = m.reasoningEfforts?.length
+      ? m.reasoningEfforts
+      : m.modes?.length
+        ? m.modes.map((mode) => mode.level)
+        : undefined
+    return {
+      id: m.id,
+      ...(m.name !== undefined ? { name: m.name } : {}),
+      contextWindow: m.contextWindow,
+      source: m.source ?? 'default',
+      ...(m.supportsVision !== undefined ? { supportsVision: m.supportsVision } : {}),
+      ...(reasoningEfforts?.length ? { reasoningEfforts } : {}),
+      ...(m.reasoningEffortOverride ? { reasoningEffortOverride: m.reasoningEffortOverride } : {}),
+      ...(m.thinkingLevel ? { thinkingLevel: m.thinkingLevel } : {}),
+      ...(m.thinkingEnabled !== undefined ? { thinkingEnabled: m.thinkingEnabled } : {}),
+    }
+  })
 }
 
 // ============================================================================

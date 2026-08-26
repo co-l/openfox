@@ -885,3 +885,105 @@ describe('ProviderModal - small context window warning', () => {
     expect(document.body.querySelector('[data-small-context]')).toBeNull()
   })
 })
+
+describe('ProviderModal - model mode merge', () => {
+  let container: HTMLElement
+  let root: ReturnType<typeof createRoot>
+  let onSaveMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    onSaveMock = vi.fn()
+  })
+
+  afterEach(() => {
+    root.unmount()
+    document.body.removeChild(container)
+    vi.unstubAllGlobals()
+  })
+
+  const omniModels = [
+    { id: 'antigravity/gemini-3.6-flash-high', contextWindow: 1048576 },
+    { id: 'antigravity/gemini-3.6-flash-low', contextWindow: 1048576 },
+    { id: 'antigravity/gemini-3.6-flash-medium', contextWindow: 1048576 },
+    { id: 'antigravity/claude-opus-4-6-thinking', contextWindow: 1048576 },
+  ] as const
+
+  async function renderOmni(editProviderModels: readonly unknown[]) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/api/provider-presets')) {
+          return new Response(JSON.stringify({ presets: [] }), { status: 200 })
+        }
+        return new Response(JSON.stringify({ models: [], url: 'https://omniroute.example/v1' }), { status: 200 })
+      }),
+    )
+    await new Promise<void>((resolve) => {
+      root.render(
+        <ProviderModal
+          isOpen={true}
+          onClose={vi.fn()}
+          onSave={onSaveMock as (provider: ProviderFormData) => void}
+          initialStep={2}
+          editProvider={{
+            id: 'omni-provider',
+            name: 'OmniRoute',
+            url: 'https://omniroute.example/v1',
+            backend: 'openai' as const,
+            models: editProviderModels as never,
+          }}
+        />,
+      )
+      setTimeout(resolve, 200)
+    })
+  }
+
+  it('shows a merge button when models share a base name with mode suffixes', async () => {
+    await renderOmni(omniModels)
+    const mergeButton = Array.from(document.body.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Merge gemini-3.6-flash'),
+    )
+    expect(mergeButton).toBeTruthy()
+  })
+
+  it('hides the merge button when there are no mergeable families', async () => {
+    await renderOmni([{ id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash', contextWindow: 1048576 }])
+    const anyMergeButton = Array.from(document.body.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Merge '),
+    )
+    expect(anyMergeButton).toBeUndefined()
+  })
+
+  it('merges a family into a single model with modes in the save payload', async () => {
+    await renderOmni(omniModels)
+    const mergeButton = Array.from(document.body.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Merge gemini-3.6-flash'),
+    )
+    expect(mergeButton).toBeTruthy()
+    mergeButton?.click()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    const saveButton = document.body.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
+    saveButton?.click()
+
+    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
+    const merged = savedData.models.find((m) => m.id === 'antigravity/gemini-3.6-flash')
+    expect(merged).toBeDefined()
+    // Display name is the path-stripped base id, not the full provider path.
+    expect(merged?.name).toBe('gemini-3.6-flash')
+    expect(merged?.modes?.map((mode) => mode.level)).toEqual(['high', 'low', 'medium'])
+    expect(merged?.modes?.map((mode) => mode.apiModelId)).toEqual([
+      'antigravity/gemini-3.6-flash-high',
+      'antigravity/gemini-3.6-flash-low',
+      'antigravity/gemini-3.6-flash-medium',
+    ])
+    expect(merged?.reasoningEfforts).toEqual(['high', 'low', 'medium'])
+    // The suffixes are removed from the model list
+    expect(savedData.models.some((m) => m.id === 'antigravity/gemini-3.6-flash-high')).toBe(false)
+    expect(savedData.models.some((m) => m.id === 'antigravity/claude-opus-4-6-thinking')).toBe(true)
+  })
+})

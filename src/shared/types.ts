@@ -660,6 +660,11 @@ export interface ModelConfig {
    *  Takes precedence over `thinkingLevel` as the model default and is never
    *  clamped to the preset list — the escape hatch for provider-specific values. */
   reasoningEffortOverride?: string
+  /** Modes a merged model exposes, each mapping a level to the concrete
+   *  provider model ID to send (e.g. OmniRoute exposes the same model as
+   *  "gemini-3.6-flash-low/-medium/-high"). When present, the active effort
+   *  selects the corresponding apiModelId at request time. */
+  modes?: Array<{ level: string; apiModelId: string; name?: string }>
   contextWindow: number // Context window size in tokens
   source: 'backend' | 'user' | 'default' // Where the value came from
   selected?: boolean // User explicitly selected this model (for multi-model providers)

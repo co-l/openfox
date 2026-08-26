@@ -1,6 +1,6 @@
 import { ScrollArea } from './ScrollArea'
 import { Modal } from './Modal'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { authFetch } from '../../lib/api'
 import type { Backend } from '../../stores/config'
 import type { ModelConfig as SharedModelConfig } from '@shared/types.js'
@@ -10,6 +10,7 @@ import { formatTokens } from '../../lib/format-stats'
 import { shouldAutofocus } from '../../lib/device'
 import { REASONING_EFFORT_VALUES } from '../../lib/model-value'
 import { isSmallContext } from '../../lib/context-warning'
+import { groupModeFamilies, splitModeSuffix } from '@shared/reasoning-effort.js'
 
 const COMMON_PORTS = [8080, 11434, 8000, 1234]
 
@@ -667,6 +668,11 @@ export function ProviderModal({
   const urlInputRef = useRef<HTMLInputElement>(null)
   const manualModelInputRef = useRef<HTMLInputElement>(null)
 
+  // Models that share a base id differing only by a mode suffix (e.g. OmniRoute's
+  // "gemini-3.6-flash-low/-medium/-high") can be merged into one model with mode
+  // chips. Derived from the fetched and user-added models.
+  const mergeableGroups = useMemo(() => groupModeFamilies(models.filter((m) => splitModeSuffix(m.id))), [models])
+
   useEffect(() => {
     if (formStep === 1 && isOpen) {
       // Small delay to ensure the input is mounted
@@ -713,6 +719,44 @@ export function ProviderModal({
     if (!query.trim()) return models
     const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
     return models.filter((m) => terms.every((t) => m.id.toLowerCase().includes(t)))
+  }
+
+  // Merge a mode-suffix family into a single model whose `modes` map each level
+  // to the concrete provider id. Keeps the base (un-suffixed) entry's metadata
+  // when present; otherwise derives it from the first member. The un-suffixed
+  // base variant, when it exists, is preserved as the merged model's fallback
+  // apiModelId — selecting the model with no chip active sends the plain id.
+  function mergeModeFamily(baseId: string, members: ModelInfo[]) {
+    const baseModel = models.find((m) => m.id === baseId)
+    const ordered = [...members].sort((a, b) => a.id.localeCompare(b.id))
+    const merged: ModelInfo = {
+      id: baseId,
+      // Display the path-stripped base id (e.g. "gemini-3.6-flash" from
+      // "antigravity/gemini-3.6-flash") so the picker never shows the whole
+      // provider path. The full id is still kept for the request.
+      name: baseModel?.name ?? ordered[0]?.name ?? baseId.split('/').pop() ?? baseId,
+      apiModelId: baseModel?.apiModelId ?? (baseModel ? baseId : undefined),
+      requestBody: baseModel?.requestBody,
+      contextWindow: baseModel?.contextWindow ?? ordered[0]?.contextWindow ?? 200000,
+      reasoningEfforts: ordered.map((m) => splitModeSuffix(m.id)?.level).filter((l): l is string => Boolean(l)),
+      modes: ordered.map((m) => ({
+        level: splitModeSuffix(m.id)!.level,
+        apiModelId: m.apiModelId ?? m.id,
+        ...(m.name !== undefined ? { name: m.name.split('/').pop() ?? m.name } : {}),
+      })),
+    }
+    const removedIds = new Set([baseId, ...ordered.map((m) => m.id)])
+    setModels((current) => [merged, ...current.filter((m) => !removedIds.has(m.id))])
+    // Preserve selections/configs on the merged id if any member was selected.
+    const anySelected = ordered.some((m) => selectedModelIds.has(m.id)) || selectedModelIds.has(baseId)
+    if (anySelected) {
+      setSelectedModelIds((current) => {
+        const next = new Set(current)
+        for (const id of removedIds) next.delete(id)
+        next.add(baseId)
+        return next
+      })
+    }
   }
 
   function addManualModel() {
@@ -1166,6 +1210,7 @@ export function ProviderModal({
         requestBody: m.requestBody,
         reasoningEfforts: modelConfigs[m.id]?.reasoningEfforts ?? m.reasoningEfforts,
         reasoningEffortOverride: modelConfigs[m.id]?.reasoningEffortOverride ?? m.reasoningEffortOverride,
+        modes: m.modes,
         contextWindow: modelConfigs[m.id]?.contextWindow ?? m.contextWindow,
         selected: selectedModelIds.has(m.id) || undefined,
         supportsVision: modelConfigs[m.id]?.supportsVision,
@@ -1689,6 +1734,38 @@ export function ProviderModal({
                         </button>
                       )}
                     </div>
+
+                    {mergeableGroups.length > 0 && (
+                      <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+                        <span className="text-text-secondary">
+                          {mergeableGroups.length} model group{mergeableGroups.length > 1 ? 's' : ''} share the same
+                          base name with different modes:
+                        </span>
+                        <div className="flex flex-wrap gap-2">
+                          {mergeableGroups.map((group) => (
+                            <button
+                              key={group.baseId}
+                              type="button"
+                              onClick={() =>
+                                mergeModeFamily(
+                                  group.baseId,
+                                  group.members
+                                    .map((m) => models.find((x) => x.id === m.id))
+                                    .filter((m): m is ModelInfo => Boolean(m)),
+                                )
+                              }
+                              className="px-2.5 py-1 rounded border border-accent-primary/40 text-accent-primary hover:bg-accent-primary/10 transition-colors"
+                            >
+                              Merge {group.baseId.split('/').pop()}:{' '}
+                              {group.members
+                                .map((m) => splitModeSuffix(m.id)?.level)
+                                .filter(Boolean)
+                                .join(', ')}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-xs text-text-muted">
