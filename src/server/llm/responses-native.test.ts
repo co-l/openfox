@@ -30,11 +30,16 @@ describe('buildResponsesRequest', () => {
     expect(body.model).toBe('gpt-5.6-luna')
     expect(body.instructions).toBe('You are helpful.')
     expect(body.input).toEqual([{ role: 'user', content: 'hello' }])
-    expect(body.temperature).toBe(0.7)
     expect(body.max_output_tokens).toBe(2048)
     expect(body.top_p).toBe(0.9)
     expect(body.stream).toBe(true)
     expect(body.store).toBe(false)
+  })
+
+  it('never forwards temperature (GPT-5.x models reject it)', () => {
+    const body = buildResponsesRequest(streamParams({ temperature: 0.7 }))
+    expect(body['temperature']).toBeUndefined()
+    expect(Object.keys(body)).not.toContain('temperature')
   })
 
   it('converts tool definitions to the flat Responses format', () => {
