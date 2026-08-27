@@ -20,7 +20,9 @@ import {
   getThinking,
   parseToolArguments,
 } from './client-pure.js'
+import { resolveApiProtocol } from './responses-routing.js'
 import { OpenAIHttpClient } from './http-client.js'
+import { OpenAIResponsesHttpClient } from './responses-native.js'
 import { OllamaHttpClient } from './ollama-native.js'
 
 /**
@@ -50,6 +52,8 @@ export interface LLMClientWithModel extends LLMClient {
   getProfile(): ModelProfile
   getBackend(): Backend
   setBackend(backend: Backend): void
+  /** True when the active model is routed to the OpenAI Responses API. */
+  usesResponsesApi?(): boolean
   /** The reasoning effort this client was created with (if any). */
   getReasoningEffort?(): string | undefined
 }
@@ -59,6 +63,9 @@ export function createLLMClient(
   initialBackend: Backend = config.llm.backend ?? 'unknown',
 ): LLMClientWithModel {
   const baseURL = ensureVersionPrefix(config.llm.baseUrl)
+
+  /** Whether the active model speaks the Responses API (per-model routing). */
+  const clientUsesResponsesApi = (modelId: string) => resolveApiProtocol(modelId) === 'responses'
 
   const httpClient = new OpenAIHttpClient({
     baseURL,
@@ -70,7 +77,19 @@ export function createLLMClient(
   const ollamaHttpClient = new OllamaHttpClient({
     baseURL: stripVersionPrefix(baseURL),
   })
-  const httpFor = (b: Backend) => (b === 'ollama' ? ollamaHttpClient : httpClient)
+  // Some models (OpenCode Go: gpt-5.6-luna, grok-4.6, muse-spark-1.2-…)
+  // are served through OpenAI's Responses API rather than
+  // /chat/completions — see responses-routing.ts. Routing is per MODEL,
+  // not per backend: one Go provider serves both endpoints.
+  const responsesHttpClient = new OpenAIResponsesHttpClient({
+    baseURL,
+    apiKey: config.llm.apiKey ?? 'not-needed',
+  })
+  const httpFor = (b: Backend) => {
+    if (b === 'ollama') return ollamaHttpClient
+    if (resolveApiProtocol(model) === 'responses') return responsesHttpClient
+    return httpClient
+  }
 
   let model = config.llm.model
   let profile = getModelProfile(model)
@@ -93,6 +112,8 @@ export function createLLMClient(
     getModel() {
       return model
     },
+
+    usesResponsesApi: () => clientUsesResponsesApi(model),
 
     getProfile() {
       return profile
