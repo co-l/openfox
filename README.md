@@ -101,6 +101,7 @@ Restart OpenFox after installing or updating a plugin.
 - To authenticate with a Google Antigravity account, you can install the [`openfox-google-antigravity`](https://github.com/JamesDAdams/openfox-google-antigravity) plugin.
 - To authenticate with an X (xAI) SuperGrok subscription, you can install the [`openfox-xai-supergrok`](https://github.com/Olgean-Group/openfox-xai-supergrok) plugin.
 - To use free OpenRouter models, you can install the [`openfox-openrouter-free`](https://github.com/JamesDAdams/openfox-openrouter-free) plugin.
+- To use free OpenCode models, you can install the [`openfox-opencode-free`](https://github.com/JamesDAdams/openfox-opencode-free) plugin.
 
 ## Screenshots
 

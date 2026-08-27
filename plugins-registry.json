@@ -28,5 +28,11 @@
     "displayName": "OpenRouter (Free Models)",
     "description": "OpenRouter provider filtered to include only free plans, with automatic hourly updates (once per hour) and 1-Click OAuth / API key authentication.",
     "githubUrl": "https://github.com/JamesDAdams/openfox-openrouter-free"
+  },
+  {
+    "name": "openfox-opencode-free",
+    "displayName": "OpenCode (Free Models)",
+    "description": "OpenCode provider filtered to free models only (-free suffix), with automatic hourly model updates (1x/hour) and API key auth.",
+    "githubUrl": "https://github.com/JamesDAdams/openfox-opencode-free"
   }
 ]
