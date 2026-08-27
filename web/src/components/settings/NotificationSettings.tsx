@@ -103,6 +103,15 @@ export function NotificationSettings() {
           {t({ en: 'Master Controls', fr: 'Contrôles principaux' })}
         </h3>
         <Toggle
+          label={t({ en: 'Popup notifications', fr: 'Notifications contextuelles' })}
+          description={t({
+            en: 'Show the in-app popup (top-right) when a notification arrives',
+            fr: 'Afficher la notification contextuelle (en haut à droite) lors de la réception',
+          })}
+          checked={settings.popupEnabled}
+          onChange={(v) => update({ ...settings, popupEnabled: v })}
+        />
+        <Toggle
           label={t({ en: 'Sound notifications', fr: 'Notifications sonores' })}
           description={t({
             en: 'Play sounds when events occur',

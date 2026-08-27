@@ -519,6 +519,27 @@ export interface ProjectTaskCounts {
   done: number
 }
 
+// ============================================================================
+// Notifications
+// ============================================================================
+
+export interface Notification {
+  id: string
+  title: string
+  body: string
+  /** Origin of the notification (plugin id, system, etc). */
+  source: string
+  /** Whether the user has seen the notification center since it arrived. */
+  read: boolean
+  createdAt: string
+}
+
+export interface NotificationInput {
+  title: string
+  body: string
+  source?: string
+}
+
 export interface Criterion {
   id: string
   description: string // Self-contained contract, includes how to verify

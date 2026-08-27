@@ -33,12 +33,14 @@ import type {
 import { useDevServerStore } from '../dev-server'
 import { useBackgroundProcessesStore } from '../background-processes'
 import { useTasksStore } from '../tasks'
-import { playNewMessage } from '../../lib/sound'
+import { useNotificationSettingsStore } from '../notifications'
+import { useNotificationToastsStore } from '../notificationToasts'
+import { playNewMessage, playAppNotification } from '../../lib/sound'
 import type { AgentType } from '../notifications'
 import type { SessionState, PendingQuestion, SessionPane } from './types'
 import { handleGlobalSoundEffects, resolveAgentType } from './sounds'
 import { getBuffer, scheduleStreamingFlush, cancelStreamingFlush } from './streamingBuffer'
-import { mcpServersResource, type McpServerInfo } from '../../lib/resources'
+import { mcpServersResource, notificationsResource, readNotifications, type McpServerInfo } from '../../lib/resources'
 import {
   emptyPane,
   paneFromFlat,
@@ -1102,6 +1104,44 @@ export function handleServerMessage(
 
     case 'tasks.update': {
       useTasksStore.getState().handleTasksUpdate(message.payload as import('@shared/protocol.js').TasksUpdatePayload)
+      break
+    }
+
+    case 'notifications.new': {
+      const payload = message.payload as import('@shared/protocol.js').NotificationsNewPayload
+      const notification = payload.notification
+      const current = readNotifications() ?? []
+      notificationsResource.write([notification, ...current.filter((n) => n.id !== notification.id)])
+      if (useNotificationSettingsStore.getState().settings.popupEnabled) {
+        useNotificationToastsStore.getState().pushToast({
+          id: notification.id,
+          title: notification.title,
+          body: notification.body,
+          source: notification.source,
+          createdAt: notification.createdAt,
+        })
+      }
+      playAppNotification({ title: notification.title, body: notification.body })
+      break
+    }
+
+    case 'notifications.deleted': {
+      const payload = message.payload as { id: string }
+      const current = readNotifications() ?? []
+      notificationsResource.write(current.filter((n) => n.id !== payload.id))
+      useNotificationToastsStore.getState().dismissToast(payload.id)
+      break
+    }
+
+    case 'notifications.read': {
+      const current = readNotifications() ?? []
+      notificationsResource.write(current.map((n) => ({ ...n, read: true })))
+      break
+    }
+
+    case 'notifications.cleared': {
+      notificationsResource.write([])
+      useNotificationToastsStore.getState().clearToasts()
       break
     }
 
