@@ -31,15 +31,16 @@ describe('buildResponsesRequest', () => {
     expect(body.instructions).toBe('You are helpful.')
     expect(body.input).toEqual([{ role: 'user', content: 'hello' }])
     expect(body.max_output_tokens).toBe(2048)
-    expect(body.top_p).toBe(0.9)
     expect(body.stream).toBe(true)
     expect(body.store).toBe(false)
   })
 
-  it('never forwards temperature (GPT-5.x models reject it)', () => {
-    const body = buildResponsesRequest(streamParams({ temperature: 0.7 }))
+  it('never forwards sampling params (GPT-5.x models reject temperature and top_p)', () => {
+    const body = buildResponsesRequest(streamParams({ temperature: 0.7, top_p: 0.9 }))
     expect(body['temperature']).toBeUndefined()
+    expect(body['top_p']).toBeUndefined()
     expect(Object.keys(body)).not.toContain('temperature')
+    expect(Object.keys(body)).not.toContain('top_p')
   })
 
   it('converts tool definitions to the flat Responses format', () => {

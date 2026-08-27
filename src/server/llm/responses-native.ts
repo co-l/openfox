@@ -48,7 +48,6 @@ export interface ResponsesRequestBody {
   instructions?: string
   tools?: Array<Record<string, unknown>>
   tool_choice?: unknown
-  top_p?: number
   max_output_tokens?: number
   stream?: boolean
   store?: boolean
@@ -116,11 +115,10 @@ export function buildResponsesRequest(
     const choice = params.tool_choice
     body.tool_choice = choice === 'auto' || choice === 'none' ? choice : 'auto'
   }
-  // GPT-5.x-family models served through the Responses API reject sampling
-  // params entirely ("'temperature' is not supported with this model"), so
-  // they are never forwarded — only max_output_tokens and top_p are safe.
+  // GPT-5.x-family models served through the Responses API reject ALL
+  // sampling params ("'temperature'/'top_p' is not supported with this
+  // model"), so none are forwarded — only max_output_tokens is safe.
   if (params.max_tokens !== undefined) body.max_output_tokens = params.max_tokens
-  if (params.top_p !== undefined) body.top_p = params.top_p
 
   // The Responses API expresses reasoning as a `reasoning.effort` object and
   // has no explicit "off" — omit the field entirely for 'none'.
