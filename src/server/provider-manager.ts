@@ -105,7 +105,21 @@ function mergeModelsWithUserOverrides(
 ): ModelConfig[] {
   const normalizedUserIdMap = new Map(userModels.map((m) => [normalizeModelId(m.id), m]))
 
-  const updatedModels = backendModels.map((backendModel) => {
+  // A user model with `modes` is a merged mode-chip model that represents
+  // multiple concrete backend catalog ids (its modes' apiModelIds). Hide
+  // those suffixed backend variants so they don't reappear alongside the
+  // merged model on refresh.
+  const claimedByMergedModes = new Set<string>()
+  for (const userModel of userModels) {
+    if (!userModel.modes?.length) continue
+    for (const mode of userModel.modes) {
+      if (mode.apiModelId) claimedByMergedModes.add(normalizeModelId(mode.apiModelId))
+    }
+  }
+
+  const filteredBackendModels = backendModels.filter((m) => !claimedByMergedModes.has(normalizeModelId(m.id)))
+
+  const updatedModels = filteredBackendModels.map((backendModel) => {
     const existingUserModel = normalizedUserIdMap.get(normalizeModelId(backendModel.id))
     if (existingUserModel) {
       return enrichWithProfileDefaults({ ...backendModel, ...existingUserModel, id: backendModel.id })
@@ -114,7 +128,7 @@ function mergeModelsWithUserOverrides(
   })
 
   if (preserveMissingUserModels) {
-    const normalizedBackendIds = new Set(backendModels.map((m) => normalizeModelId(m.id)))
+    const normalizedBackendIds = new Set(filteredBackendModels.map((m) => normalizeModelId(m.id)))
     for (const userModel of userModels) {
       if (!normalizedBackendIds.has(normalizeModelId(userModel.id))) {
         updatedModels.push(enrichWithProfileDefaults(userModel))

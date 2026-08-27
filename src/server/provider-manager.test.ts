@@ -440,6 +440,59 @@ describe('ProviderManager - Model Selection', () => {
       expect(modelA?.source).toBe('user')
     })
 
+    it('hides catalog variants claimed by a merged mode-chip user model', async () => {
+      // Simulate a user who merged three suffixed catalog variants into a
+      // single mode-chip model. On refresh, the raw catalog (still exposing the
+      // suffixed variants) must not reintroduce them alongside the merged one.
+      const mergedConfig: Config = {
+        ...config,
+        providers: [
+          {
+            id: 'omni',
+            name: 'OmniRoute',
+            url: 'http://localhost:9100',
+            backend: 'openai',
+            models: [
+              {
+                id: 'antigravity/gemini-3.6-flash',
+                contextWindow: 1048576,
+                source: 'user',
+                modes: [
+                  { level: 'low', apiModelId: 'antigravity/gemini-3.6-flash-low' },
+                  { level: 'medium', apiModelId: 'antigravity/gemini-3.6-flash-medium' },
+                  { level: 'high', apiModelId: 'antigravity/gemini-3.6-flash-high' },
+                ],
+              },
+            ],
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      }
+      const manager = createProviderManager(mergedConfig)
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: [
+            { id: 'antigravity/gemini-3.6-flash-low', max_model_len: 1048576 },
+            { id: 'antigravity/gemini-3.6-flash-medium', max_model_len: 1048576 },
+            { id: 'antigravity/gemini-3.6-flash-high', max_model_len: 1048576 },
+            { id: 'antigravity/other-model', max_model_len: 200000 },
+          ],
+        }),
+      })
+
+      const result = await manager.refreshProviderModels('omni')
+
+      expect(result).toEqual({ success: true })
+      const models = manager.getProviders().find((p) => p.id === 'omni')?.models ?? []
+      const ids = models.map((m) => m.id).sort()
+      expect(ids).toEqual(['antigravity/gemini-3.6-flash', 'antigravity/other-model'])
+      const merged = models.find((m) => m.id === 'antigravity/gemini-3.6-flash')
+      expect(merged?.modes?.length).toBe(3)
+    })
+
     it('returns error when backend returns no models', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
