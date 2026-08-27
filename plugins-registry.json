@@ -26,7 +26,7 @@
   {
     "name": "openfox-openrouter-free",
     "displayName": "OpenRouter (Free Models)",
-    "description": "Provider OpenRouter filteré sur les modèles gratuits uniquement, avec mise à jour horaire automatique (1x/heure) et auth 1-Click OAuth / API key.",
+    "description": "OpenRouter provider filtered to include only free plans, with automatic hourly updates (once per hour) and 1-Click OAuth / API key authentication.",
     "githubUrl": "https://github.com/JamesDAdams/openfox-openrouter-free"
   }
 ]
