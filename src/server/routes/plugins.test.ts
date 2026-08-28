@@ -6,6 +6,18 @@ import { tmpdir } from 'node:os'
 import { createPluginRoutes } from './plugins.js'
 import { ProviderRegistry } from '../providers/plugins/registry.js'
 import type { ProviderPluginDiagnostic } from '../providers/plugins/index.js'
+import { closeDatabase, initDatabase } from '../db/index.js'
+import { loadConfig } from '../config.js'
+import { SETTINGS_KEYS, setSetting } from '../db/settings.js'
+
+let mockConfigDir = ''
+vi.mock('../../cli/paths.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../cli/paths.js')>()
+  return {
+    ...actual,
+    getGlobalConfigDir: () => mockConfigDir || actual.getGlobalConfigDir('test'),
+  }
+})
 
 function createApp(options?: Partial<Parameters<typeof createPluginRoutes>[0]>) {
   const app = express()
@@ -37,7 +49,12 @@ describe('plugin routes', () => {
   let baseUrl: string
 
   beforeEach(async () => {
+    closeDatabase()
+    const cfg = loadConfig()
+    cfg.database.path = ':memory:'
+    initDatabase(cfg)
     rootDir = await mkdtemp(join(tmpdir(), 'openfox-plugins-'))
+    mockConfigDir = rootDir
     const { app } = createApp({
       config: { mode: 'test', providers: [] } as any,
     })
@@ -118,6 +135,91 @@ describe('plugin routes', () => {
       expect(res.status).toBe(200)
       const body = (await res.json()) as { installed: unknown[] }
       expect(body).toEqual({ installed: [] })
+    })
+  })
+
+  describe('GET /:name/settings and POST /:name/settings', () => {
+    it('returns settings spec and saved values', async () => {
+      const appWithSpec = createApp({
+        config: { mode: 'test', providers: [] } as any,
+      })
+      appWithSpec.providerAdapters.registerSettingsForPlugin('test-plugin', {
+        title: 'Test Plugin Settings',
+        description: 'Configure test plugin options',
+        fields: [
+          { key: 'apiKey', label: 'API Key', type: 'password', required: true },
+          { key: 'enableFeature', label: 'Enable Feature', type: 'boolean', defaultValue: true },
+        ],
+      })
+      const lServer = appWithSpec.app.listen(0)
+      const lUrl = `http://localhost:${(lServer.address() as { port: number }).port}`
+
+      try {
+        const resGet1 = await fetch(`${lUrl}/api/plugins/test-plugin/settings`)
+        expect(resGet1.status).toBe(200)
+        const bodyGet1 = (await resGet1.json()) as {
+          name: string
+          hasSpec: boolean
+          spec: any
+          values: Record<string, unknown>
+        }
+        expect(bodyGet1.hasSpec).toBe(true)
+        expect(bodyGet1.spec.title).toBe('Test Plugin Settings')
+        expect(bodyGet1.values['enableFeature']).toBe(true)
+
+        const resPost = await fetch(`${lUrl}/api/plugins/test-plugin/settings`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ values: { apiKey: 'secret123', enableFeature: false } }),
+        })
+        expect(resPost.status).toBe(200)
+        const bodyPost = (await resPost.json()) as { success: boolean; values: Record<string, unknown> }
+        expect(bodyPost.success).toBe(true)
+        expect(bodyPost.values).toEqual({ apiKey: 'secret123', enableFeature: false })
+
+        const resGet2 = await fetch(`${lUrl}/api/plugins/test-plugin/settings`)
+        const bodyGet2 = (await resGet2.json()) as { values: Record<string, unknown>; configuredKeys: string[] }
+        // password field must not be echoed back on GET
+        expect(bodyGet2.values).toEqual({ enableFeature: false })
+        expect(bodyGet2.configuredKeys).toEqual(['apiKey'])
+
+        // Updating other settings without re-sending password should succeed
+        const resPost2 = await fetch(`${lUrl}/api/plugins/test-plugin/settings`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ values: { enableFeature: true } }),
+        })
+        expect(resPost2.status).toBe(200)
+      } finally {
+        lServer.close()
+      }
+    })
+
+    it('returns translated error message when required field is missing in French locale', async () => {
+      setSetting(SETTINGS_KEYS.DISPLAY_LOCALE, 'fr')
+      const appWithSpec = createApp({
+        config: { mode: 'test', providers: [] } as any,
+      })
+      appWithSpec.providerAdapters.registerSettingsForPlugin('test-fr-plugin', {
+        title: 'Settings FR',
+        fields: [{ key: 'apiKey', label: 'Clé API', type: 'password', required: true }],
+      })
+      const lServer = appWithSpec.app.listen(0)
+      const lUrl = `http://localhost:${(lServer.address() as { port: number }).port}`
+
+      try {
+        const resPost = await fetch(`${lUrl}/api/plugins/test-fr-plugin/settings`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ values: {} }),
+        })
+        expect(resPost.status).toBe(400)
+        const body = (await resPost.json()) as { error: string }
+        expect(body.error).toBe('Clé API est requis')
+      } finally {
+        setSetting(SETTINGS_KEYS.DISPLAY_LOCALE, 'en')
+        lServer.close()
+      }
     })
   })
 
