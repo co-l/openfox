@@ -10,8 +10,10 @@
  *   `openai` backend, the gpt-5 family's profile marks it `responses`.
  * - OpenCode Go (https://opencode.ai/docs/go/) serves a subset of its catalog
  *   (gpt-5.6-luna, grok-4.6, muse-spark-1.2-contributor) only through the
- *   Responses API — the curated table below covers those, scoped to the
- *   `opencode-go` backend.
+ *   Responses API — the curated table below covers those, on the `opencode-go`
+ *   backend and, as a fallback, on `unknown` (providers created before the
+ *   backend was picked or added as "Other" still work; local inference engines
+ *   never serve these curated ids, so the fallback cannot mis-route them).
  *
  * The `/v1/responses` endpoint is OpenAI-specific: vLLM, Ollama, llama.cpp and
  * friends only speak chat completions, so a global model-name match would
@@ -68,14 +70,16 @@ function matchesRules(modelId: string, rules: ProtocolRule[]): ApiProtocol | und
 
 /**
  * Resolve the API protocol for a model on a given backend.
- * Explicit override > openai backend + profile protocol > opencode-go curated
- * table > chat completions.
+ * Explicit override > openai backend + profile protocol > OpenCode Go curated
+ * table (also applied on the 'unknown' backend, so providers created before the
+ * curated table existed keep working — local inference engines never serve
+ * these ids) > chat completions.
  */
 export function resolveApiProtocol(input: ProtocolResolutionInput): ApiProtocol {
   const { model, backend, profileApiProtocol, explicitApiProtocol } = input
   if (explicitApiProtocol) return explicitApiProtocol
   if (backend === 'openai' && profileApiProtocol) return profileApiProtocol
-  if (backend === 'opencode-go') {
+  if (backend === 'opencode-go' || backend === 'unknown') {
     const matched = matchesRules(model, OPENCODE_GO_RESPONSES_RULES)
     if (matched) return matched
   }

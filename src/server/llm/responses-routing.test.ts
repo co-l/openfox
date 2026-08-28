@@ -15,6 +15,15 @@ describe('resolveApiProtocol', () => {
     expect(resolveApiProtocol({ model: 'muse-spark-1.2-contributor', backend: 'opencode-go' })).toBe('responses')
   })
 
+  it('routes curated OpenCode Go models to responses on an unknown backend', () => {
+    // Providers created before the curated table existed (or added as "Other")
+    // carry backend 'unknown'; none of the local inference engines serve these
+    // ids, so the curated match still applies.
+    expect(resolveApiProtocol({ model: 'gpt-5.6-luna', backend: 'unknown' })).toBe('responses')
+    expect(resolveApiProtocol({ model: 'grok-4.6', backend: 'unknown' })).toBe('responses')
+    expect(resolveApiProtocol({ model: 'muse-spark-1.2-contributor', backend: 'unknown' })).toBe('responses')
+  })
+
   it('does NOT route responses-class models on backends that only speak chat completions', () => {
     expect(resolveApiProtocol({ model: 'gpt-5.6-luna', backend: 'vllm', profileApiProtocol: 'responses' })).toBe(
       'chat-completions',
