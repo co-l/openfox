@@ -810,3 +810,48 @@ export interface ElementData {
   rect: { x: number; y: number; width: number; height: number }
   attributes: Record<string, string>
 }
+
+// ============================================================================
+// Plugin Quota Types
+// ============================================================================
+
+/**
+ * A single quota metric contributed by a plugin. The shape is generic so any
+ * plugin (OpenCode Go, Google Antigravity, GitHub Copilot, …) can report quota
+ * without the server or UI knowing about it specifically.
+ */
+export type QuotaMetric =
+  // Windowed usage/limit: e.g. "3 requests per hour", "1000 per week", "5000 per month".
+  // When `model` is present the metric applies only to that model; otherwise it
+  // is shared across all models for the source.
+  | {
+      kind: 'windowed'
+      label: string
+      used: number
+      limit: number
+      window: 'hour' | 'week' | 'month'
+      model?: string
+      /** ISO timestamp when the window resets. */
+      resetsAt?: string
+    }
+  // Token balance: a fixed pool with a remaining amount (e.g. GitHub Copilot Business).
+  | {
+      kind: 'token-balance'
+      label: string
+      total: number
+      remaining: number
+      model?: string
+    }
+
+/** A quota source is a single plugin/provider reporting one or more metrics. */
+export interface QuotaSource {
+  id: string
+  name: string
+  metrics: QuotaMetric[]
+}
+
+/** Aggregated quota report returned by the server. */
+export interface QuotaReport {
+  sources: QuotaSource[]
+  fetchedAt: string
+}

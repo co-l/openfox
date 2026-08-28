@@ -29,10 +29,13 @@ import { TerminalDrawer } from '../terminal/TerminalDrawer'
 import { ProjectDropdown } from './ProjectDropdown'
 import { SessionDropdown } from './SessionDropdown'
 import { TasksModal } from '../tasks/TasksModal'
+import { QuotaModal } from '../QuotaModal'
 import { useTasksStore } from '../../stores/tasks'
-import { TasksIcon, ArrowRightIcon } from '../shared/icons'
+import { TasksIcon, ArrowRightIcon, QuotaIcon } from '../shared/icons'
 import { useIsSplit } from '../../lib/splitPersistence'
 import { DropdownMenu, type DropdownMenuItem } from '../shared/DropdownMenu'
+import { useQuotaStore } from '../../stores/quota'
+import { isQuotaMetricOverLimit } from '../../lib/quota'
 
 interface HeaderProps {
   onMenuClick?: () => void
@@ -46,6 +49,7 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement)
   const [location, setLocation] = useLocation()
   const [tasksModalOpen, setTasksModalOpen] = useState(false)
+  const [quotaModalOpen, setQuotaModalOpen] = useState(false)
   const lastAutoLaunch = useTasksStore((state) => state.lastAutoLaunch)
   const clearAutoLaunch = useTasksStore((state) => state.clearAutoLaunch)
 
@@ -70,12 +74,24 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
   const terminalIsOpen = useTerminalStore((state) => state.isOpen)
   const updateAvailable = useUpdateStore((state) => state.status === 'available')
   const checkForUpdate = useUpdateStore((state) => state.check)
+  const quotaWarning = useQuotaStore((state) =>
+    (state.report?.sources ?? []).some((s) => s.metrics.some(isQuotaMetricOverLimit)),
+  )
+  const fetchQuota = useQuotaStore((state) => state.fetchQuota)
 
   useEffect(() => {
     if (useUpdateStore.getState().status === 'idle') {
       checkForUpdate()
     }
   }, [checkForUpdate])
+
+  useEffect(() => {
+    void fetchQuota()
+    // Refetch on window focus so the warning dot clears after quota recovers.
+    const onFocus = () => void fetchQuota()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [fetchQuota])
 
   useEffect(() => {
     const handler = () => setSessionDropdownOpen(true)
@@ -127,6 +143,16 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
       })
     }
   }
+  mobileMenuItems.push({
+    label: (
+      <span className="flex items-center gap-2">
+        {t({ en: 'Usage & Quotas', fr: 'Utilisation & quotas' })}
+        {quotaWarning && <span className="w-1.5 h-1.5 rounded-full bg-accent-danger" />}
+      </span>
+    ),
+    icon: <QuotaIcon />,
+    onClick: () => setQuotaModalOpen(true),
+  })
   mobileMenuItems.push({
     label: (
       <span className="flex items-center gap-2">
@@ -292,6 +318,16 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
           )}
 
           <button
+            onClick={() => setQuotaModalOpen(true)}
+            className="relative p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
+            title="Usage & quotas"
+            aria-label="Open usage and quotas"
+          >
+            <QuotaIcon />
+            {quotaWarning && <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-accent-danger" />}
+          </button>
+
+          <button
             onClick={() => setShowSettings(true)}
             className="relative p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
             title={
@@ -354,6 +390,7 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
       </div>
 
       <GlobalSettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
+      <QuotaModal isOpen={quotaModalOpen} onClose={() => setQuotaModalOpen(false)} />
       <TerminalDrawer isOpen={terminalIsOpen} onClose={() => setTerminalOpen(false)} />
       {project && (
         <TasksModal isOpen={tasksModalOpen} onClose={() => setTasksModalOpen(false)} projectId={project.id} />

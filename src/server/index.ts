@@ -6,7 +6,7 @@ import { dirname, resolve, join } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { createServer as createViteServer, type ViteDevServer } from 'vite'
 
-import type { Config, ModelConfig, ProviderBackend } from '../shared/types.js'
+import type { Config, ModelConfig, ProviderBackend, QuotaReport } from '../shared/types.js'
 import type { ServerHandle } from './context.js'
 import type { VisionBackend } from './llm/vision-fallback.js'
 import { initDatabase } from './db/index.js'
@@ -2536,6 +2536,21 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }),
   )
   app.use('/api/provider-auth', createProviderAuthRoutes(config, providerManager, providerAdapters))
+
+  // Aggregate quota reports from all registered quota providers (plugins + mocks).
+  app.get('/api/quota', async (_req, res) => {
+    try {
+      const providers = providerAdapters.getQuotaProviders()
+      const sources = await Promise.all(providers.map((p) => p.getQuota().catch(() => null)))
+      res.json({
+        sources: sources.filter((s): s is NonNullable<typeof s> => s !== null),
+        fetchedAt: new Date().toISOString(),
+      } satisfies QuotaReport)
+    } catch (error) {
+      logger.error('Failed to aggregate quota report', { error: String(error) })
+      res.status(500).json({ error: 'Failed to load quota' })
+    }
+  })
 
   // Provider endpoints
   app.get('/api/providers', (_req, res) => {
