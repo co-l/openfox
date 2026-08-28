@@ -65,6 +65,7 @@ interface MessageListProps {
   ) => void
   onScrollToTop?: () => void
   hiddenCount?: number
+  onLoadOlder?: (maxItems: number) => Promise<number>
   onScrollbarGesture?: (kind: ScrollbarGestureKind, gapToEndPx: number | null) => void
   emptyState?: ReactNode
 }
@@ -76,6 +77,7 @@ export const MessageList = memo(function MessageList({
   onLaunchWorkflow,
   onScrollToTop,
   hiddenCount = 0,
+  onLoadOlder,
   onScrollbarGesture,
   emptyState,
 }: MessageListProps) {
@@ -121,7 +123,7 @@ export const MessageList = memo(function MessageList({
   )
   const retryLLMNow = useSessionStore((state) => state.retryLLMNow)
   const retryLLM = useSessionStore((state) => state.retryLLM)
-  const { showThinking, showVerboseToolOutput, showStats, showAgentDefinitions, showWorkflowBars } =
+  const { showThinking, showVerboseToolOutput, showStats, showAgentDefinitions, showWorkflowBars, maxVisibleItems } =
     useDisplaySettings()
 
   const workflows = useAllWorkflows()
@@ -143,8 +145,12 @@ export const MessageList = memo(function MessageList({
     undefined,
   )
   const [popupBlocked, setPopupBlocked] = useState(false)
+  const [loadingOlder, setLoadingOlder] = useState(false)
+  const [historyLoadError, setHistoryLoadError] = useState(false)
   const [isScrollable, setIsScrollable] = useState(false)
   const [scrolledPastTop, setScrolledPastTop] = useState(false)
+  const previousScrollTopRef = useRef(0)
+  const loadingOlderRef = useRef(false)
 
   const getViewport = useViewport(scrollContainerRef)
 
@@ -157,7 +163,9 @@ export const MessageList = memo(function MessageList({
   useEffect(() => {
     const el = getViewport()
     if (!el) return
-    const onScroll = () => setScrolledPastTop(el.scrollTop > 4)
+    const onScroll = () => {
+      setScrolledPastTop(el.scrollTop > 4)
+    }
     onScroll()
     el.addEventListener('scroll', onScroll, { passive: true })
     return () => el.removeEventListener('scroll', onScroll)
@@ -171,6 +179,56 @@ export const MessageList = memo(function MessageList({
       setPopupBlocked(true)
     }
   }
+
+  const canLoadOlder =
+    hiddenCount > 0 && onLoadOlder !== undefined && (maxVisibleItems === 0 || displayItems.length < maxVisibleItems)
+  const pageCapacity = maxVisibleItems === 0 ? 30 : Math.max(1, Math.min(30, maxVisibleItems - displayItems.length))
+
+  const loadOlder = useCallback(async () => {
+    if (!canLoadOlder || loadingOlderRef.current || !onLoadOlder) return
+
+    const viewport = getViewport()
+    const previousHeight = viewport?.scrollHeight ?? 0
+    const previousTop = viewport?.scrollTop ?? 0
+    loadingOlderRef.current = true
+    setLoadingOlder(true)
+    setHistoryLoadError(false)
+
+    try {
+      const loaded = await onLoadOlder(pageCapacity)
+      if (loaded === 0) return
+      requestAnimationFrame(() => {
+        const updatedViewport = getViewport()
+        if (!updatedViewport) return
+        updatedViewport.scrollTop = previousTop + Math.max(0, updatedViewport.scrollHeight - previousHeight)
+        previousScrollTopRef.current = updatedViewport.scrollTop
+      })
+    } catch {
+      setHistoryLoadError(true)
+    } finally {
+      loadingOlderRef.current = false
+      setLoadingOlder(false)
+    }
+  }, [canLoadOlder, getViewport, onLoadOlder, pageCapacity])
+
+  useEffect(() => {
+    const viewport = getViewport()
+    if (!viewport || !canLoadOlder) return
+    previousScrollTopRef.current = viewport.scrollTop
+
+    const onScroll = () => {
+      const currentTop = viewport.scrollTop
+      const movedUp = currentTop < previousScrollTopRef.current - 1
+      previousScrollTopRef.current = currentTop
+      const hasUnmountedHistory = viewport.querySelector('[data-placeholder]') !== null
+      if (movedUp && currentTop <= 160 && !hasUnmountedHistory) {
+        void loadOlder()
+      }
+    }
+
+    viewport.addEventListener('scroll', onScroll, { passive: true })
+    return () => viewport.removeEventListener('scroll', onScroll)
+  }, [canLoadOlder, getViewport, loadOlder, sessionId])
 
   const [continuing, setContinuing] = useState(false)
 
@@ -203,11 +261,27 @@ export const MessageList = memo(function MessageList({
             {hiddenCount > 0 && (
               <div className="px-2 @md:px-4 pb-2 space-y-1">
                 <button
-                  onClick={openFullHistory}
-                  className="w-full text-sm text-text-muted hover:text-text-primary bg-bg-tertiary/50 hover:bg-bg-tertiary border border-border rounded px-3 py-2 transition-colors text-center"
+                  onClick={canLoadOlder ? loadOlder : openFullHistory}
+                  disabled={loadingOlder}
+                  className="w-full text-sm text-text-muted hover:text-text-primary bg-bg-tertiary/50 hover:bg-bg-tertiary border border-border rounded px-3 py-2 transition-colors text-center disabled:opacity-60 disabled:cursor-wait"
                 >
-                  {hiddenCount} older item{hiddenCount !== 1 ? 's' : ''} hidden — View full history
+                  {loadingOlder
+                    ? 'Loading older history…'
+                    : canLoadOlder
+                      ? `Load older history (${hiddenCount} remaining)`
+                      : `${hiddenCount} older item${hiddenCount !== 1 ? 's' : ''} hidden · View full history`}
                 </button>
+                {canLoadOlder && (
+                  <button
+                    onClick={openFullHistory}
+                    className="w-full text-xs text-text-muted hover:text-text-primary transition-colors text-center"
+                  >
+                    Open full history in a new tab
+                  </button>
+                )}
+                {historyLoadError && (
+                  <p className="text-xs text-error text-center">Could not load older history. Try again.</p>
+                )}
                 {popupBlocked && (
                   <p className="text-xs text-text-muted text-center">
                     Popup blocked.{' '}
@@ -225,9 +299,11 @@ export const MessageList = memo(function MessageList({
             )}
 
             <ChatFeedItems
+              key={sessionId ?? 'unscoped'}
               displayItems={displayItems}
               highlightedMessageId={highlightedMessageId}
               sessionId={sessionId}
+              paginatedHistory={hiddenCount > 0}
               scrollContainerRef={scrollContainerRef}
               showThinking={showThinking}
               showVerboseToolOutput={showVerboseToolOutput}

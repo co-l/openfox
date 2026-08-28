@@ -926,11 +926,44 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
   })
 
+  app.get('/api/sessions/:id/messages', async (req, res) => {
+    const { getSession } = await import('./db/sessions.js')
+    if (!getSession(req.params.id)) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+
+    const { getEventStore, combineEventsWithSnapshot } = await import('./events/index.js')
+    const { buildMessagesFromStoredEvents } = await import('./events/folding.js')
+    const { paginateMessages, DEFAULT_HISTORY_PAGE_MAX_ITEMS } = await import('./session/message-pagination.js')
+
+    const eventStore = getEventStore()
+    const { snapshot, events: eventsSinceSnapshot } = eventStore.getEventsSinceSnapshot(req.params.id)
+    const events = combineEventsWithSnapshot(req.params.id, snapshot, eventsSinceSnapshot)
+    const allMessages = buildMessagesFromStoredEvents(events).messages
+    const requestedMaxItems = Number(req.query['maxItems'])
+    const maxItems =
+      Number.isInteger(requestedMaxItems) && requestedMaxItems > 0
+        ? Math.min(requestedMaxItems, DEFAULT_HISTORY_PAGE_MAX_ITEMS)
+        : DEFAULT_HISTORY_PAGE_MAX_ITEMS
+
+    try {
+      res.json(
+        paginateMessages(allMessages, {
+          ...(typeof req.query['before'] === 'string' ? { beforeMessageId: req.query['before'] } : {}),
+          maxItems,
+        }),
+      )
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : 'Invalid message cursor' })
+    }
+  })
+
   app.get('/api/sessions/:id', async (req, res) => {
     const { getEventStore, combineEventsWithSnapshot } = await import('./events/index.js')
     const { buildMessagesFromStoredEvents, foldPendingConfirmations } = await import('./events/folding.js')
     const { getPendingQuestionsForSession } = await import('./tools/index.js')
     const { getMaxVisibleItems } = await import('./db/settings.js')
+    const { paginateMessages } = await import('./session/message-pagination.js')
 
     const session = sessionManager.getSession(req.params.id)
     if (!session) {
@@ -944,8 +977,11 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const { snapshot, events: eventsSinceSnapshot } = eventStore.getEventsSinceSnapshot(req.params.id)
     const events = combineEventsWithSnapshot(req.params.id, snapshot, eventsSinceSnapshot)
 
-    const maxVisibleItems = req.query['full'] === 'true' ? undefined : getMaxVisibleItems() || undefined
-    const { messages, hiddenCount } = buildMessagesFromStoredEvents(events, maxVisibleItems)
+    const fullHistory = req.query['full'] === 'true'
+    const recentHistory = !fullHistory && req.query['history'] === 'recent'
+    const maxVisibleItems = fullHistory || recentHistory ? undefined : getMaxVisibleItems() || undefined
+    const folded = buildMessagesFromStoredEvents(events, maxVisibleItems)
+    const { messages, hiddenCount } = recentHistory ? paginateMessages(folded.messages) : folded
     const contextState = sessionManager.getContextState(req.params.id)
     const queueState = sessionManager.getQueueState(req.params.id)
     const pendingQuestions = getPendingQuestionsForSession(req.params.id)

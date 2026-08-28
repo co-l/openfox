@@ -125,6 +125,7 @@ export interface SessionState {
   cancelPassword: () => void
   createSession: (projectId: string, title?: string) => Promise<Session | null>
   loadSession: (sessionId: string, force?: boolean) => Promise<void>
+  loadOlderMessages: (sessionId: string, maxItems?: number) => Promise<number>
   openPane: (sessionId: string, opts?: { focus?: boolean }) => Promise<void>
   closePane: (sessionId: string) => void
   focusPane: (sessionId: string) => void

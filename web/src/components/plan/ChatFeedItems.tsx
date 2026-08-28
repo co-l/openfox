@@ -11,8 +11,12 @@ const ITEM_CONTAINMENT_STYLE = { contentVisibility: 'auto', containIntrinsicSize
 const PLACEHOLDER_STYLE = { contentVisibility: 'auto', containIntrinsicSize: '160px', minHeight: '160px' } as const
 
 // Bottom-anchored virtualization: only the most recent items are mounted at
-// load, older items are revealed in batches as the user scrolls up.
+// load, older items are revealed in batches as the user scrolls up. Paginated
+// history uses a smaller automatic window even when the experimental setting
+// is disabled: a handful of tool-heavy messages can otherwise create thousands
+// of DOM nodes and make session switches block the browser's main thread.
 const INITIAL_RENDER_COUNT = 30
+const AUTO_INITIAL_RENDER_COUNT = 4
 const REVEAL_BATCH_SIZE = 20
 const REVEAL_MARGIN = 10
 const BULK_APPEND_THRESHOLD = 5
@@ -21,6 +25,7 @@ interface ChatFeedItemsProps {
   displayItems: DisplayItem[]
   highlightedMessageId?: string | null
   sessionId?: string | null
+  paginatedHistory?: boolean
   scrollContainerRef?: React.RefObject<OverlayScrollbarsComponentRef<'div'> | null>
   showThinking?: boolean
   showVerboseToolOutput?: boolean
@@ -39,6 +44,7 @@ export const ChatFeedItems = memo(function ChatFeedItems({
   displayItems,
   highlightedMessageId = null,
   sessionId,
+  paginatedHistory = false,
   scrollContainerRef,
   showThinking = true,
   showVerboseToolOutput = true,
@@ -48,26 +54,29 @@ export const ChatFeedItems = memo(function ChatFeedItems({
 }: ChatFeedItemsProps) {
   const totalItems = displayItems.length
   const { feedVirtualization } = useDisplaySettings()
+  const virtualizationEnabled = feedVirtualization || paginatedHistory
+  const initialRenderCount = feedVirtualization ? INITIAL_RENDER_COUNT : AUTO_INITIAL_RENDER_COUNT
+  const revealBatchSize = feedVirtualization ? REVEAL_BATCH_SIZE : AUTO_INITIAL_RENDER_COUNT
   // Absolute index of the first mounted item. New items appended at the end
   // (streaming) keep the window stable — only the reveal moves it up.
-  const [startIndex, setStartIndex] = useState(() => Math.max(0, totalItems - INITIAL_RENDER_COUNT))
+  const [startIndex, setStartIndex] = useState(() => Math.max(0, totalItems - initialRenderCount))
   const sentinelRef = useRef<HTMLDivElement | null>(null)
   const prevItemCountRef = useRef(displayItems.length)
   const userScrolledRef = useRef(false)
-  // Virtualization is opt-in: off by default, the full feed renders as before.
-  const displayStart = feedVirtualization ? startIndex : 0
+  const previousScrollTopRef = useRef(0)
+  const displayStart = virtualizationEnabled ? startIndex : 0
   // Only virtualized feeds get content-visibility containment. Off-screen it
   // freezes element heights at the last-known intrinsic size, so applying it to
   // dynamically-mutating content (streaming LLM output) leaves stale phantom
   // gaps below messages. Non-virtualized feeds render at natural height.
-  const itemContainmentStyle = feedVirtualization ? ITEM_CONTAINMENT_STYLE : undefined
+  const itemContainmentStyle = virtualizationEnabled ? ITEM_CONTAINMENT_STYLE : undefined
 
   // Reset the virtual window when switching sessions.
   useEffect(() => {
-    if (!feedVirtualization) return
-    setStartIndex(Math.max(0, displayItems.length - INITIAL_RENDER_COUNT))
+    if (!virtualizationEnabled) return
+    setStartIndex(Math.max(0, displayItems.length - initialRenderCount))
     userScrolledRef.current = false
-  }, [sessionId])
+  }, [initialRenderCount, sessionId, virtualizationEnabled])
 
   // Re-anchor the window when a large batch of items arrives at once (initial
   // history load). Single-item streaming appends keep the window stable, and
@@ -76,39 +85,39 @@ export const ChatFeedItems = memo(function ChatFeedItems({
   useEffect(() => {
     const prev = prevItemCountRef.current
     prevItemCountRef.current = displayItems.length
-    if (!feedVirtualization) return
+    if (!virtualizationEnabled) return
     if (displayItems.length - prev >= BULK_APPEND_THRESHOLD && !userScrolledRef.current) {
-      setStartIndex(Math.max(0, displayItems.length - INITIAL_RENDER_COUNT))
+      setStartIndex(Math.max(0, displayItems.length - initialRenderCount))
     }
-  }, [displayItems.length, feedVirtualization])
+  }, [displayItems.length, initialRenderCount, virtualizationEnabled])
 
   // Clamp when items are removed (truncation, session switch).
   useEffect(() => {
-    if (!feedVirtualization) return
+    if (!virtualizationEnabled) return
     if (startIndex > 0 && startIndex >= displayItems.length) {
-      setStartIndex(Math.max(0, displayItems.length - INITIAL_RENDER_COUNT))
+      setStartIndex(Math.max(0, displayItems.length - initialRenderCount))
     }
-  }, [displayItems.length, startIndex, feedVirtualization])
+  }, [displayItems.length, initialRenderCount, startIndex, virtualizationEnabled])
 
   // Reveal older items in batches while the sentinel approaches the viewport.
   // The bottom-expanded rootMargin triggers before the user reaches the
   // placeholder region, so scrolling up never exposes gaps.
   useEffect(() => {
-    if (!feedVirtualization) return
+    if (!virtualizationEnabled) return
     if (startIndex <= 0 || typeof IntersectionObserver === 'undefined') return
     const sentinel = sentinelRef.current
     if (!sentinel) return
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setStartIndex((index) => Math.max(0, index - REVEAL_BATCH_SIZE))
+        if (userScrolledRef.current && entries.some((entry) => entry.isIntersecting)) {
+          setStartIndex((index) => Math.max(0, index - revealBatchSize))
         }
       },
       { rootMargin: '0px 0px 300px 0px' },
     )
     observer.observe(sentinel)
     return () => observer.disconnect()
-  }, [startIndex, feedVirtualization])
+  }, [revealBatchSize, startIndex, virtualizationEnabled])
 
   // When the user reaches the very top, keep revealing until everything is
   // mounted — the sentinel can end up below remaining placeholders, out of the
@@ -119,40 +128,64 @@ export const ChatFeedItems = memo(function ChatFeedItems({
   startIndexRef.current = startIndex
 
   useEffect(() => {
-    if (!feedVirtualization) return
-    const container = scrollContainerRef?.current
-    if (!container) return
-    const viewport = container.osInstance?.()?.elements().viewport
-    if (!viewport) return
-    const onScroll = () => {
-      if (viewport.scrollTop > 4) {
-        userScrolledRef.current = true
+    if (!virtualizationEnabled) return
+    let frameId: number | undefined
+    let attempts = 0
+    let detach: (() => void) | undefined
+
+    const attach = () => {
+      const viewport = scrollContainerRef?.current?.osInstance?.()?.elements().viewport
+      if (!viewport) {
+        if (attempts++ < 10) frameId = requestAnimationFrame(attach)
         return
       }
-      if (startIndexRef.current > 0) {
-        setStartIndex((index) => Math.max(0, index - REVEAL_BATCH_SIZE))
+
+      previousScrollTopRef.current = viewport.scrollTop
+      const onWheel = (event: WheelEvent) => {
+        if (event.deltaY < 0) userScrolledRef.current = true
+      }
+      const onScroll = () => {
+        const currentTop = viewport.scrollTop
+        const movedUp = currentTop < previousScrollTopRef.current - 1
+        previousScrollTopRef.current = currentTop
+        if (movedUp) {
+          userScrolledRef.current = true
+        }
+        if (userScrolledRef.current && currentTop <= 4 && startIndexRef.current > 0) {
+          setStartIndex((index) => Math.max(0, index - revealBatchSize))
+        }
+      }
+      viewport.addEventListener('wheel', onWheel, { passive: true })
+      viewport.addEventListener('scroll', onScroll, { passive: true })
+      detach = () => {
+        viewport.removeEventListener('wheel', onWheel)
+        viewport.removeEventListener('scroll', onScroll)
       }
     }
-    viewport.addEventListener('scroll', onScroll, { passive: true })
-    return () => viewport.removeEventListener('scroll', onScroll)
-  }, [scrollContainerRef, feedVirtualization])
+
+    attach()
+    return () => {
+      if (frameId !== undefined) cancelAnimationFrame(frameId)
+      detach?.()
+    }
+  }, [revealBatchSize, scrollContainerRef, sessionId, virtualizationEnabled])
 
   useEffect(() => {
-    if (!feedVirtualization) return
+    if (!virtualizationEnabled) return
     if (startIndex <= 0 || !userScrolledRef.current) return
     const container = scrollContainerRef?.current
     const viewport = container?.osInstance?.()?.elements().viewport
     if (viewport && viewport.scrollTop <= 4) {
-      setStartIndex((index) => Math.max(0, index - REVEAL_BATCH_SIZE))
+      setStartIndex((index) => Math.max(0, index - revealBatchSize))
     }
-  }, [startIndex, scrollContainerRef, feedVirtualization])
+  }, [revealBatchSize, startIndex, scrollContainerRef, virtualizationEnabled])
 
   // Timeline navigation: reveal up to a target index when asked. This is the
   // only active reveal path — highlightedMessageId (ChatFeedItems) has no
   // non-null caller today, so any future highlight must reveal the target via
   // this event first (see PlanPanel's MessageList usage).
   useEffect(() => {
-    if (!feedVirtualization) return
+    if (!virtualizationEnabled) return
     const onRevealRequest = (event: Event) => {
       const index = (event as CustomEvent<{ index: number }>).detail?.index
       if (typeof index !== 'number') return
@@ -160,7 +193,7 @@ export const ChatFeedItems = memo(function ChatFeedItems({
     }
     window.addEventListener(FEED_REVEAL_EVENT, onRevealRequest)
     return () => window.removeEventListener(FEED_REVEAL_EVENT, onRevealRequest)
-  }, [feedVirtualization])
+  }, [virtualizationEnabled])
 
   const visibleItems = displayItems.slice(displayStart)
 

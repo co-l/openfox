@@ -2319,6 +2319,75 @@ describe('cross-tab sidebar sync', () => {
   })
 })
 
+describe('loadOlderMessages', () => {
+  beforeEach(() => {
+    fetchMock.mockClear()
+  })
+
+  it('prepends a bounded page and updates the remaining hidden count', async () => {
+    const useSessionStore = await loadSessionStore()
+    const currentSession = {
+      id: 'session-1',
+      projectId: 'project-1',
+      workdir: '/tmp/project-1',
+      mode: 'planner',
+      phase: 'plan',
+      isRunning: false,
+      criteria: [],
+      summary: null,
+    } as any
+    useSessionStore.setState({
+      currentSession,
+      focusedSessionId: 'session-1',
+      messages: [
+        { id: 'message-3', role: 'user', content: 'three', timestamp: '2026-08-22T00:00:00.000Z' },
+        { id: 'message-4', role: 'assistant', content: 'four', timestamp: '2026-08-22T00:00:01.000Z' },
+      ],
+      hiddenCount: 2,
+    })
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        messages: [
+          { id: 'message-1', role: 'user', content: 'one', timestamp: '2026-08-21T00:00:00.000Z' },
+          { id: 'message-2', role: 'assistant', content: 'two', timestamp: '2026-08-21T00:00:01.000Z' },
+        ],
+        hiddenCount: 0,
+      }),
+    } as never)
+
+    const loaded = await useSessionStore.getState().loadOlderMessages('session-1', 10)
+
+    expect(loaded).toBe(2)
+    expect(fetchMock).toHaveBeenCalledWith('/api/sessions/session-1/messages?before=message-3&maxItems=10', {
+      headers: {},
+    })
+    expect(useSessionStore.getState().messages.map((entry) => entry.id)).toEqual([
+      'message-1',
+      'message-2',
+      'message-3',
+      'message-4',
+    ])
+    expect(useSessionStore.getState().hiddenCount).toBe(0)
+  })
+
+  it('does not fetch when the current page has no older messages', async () => {
+    const useSessionStore = await loadSessionStore()
+    useSessionStore.setState({
+      currentSession: { id: 'session-1' } as any,
+      focusedSessionId: 'session-1',
+      messages: [{ id: 'message-1', role: 'user', content: 'one', timestamp: '2026-08-22T00:00:00.000Z' }],
+      hiddenCount: 0,
+    })
+
+    const loaded = await useSessionStore.getState().loadOlderMessages('session-1')
+
+    expect(loaded).toBe(0)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
 describe('toggleFavorite', () => {
   beforeEach(() => {
     fetchMock.mockClear()
