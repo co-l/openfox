@@ -99,10 +99,15 @@ describe('LLM retry UI state', () => {
     useSessionStore.getState().handleServerMessage({
       type: 'chat.llm_retry',
       sessionId: 'session-1',
-      payload: { attempt: 2, retryInMs: 4000 },
+      payload: { attempt: 2, retryInMs: 4000, error: 'Request failed 400' },
     })
 
-    expect(useSessionStore.getState().llmRetry).toEqual({ status: 'retrying', attempt: 2, retryInMs: 4000 })
+    expect(useSessionStore.getState().llmRetry).toEqual({
+      status: 'retrying',
+      attempt: 2,
+      retryInMs: 4000,
+      error: 'Request failed 400',
+    })
     expect(useSessionStore.getState().error).toBeNull()
   })
 

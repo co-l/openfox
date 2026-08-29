@@ -10,6 +10,8 @@ import { useDisplaySettings } from '../../stores/settings'
 import { ChatFeedItems } from './ChatFeedItems'
 import { CloseButton } from '../shared/CloseButton'
 import { ChevronUpIcon } from '../shared/icons'
+import { Modal } from '../shared/Modal'
+import { CodeHighlight } from '../shared/CodeHighlight'
 import { useClickOutside } from '../../hooks/useClickOutside'
 import { useSessionScope, useScopedPaneState } from '../../stores/session/session-scope'
 import type { DisplayItem } from './groupMessages.js'
@@ -18,16 +20,58 @@ import type { LLMRetryState } from '../../stores/session/types'
 
 const EMPTY_CRITERIA: MetadataEntry[] = []
 
+function formatErrorMessage(error: string): { code: string; language: string; prefix?: string } {
+  // If the whole string is JSON
+  const trimmed = error.trim()
+  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+    try {
+      const parsed = JSON.parse(trimmed)
+      return { code: JSON.stringify(parsed, null, 2), language: 'json' }
+    } catch {
+      // ignore
+    }
+  }
+
+  // If there's a prefix like "HTTP 400: {" or "LLMError: HTTP 400: {"
+  const jsonStart = error.indexOf('{')
+  const jsonArrayStart = error.indexOf('[')
+  const firstJsonIdx =
+    jsonStart !== -1 && jsonArrayStart !== -1
+      ? Math.min(jsonStart, jsonArrayStart)
+      : jsonStart !== -1
+        ? jsonStart
+        : jsonArrayStart
+
+  if (firstJsonIdx > 0) {
+    const prefix = error.slice(0, firstJsonIdx).trim()
+    const potentialJson = error.slice(firstJsonIdx).trim()
+    try {
+      const parsed = JSON.parse(potentialJson)
+      return { prefix, code: JSON.stringify(parsed, null, 2), language: 'json' }
+    } catch {
+      // ignore
+    }
+  }
+
+  return { code: error, language: 'text' }
+}
+
 /** Live countdown pill shown while an LLM call is backing off before its next retry. */
 function LLMRetryIndicator({
   retry,
   onRetryNow,
+  onShowError,
 }: {
   retry: Extract<LLMRetryState, { status: 'retrying' }>
   onRetryNow: () => void
+  onShowError: (error: string) => void
 }) {
-  const [receivedAt] = useState(Date.now())
+  const [receivedAt, setReceivedAt] = useState(Date.now())
   const [now, setNow] = useState(Date.now())
+
+  useEffect(() => {
+    setReceivedAt(Date.now())
+  }, [retry.attempt, retry.retryInMs])
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 250)
@@ -49,6 +93,14 @@ function LLMRetryIndicator({
       >
         Retry now
       </button>
+      {retry.error && (
+        <button
+          onClick={() => onShowError(retry.error!)}
+          className="px-2 py-0.5 rounded-full bg-bg-secondary hover:bg-bg-hover text-text-secondary border border-border transition-colors"
+        >
+          Show error
+        </button>
+      )}
     </div>
   )
 }
@@ -145,6 +197,14 @@ export const MessageList = memo(function MessageList({
   const [popupBlocked, setPopupBlocked] = useState(false)
   const [isScrollable, setIsScrollable] = useState(false)
   const [scrolledPastTop, setScrolledPastTop] = useState(false)
+  const [activeErrorModal, setActiveErrorModal] = useState<string | null>(null)
+
+  // Keep active error content updated if a new error comes in for the retry while modal is open
+  useEffect(() => {
+    if (activeErrorModal && llmRetry?.status === 'retrying' && llmRetry.error) {
+      setActiveErrorModal(llmRetry.error)
+    }
+  }, [activeErrorModal, llmRetry])
 
   const getViewport = useViewport(scrollContainerRef)
 
@@ -243,9 +303,9 @@ export const MessageList = memo(function MessageList({
             {llmRetry?.status === 'retrying' && isRunning && (
               <div className="flex justify-center feed-item" data-testid="llm-retry-indicator">
                 <LLMRetryIndicator
-                  key={llmRetry.attempt}
                   retry={llmRetry}
                   onRetryNow={() => sessionId && retryLLMNow(sessionId)}
+                  onShowError={(err) => setActiveErrorModal(err)}
                 />
               </div>
             )}
@@ -253,8 +313,14 @@ export const MessageList = memo(function MessageList({
             {(llmRetry?.status === 'failed' && !isRunning) || blockedWorkflowStep ? (
               <div className="flex flex-col items-center gap-2 feed-item flex-wrap">
                 {llmRetry?.status === 'failed' && (
-                  <div className="text-xs text-text-secondary max-w-md text-center">
-                    The LLM call failed: {llmRetry.error}
+                  <div className="flex flex-col items-center gap-1.5 text-xs text-text-secondary max-w-md text-center">
+                    <span>The LLM call failed.</span>
+                    <button
+                      onClick={() => setActiveErrorModal(llmRetry.error)}
+                      className="px-2 py-0.5 rounded-full bg-bg-secondary hover:bg-bg-hover text-text-secondary border border-border transition-colors text-xs"
+                    >
+                      Show error details
+                    </button>
                   </div>
                 )}
                 {isWorkflowBlock && (
@@ -362,6 +428,26 @@ export const MessageList = memo(function MessageList({
             scroll to top
           </button>
         </div>
+      )}
+
+      {activeErrorModal && (
+        <Modal isOpen={!!activeErrorModal} onClose={() => setActiveErrorModal(null)} title="LLM Error" size="lg">
+          <div className="p-4 space-y-2">
+            {formatErrorMessage(activeErrorModal).prefix && (
+              <div className="text-xs font-medium text-text-secondary">
+                {formatErrorMessage(activeErrorModal).prefix}
+              </div>
+            )}
+            <div className="bg-bg-primary p-3 rounded border border-border overflow-y-auto max-h-[60vh] text-xs font-mono">
+              <CodeHighlight
+                code={formatErrorMessage(activeErrorModal).code}
+                language={formatErrorMessage(activeErrorModal).language}
+                variant="block"
+                showLineNumbers={formatErrorMessage(activeErrorModal).language === 'json'}
+              />
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   )

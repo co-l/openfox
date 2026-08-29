@@ -295,8 +295,12 @@ export function createChatErrorMessage(error: string, recoverable: boolean): Ser
   return createServerMessage('chat.error', { error, recoverable })
 }
 
-export function createChatLLMRetryMessage(attempt: number, retryInMs: number): ServerMessage<ChatLLMRetryPayload> {
-  return createServerMessage('chat.llm_retry', { attempt, retryInMs })
+export function createChatLLMRetryMessage(
+  attempt: number,
+  retryInMs: number,
+  error?: string,
+): ServerMessage<ChatLLMRetryPayload> {
+  return createServerMessage('chat.llm_retry', { attempt, retryInMs, ...(error !== undefined ? { error } : {}) })
 }
 
 export function createChatLLMRetryFailedMessage(

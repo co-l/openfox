@@ -447,7 +447,7 @@ export async function runTopLevelAgentLoop(
         return { failed: { error: attemptResult.error } }
       }
       if (!config.subAgentMetadata) {
-        config.onMessage?.(createChatLLMRetryMessage(decision.attempt, decision.delayMs))
+        config.onMessage?.(createChatLLMRetryMessage(decision.attempt, decision.delayMs, attemptResult.error))
       }
       const waitResult = await sleepThroughRetryBackoff(decision.delayMs, sessionId, signal)
       if (waitResult === 'aborted') throw new Error('Aborted')
