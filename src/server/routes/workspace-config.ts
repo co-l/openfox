@@ -6,7 +6,7 @@ import { loadWorkspaceConfig, saveWorkspaceConfig } from '../git/workspace-confi
 import { getGlobalDataDir } from '../git/workspace.js'
 import { isDirectoryEntry } from '../utils/fs.js'
 import { getProjectByWorkdir, updateProject } from '../db/projects.js'
-import { setSessionDisabledServers } from '../mcp/session-overrides.js'
+import { setSessionDisabledServers, computeDisabledServersForProject } from '../mcp/session-overrides.js'
 import { logger } from '../utils/logger.js'
 import type { WorkspaceConfig } from '../../shared/workspace.js'
 import { formatRootDir, getRootDirBlockReason, suggestRootDirChild } from '../../shared/workspace.js'
@@ -195,12 +195,14 @@ export function createWorkspaceConfigRoutes(sessionManager: SessionManager): Rou
       if (mcpOverrides !== undefined) {
         const project = getProjectByWorkdir(workdir)
         if (project) {
+          const overridesObj =
+            Object.keys(mcpOverrides).length > 0
+              ? (mcpOverrides as Record<string, { disabled?: boolean; disabledTools?: string[] }>)
+              : null
           updateProject(project.id, {
-            mcpOverrides: Object.keys(mcpOverrides).length > 0 ? mcpOverrides : null,
+            mcpOverrides: overridesObj,
           })
-          const disabledServers = Object.entries(mcpOverrides as Record<string, { disabled?: boolean }>)
-            .filter(([, override]) => override.disabled)
-            .map(([name]) => name)
+          const disabledServers = computeDisabledServersForProject(overridesObj)
           const allSessions = sessionManager.listSessions()
           for (const s of allSessions) {
             if (s.projectId === project.id) {

@@ -207,7 +207,7 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
       const wsConfigPayload: WorkspaceConfigResponse = {}
       if (setupDirty) wsConfigPayload.setup = setup
       if (rootDirDirty) wsConfigPayload.rootDir = rootDir.trim()
-      if (Object.keys(mcpOverrides).length > 0) wsConfigPayload.mcpOverrides = mcpOverrides
+      if (mcpDirty) wsConfigPayload.mcpOverrides = mcpOverrides
       await saveWorkspaceConfig(project.workdir, wsConfigPayload)
     }
     setInstructionsDirty(false)

@@ -176,6 +176,25 @@ describe('SessionManager', () => {
     expect(sessionEvents).toContain('phase_changed')
   })
 
+  it('inherits project MCP overrides on createSession and cleans up on deleteSession', async () => {
+    const { updateProject } = await import('../db/projects.js')
+    const { getSessionDisabledServers } = await import('../mcp/session-overrides.js')
+
+    updateProject(projectId, {
+      mcpOverrides: {
+        'server-disabled-1': { disabled: true },
+        'server-disabled-2': { disabled: true },
+        'server-enabled': { disabled: false },
+      },
+    })
+
+    const session = manager.createSession(projectId, 'MCP Project Session')
+    expect(getSessionDisabledServers(session.id)).toEqual(['server-disabled-1', 'server-disabled-2'])
+
+    manager.deleteSession(session.id)
+    expect(getSessionDisabledServers(session.id)).toEqual([])
+  })
+
   it('uses database is_running as source of truth for session state', () => {
     const session = manager.createSession(projectId)
 
@@ -797,6 +816,17 @@ describe('SessionManager', () => {
       expect(forked.messages).toHaveLength(2)
       expect(forked.messages[0]?.content).toBe('Hello')
       expect(forked.messages[1]?.content).toBe('Hi there!')
+    })
+
+    it('preserves disabled MCP servers from original session on fork', async () => {
+      const { setSessionDisabledServers, getSessionDisabledServers } = await import('../mcp/session-overrides.js')
+      const original = manager.createSession(projectId)
+      setSessionDisabledServers(original.id, ['server-a', 'server-b'])
+
+      const msg = manager.addMessage(original.id, { role: 'user', content: 'Hello', tokenCount: 10 })
+      const forked = manager.forkSession(original.id, msg.id)
+
+      expect(getSessionDisabledServers(forked.id)).toEqual(['server-a', 'server-b'])
     })
 
     it('throws error for non-existent messageId', () => {
