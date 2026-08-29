@@ -21,5 +21,11 @@ export function useDisplaySettings() {
     deferCodeHighlightWhileStreaming:
       useSetting(SETTINGS_KEYS.DISPLAY_DEFER_CODE_HIGHLIGHT_WHILE_STREAMING, 'false').value === 'true',
     feedVirtualization: useSetting(SETTINGS_KEYS.DISPLAY_FEED_VIRTUALIZATION, 'false').value === 'true',
+    modelSelectorHeight: useSetting(SETTINGS_KEYS.DISPLAY_MODEL_SELECTOR_HEIGHT, 'default').value || 'default',
+    collapseProvidersByDefault:
+      useSetting(SETTINGS_KEYS.DISPLAY_COLLAPSE_PROVIDERS_BY_DEFAULT, 'false').value === 'true',
+    collapseFavoritesByDefault:
+      useSetting(SETTINGS_KEYS.DISPLAY_COLLAPSE_FAVORITES_BY_DEFAULT, 'false').value === 'true',
+    modelFavoritesRaw: useSetting(SETTINGS_KEYS.DISPLAY_MODEL_FAVORITES, '[]').value,
   }
 }

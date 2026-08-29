@@ -1,5 +1,14 @@
 import { useState, useRef, useEffect, useMemo, type RefObject } from 'react'
-import { CheckIcon, EditSmallIcon, EyeIcon, StarIcon, StarFilledIcon, WarningIcon } from '../shared/icons'
+import {
+  CheckIcon,
+  EditSmallIcon,
+  EyeIcon,
+  HeartIcon,
+  HeartFilledIcon,
+  StarIcon,
+  StarFilledIcon,
+  WarningIcon,
+} from '../shared/icons'
 import type { Provider } from '../../stores/config'
 import { isSmallContext } from '../../lib/context-warning'
 import { useT } from '../../hooks/useT'
@@ -66,10 +75,12 @@ export interface ModelEntryRowProps {
   highlighted: boolean
   onModelClick: (providerId: string, modelId: string) => void
   isDefault?: boolean
+  isFavorite?: boolean
   disabled?: boolean
   hasSession?: boolean
   settingDefault?: boolean
   onSetDefault?: (e: React.MouseEvent, providerId: string, modelId: string) => void
+  onToggleFavorite?: (e: React.MouseEvent, providerId: string, modelId: string) => void
   onEditModel?: (providerId: string, model: ModelWithConfig) => void
   /** Available reasoning efforts for this model (shown as compact chips). */
   reasoningEfforts?: string[]
@@ -83,12 +94,14 @@ export function ModelEntryRow({
   modelConfig,
   isActive,
   isDefault: isDef,
+  isFavorite,
   disabled,
   hasSession,
   settingDefault,
   highlighted,
   onModelClick,
   onSetDefault,
+  onToggleFavorite,
   onEditModel,
   reasoningEfforts,
   selectedEffort,
@@ -136,6 +149,21 @@ export function ModelEntryRow({
             >
               <WarningIcon className="w-3.5 h-3.5" />
             </span>
+          )}
+          {onToggleFavorite && (
+            <button
+              type="button"
+              onClick={(e) => onToggleFavorite(e, providerId, modelConfig.id)}
+              disabled={disabled}
+              className="p-0.5 hover:bg-bg-tertiary rounded transition-colors"
+              title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+            >
+              {isFavorite ? (
+                <HeartFilledIcon className="w-3.5 h-3.5 text-rose-500" />
+              ) : (
+                <HeartIcon className="w-3.5 h-3.5 text-text-muted hover:text-rose-500" />
+              )}
+            </button>
           )}
           {hasSession && onSetDefault && (
             <button

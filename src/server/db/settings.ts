@@ -27,6 +27,10 @@ export const SETTINGS_KEYS = {
   DISPLAY_COLLAPSE_LARGE_TOOL_CALLS: 'display.collapseLargeToolCalls',
   DISPLAY_DEFER_CODE_HIGHLIGHT_WHILE_STREAMING: 'display.deferCodeHighlightWhileStreaming',
   DISPLAY_FEED_VIRTUALIZATION: 'display.feedVirtualization',
+  DISPLAY_MODEL_SELECTOR_HEIGHT: 'display.modelSelectorHeight',
+  DISPLAY_COLLAPSE_PROVIDERS_BY_DEFAULT: 'display.collapseProvidersByDefault',
+  DISPLAY_COLLAPSE_FAVORITES_BY_DEFAULT: 'display.collapseFavoritesByDefault',
+  DISPLAY_MODEL_FAVORITES: 'display.modelFavorites',
   LLM_DYNAMIC_SYSTEM_PROMPT: 'llm.dynamicSystemPrompt',
   CACHE_WARMING: 'cache.warming',
   KEYBINDINGS: 'keybindings',
@@ -68,6 +72,10 @@ export const SETTINGS_DEFAULTS: Record<string, string> = {
   [SETTINGS_KEYS.DISPLAY_COLLAPSE_LARGE_TOOL_CALLS]: 'false',
   [SETTINGS_KEYS.DISPLAY_DEFER_CODE_HIGHLIGHT_WHILE_STREAMING]: 'false',
   [SETTINGS_KEYS.DISPLAY_FEED_VIRTUALIZATION]: 'false',
+  [SETTINGS_KEYS.DISPLAY_MODEL_SELECTOR_HEIGHT]: 'default',
+  [SETTINGS_KEYS.DISPLAY_COLLAPSE_PROVIDERS_BY_DEFAULT]: 'false',
+  [SETTINGS_KEYS.DISPLAY_COLLAPSE_FAVORITES_BY_DEFAULT]: 'false',
+  [SETTINGS_KEYS.DISPLAY_MODEL_FAVORITES]: '[]',
   [SETTINGS_KEYS.LLM_DYNAMIC_SYSTEM_PROMPT]: 'false',
   [SETTINGS_KEYS.CACHE_WARMING]: 'false',
   [SETTINGS_KEYS.RETRY_PATTERNS]: JSON.stringify({ patterns: [], maxRetriesPerTurn: 10 }),
@@ -140,6 +148,29 @@ export function getAllSettings(): Record<string, string> {
     result[row.key] = row.value
   }
   return result
+}
+
+export function pruneFavoriteModels(validProviders: Array<{ id: string; models?: Array<{ id: string }> }>): void {
+  const raw = getSetting(SETTINGS_KEYS.DISPLAY_MODEL_FAVORITES)
+  if (!raw) return
+  try {
+    const favorites = JSON.parse(raw) as string[]
+    if (!Array.isArray(favorites) || favorites.length === 0) return
+
+    const validSet = new Set<string>()
+    for (const provider of validProviders) {
+      for (const model of provider.models ?? []) {
+        validSet.add(`${provider.id}/${model.id}`)
+      }
+    }
+
+    const pruned = favorites.filter((fav) => validSet.has(fav))
+    if (pruned.length !== favorites.length) {
+      setSetting(SETTINGS_KEYS.DISPLAY_MODEL_FAVORITES, JSON.stringify(pruned))
+    }
+  } catch {
+    // Ignore JSON parsing errors
+  }
 }
 
 export function getMaxVisibleItems(): number {

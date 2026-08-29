@@ -228,6 +228,13 @@ export function DisplayTab() {
       </div>
 
       <div className="border-t border-border pt-4">
+        <h3 className="text-sm font-medium text-text-primary mb-4">
+          {t({ en: 'Model Selector', fr: 'Sélecteur de modèles' })}
+        </h3>
+        <ModelSelectorEditor />
+      </div>
+
+      <div className="border-t border-border pt-4">
         <h3 className="text-sm font-medium text-text-primary mb-4">{t({ en: 'Performance', fr: 'Performances' })}</h3>
         <div className="space-y-4">
           <ToggleList toggles={PERF_TOGGLES} local={local} onToggle={handleToggle} />
@@ -272,6 +279,91 @@ export function DisplayTab() {
 }
 
 const FONT_PREVIEW_TEXT = '~/project \ue0b0 git status \u2713 \u2717 \u2192 0123 iIlL1 |\u2500\u2524'
+
+function ModelSelectorEditor() {
+  const t = useT()
+  const savedHeight = useSetting(SETTINGS_KEYS.DISPLAY_MODEL_SELECTOR_HEIGHT, 'default')
+  const savedCollapse = useSetting(SETTINGS_KEYS.DISPLAY_COLLAPSE_PROVIDERS_BY_DEFAULT, 'false')
+  const savedCollapseFavorites = useSetting(SETTINGS_KEYS.DISPLAY_COLLAPSE_FAVORITES_BY_DEFAULT, 'false')
+
+  const handleHeightChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setSetting(SETTINGS_KEYS.DISPLAY_MODEL_SELECTOR_HEIGHT, e.target.value)
+  }
+
+  const handleCollapseChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSetting(SETTINGS_KEYS.DISPLAY_COLLAPSE_PROVIDERS_BY_DEFAULT, String(e.target.checked))
+  }
+
+  const handleCollapseFavoritesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSetting(SETTINGS_KEYS.DISPLAY_COLLAPSE_FAVORITES_BY_DEFAULT, String(e.target.checked))
+  }
+
+  return (
+    <div className="space-y-4">
+      <label className="flex items-center justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="text-sm text-text-primary font-medium">
+            {t({ en: 'Dropdown size', fr: 'Taille de la liste' })}
+          </div>
+          <div className="text-xs text-text-muted mt-0.5">
+            {t({
+              en: 'Choose whether the model picker uses default sizing or fills the available screen height.',
+              fr: 'Choisissez si le sélecteur de modèles utilise la taille par défaut ou remplit la hauteur d’écran disponible.',
+            })}
+          </div>
+        </div>
+        <select
+          value={savedHeight.value}
+          onChange={handleHeightChange}
+          className="px-2 py-1 text-sm text-text-primary bg-bg-tertiary border border-border rounded focus:outline-none focus:ring-2 focus:ring-accent-primary/50 focus:border-accent-primary"
+        >
+          <option value="default">{t({ en: 'Default', fr: 'Par défaut' })}</option>
+          <option value="full_height">{t({ en: 'Full height', fr: 'Pleine hauteur' })}</option>
+        </select>
+      </label>
+
+      <label className="flex items-start justify-between gap-3 cursor-pointer">
+        <div className="flex-1 min-w-0">
+          <div className="text-sm text-text-primary font-medium">
+            {t({ en: 'Collapse favorites by default', fr: 'Replier les favoris par défaut' })}
+          </div>
+          <div className="text-xs text-text-muted mt-0.5">
+            {t({
+              en: 'Start with the favorites section collapsed when opening the model selector.',
+              fr: 'Démarrez avec la section des favoris repliée à l’ouverture du sélecteur de modèles.',
+            })}
+          </div>
+        </div>
+        <input
+          type="checkbox"
+          checked={savedCollapseFavorites.value === 'true'}
+          onChange={handleCollapseFavoritesChange}
+          className="mt-1 h-4 w-4 rounded border-border text-accent-primary focus:ring-accent-primary"
+        />
+      </label>
+
+      <label className="flex items-start justify-between gap-3 cursor-pointer">
+        <div className="flex-1 min-w-0">
+          <div className="text-sm text-text-primary font-medium">
+            {t({ en: 'Collapse providers by default', fr: 'Replier les fournisseurs par défaut' })}
+          </div>
+          <div className="text-xs text-text-muted mt-0.5">
+            {t({
+              en: 'Start with provider lists collapsed when opening the model selector.',
+              fr: 'Démarrez avec les listes de fournisseurs repliées à l’ouverture du sélecteur de modèles.',
+            })}
+          </div>
+        </div>
+        <input
+          type="checkbox"
+          checked={savedCollapse.value === 'true'}
+          onChange={handleCollapseChange}
+          className="mt-1 h-4 w-4 rounded border-border text-accent-primary focus:ring-accent-primary"
+        />
+      </label>
+    </div>
+  )
+}
 
 function ToggleList({
   toggles,

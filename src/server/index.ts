@@ -2619,6 +2619,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       logger.info('Cleared provider from sessions of deleted provider', { providerId: id, sessions: clearedSessions })
     }
 
+    const { pruneFavoriteModels } = await import('./db/settings.js')
+    pruneFavoriteModels(updatedConfig.providers)
+
     res.json({ success: true })
   })
 
@@ -2694,6 +2697,10 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       await saveGlobalConfig(config.mode ?? 'production', updatedConfig, config.globalConfigPath)
       providerManager.setProviders(updatedConfig.providers, updatedConfig.defaultModelSelection ?? undefined)
       config.defaultModelSelection = updatedConfig.defaultModelSelection
+
+      const { pruneFavoriteModels } = await import('./db/settings.js')
+      pruneFavoriteModels(updatedConfig.providers)
+
       res.json({ success: true, provider: updatedConfig.providers.find((p) => p.id === id) })
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to update provider' })
