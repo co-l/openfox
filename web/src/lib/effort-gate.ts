@@ -7,7 +7,7 @@
  * choice when a warm cache exists.
  */
 
-import { isReasoningEffortValue } from './model-value'
+import { isReasoningEffortValue, REASONING_EFFORT_VALUES } from './model-value'
 import { resolveEffortForModel } from '@shared/reasoning-effort.js'
 
 export interface EffortGateSession {
@@ -67,7 +67,8 @@ export function shouldGateEffortChange(opts: {
   proposedEffort?: string
 }): boolean {
   const { warmCache, currentEffort, proposedEffort } = opts
-  const storableCurrent = currentEffort && isReasoningEffortValue(currentEffort) ? currentEffort : undefined
+  const storableCurrent =
+    currentEffort && (REASONING_EFFORT_VALUES as readonly string[]).includes(currentEffort) ? currentEffort : undefined
   return !!warmCache && !!proposedEffort && !!storableCurrent && proposedEffort !== storableCurrent
 }
 

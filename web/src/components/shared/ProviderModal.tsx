@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { authFetch } from '../../lib/api'
 import type { Backend } from '../../stores/config'
 import type { ModelConfig as SharedModelConfig } from '@shared/types.js'
-import { ChevronDownIcon, EyeIcon, SettingsIcon } from './icons'
+import { ChevronDownIcon, EyeIcon, ReloadIcon, SettingsIcon } from './icons'
 import { QueryParamsInput } from './QueryParamsInput'
 import { formatTokens } from '../../lib/format-stats'
 import { getLocale } from '@shared/i18n/index.js'
@@ -1127,10 +1127,10 @@ export function ProviderModal({
   async function fetchModels(url: string) {
     setFetchingModels(true)
     setFetchError(null)
-    // Preserve any already-merged mode-chip models and their configs so
-    // newly-fetched raw catalog data doesn't clobber user-collapsed families.
+    const isInitialEmpty = !editProvider && models.length === 0 && selectedModelIds.size === 0
+    // Preserve any already-merged mode-chip models so newly-fetched raw catalog
+    // data doesn't clobber user-collapsed families.
     const preservedMerged = models.filter((m) => m.modes?.length)
-    setModels(preservedMerged)
     try {
       const params = new URLSearchParams({ url })
       if (formApiKey) params.set('apiKey', formApiKey)
@@ -1142,19 +1142,26 @@ export function ProviderModal({
       if (response.ok) {
         const data = (await response.json()) as { models: ModelInfo[]; url: string }
         if (data.models?.length) {
-          // Suffixed catalog variants already represented by a preserved merged
+          // Suffixed catalog variants already represented by an existing or merged
           // model must not reappear alongside it (mirrors the server-side
           // `claimedByMergedModes` filter in provider-manager.ts).
           const claimed = new Set<string>()
           for (const merged of preservedMerged) {
+            claimed.add(merged.id)
             for (const mode of merged.modes ?? []) {
               if (mode.apiModelId) claimed.add(mode.apiModelId)
             }
           }
-          const filteredRaw = data.models.filter((m) => !claimed.has(m.id))
+          const filteredRaw: ModelInfo[] = []
+          for (const m of data.models) {
+            if (!claimed.has(m.id)) {
+              claimed.add(m.id)
+              filteredRaw.push(m)
+            }
+          }
           const combined = [...preservedMerged, ...filteredRaw]
           setModels(combined)
-          setExpandedModelId(combined[0]?.id ?? null)
+          setExpandedModelId((current) => (current && combined.some((m) => m.id === current) ? current : null))
           setModelConfigs((current) => {
             const next: Record<string, ModelConfig> = { ...current }
             for (const m of filteredRaw) {
@@ -1172,10 +1179,12 @@ export function ProviderModal({
             }
             return next
           })
-          if (combined.length === 1) {
+          if (isInitialEmpty && combined.length === 1) {
             setSelectedModelIds(new Set([combined[0]!.id]))
             setExpandedModelId(combined[0]!.id)
             runAutoConfig(combined[0]!.id)
+          } else {
+            setSelectedModelIds((current) => new Set([...current].filter((id) => combined.some((m) => m.id === id))))
           }
         }
       } else {
@@ -2058,7 +2067,17 @@ export function ProviderModal({
                           { shown: filterModels(searchQuery).length, total: models.length },
                         )}
                       </p>
-                      <div className="flex gap-2">
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => formUrl && fetchModels(formUrl)}
+                          disabled={fetchingModels || !formUrl}
+                          className="text-xs text-accent-primary hover:underline flex items-center gap-1 disabled:opacity-50"
+                          title="Sync available models from provider"
+                        >
+                          <ReloadIcon className={`w-3 h-3 ${fetchingModels ? 'animate-spin' : ''}`} />
+                          Sync
+                        </button>
                         <button
                           onClick={() => {
                             const next = new Set(selectedModelIds)
@@ -2141,6 +2160,11 @@ export function ProviderModal({
                             />
                             <span className="text-sm text-text-primary flex-1 truncate">
                               {model.name ?? model.id.split('/').pop()}
+                              {model.modes && model.modes.length > 0 && (
+                                <span className="text-text-muted font-normal ml-1">
+                                  ({model.modes.map((m) => m.level).join(', ')})
+                                </span>
+                              )}
                             </span>
                             <span className="text-xs text-text-muted flex flex-shrink-0 items-center gap-1">
                               {(modelConfigs[model.id]?.supportsVision ?? model.supportsVision) && (

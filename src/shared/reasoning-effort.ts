@@ -15,6 +15,17 @@ export function isReasoningEffortValue(value: string): boolean {
   return (REASONING_EFFORT_VALUES as readonly string[]).includes(value)
 }
 
+export function isReasoningEffortValidForModel(
+  effort: string | undefined | null,
+  model?: { modes?: Array<{ level: string }>; reasoningEfforts?: string[] },
+): boolean {
+  if (!effort) return false
+  if (isReasoningEffortValue(effort)) return true
+  if (model?.modes?.some((m) => m.level === effort)) return true
+  if (model?.reasoningEfforts?.includes(effort)) return true
+  return false
+}
+
 export interface ResolveEffortForModelOptions {
   /** The model's advertised preset list (UI chips). Absent/empty = no constraint. */
   reasoningEfforts?: string[]
@@ -75,14 +86,25 @@ export interface ModeModelSeed {
 }
 
 /**
- * Detect whether a model ID carries a trailing mode suffix, returning the
- * stripped base ID and the suffix, or undefined when the ID is un-suffixed.
+ * Detect whether a model ID carries a trailing mode suffix (e.g. `base-suffix`),
+ * returning the stripped base ID and the suffix, or undefined when the ID has no
+ * trailing hyphen-separated segment.
  */
-const MODE_SUFFIX_REGEX = new RegExp(`-(${MODE_SUFFIXES.join('|')})$`)
 export function splitModeSuffix(id: string): { base: string; level: string } | undefined {
-  const match = id.match(MODE_SUFFIX_REGEX)
-  if (!match) return undefined
-  return { base: id.slice(0, -match[0].length), level: match[1]! }
+  const lastSlashIndex = id.lastIndexOf('/')
+  const searchStart = lastSlashIndex >= 0 ? lastSlashIndex + 1 : 0
+  const lastHyphenIndex = id.lastIndexOf('-')
+  if (lastHyphenIndex <= searchStart || lastHyphenIndex === id.length - 1) {
+    return undefined
+  }
+  const level = id.slice(lastHyphenIndex + 1)
+  if (!MODE_SUFFIXES.includes(level as ModeSuffix)) {
+    return undefined
+  }
+  return {
+    base: id.slice(0, lastHyphenIndex),
+    level,
+  }
 }
 
 /**

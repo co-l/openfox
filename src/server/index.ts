@@ -22,7 +22,7 @@ import { buildModelsUrl } from './llm/url-utils.js'
 
 import { createMockLLMClient } from './llm/mock.js'
 import { createProviderManager, parseDefaultModelSelection } from './provider-manager.js'
-import { isReasoningEffortValue } from './providers/model-catalog.js'
+import { isReasoningEffortValidForModel } from '../shared/reasoning-effort.js'
 import { createToolRegistry, setMcpTools, getBuiltInToolNames } from './tools/index.js'
 import { ALWAYS_ALLOWED, ALWAYS_ALLOWED_FOR_SUBAGENTS, TOP_LEVEL_ONLY_TOOLS } from './tools/tool-policy.js'
 import { McpManager, createMcpTools } from './mcp/index.js'
@@ -1080,12 +1080,17 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     if (!providerId) {
       return res.status(400).json({ error: 'providerId is required' })
     }
-    if (reasoningEffort !== undefined && reasoningEffort !== null && !isReasoningEffortValue(reasoningEffort)) {
+    // Resolve model: use provided model, or first model from provider, or fallback
+    const provider = providerManager.getProviders().find((p) => p.id === providerId)
+    const targetModel = provider?.models.find((m) => m.id === model)
+    if (
+      reasoningEffort !== undefined &&
+      reasoningEffort !== null &&
+      !isReasoningEffortValidForModel(reasoningEffort, targetModel)
+    ) {
       return res.status(400).json({ error: `Unsupported reasoningEffort: ${reasoningEffort}` })
     }
 
-    // Resolve model: use provided model, or first model from provider, or fallback
-    const provider = providerManager.getProviders().find((p) => p.id === providerId)
     const resolvedModel = model ?? provider?.models?.[0]?.id ?? 'auto'
 
     // Set provider for session only — does NOT touch global defaultModelSelection.
@@ -1147,7 +1152,12 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
 
     const { effort } = req.body as { effort?: string }
-    if (!effort || !isReasoningEffortValue(effort)) {
+    const sessionModel = session.providerModel
+    const targetModel = providerManager
+      .getProviders()
+      .flatMap((p) => p.models)
+      .find((m) => m.id === sessionModel)
+    if (!effort || !isReasoningEffortValidForModel(effort, targetModel)) {
       return res.status(400).json({ error: `Unsupported reasoningEffort: ${effort}` })
     }
 
@@ -2704,9 +2714,6 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       thinkingLevel?: string
       thinkingEnabled?: boolean
     }
-    if (thinkingLevel !== undefined && !isReasoningEffortValue(thinkingLevel)) {
-      return res.status(400).json({ error: `Invalid reasoning effort '${thinkingLevel}'` })
-    }
     if (thinkingEnabled !== undefined && typeof thinkingEnabled !== 'boolean') {
       return res.status(400).json({ error: 'thinkingEnabled must be a boolean' })
     }
@@ -2718,8 +2725,12 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         return res.status(404).json({ error: 'Provider not found' })
       }
       const models = provider.models ?? []
-      if (!models.some((m) => m.id === modelId)) {
+      const targetModel = models.find((m) => m.id === modelId)
+      if (!targetModel) {
         return res.status(404).json({ error: 'Model not found' })
+      }
+      if (thinkingLevel !== undefined && !isReasoningEffortValidForModel(thinkingLevel, targetModel)) {
+        return res.status(400).json({ error: `Invalid reasoning effort '${thinkingLevel}'` })
       }
       const updatedModels = models.map((m) =>
         m.id === modelId

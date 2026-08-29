@@ -60,9 +60,15 @@ describe('resolveEffortForModel', () => {
 })
 
 describe('splitModeSuffix', () => {
-  it('strips a trailing low/medium/high/xhigh/max suffix from a model id', () => {
+  it('strips a trailing mode suffix generically from a model id', () => {
     expect(splitModeSuffix('gemini-3.6-flash-high')).toEqual({ base: 'gemini-3.6-flash', level: 'high' })
     expect(splitModeSuffix('claude-sonnet-4-6-low')).toEqual({ base: 'claude-sonnet-4-6', level: 'low' })
+  })
+
+  it('rejects models whose suffix is not a recognized mode suffix', () => {
+    expect(splitModeSuffix('custom-model-light')).toBeUndefined()
+    expect(splitModeSuffix('claude-3-5-sonnet')).toBeUndefined()
+    expect(splitModeSuffix('qwen-2.5-coder-7b')).toBeUndefined()
   })
 
   it('handles prefixed ids and keeps the path segment base', () => {
@@ -72,9 +78,11 @@ describe('splitModeSuffix', () => {
     })
   })
 
-  it('returns undefined when there is no trailing mode suffix', () => {
-    expect(splitModeSuffix('gemini-3.6-flash')).toBeUndefined()
-    expect(splitModeSuffix('claude-sonnet-4-6')).toBeUndefined()
+  it('returns undefined when there is no trailing mode suffix or hyphen is at start/end', () => {
+    expect(splitModeSuffix('gemini')).toBeUndefined()
+    expect(splitModeSuffix('antigravity/gemini')).toBeUndefined()
+    expect(splitModeSuffix('provider/-model')).toBeUndefined()
+    expect(splitModeSuffix('provider/model-')).toBeUndefined()
   })
 })
 

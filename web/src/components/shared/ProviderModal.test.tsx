@@ -1213,4 +1213,301 @@ describe('ProviderModal - model mode merge', () => {
     expect(merged?.modes?.map((mode) => mode.level)).toEqual(['low', 'medium', 'high'])
     expect(savedData.models.some((m) => m.id === 'antigravity/gemini-3.6-flash-high')).toBe(false)
   })
+
+  it('displays merged modes in parentheses in the Available Models list', async () => {
+    await renderWithRawCatalog(mergedProviderModels)
+    const availableModelsList = document.body.querySelectorAll('[role="checkbox"]')
+    const geminiCheckbox = Array.from(availableModelsList).find((el) => el.textContent?.includes('gemini-3.6-flash'))
+    expect(geminiCheckbox).toBeTruthy()
+    expect(geminiCheckbox?.textContent).toContain('(high, low, medium)')
+  })
+
+  it('renders a Sync button next to Select all that refetches models without expanding collapsed models', async () => {
+    await renderWithRawCatalog(mergedProviderModels)
+    // Collapse any expanded model
+    const header = document.body.querySelector(
+      '.bg-bg-primary.border.border-border .cursor-pointer',
+    ) as HTMLElement | null
+    header?.click()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    const syncButton = Array.from(document.body.querySelectorAll('button')).find((b) =>
+      b.textContent?.trim().includes('Sync'),
+    )
+    expect(syncButton).toBeTruthy()
+    syncButton?.click()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(global.fetch).toHaveBeenCalled()
+    // ModelConfigPanel should remain collapsed (e.g. no Context window input visible)
+    const contextInput = document.body.querySelector('input[type="number"]')
+    expect(contextInput).toBeNull()
+  })
+
+  it('syncing discovers new models, adding them to Available Models without adding them to Selected Models', async () => {
+    const initialModels = [
+      { id: 'model-a', contextWindow: 128000, selected: true },
+      { id: 'model-b', contextWindow: 200000, selected: false },
+    ]
+    const fetchedCatalog = [
+      { id: 'model-a', contextWindow: 128000 },
+      { id: 'model-b', contextWindow: 200000 },
+      { id: 'model-c-new', contextWindow: 256000 },
+    ]
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/api/provider-presets')) {
+          return new Response(JSON.stringify({ presets: [] }), { status: 200 })
+        }
+        if (url.includes('/models')) {
+          return new Response(JSON.stringify({ models: fetchedCatalog, url: 'http://localhost:8000/v1' }), {
+            status: 200,
+          })
+        }
+        return new Response(JSON.stringify({ models: [], url: 'http://localhost:8000/v1' }), { status: 200 })
+      }),
+    )
+
+    await new Promise<void>((resolve) => {
+      root.render(
+        <ProviderModal
+          isOpen={true}
+          onClose={vi.fn()}
+          onSave={onSaveMock as (provider: ProviderFormData) => void}
+          editProvider={{
+            id: 'test-provider',
+            name: 'Test Provider',
+            url: 'http://localhost:8000/v1',
+            backend: 'vllm',
+            models: initialModels as never,
+          }}
+          initialStep={2}
+        />,
+      )
+      setTimeout(resolve, 200)
+    })
+
+    const syncButton = Array.from(document.body.querySelectorAll('button')).find((b) =>
+      b.textContent?.trim().includes('Sync'),
+    )
+    expect(syncButton).toBeTruthy()
+    syncButton?.click()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    // Click Save Provider
+    const saveButton = document.body.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
+    saveButton?.click()
+
+    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
+    // model-a remains selected
+    const modelA = savedData.models.find((m) => m.id === 'model-a')
+    expect(modelA?.selected).toBe(true)
+
+    // model-b was not selected and remains unselected
+    const modelB = savedData.models.find((m) => m.id === 'model-b')
+    expect(modelB?.selected).toBeUndefined()
+
+    // model-c-new is added to models but is NOT selected
+    const modelC = savedData.models.find((m) => m.id === 'model-c-new')
+    expect(modelC).toBeDefined()
+    expect(modelC?.selected).toBeUndefined()
+  })
+
+  it('syncing with merged mode models does not duplicate models in Selected Models', async () => {
+    const initialModels = [
+      {
+        id: 'claude-opus-4-6-thinking',
+        contextWindow: 1048576,
+        selected: true,
+        modes: [
+          { level: 'low', apiModelId: 'claude-opus-4-6-thinking-low' },
+          { level: 'high', apiModelId: 'claude-opus-4-6-thinking-high' },
+        ],
+      },
+      { id: 'gemini-3.7-flash', contextWindow: 1048576, selected: true },
+    ]
+    const fetchedCatalog = [
+      { id: 'claude-opus-4-6-thinking', contextWindow: 1048576 },
+      { id: 'gemini-3.7-flash', contextWindow: 1048576 },
+      { id: 'gemini-3.1-pro', contextWindow: 1048576 },
+    ]
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/api/provider-presets')) {
+          return new Response(JSON.stringify({ presets: [] }), { status: 200 })
+        }
+        if (url.includes('/models')) {
+          return new Response(JSON.stringify({ models: fetchedCatalog, url: 'http://localhost:8000/v1' }), {
+            status: 200,
+          })
+        }
+        return new Response(JSON.stringify({ models: [], url: 'http://localhost:8000/v1' }), { status: 200 })
+      }),
+    )
+
+    await new Promise<void>((resolve) => {
+      root.render(
+        <ProviderModal
+          isOpen={true}
+          onClose={vi.fn()}
+          onSave={onSaveMock as (provider: ProviderFormData) => void}
+          editProvider={{
+            id: 'test-provider',
+            name: 'Test Provider',
+            url: 'http://localhost:8000/v1',
+            backend: 'vllm',
+            models: initialModels as never,
+          }}
+          initialStep={2}
+        />,
+      )
+      setTimeout(resolve, 200)
+    })
+
+    const syncButton = Array.from(document.body.querySelectorAll('button')).find((b) =>
+      b.textContent?.trim().includes('Sync'),
+    )
+    expect(syncButton).toBeTruthy()
+    syncButton?.click()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    const saveButton = document.body.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
+    saveButton?.click()
+
+    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
+    const opusInstances = savedData.models.filter((m) => m.id === 'claude-opus-4-6-thinking')
+    expect(opusInstances.length).toBe(1)
+    expect(opusInstances[0]?.modes).toBeDefined()
+    expect(opusInstances[0]?.selected).toBe(true)
+
+    // gemini-3.1-pro was newly discovered, so it is in available models but NOT selected
+    const geminiPro = savedData.models.find((m) => m.id === 'gemini-3.1-pro')
+    expect(geminiPro).toBeDefined()
+    expect(geminiPro?.selected).toBeUndefined()
+
+    // Total models saved should be 3 (claude-opus, gemini-flash, gemini-pro)
+    expect(savedData.models.length).toBe(3)
+  })
+
+  it('syncing when backend returns a single new model does not auto-select it for an existing provider with multiple models', async () => {
+    const initialModels = [
+      { id: 'model-a', contextWindow: 128000, selected: true },
+      { id: 'model-b', contextWindow: 200000, selected: false },
+    ]
+    const singleModelCatalog = [{ id: 'model-a', contextWindow: 128000 }]
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/api/provider-presets')) {
+          return new Response(JSON.stringify({ presets: [] }), { status: 200 })
+        }
+        if (url.includes('/models')) {
+          return new Response(JSON.stringify({ models: singleModelCatalog, url: 'http://localhost:8000/v1' }), {
+            status: 200,
+          })
+        }
+        return new Response(JSON.stringify({ models: [], url: 'http://localhost:8000/v1' }), { status: 200 })
+      }),
+    )
+
+    await new Promise<void>((resolve) => {
+      root.render(
+        <ProviderModal
+          isOpen={true}
+          onClose={vi.fn()}
+          onSave={onSaveMock as (provider: ProviderFormData) => void}
+          editProvider={{
+            id: 'test-provider',
+            name: 'Test Provider',
+            url: 'http://localhost:8000/v1',
+            backend: 'vllm',
+            models: initialModels as never,
+          }}
+          initialStep={2}
+        />,
+      )
+      setTimeout(resolve, 200)
+    })
+
+    const syncButton = Array.from(document.body.querySelectorAll('button')).find((b) =>
+      b.textContent?.trim().includes('Sync'),
+    )
+    expect(syncButton).toBeTruthy()
+    syncButton?.click()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    const saveButton = document.body.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
+    saveButton?.click()
+
+    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
+    expect(savedData.models.find((m) => m.id === 'model-a')?.selected).toBe(true)
+    expect(savedData.models.some((m) => m.id === 'model-b')).toBe(false)
+  })
+
+  it('syncing removes deleted models from Available Models and Selected Models', async () => {
+    const initialModels = [
+      { id: 'model-kept', contextWindow: 128000, selected: true },
+      { id: 'model-removed', contextWindow: 200000, selected: true },
+      { id: 'model-unselected-removed', contextWindow: 200000, selected: false },
+    ]
+    const updatedCatalog = [{ id: 'model-kept', contextWindow: 128000 }]
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/api/provider-presets')) {
+          return new Response(JSON.stringify({ presets: [] }), { status: 200 })
+        }
+        if (url.includes('/models')) {
+          return new Response(JSON.stringify({ models: updatedCatalog, url: 'http://localhost:8000/v1' }), {
+            status: 200,
+          })
+        }
+        return new Response(JSON.stringify({ models: [], url: 'http://localhost:8000/v1' }), { status: 200 })
+      }),
+    )
+
+    await new Promise<void>((resolve) => {
+      root.render(
+        <ProviderModal
+          isOpen={true}
+          onClose={vi.fn()}
+          onSave={onSaveMock as (provider: ProviderFormData) => void}
+          editProvider={{
+            id: 'test-provider',
+            name: 'Test Provider',
+            url: 'http://localhost:8000/v1',
+            backend: 'vllm',
+            models: initialModels as never,
+          }}
+          initialStep={2}
+        />,
+      )
+      setTimeout(resolve, 200)
+    })
+
+    const syncButton = Array.from(document.body.querySelectorAll('button')).find((b) =>
+      b.textContent?.trim().includes('Sync'),
+    )
+    expect(syncButton).toBeTruthy()
+    syncButton?.click()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    const saveButton = document.body.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
+    saveButton?.click()
+
+    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
+    expect(savedData.models.length).toBe(1)
+    expect(savedData.models[0]?.id).toBe('model-kept')
+    expect(savedData.models[0]?.selected).toBe(true)
+  })
 })
