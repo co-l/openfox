@@ -17,6 +17,7 @@ export interface ProviderPluginDiagnostic {
   authAdapters: string[]
   transportAdapters: string[]
   presets: string[]
+  transitionHandlers: string[]
   error?: string
 }
 
@@ -85,6 +86,7 @@ export async function loadProviderPlugins(options: {
         authAdapters: [],
         transportAdapters: [],
         presets: [],
+        transitionHandlers: [],
       }
       diagnostics.push(diagnostic)
       if (manifest.openfox?.apiVersion !== 1) {
@@ -105,6 +107,10 @@ export async function loadProviderPlugins(options: {
         registerPreset(preset) {
           options.registry.registerPreset(preset)
           diagnostic.presets.push(preset.id)
+        },
+        registerTransitionHandler(handlerId, handler) {
+          options.registry.registerTransitionHandler(handlerId, handler)
+          diagnostic.transitionHandlers.push(handlerId)
         },
       }
       try {

@@ -64,7 +64,8 @@ import { logger } from '../utils/logger.js'
 import { EventEmitter, type Unsubscribe } from '../utils/async.js'
 import { getLspManager as getOrCreateLspManager, shutdownLspManager, type LspManager } from '../lsp/index.js'
 import { devServerManager } from '../dev-server/manager.js'
-import { resolveLLMClientForAgent, getAgentModelOverride } from '../agents/model-overrides.js'
+import { resolveLLMClientForAgent, resolveLLMClientForStep, getAgentModelOverride } from '../agents/model-overrides.js'
+import type { StepContext } from '../runner/types.js'
 import { parseDefaultModelSelection } from '../provider-manager.js'
 import { getEventStore } from '../events/store.js'
 import {
@@ -173,13 +174,24 @@ export class SessionManager {
     sessionId: string,
     agentId: string,
     preferredFallback?: import('../llm/client.js').LLMClientWithModel,
+    stepContext?: StepContext,
   ): import('../llm/client.js').LLMClientWithModel {
     const fallback = preferredFallback ?? this.providerManager.getLLMClient()
     const pinnedEffort = dbGetSession(sessionId)?.providerPinnedEffort ?? undefined
-    const resolved = resolveLLMClientForAgent(agentId, fallback, this.providerManager, pinnedEffort)
+    const resolved = stepContext
+      ? resolveLLMClientForStep(
+          stepContext.workflowId,
+          stepContext.stepId,
+          agentId,
+          fallback,
+          this.providerManager,
+          pinnedEffort,
+        )
+      : resolveLLMClientForAgent(agentId, fallback, this.providerManager, pinnedEffort)
     if (resolved.warning) {
       logger.warn('Agent model override unavailable, falling back', {
         agentId,
+        ...(stepContext ? { stepId: stepContext.stepId, workflowId: stepContext.workflowId } : {}),
         warning: resolved.warning,
       })
     }

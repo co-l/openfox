@@ -18,6 +18,7 @@ import type {
   ShellStep,
   UserStep,
 } from './types.js'
+import type { TransitionHandlerRegistry, TransitionHandlerContext } from './transition-handlers.js'
 import { TERMINAL_DONE, TERMINAL_BLOCKED } from './types.js'
 import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
 import { createChatMessageMessage } from '../ws/protocol.js'
@@ -148,6 +149,10 @@ export function evaluateCondition(
 
     case 'always':
       return true
+    // `custom` conditions are resolved asynchronously via the handler registry
+    // (see evaluateConditionAsync). Synchronous callers see them as non-firing.
+    default:
+      return false
   }
 }
 
@@ -170,6 +175,58 @@ export function evaluateTransitions(
   metadataEntries?: Record<string, import('../../shared/types.js').MetadataEntry[]>,
 ): string {
   return findMatchingTransition(transitions, stepOutcome, metadataEntries)?.goto ?? TERMINAL_BLOCKED
+}
+
+// ----------------------------------------------------------------------------
+// Async evaluation — supports `custom` conditions backed by the handler registry
+// ----------------------------------------------------------------------------
+
+/**
+ * Async condition evaluator. Built-in condition types delegate to the
+ * synchronous {@link evaluateCondition} (unchanged fast path). `custom`
+ * conditions are dispatched to the handler registered under `condition.handler`
+ * in the provided registry. A `custom` condition with no registered handler
+ * is treated as non-firing (logged), so a missing plugin never blocks the
+ * workflow — the next transition (typically an `always` fallback) wins.
+ */
+export async function evaluateConditionAsync(
+  condition: TransitionCondition,
+  stepOutcome: StepOutcome | null,
+  metadataEntries: Record<string, import('../../shared/types.js').MetadataEntry[]> | undefined,
+  registry: TransitionHandlerRegistry | undefined,
+  handlerCtx: TransitionHandlerContext,
+): Promise<boolean> {
+  if (condition.type === 'custom') {
+    const handler = registry?.get(condition.handler)
+    if (!handler) {
+      logger.warn('Custom transition handler not registered', { handler: condition.handler })
+      return false
+    }
+    const ctx: TransitionHandlerContext = {
+      ...handlerCtx,
+      stepOutcome,
+      metadataEntries,
+      config: condition.config,
+    }
+    return handler(ctx)
+  }
+  return evaluateCondition(condition, stepOutcome, metadataEntries)
+}
+
+/** Async counterpart of {@link findMatchingTransition} — first match wins. */
+export async function findMatchingTransitionAsync(
+  transitions: Transition[],
+  stepOutcome: StepOutcome | null,
+  metadataEntries: Record<string, import('../../shared/types.js').MetadataEntry[]> | undefined,
+  registry: TransitionHandlerRegistry | undefined,
+  handlerCtx: TransitionHandlerContext,
+): Promise<Transition | null> {
+  for (const transition of transitions) {
+    if (await evaluateConditionAsync(transition.when, stepOutcome, metadataEntries, registry, handlerCtx)) {
+      return transition
+    }
+  }
+  return null
 }
 
 // ============================================================================
@@ -327,7 +384,7 @@ export async function executeWorkflow(
   options: OrchestratorOptions,
   subGroup?: string,
 ): Promise<OrchestratorResult> {
-  const { sessionManager, sessionId, llmClient, signal, onMessage } = options
+  const { sessionManager, sessionId, llmClient, signal, onMessage, transitionHandlers } = options
   const eventStore = getEventStore()
   const startTime = performance.now()
   let iterations = 0
@@ -399,10 +456,19 @@ export async function executeWorkflow(
   // Evaluate start condition if present
   if (workflow.startCondition && workflow.startCondition.type !== 'always') {
     const session = sessionManager.requireSession(sessionId)
-    const conditionMet = evaluateCondition(
+    const conditionMet = await evaluateConditionAsync(
       workflow.startCondition as TransitionCondition,
       null,
       session.metadataEntries,
+      transitionHandlers,
+      {
+        stepOutcome: null,
+        metadataEntries: session.metadataEntries,
+        workflowId: workflow.metadata.id,
+        stepId: workflow.entryStep,
+        signal,
+        llmClient,
+      },
     )
     if (!conditionMet) {
       logger.debug('Workflow start condition not met', { sessionId, condition: workflow.startCondition.type })
@@ -624,6 +690,7 @@ export async function executeWorkflow(
               sessionManager,
               sessionId,
               llmClient,
+              stepContext: { workflowId: workflow.metadata.id, stepId: step.id },
               ...(options.getSessionLLMClient ? { getSessionLLMClient: options.getSessionLLMClient } : {}),
               ...(options.statsIdentity ? { statsIdentity: options.statsIdentity } : {}),
               ...(signal ? { signal } : {}),
@@ -724,6 +791,7 @@ export async function executeWorkflow(
           llmClient,
           toolRegistry: filteredToolRegistry,
           turnMetrics,
+          stepContext: { workflowId: workflow.metadata.id, stepId: step.id },
           statsIdentity: options.statsIdentity ?? {
             providerId: '',
             providerName: '',
@@ -864,7 +932,31 @@ export async function executeWorkflow(
     const candidates = subGroup
       ? step.transitions.filter((t) => !t.subGroup || activeSubGroups.has(t.subGroup))
       : step.transitions
-    const fired = findMatchingTransition(candidates, stepOutcome, refreshedSession.metadataEntries)
+    // Resolve the step's LLM client so custom handlers (e.g. llm_decision) can
+    // route with the same model the step ran under (per-step/team overrides).
+    const decisionClient =
+      step.type === 'agent'
+        ? sessionManager.createClientForAgent(
+            sessionId,
+            (step as AgentStep).agentId ?? resolveDefaultAgentId(),
+            llmClient,
+            { workflowId: workflow.metadata.id, stepId: step.id },
+          )
+        : llmClient
+    const fired = await findMatchingTransitionAsync(
+      candidates,
+      stepOutcome,
+      refreshedSession.metadataEntries,
+      transitionHandlers,
+      {
+        stepOutcome,
+        metadataEntries: refreshedSession.metadataEntries,
+        workflowId: workflow.metadata.id,
+        stepId: step.id,
+        signal,
+        llmClient: decisionClient,
+      },
+    )
     let nextStepId = fired ? fired.goto : TERMINAL_BLOCKED
 
     // When running a sub-group, a transition leaving the active set either:

@@ -64,3 +64,5 @@ tmp/
 worktrees/
 
 plugins/
+# jscpd JSON report (generated, .md is the tracked stub)
+report/jscpd-report.json

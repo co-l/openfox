@@ -45,6 +45,8 @@ import { setRuntimeConfig } from './runtime-config.js'
 import { createSkillRoutes } from './routes/skills.js'
 import { createCommandRoutes } from './routes/commands.js'
 import { createAgentRoutes } from './routes/agents.js'
+import { createTeamRoutes } from './routes/teams.js'
+import { createStepModelOverrideRoutes } from './routes/step-model-overrides.js'
 import { loadAllAgentsDefault, getTopLevelAgents } from './agents/registry.js'
 import { createWorkflowRoutes } from './routes/workflows.js'
 import { listAvailableWorkflows } from './workflows/registry.js'
@@ -62,6 +64,7 @@ import { createProviderAuthRoutes } from './routes/provider-auth.js'
 import { devServerManager } from './dev-server/manager.js'
 import { getGlobalConfigDir } from '../cli/paths.js'
 import { ProviderRegistry, loadProviderPlugins } from './providers/plugins/index.js'
+import { createLlmDecisionHandler } from './workflows/llm-decision-handler.js'
 import { createPluginRoutes } from './routes/plugins.js'
 import { registerSessionFavoriteRoute } from './routes/session-favorite.js'
 import { logger, setLogLevel } from './utils/logger.js'
@@ -136,6 +139,10 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     mode: config.mode === 'development' ? 'development' : 'production',
     configDirectory: configDir,
   })
+  // Register the built-in `llm_decision` transition handler before plugins
+  // load, so a plugin registering the same id still wins (last write).
+  providerAdapters.registerTransitionHandler('llm_decision', createLlmDecisionHandler())
+
   const pluginDiagnostics = await loadProviderPlugins({ registry: providerAdapters, configDirectory: configDir })
   for (const diagnostic of pluginDiagnostics) {
     if (!diagnostic.loaded) logger.warn('Provider plugin failed to load', { ...diagnostic })
@@ -3226,6 +3233,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   app.use('/api/commands', createCommandRoutes(configDir, projectDir))
   app.use('/api/agents', createAgentRoutes(configDir, projectDir))
   app.use('/api/workflows', createWorkflowRoutes(configDir, config, projectDir))
+  app.use('/api/workflows', createStepModelOverrideRoutes())
+  app.use('/api/teams', createTeamRoutes())
   app.use('/api/dev-server', createDevServerRoutes())
   app.use('/api/workspace', createWorkspaceConfigRoutes(sessionManager))
   app.use('/api/terminals', createTerminalRoutes())
@@ -3455,6 +3464,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     sessionManager,
     providerManager,
     () => mcpManager.getAllServers(),
+    () => providerAdapters.getTransitionHandlers(),
   )
   const wss = wssExports.wss
 
@@ -3494,6 +3504,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
           ...(statsEffort ? { reasoningEffort: statsEffort } : {}),
         },
         broadcastForSession: wssExports.broadcastForSession,
+        transitionHandlers: providerAdapters.getTransitionHandlers(),
       },
       {
         ...(launch.workflowId ? { workflowId: launch.workflowId } : {}),

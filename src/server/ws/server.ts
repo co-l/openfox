@@ -19,6 +19,7 @@ import { runChatTurn } from '../chat/orchestrator.js'
 import { interruptLLMRetryWait, hasRecentLLMFailure } from '../chat/stream-pure.js'
 
 import { launchWorkflowRun } from '../runner/launch.js'
+import type { TransitionHandlerRegistry } from '../workflows/transition-handlers.js'
 import { appendCompactionPrompt } from '../context/compactor.js'
 import { computeSessionHash, applyDynamicContext, computeUnifiedDiff } from '../chat/dynamic-context.js'
 import { provideAnswer } from '../tools/index.js'
@@ -353,6 +354,7 @@ export function createWebSocketServer(
   sessionManager: SessionManager,
   providerManager?: ProviderManager,
   getMcpServers?: () => import('../mcp/types.js').McpServerState[],
+  getTransitionHandlers?: () => TransitionHandlerRegistry,
 ): WebSocketServerExports {
   const wss = new WebSocketServer({ server: httpServer })
   const clients = new Map<WebSocket, ClientConnection>()
@@ -817,6 +819,7 @@ export function createWebSocketServer(
           cleanupAfterTurn,
           enqueueSend,
           getMcpServers,
+          getTransitionHandlers,
         )
       } catch (error) {
         logger.error('Error handling client message', { error, type: message.type })
@@ -907,6 +910,7 @@ async function handleClientMessage(
   ) => void,
   enqueueSendFn: (client: ClientConnection, data: string, seq: number) => void,
   getMcpServers?: () => import('../mcp/types.js').McpServerState[],
+  getTransitionHandlers?: () => TransitionHandlerRegistry,
 ): Promise<void> {
   const send = (msg: ServerMessage) => {
     if (ws.readyState === WebSocket.OPEN) {
@@ -1408,6 +1412,7 @@ async function handleClientMessage(
           statsIdentity: statsForSession(sessionId),
           broadcastForSession: (sid, msg) => _broadcastForSession(sid, msg),
           onFinished: () => cleanupAfterTurn(sessionId, controller, sendForSession, true),
+          ...(getTransitionHandlers ? { transitionHandlers: getTransitionHandlers() } : {}),
         },
         {
           ...(launchPayload?.workflowId ? { workflowId: launchPayload.workflowId } : {}),
