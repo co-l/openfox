@@ -13,11 +13,9 @@
 
 import { loadAllCommands, findCommandById } from '../commands/registry.js'
 import { loadAllWorkflows, findWorkflowById } from '../workflows/registry.js'
+import { expandCommandPrompt, parseSlashInput, type SlashInput } from '../../shared/slash-args.js'
 
-export interface SlashInvocation {
-  id: string
-  args: string[]
-}
+export type SlashInvocation = SlashInput
 
 export interface WorkflowSlashLaunch {
   kind: 'workflow'
@@ -35,16 +33,11 @@ export interface CommandSlashLaunch {
 export type SlashLaunch = WorkflowSlashLaunch | CommandSlashLaunch | null
 
 /**
- * Split a prompt into a slash id + positional args. Returns null when the
- * prompt is not a slash invocation (or is just a bare "/").
+ * Split a prompt into a slash id, its tokenized args and the raw remainder.
+ * Returns null when the prompt is not a slash invocation (or is a bare "/").
  */
 export function parseSlashInvocation(prompt: string): SlashInvocation | null {
-  const trimmed = prompt.trim()
-  if (!trimmed.startsWith('/')) return null
-  const parts = trimmed.slice(1).split(/\s+/)
-  const id = parts[0]
-  if (!id) return null
-  return { id, args: parts.slice(1) }
+  return parseSlashInput(prompt)
 }
 
 /**
@@ -71,37 +64,7 @@ export function workflowParamsFromArgs(
   return params
 }
 
-/** Named template placeholders ({{name}}) in order of first occurrence, deduplicated. */
-export function extractTemplateParams(template: string): string[] {
-  const seen: string[] = []
-  const regex = /\{\{(\w+)\}\}/g
-  let match: RegExpExecArray | null
-  while ((match = regex.exec(template)) !== null) {
-    const key = match[1]!
-    if (!seen.includes(key)) seen.push(key)
-  }
-  return seen
-}
-
-/**
- * Substitute positional args into a command's prompt template. Args map to
- * placeholders by order of appearance. Returns the expanded prompt plus the
- * placeholders that remain unfilled (so callers can degrade gracefully).
- */
-export function expandCommandPrompt(template: string, args: string[]): { prompt: string; unfilledParams: string[] } {
-  const paramNames = extractTemplateParams(template)
-  const named: Record<string, string> = {}
-  paramNames.forEach((name, index) => {
-    const value = args[index]
-    if (value !== undefined) named[name] = value
-  })
-  let prompt = template
-  for (const [key, value] of Object.entries(named)) {
-    prompt = prompt.replaceAll(`{{${key}}}`, value)
-  }
-  const unfilledParams = paramNames.filter((name) => !(name in named))
-  return { prompt, unfilledParams }
-}
+export { expandCommandPrompt, extractTemplateParams } from '../../shared/slash-args.js'
 
 /**
  * Resolve a prompt against the available workflows and commands. Returns null
@@ -138,7 +101,7 @@ export async function resolveSlashLaunch(
   const command = findCommandById(invocation.id, commands)
   if (!command) return null
 
-  const expanded = expandCommandPrompt(command.prompt, invocation.args)
+  const expanded = expandCommandPrompt(command.prompt, invocation.args, invocation.rest)
   if (expanded.unfilledParams.length > 0) return null
 
   return {

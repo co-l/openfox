@@ -6,7 +6,8 @@ import { useResource } from '../../hooks/useResource'
 import { useWorkflows } from '../../hooks/useWorkflows'
 import { commandsResource, commandResource } from '../../lib/resources'
 import { authFetch } from '../../lib/api'
-import { parseSlashCommand, extractTemplateParams } from '../../lib/parse-slash-command'
+import { parseSlashCommand, tokenizeArgs } from '../../lib/parse-slash-command'
+import { expandCommandPrompt } from '@shared/slash-args.js'
 import { insertSuggestionAtCursor, focusTextareaAt, resolveSlashParamIds } from '../../lib/composer-utils'
 import { resolveWorkflowForLaunch } from '../../lib/workflow-scope'
 import { dedupById } from '../../lib/modal-utils'
@@ -439,18 +440,10 @@ export function ChatInput({
         // Fetch command, resolve params, send as message
         commandResource.refresh(slashResult.commandId, workdir).then((full) => {
           if (full) {
-            // Map positional args to named params by order of appearance in the prompt
-            const paramNames = extractTemplateParams(full.prompt)
-            const namedParams: Record<string, string> = {}
-            for (const [posKey, value] of Object.entries(slashResult.params)) {
-              const idx = parseInt(posKey, 10)
-              const name = paramNames[idx]
-              if (name) namedParams[name] = value
-            }
-            let prompt = full.prompt
-            for (const [key, value] of Object.entries(namedParams)) {
-              prompt = prompt.replaceAll(`{{${key}}}`, value)
-            }
+            // Positional args fill {{name}} by order of appearance; {{ARGUMENTS}}
+            // takes the raw remainder. Anything left unfilled reaches
+            // onSendCommand as a placeholder, which opens the params modal.
+            const { prompt } = expandCommandPrompt(full.prompt, slashResult.args, slashResult.rest)
             onSendCommand(prompt, full.metadata.agentMode)
             clearInput()
           }
@@ -656,10 +649,9 @@ export function ChatInput({
             />
             {activeSlashParams.length > 0 &&
               (() => {
-                // Count space-separated args after the last /command
+                // Count args typed after the /command, quoted runs counting once
                 const match = input.match(/\/(\w+)\s+(.*)$/)
-                const args = match ? match[2]!.trim().split(/\s+/) : []
-                const filledCount = args.filter(Boolean).length
+                const filledCount = match ? tokenizeArgs(match[2]!).length : 0
                 const nextParam = activeSlashParams[filledCount]
                 if (!nextParam) return null
                 return (
