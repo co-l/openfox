@@ -14,6 +14,7 @@ import {
 } from '../commands/registry.js'
 import type { CommandDefinition } from '../commands/types.js'
 import { createCrudRoutes, validateNameIdPrompt, type CrudRouteConfig } from './crud-helpers.js'
+import { templateParamHints } from '../../shared/slash-args.js'
 
 const config: CrudRouteConfig<CommandDefinition> = {
   dirName: 'commands',
@@ -34,7 +35,7 @@ const config: CrudRouteConfig<CommandDefinition> = {
   mapToResponse: (c) =>
     ({
       ...c.metadata,
-      paramNames: [...new Set(Array.from(c.prompt.matchAll(/\{\{(\w+)\}\}/g), (m) => m[1]!))],
+      paramNames: templateParamHints(c.prompt),
     }) as unknown as { [key: string]: unknown },
 }
 
