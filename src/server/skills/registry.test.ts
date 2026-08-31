@@ -561,3 +561,85 @@ describe('getDefaultSkillIds', () => {
     expect(ids).toContain('workflows')
   })
 })
+
+describe('claude code compatibility', () => {
+  let homeDir: string
+  let configDir: string
+  let projectDir: string
+
+  beforeEach(() => {
+    homeDir = join(tempDir, 'home')
+    configDir = join(tempDir, 'config')
+    projectDir = join(tempDir, 'project')
+  })
+
+  it('discovers global and project .claude/skills when enabled', async () => {
+    await createPortableInRoot(join(homeDir, '.claude', 'skills'), 'user-claude', 'User claude skill.')
+    await createPortableInRoot(join(projectDir, '.claude', 'skills'), 'project-claude', 'Project claude skill.')
+
+    const skills = await loadAllSkills(configDir, projectDir, { homeDir, claudeCompat: true })
+
+    expect(skills.find((skill) => skill.metadata.id === 'user-claude')).toMatchObject({ source: 'global-claude' })
+    expect(skills.find((skill) => skill.metadata.id === 'project-claude')).toMatchObject({ source: 'project-claude' })
+  })
+
+  it('ignores .claude/skills when disabled', async () => {
+    await createPortableInRoot(join(homeDir, '.claude', 'skills'), 'user-claude', 'User claude skill.')
+    await createPortableInRoot(join(projectDir, '.claude', 'skills'), 'project-claude', 'Project claude skill.')
+
+    const skills = await loadAllSkills(configDir, projectDir, { homeDir, claudeCompat: false })
+
+    expect(skills.find((skill) => skill.metadata.id === 'user-claude')).toBeUndefined()
+    expect(skills.find((skill) => skill.metadata.id === 'project-claude')).toBeUndefined()
+  })
+
+  it('auto-enables discovery for a project holding a .claude directory', async () => {
+    await createPortableInRoot(join(projectDir, '.claude', 'skills'), 'auto-claude', 'Auto discovered.')
+
+    const skills = await loadAllSkills(configDir, projectDir, { homeDir })
+
+    expect(skills.find((skill) => skill.metadata.id === 'auto-claude')).toMatchObject({ source: 'project-claude' })
+  })
+
+  it('stays off in auto mode for a project without Claude Code markers', async () => {
+    await createPortableInRoot(join(homeDir, '.claude', 'skills'), 'user-claude', 'User claude skill.')
+    await createPortableInRoot(join(projectDir, '.openfox', 'skills'), 'openfox-only', 'OpenFox skill.')
+
+    const skills = await loadAllSkills(configDir, projectDir, { homeDir })
+
+    expect(skills.find((skill) => skill.metadata.id === 'user-claude')).toBeUndefined()
+    expect(skills.find((skill) => skill.metadata.id === 'openfox-only')).toBeDefined()
+  })
+
+  it('lets a project OpenFox skill override the Claude one', async () => {
+    await createPortableInRoot(join(projectDir, '.claude', 'skills'), 'shared', 'claude version')
+    await createPortableInRoot(join(projectDir, '.openfox', 'skills'), 'shared', 'openfox version')
+
+    const result = await loadAllSkillsWithDiagnostics(configDir, projectDir, { homeDir, claudeCompat: true })
+
+    expect(result.skills.find((skill) => skill.metadata.id === 'shared')).toMatchObject({
+      prompt: 'openfox version',
+      source: 'project-openfox',
+    })
+    expect(result.diagnostics).toContain('Skill "shared" from project-openfox overrides project-claude')
+  })
+})
+
+describe('overlap diagnostics', () => {
+  it.skipIf(!CAN_SYMLINK)('stays quiet when two automatic roots point at the same package', async () => {
+    const homeDir = join(tempDir, 'home')
+    const agentsRoot = join(homeDir, '.agents', 'skills')
+    const claudeRoot = join(homeDir, '.claude', 'skills')
+    await createPortableInRoot(agentsRoot, 'linked-skill', 'Linked once.')
+    await mkdir(join(homeDir, '.claude'), { recursive: true })
+    await symlink(agentsRoot, claudeRoot, 'dir')
+
+    const result = await loadAllSkillsWithDiagnostics(join(tempDir, 'config'), undefined, {
+      homeDir,
+      claudeCompat: true,
+    })
+
+    expect(result.skills.filter((skill) => skill.metadata.id === 'linked-skill')).toHaveLength(1)
+    expect(result.diagnostics).toEqual([])
+  })
+})
