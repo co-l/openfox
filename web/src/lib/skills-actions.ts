@@ -3,7 +3,23 @@ import { saveEntity, duplicateEntity } from './entity-mutations'
 import { skillsResource, skillResource, scopedUrl } from './resources'
 
 export type SkillSource =
-  'bundled' | 'global-shared' | 'global-openfox' | 'selected' | 'project-shared' | 'project-openfox'
+  | 'bundled'
+  | 'global-shared'
+  | 'global-claude'
+  | 'global-openfox'
+  | 'selected'
+  | 'project-shared'
+  | 'project-claude'
+  | 'project-openfox'
+
+/** Sources discovered outside OpenFox's own config, grouped as "Shared" in the UI. */
+export const EXTERNAL_SKILL_SOURCES: SkillSource[] = [
+  'global-shared',
+  'global-claude',
+  'selected',
+  'project-shared',
+  'project-claude',
+]
 
 export interface SelectedSkillDirectory {
   configuredPath: string
