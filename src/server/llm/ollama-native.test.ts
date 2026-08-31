@@ -110,6 +110,52 @@ describe('buildOllamaChatRequest', () => {
     const body = buildOllamaChatRequest(streamParams({ messages }))
     expect(body['messages']).toStrictEqual(messages)
   })
+
+  it('converts OpenAI content array with text and image_url to Ollama-native format', () => {
+    const base64Image =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+    const messages = [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'What is in this image?' },
+          { type: 'image_url', image_url: { url: `data:image/png;base64,${base64Image}` } },
+          { type: 'text', text: 'Please be detailed.' },
+        ],
+      },
+    ] as ChatCompletionMessageParam[]
+    const body = buildOllamaChatRequest(streamParams({ messages }))
+    expect(body['messages']).toEqual([
+      {
+        role: 'user',
+        content: 'What is in this image?\nPlease be detailed.',
+        images: [base64Image],
+      },
+    ])
+  })
+
+  it('converts content array with multiple image_url parts', () => {
+    const img1 = 'img1base64data'
+    const img2 = 'img2base64data'
+    const messages = [
+      {
+        role: 'user',
+        content: [
+          { type: 'image_url', image_url: { url: `data:image/png;base64,${img1}` } },
+          { type: 'text', text: 'and this' },
+          { type: 'image_url', image_url: { url: `data:image/png;base64,${img2}` } },
+        ],
+      },
+    ] as ChatCompletionMessageParam[]
+    const body = buildOllamaChatRequest(streamParams({ messages }))
+    expect(body['messages']).toEqual([
+      {
+        role: 'user',
+        content: 'and this',
+        images: [img1, img2],
+      },
+    ])
+  })
 })
 
 describe('parseOllamaChatResponse', () => {

@@ -93,28 +93,81 @@ export function toOllamaThink(effort: string): boolean | string {
  * while OpenAI-shaped history messages carry it as a JSON string. Parse the
  * string back into an object; messages without tool calls pass through
  * untouched.
+ *
+ * Also converts OpenAI-style content arrays to Ollama-native format:
+ * - Text parts are concatenated into the `content` string
+ * - image_url parts are extracted as base64 strings into the `images` array
  */
 function toNativeMessage(message: ChatCompletionMessageParam): Record<string, unknown> {
   const raw = message as unknown as Record<string, unknown>
   const toolCalls = raw['tool_calls']
-  if (!Array.isArray(toolCalls) || toolCalls.length === 0) {
-    return raw
-  }
-  return {
-    ...raw,
-    tool_calls: toolCalls.map((toolCall) => {
-      const fn = (toolCall as { function?: { arguments?: unknown } }).function
-      if (!fn || typeof fn.arguments !== 'string') return toolCall
-      try {
-        return {
-          ...toolCall,
-          function: { ...fn, arguments: JSON.parse(fn.arguments) },
+
+  // Handle content: if it's an array, convert to Ollama-native format
+  const content = raw['content']
+  if (Array.isArray(content)) {
+    const textParts: string[] = []
+    const imageParts: string[] = []
+
+    for (const part of content) {
+      if (part.type === 'text') {
+        textParts.push(part.text)
+      } else if (part.type === 'image_url') {
+        const match = part.image_url.url.match(/^data:image\/[^;]+;base64,(.+)$/)
+        if (match && match[1]) {
+          imageParts.push(match[1])
         }
-      } catch {
-        return toolCall
       }
-    }),
+    }
+
+    const result: Record<string, unknown> = {
+      ...raw,
+      content: textParts.join('\n'),
+    }
+
+    if (imageParts.length > 0) {
+      result['images'] = imageParts
+    }
+
+    // If there are also tool_calls, convert their arguments
+    if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+      result['tool_calls'] = toolCalls.map((toolCall) => {
+        const fn = (toolCall as { function?: { arguments?: unknown } }).function
+        if (!fn || typeof fn.arguments !== 'string') return toolCall
+        try {
+          return {
+            ...toolCall,
+            function: { ...fn, arguments: JSON.parse(fn.arguments) },
+          }
+        } catch {
+          return toolCall
+        }
+      })
+    }
+
+    return result
   }
+
+  // No content array - handle tool calls if present
+  if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+    return {
+      ...raw,
+      tool_calls: toolCalls.map((toolCall) => {
+        const fn = (toolCall as { function?: { arguments?: unknown } }).function
+        if (!fn || typeof fn.arguments !== 'string') return toolCall
+        try {
+          return {
+            ...toolCall,
+            function: { ...fn, arguments: JSON.parse(fn.arguments) },
+          }
+        } catch {
+          return toolCall
+        }
+      }),
+    }
+  }
+
+  // No tool calls and content is not an array - pass through unchanged
+  return raw
 }
 
 /**
