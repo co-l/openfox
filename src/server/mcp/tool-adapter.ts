@@ -31,6 +31,7 @@ export function createMcpTools(mcpManager: McpManager): Tool[] {
           const normalizedArgs = { ...args }
           if ('props' in normalizedArgs && !('properties' in normalizedArgs)) {
             normalizedArgs['properties'] = normalizedArgs['props']
+            delete normalizedArgs['props']
           }
           const result = await mcpManager.callTool(server.name, mcpTool.name, normalizedArgs)
           return {

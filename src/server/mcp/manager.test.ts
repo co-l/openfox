@@ -519,6 +519,41 @@ describe('createMcpTools', () => {
     expect(result.success).toBe(true)
     expect(result.output).toBe('Sunny, 72°F')
   })
+
+  it('remaps a renamed props argument back to properties on execution', async () => {
+    mockClientInstance.listTools.mockResolvedValueOnce({
+      tools: [
+        {
+          name: 'config_tool',
+          description: 'Config tool',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              properties: { type: 'object', properties: { a: { type: 'string' } } },
+            },
+          },
+        },
+      ],
+    })
+    const manager = new McpManager()
+    await manager.addServer('test', { transport: 'stdio', command: 'node' })
+
+    const tools = createMcpTools(manager)
+    // The sanitizer renames the top-level `properties` param to `props` in the
+    // LLM-facing schema, so the model answers with `props`.
+    expect(tools[0]!.definition.function.parameters).toEqual({
+      type: 'object',
+      properties: { props: { type: 'object', properties: { a: { type: 'string' } } } },
+    })
+
+    await tools[0]!.execute({ props: { a: 'x' } }, {} as any)
+
+    // The MCP server must receive the original param name, with no stray `props` key.
+    const lastCall = mockClientInstance.callTool.mock.calls.at(-1)!
+    const payload = lastCall[lastCall.length - 1] as { arguments?: Record<string, unknown> }
+    expect(payload.arguments).toEqual({ properties: { a: 'x' } })
+    expect(payload.arguments).not.toHaveProperty('props')
+  })
 })
 
 describe('estimateToolTokens', () => {

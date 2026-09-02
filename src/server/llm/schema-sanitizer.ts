@@ -66,8 +66,7 @@ function cleanSchemaNode(node: Record<string, unknown>): Record<string, unknown>
         const targetKey = propKey === 'properties' ? 'props' : propKey
 
         if (typeof propVal === 'string') {
-          sanitizedProps[targetKey] =
-            propVal === 'object' ? { type: 'object', properties: {} } : { type: propVal }
+          sanitizedProps[targetKey] = propVal === 'object' ? { type: 'object', properties: {} } : { type: propVal }
         } else if (propVal && typeof propVal === 'object' && !Array.isArray(propVal)) {
           sanitizedProps[targetKey] = cleanSchemaNode(propVal as Record<string, unknown>)
         } else {
