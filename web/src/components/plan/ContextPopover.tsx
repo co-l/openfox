@@ -120,9 +120,12 @@ export function ContextPopover({ variant = 'popover', onUpdateSystemPrompt }: Co
                 setMenuOpen(false)
               }}
               className="w-full px-3 py-1.5 text-left text-sm hover:bg-bg-tertiary transition-colors"
-              title="Export all conversation history"
+              title={t({
+                en: 'Export all conversation history',
+                fr: 'Exporter tout l’historique de conversation',
+              })}
             >
-              <span>Export all conversation</span>
+              <span>{t({ en: 'Export all conversation', fr: 'Exporter toute la conversation' })}</span>
             </button>
           </div>
         </>
@@ -197,9 +200,12 @@ export function ContextPopover({ variant = 'popover', onUpdateSystemPrompt }: Co
             if (sessionId) exportConversation(sessionId, currentSession)
           }}
           className="w-full px-3 py-1.5 text-left text-sm hover:bg-bg-tertiary transition-colors rounded"
-          title="Export all conversation history"
+          title={t({
+            en: 'Export all conversation history',
+            fr: 'Exporter tout l’historique de conversation',
+          })}
         >
-          <span>Export all conversation</span>
+          <span>{t({ en: 'Export all conversation', fr: 'Exporter toute la conversation' })}</span>
         </button>
       </div>
       {applyModal}
