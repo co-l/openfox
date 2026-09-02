@@ -614,7 +614,10 @@ describe('llm client pure helpers', () => {
         model: 'test-model',
         messages: [{ role: 'user', content: 'hello' }],
         tools: [
-          { type: 'function', function: { name: 'glob', description: 'Search', parameters: { type: 'object' } } },
+          {
+            type: 'function',
+            function: { name: 'glob', description: 'Search', parameters: { type: 'object', properties: {} } },
+          },
         ],
         tool_choice: 'auto',
         temperature: 0.2,
@@ -655,7 +658,10 @@ describe('llm client pure helpers', () => {
         model: 'test-model',
         messages: [{ role: 'user', content: 'hello' }],
         tools: [
-          { type: 'function', function: { name: 'glob', description: 'Search', parameters: { type: 'object' } } },
+          {
+            type: 'function',
+            function: { name: 'glob', description: 'Search', parameters: { type: 'object', properties: {} } },
+          },
         ],
         tool_choice: 'auto',
         temperature: 0.2,
@@ -696,7 +702,10 @@ describe('llm client pure helpers', () => {
         model: 'test-model',
         messages: [{ role: 'user', content: 'hello' }],
         tools: [
-          { type: 'function', function: { name: 'glob', description: 'Search', parameters: { type: 'object' } } },
+          {
+            type: 'function',
+            function: { name: 'glob', description: 'Search', parameters: { type: 'object', properties: {} } },
+          },
         ],
         tool_choice: 'auto',
         temperature: 0.2,
@@ -737,7 +746,10 @@ describe('llm client pure helpers', () => {
         model: 'test-model',
         messages: [{ role: 'user', content: 'hello' }],
         tools: [
-          { type: 'function', function: { name: 'glob', description: 'Search', parameters: { type: 'object' } } },
+          {
+            type: 'function',
+            function: { name: 'glob', description: 'Search', parameters: { type: 'object', properties: {} } },
+          },
         ],
         tool_choice: 'auto',
         temperature: 0.2,
@@ -779,7 +791,10 @@ describe('llm client pure helpers', () => {
         model: 'test-model',
         messages: [{ role: 'user', content: 'hello' }],
         tools: [
-          { type: 'function', function: { name: 'glob', description: 'Search', parameters: { type: 'object' } } },
+          {
+            type: 'function',
+            function: { name: 'glob', description: 'Search', parameters: { type: 'object', properties: {} } },
+          },
         ],
         tool_choice: 'auto',
         temperature: 0.2,

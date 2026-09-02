@@ -4,6 +4,7 @@ import { getModelProfile } from '../../llm/profiles.js'
 import type { LLMClientWithModel } from '../../llm/client.js'
 import type { ProviderTransportAdapter } from '../../../provider/index.js'
 import { resolveAttachmentsInMessages } from '../../llm/client-pure.js'
+import { sanitizeToolSchema } from '../../llm/schema-sanitizer.js'
 import { resolveEffortForModel, resolveModeModelId } from '../../../shared/reasoning-effort.js'
 
 export function createTransportLLMClient(
@@ -80,6 +81,17 @@ export function createTransportLLMClient(
       request: {
         ...request,
         messages: await resolveAttachmentsInMessages(request.messages, supportsVision),
+        ...(request.tools
+          ? {
+              tools: request.tools.map((t) => ({
+                ...t,
+                function: {
+                  ...t.function,
+                  parameters: sanitizeToolSchema(t.function.parameters),
+                },
+              })),
+            }
+          : {}),
         ...(resolvedEffort && !send.suppressEffort ? { reasoningEffort: resolvedEffort } : {}),
       },
       effort: resolvedEffort,

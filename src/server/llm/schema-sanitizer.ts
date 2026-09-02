@@ -5,6 +5,9 @@
  * (OpenAI, Gemini/Vertex AI/Antigravity, Anthropic, Ollama, etc.).
  *
  * Normalizes invalid or unsupported constructs:
+ * - Strips `additionalProperties` (unsupported by Vertex AI / Antigravity protobuf Schema)
+ * - Strips `null` values (e.g. `default: null`)
+ * - Ensures `type: 'object'` always defines a valid `properties` map
  * - Empty or missing `items` in array schemas (`items: {}` -> `items: { type: 'string' }`)
  * - Strips meta keywords ($schema, $id, $vocabulary, etc.)
  * - Converts `const` values to `enum: [val]`
@@ -23,7 +26,12 @@ function cleanSchemaNode(node: Record<string, unknown>): Record<string, unknown>
   const result: Record<string, unknown> = {}
 
   for (const [key, val] of Object.entries(node)) {
-    // Strip meta keywords unsupported across providers
+    // Strip null / undefined values (e.g. default: null)
+    if (val === null || val === undefined) {
+      continue
+    }
+
+    // Strip meta keywords & additionalProperties unsupported across providers
     if (
       key === '$schema' ||
       key === '$id' ||
@@ -33,7 +41,8 @@ function cleanSchemaNode(node: Record<string, unknown>): Record<string, unknown>
       key === 'dependentSchemas' ||
       key === 'unevaluatedProperties' ||
       key === 'unevaluatedItems' ||
-      key === 'patternProperties'
+      key === 'patternProperties' ||
+      key === 'additionalProperties'
     ) {
       continue
     }
@@ -46,7 +55,10 @@ function cleanSchemaNode(node: Record<string, unknown>): Record<string, unknown>
     if (key === 'properties' && val && typeof val === 'object' && !Array.isArray(val)) {
       const sanitizedProps: Record<string, unknown> = {}
       for (const [propKey, propVal] of Object.entries(val as Record<string, unknown>)) {
-        if (propVal && typeof propVal === 'object' && !Array.isArray(propVal)) {
+        if (typeof propVal === 'string') {
+          sanitizedProps[propKey] =
+            propVal === 'object' ? { type: 'object', properties: {} } : { type: propVal }
+        } else if (propVal && typeof propVal === 'object' && !Array.isArray(propVal)) {
           sanitizedProps[propKey] = cleanSchemaNode(propVal as Record<string, unknown>)
         } else {
           sanitizedProps[propKey] = propVal
@@ -77,6 +89,11 @@ function cleanSchemaNode(node: Record<string, unknown>): Record<string, unknown>
     }
 
     result[key] = val
+  }
+
+  // If type is object but properties is missing, provide empty properties map
+  if (result['type'] === 'object' && !result['properties']) {
+    result['properties'] = {}
   }
 
   // If type is array but items is missing or empty, supply a default string item schema

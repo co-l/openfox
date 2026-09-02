@@ -617,4 +617,25 @@ describe('McpManager token estimation', () => {
     expect(betaRe.status).toBe('connected')
     expect(betaRe.tools.length).toBe(2)
   })
+
+  it('creates MCP tools with sanitized parameters schema', async () => {
+    mockClientInstance.listTools.mockResolvedValueOnce({
+      tools: [
+        {
+          name: 'get_weather',
+          description: 'Get weather',
+          inputSchema: { type: 'object', properties: { location: { type: 'string' } } },
+        },
+      ],
+    })
+    const manager = new McpManager()
+    await manager.addServer('test', { transport: 'stdio', command: 'node' })
+    const tools = createMcpTools(manager)
+    expect(tools).toHaveLength(1)
+    expect(tools[0]!.name).toBe('test_get_weather')
+    expect(tools[0]!.definition.function.parameters).toEqual({
+      type: 'object',
+      properties: { location: { type: 'string' } },
+    })
+  })
 })

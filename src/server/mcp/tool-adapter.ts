@@ -2,6 +2,7 @@ import type { Tool, ToolContext } from '../tools/types.js'
 import type { LLMToolDefinition } from '../llm/types.js'
 import type { McpManager } from './manager.js'
 import type { ToolResult } from '../../shared/types.js'
+import { sanitizeToolSchema } from '../llm/schema-sanitizer.js'
 
 export function createMcpTools(mcpManager: McpManager): Tool[] {
   const tools: Tool[] = []
@@ -17,7 +18,7 @@ export function createMcpTools(mcpManager: McpManager): Tool[] {
         function: {
           name: prefixedName,
           description: mcpTool.description ?? '',
-          parameters: mcpTool.inputSchema as Record<string, unknown>,
+          parameters: sanitizeToolSchema(mcpTool.inputSchema as Record<string, unknown>),
         },
       }
 
