@@ -22,6 +22,7 @@ import {
   extractPdfBlocksFromDataUrl,
   formatVisionFallbackDescription,
 } from './resolve-attachments.js'
+import { sanitizeToolSchema } from './schema-sanitizer.js'
 
 import type { ContentPart } from './resolve-attachments.js'
 export { resolveAttachmentsInMessages } from './resolve-attachments.js'
@@ -255,7 +256,7 @@ export function convertTools(tools: LLMToolDefinition[]): ChatCompletionTool[] {
     function: {
       name: tool.function.name,
       description: tool.function.description,
-      parameters: tool.function.parameters,
+      parameters: sanitizeToolSchema(tool.function.parameters),
     },
   }))
 }

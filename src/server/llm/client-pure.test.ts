@@ -377,12 +377,38 @@ describe('llm client pure helpers', () => {
     expect(withoutFlag).toEqual([{ role: 'user', content: 'hi' }])
   })
 
-  it('converts tool definitions to openai function schema', () => {
+  it('converts tool definitions to openai function schema and sanitizes invalid schema fields', () => {
     expect(
       convertTools([
-        { type: 'function', function: { name: 'grep', description: 'Search', parameters: { type: 'object' } } },
+        {
+          type: 'function',
+          function: {
+            name: 'grep',
+            description: 'Search',
+            parameters: {
+              type: 'object',
+              properties: {
+                tags: { type: 'array', items: {} },
+              },
+            },
+          },
+        },
       ]),
-    ).toEqual([{ type: 'function', function: { name: 'grep', description: 'Search', parameters: { type: 'object' } } }])
+    ).toEqual([
+      {
+        type: 'function',
+        function: {
+          name: 'grep',
+          description: 'Search',
+          parameters: {
+            type: 'object',
+            properties: {
+              tags: { type: 'array', items: { type: 'string' } },
+            },
+          },
+        },
+      },
+    ])
   })
 
   it('maps finish reasons', () => {

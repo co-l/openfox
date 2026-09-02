@@ -94,7 +94,15 @@ export const projectTasksTool = createTool<ProjectTasksArgs>(
           attachments: {
             type: 'array',
             description: 'Optional attachments (same shape as chat attachments)',
-            items: {},
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: 'Attachment ID' },
+                filename: { type: 'string', description: 'File name' },
+                mimeType: { type: 'string', description: 'MIME type' },
+                size: { type: 'number', description: 'File size in bytes' },
+              },
+            },
           },
           agentId: { type: 'string', description: 'Selected agent id' },
           providerId: { type: 'string', description: 'Provider id used when a session is spawned' },
