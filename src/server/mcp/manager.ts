@@ -8,6 +8,7 @@ import type { LLMToolDefinition } from '../llm/types.js'
 import { logger } from '../utils/logger.js'
 import { McpOAuthProvider } from './oauth-provider.js'
 import { readMcpOAuthEntry } from './oauth-store.js'
+import { sanitizeToolSchema } from '../llm/schema-sanitizer.js'
 
 /**
  * The SDK merges requestInit headers after the ones it derives from the auth provider, so a static
@@ -243,7 +244,7 @@ export class McpManager {
           function: {
             name: `${entry.state.name}_${tool.name}`,
             description: tool.description ?? '',
-            parameters: tool.inputSchema as Record<string, unknown>,
+            parameters: sanitizeToolSchema(tool.inputSchema as Record<string, unknown>),
           },
         })
       }

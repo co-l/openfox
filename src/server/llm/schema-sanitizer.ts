@@ -47,6 +47,11 @@ function cleanSchemaNode(node: Record<string, unknown>): Record<string, unknown>
       continue
     }
 
+    if (key === 'required' && Array.isArray(val)) {
+      result['required'] = val.map((item) => (item === 'properties' ? 'props' : item))
+      continue
+    }
+
     if (key === 'const') {
       result['enum'] = [val]
       continue
@@ -55,13 +60,18 @@ function cleanSchemaNode(node: Record<string, unknown>): Record<string, unknown>
     if (key === 'properties' && val && typeof val === 'object' && !Array.isArray(val)) {
       const sanitizedProps: Record<string, unknown> = {}
       for (const [propKey, propVal] of Object.entries(val as Record<string, unknown>)) {
+        // A property named 'properties' inside a properties map creates ambiguous/conflicting
+        // Protobuf schemas for Gemini / Vertex AI (e.g. parameters.properties.properties).
+        // Safely rename it to 'props'.
+        const targetKey = propKey === 'properties' ? 'props' : propKey
+
         if (typeof propVal === 'string') {
-          sanitizedProps[propKey] =
+          sanitizedProps[targetKey] =
             propVal === 'object' ? { type: 'object', properties: {} } : { type: propVal }
         } else if (propVal && typeof propVal === 'object' && !Array.isArray(propVal)) {
-          sanitizedProps[propKey] = cleanSchemaNode(propVal as Record<string, unknown>)
+          sanitizedProps[targetKey] = cleanSchemaNode(propVal as Record<string, unknown>)
         } else {
-          sanitizedProps[propKey] = propVal
+          sanitizedProps[targetKey] = propVal
         }
       }
       result['properties'] = sanitizedProps

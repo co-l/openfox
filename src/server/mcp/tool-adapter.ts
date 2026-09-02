@@ -28,7 +28,11 @@ export function createMcpTools(mcpManager: McpManager): Tool[] {
         mcpServer: server.name,
         execute: async (args: Record<string, unknown>, _context: ToolContext): Promise<ToolResult> => {
           const start = Date.now()
-          const result = await mcpManager.callTool(server.name, mcpTool.name, args)
+          const normalizedArgs = { ...args }
+          if ('props' in normalizedArgs && !('properties' in normalizedArgs)) {
+            normalizedArgs['properties'] = normalizedArgs['props']
+          }
+          const result = await mcpManager.callTool(server.name, mcpTool.name, normalizedArgs)
           return {
             success: result.success,
             ...(result.output ? { output: result.output } : {}),

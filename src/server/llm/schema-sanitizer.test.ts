@@ -152,7 +152,7 @@ describe('sanitizeToolSchema', () => {
           description: '(Optional) Fields to expand',
           type: 'string',
         },
-        properties: {
+        props: {
           description: '(Optional) A comma-separated list of issue properties to return',
           type: 'string',
         },
