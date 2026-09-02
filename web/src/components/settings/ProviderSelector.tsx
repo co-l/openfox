@@ -781,8 +781,12 @@ export function ProviderSelector() {
                     onClick={() => setFavoritesExpanded((prev) => !prev)}
                   >
                     <div className="flex flex-col min-w-0 flex-1">
-                      <span className="text-sm font-medium truncate text-text-primary">Favorites</span>
-                      <span className="text-xs text-text-muted truncate">Pinned models</span>
+                      <span className="text-sm font-medium truncate text-text-primary">
+                        {t({ en: 'Favorites', fr: 'Favoris' })}
+                      </span>
+                      <span className="text-xs text-text-muted truncate">
+                        {t({ en: 'Pinned models', fr: 'Modèles épinglés' })}
+                      </span>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <ChevronDownIcon
@@ -910,9 +914,12 @@ export function ProviderSelector() {
                               onClick={(event) => handleDisconnectAccount(event, group.provider.id)}
                               disabled={authBusy === group.provider.id}
                               className="text-[9px] leading-tight px-1 py-0.5 rounded border border-accent-success/40 text-accent-success hover:bg-accent-success/10 disabled:opacity-50"
-                              title="Disconnect provider account"
+                              title={t({
+                                en: 'Disconnect provider account',
+                                fr: 'Déconnecter le compte du fournisseur',
+                              })}
                             >
-                              Connected
+                              {t({ en: 'Connected', fr: 'Connecté' })}
                             </button>
                           ) : (
                             <button
@@ -920,14 +927,17 @@ export function ProviderSelector() {
                               onClick={(event) => handleConnectAccount(event, group.provider.id)}
                               disabled={authBusy === group.provider.id}
                               className="text-[9px] leading-tight px-1 py-0.5 rounded border border-accent-primary/40 text-accent-primary hover:bg-accent-primary/10 disabled:opacity-50"
-                              title="Connect provider account"
+                              title={t({
+                                en: 'Connect provider account',
+                                fr: 'Connecter le compte du fournisseur',
+                              })}
                             >
                               {authBusy === group.provider.id
-                                ? 'Starting…'
+                                ? t({ en: 'Starting…', fr: 'Démarrage…' })
                                 : authStates[group.provider.id] === 'error' ||
                                     authStates[group.provider.id] === 'expired'
-                                  ? 'Retry'
-                                  : 'Connect'}
+                                  ? t({ en: 'Retry', fr: 'Réessayer' })
+                                  : t({ en: 'Connect', fr: 'Connecter' })}
                             </button>
                           ))}
                         <button

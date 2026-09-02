@@ -188,33 +188,29 @@ vi.mock('../../hooks/useKeybindings', () => ({
   useChordBinding: vi.fn(),
 }))
 
-vi.mock('../../stores/settings', () => {
-  const mockSetSetting = vi.fn().mockResolvedValue(undefined)
-  const store = mockStore({
-    settings: {},
-    loading: {},
-    getSetting: vi.fn().mockResolvedValue(null),
-    setSetting: mockSetSetting,
-  })
-  store.getState = () => ({ setSetting: mockSetSetting, getSetting: vi.fn(), settings: {} })
-  return {
-    useSettingsStore: store,
-    SETTINGS_KEYS: {
-      DISPLAY_MODEL_SELECTOR_HEIGHT: 'display.modelSelectorHeight',
-      DISPLAY_COLLAPSE_PROVIDERS_BY_DEFAULT: 'display.collapseProvidersByDefault',
-      DISPLAY_COLLAPSE_FAVORITES_BY_DEFAULT: 'display.collapseFavoritesByDefault',
-      DISPLAY_MODEL_FAVORITES: 'display.modelFavorites',
-    },
-  }
-})
+const { mockSettings, mockSetSetting } = vi.hoisted(() => ({
+  mockSettings: {} as Record<string, string>,
+  mockSetSetting: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock('../../hooks/useSetting', () => ({
+  useSetting: (key: string, fallback = '') => ({ value: mockSettings[key] ?? fallback, loading: false }),
+}))
+
+vi.mock('../../lib/resources', async (importOriginal) => ({
+  ...(await importOriginal()),
+  setSetting: mockSetSetting,
+}))
 
 import { ProviderSelector } from './ProviderSelector'
 
-const { SETTINGS_KEYS } = await import('../../stores/settings')
+const { SETTINGS_KEYS } = await import('../../lib/resources')
 
 async function setSettingsState(partial: Record<string, any>) {
-  const { useSettingsStore } = await import('../../stores/settings')
-  ;(useSettingsStore as unknown as MockStore).setState(partial)
+  // Replace, not merge — mirror the store's setState({ settings }) semantics so
+  // a setting from a previous test can never leak into the next one.
+  for (const key of Object.keys(mockSettings)) delete mockSettings[key]
+  Object.assign(mockSettings, partial.settings ?? {})
 }
 
 async function setConfigState(partial: Record<string, any>) {
@@ -2865,10 +2861,7 @@ describe('ProviderSelector search mode (AC 0-5)', () => {
 
     // Toggle off favorite (click the first one — in the Favorites section)
     await user.click(removeButtons[0]!)
-    expect((await import('../../stores/settings')).useSettingsStore.getState().setSetting).toHaveBeenCalledWith(
-      SETTINGS_KEYS.DISPLAY_MODEL_FAVORITES,
-      '[]',
-    )
+    expect(mockSetSetting).toHaveBeenCalledWith(SETTINGS_KEYS.DISPLAY_MODEL_FAVORITES, '[]')
   })
 
   it('hides favorites that no longer exist after provider/model removed', async () => {

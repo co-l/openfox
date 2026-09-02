@@ -156,7 +156,11 @@ export function ModelEntryRow({
               onClick={(e) => onToggleFavorite(e, providerId, modelConfig.id)}
               disabled={disabled}
               className="p-0.5 hover:bg-bg-tertiary rounded transition-colors"
-              title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+              title={
+                isFavorite
+                  ? t({ en: 'Remove from favorites', fr: 'Retirer des favoris' })
+                  : t({ en: 'Add to favorites', fr: 'Ajouter aux favoris' })
+              }
             >
               {isFavorite ? (
                 <HeartFilledIcon className="w-3.5 h-3.5 text-rose-500" />
