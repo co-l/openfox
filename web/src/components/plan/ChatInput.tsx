@@ -17,13 +17,15 @@ import { AttachmentPreview } from '../shared/AttachmentPreview.js'
 import { PromptHistoryList } from '../shared/PromptHistory.js'
 import { RunningIndicator } from '../shared/RunningIndicator'
 import { AutoScrollToggle } from '../shared/AutoScrollToggle'
-import { SearchIcon, StopIcon } from '../shared/icons'
+import { SearchIcon, StopIcon, SendIcon } from '../shared/icons'
 import { WorkflowBar } from './WorkflowBar'
 import { processFile } from '../../lib/file-processing.js'
 import { mimeTypeToExtension, isSupportedMimeType } from '../../lib/attachment-utils.js'
 import { CHAT_TEXTAREA_ID } from '../../lib/focusChatTextarea'
 import { shouldAutofocus } from '../../lib/device'
+import { useIsTouchDevice } from '../../hooks/useIsTouchDevice'
 import { useScrolledSend } from '../../hooks/useScrolledSend'
+import { useVisualViewport } from '../../hooks/useVisualViewport'
 import { MoreMenu } from './MoreMenu'
 import { QueuedMessages } from './QueuedMessages'
 import { AgentSelector } from './AgentSelector'
@@ -41,6 +43,9 @@ import { SlashAutocomplete, type SlashAutocompleteHandle, type SlashSuggestion }
 
 const COMPOSER_MIN_HEIGHT = 24
 const COMPOSER_MAX_HEIGHT = 200
+// Chrome below the textarea when the composer expands full-height on mobile:
+// row padding + selector rows + form padding, with a small buffer.
+const COMPOSER_EXPANDED_RESERVE = 96
 
 interface ChatInputProps {
   input: string
@@ -102,9 +107,13 @@ export function ChatInput({
   clearInput,
 }: ChatInputProps) {
   const t = useT()
+  const isTouch = useIsTouchDevice()
+  const [isFocused, setIsFocused] = useState(false)
+  const viewport = useVisualViewport()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const prevLenRef = useRef(0)
+  const wasExpandedRef = useRef(false)
   const cursorPosRef = useRef(0)
   const autocompleteRef = useRef<AtMentionAutocompleteHandle>(null)
   const slashAutocompleteRef = useRef<SlashAutocompleteHandle>(null)
@@ -167,6 +176,8 @@ export function ChatInput({
     (opts: { force?: boolean } = {}) => {
       const textarea = textareaRef.current
       if (!textarea) return
+      // While the mobile composer is pinned full-height, auto-resize must not fight it.
+      if (wasExpandedRef.current) return
       // An empty textarea reports its wrapped placeholder in scrollHeight, which
       // balloons the box on narrow layouts; pin it to the minimum height instead.
       if (!input) {
@@ -224,6 +235,26 @@ export function ChatInput({
   useEffect(() => {
     resizeTextarea()
   }, [input, resizeTextarea])
+
+  // Mobile full-height composer: while the textarea is focused on a touch
+  // device and the keyboard is up, pin it to the remaining pane height so it
+  // fills the screen instead of auto-growing endlessly (scrolls internally).
+  const expandedHeight =
+    isTouch && isFocused && viewport.keyboardVisible
+      ? Math.max(COMPOSER_MIN_HEIGHT, viewport.height - COMPOSER_EXPANDED_RESERVE)
+      : null
+
+  useEffect(() => {
+    const textarea = textareaRef.current
+    if (!textarea) return
+    if (expandedHeight !== null) {
+      wasExpandedRef.current = true
+      textarea.style.height = `${expandedHeight}px`
+    } else if (wasExpandedRef.current) {
+      wasExpandedRef.current = false
+      resizeTextarea({ force: true })
+    }
+  }, [expandedHeight, resizeTextarea])
 
   // Re-evaluate the height when the composer's column changes width (narrower or
   // wider panes change how content wraps). Forces a fresh 'auto' measurement so a
@@ -633,10 +664,15 @@ export function ChatInput({
               onKeyDown={handleKeyDown}
               onSelect={handleSelect}
               onKeyUp={handleKeyUp}
+              onFocus={() => setIsFocused(true)}
+              onBlur={() => setIsFocused(false)}
               placeholder={t({ en: 'What would you like to build?', fr: 'Que souhaitez-vous construire ?' })}
               data-testid="chat-input-textarea"
               className="w-full bg-transparent text-sm placeholder:text-text-muted resize-none overflow-y-auto focus:outline-none"
-              style={{ minHeight: `${COMPOSER_MIN_HEIGHT}px`, maxHeight: `${COMPOSER_MAX_HEIGHT}px` }}
+              style={{
+                minHeight: `${COMPOSER_MIN_HEIGHT}px`,
+                maxHeight: expandedHeight !== null ? 'none' : `${COMPOSER_MAX_HEIGHT}px`,
+              }}
               spellCheck={false}
             />
             <AtMentionAutocomplete
@@ -672,7 +708,7 @@ export function ChatInput({
                 )
               })()}
           </div>
-          <div className="flex items-center self-center gap-1.5">
+          <div className="hidden @md:flex items-center self-center gap-1.5">
             {isRunning && (
               <button
                 type="button"
@@ -706,14 +742,57 @@ export function ChatInput({
               />
             </div>
           </div>
+          <div className="flex @md:hidden items-center self-center gap-1.5">
+            <div className="relative flex h-11 w-11 items-center justify-center">
+              {isRunning ? (
+                <button
+                  type="button"
+                  onClick={() => sessionId && stopGeneration(sessionId)}
+                  data-testid="chat-stop-button-touch"
+                  aria-label={t({ en: 'Abort', fr: 'Stopper' })}
+                  className="absolute inset-0 flex items-center justify-center rounded-full bg-accent-error/25 text-accent-error hover:bg-accent-error/35 transition-colors"
+                >
+                  <StopIcon className="w-4 h-4" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleSend}
+                  disabled={!input.trim() && attachments.length === 0}
+                  data-testid="chat-send-button-touch"
+                  aria-label={t({ en: 'Send', fr: 'Envoyer' })}
+                  className="absolute inset-0 flex items-center justify-center rounded-full bg-accent-primary/20 text-accent-primary hover:bg-accent-primary/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  <SendIcon className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+            <MoreMenu
+              onSendCommand={onSendCommand}
+              onSelectWorkflow={onSelectWorkflow}
+              onSelectWorkflowWithSubGroup={onSelectWorkflowWithSubGroup}
+              onOpenCommandsManager={onOpenCommandsModal}
+              onOpenWorkflowsManager={onOpenWorkflowsModal}
+              onAttach={handleAttachClick}
+              textareaContent={input}
+              attachments={attachments.length > 0 ? attachments : undefined}
+            />
+          </div>
         </div>
-        <div className="mt-3 flex items-center justify-between">
+        <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 @md:flex-nowrap">
           <div className="flex items-center gap-2">
             <AgentSelector />
             <DangerLevelSelector />
           </div>
-          <div className="flex items-center gap-2">
-            {perSessionMcpEnabled && <McpSelector />}
+          {perSessionMcpEnabled && (
+            <div className="ms-auto" data-testid="mcp-selector-slot">
+              <McpSelector />
+            </div>
+          )}
+          <div
+            className={`flex min-w-0 justify-center basis-full @md:basis-auto ${perSessionMcpEnabled ? '' : '@md:ms-auto'}`}
+            data-testid="provider-selector-slot"
+          >
             <ProviderSelector />
           </div>
         </div>

@@ -11,6 +11,7 @@ import { getAgentColor } from '../../lib/agents-actions'
 import { ProviderModal, providerFormPayload, type ProviderFormData } from '../shared/ProviderModal'
 import { Modal } from '../shared/Modal'
 import { ManageProvidersModal } from './ManageProvidersModal'
+import { DropdownPanel } from '../shared/DropdownPanel'
 import { authFetch } from '../../lib/api'
 import { ChevronDownIcon, ReloadIcon, CheckIcon, SearchIcon, PinIcon, EditSmallIcon } from '../shared/icons'
 import { useKeybindings, useBinding } from '../../hooks/useKeybindings'
@@ -22,6 +23,7 @@ import { shouldGateEffortChange, resolveDisplayEffort } from '../../lib/effort-g
 import { useEffortChangeGate } from '../plan/EffortChangeGate'
 import { useT } from '../../hooks/useT'
 import { useSetting } from '../../hooks/useSetting'
+import { useIsTouchDevice } from '../../hooks/useIsTouchDevice'
 import { SETTINGS_KEYS, setSetting } from '../../lib/resources'
 
 type ProviderLabelProps = {
@@ -61,13 +63,13 @@ function ProviderLabel({
         {activeProvider ? (
           <>
             <span className="hidden @sm:inline">{`${activeProvider.name} • `}</span>
-            {shortModelName}
-            {effort && <span className="text-text-muted">:{effort}</span>}
+            <span className="truncate min-w-0">{shortModelName}</span>
+            {effort && <span className="text-text-muted flex-shrink-0">:{effort}</span>}
           </>
         ) : (
           <>
-            {shortModelName}
-            {effort && <span className="text-text-muted">:{effort}</span>}
+            <span className="truncate min-w-0">{shortModelName}</span>
+            {effort && <span className="text-text-muted flex-shrink-0">:{effort}</span>}
           </>
         )}
         {pinned && (
@@ -150,6 +152,10 @@ export function ProviderSelector() {
   const fetchConfig = useConfigStore((state) => state.fetchConfig)
   const modelSelectorHeight = useSetting(SETTINGS_KEYS.DISPLAY_MODEL_SELECTOR_HEIGHT, 'default').value || 'default'
   const isAllScreenHigh = modelSelectorHeight === 'all_screen_high' || modelSelectorHeight === 'full_height'
+  // On touch devices the dropdown always renders as a viewport-contained centered
+  // modal — anchored panels (default or full-height) overflow narrow screens.
+  const isTouch = useIsTouchDevice()
+  const isModalPanel = isTouch
   const collapseProvidersByDefault =
     useSetting(SETTINGS_KEYS.DISPLAY_COLLAPSE_PROVIDERS_BY_DEFAULT, 'false').value === 'true'
   const collapseFavoritesByDefault =
@@ -730,7 +736,7 @@ export function ProviderSelector() {
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-bg-tertiary transition-colors group"
+        className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-bg-tertiary transition-colors group min-w-0 max-w-full"
         title={t({ en: 'Click to switch provider or model', fr: 'Cliquez pour changer de fournisseur ou de modèle' })}
       >
         {isLlmOffline ? (
@@ -750,10 +756,12 @@ export function ProviderSelector() {
       </button>
 
       {isOpen && (
-        <div
-          className={`absolute bottom-full right-0 mb-1 min-w-72 max-w-[100vw] bg-bg-secondary border border-border rounded-lg shadow-lg z-50 flex flex-col ${
-            isAllScreenHigh ? 'h-[calc(100vh-6.5rem)] max-h-[calc(100vh-6.5rem)]' : 'max-h-[80vh]'
-          }`}
+        <DropdownPanel
+          isModal={isModalPanel}
+          testId="provider-dropdown"
+          fillViewport
+          anchoredClassName={isAllScreenHigh ? 'h-[calc(100vh-6.5rem)] max-h-[calc(100vh-6.5rem)]' : 'max-h-[80vh]'}
+          onClose={() => setIsOpen(false)}
         >
           <div className="flex items-center gap-1 px-3 py-2 border-b border-border flex-shrink-0">
             <SearchIcon className="w-3.5 h-3.5 text-text-muted flex-shrink-0" />
@@ -1058,7 +1066,7 @@ export function ProviderSelector() {
               {t({ en: 'Manage providers', fr: 'Gérer les fournisseurs' })}
             </button>
           </div>
-        </div>
+        </DropdownPanel>
       )}
       {deviceChallenge && (
         <Modal
