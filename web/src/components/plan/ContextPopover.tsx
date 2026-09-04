@@ -3,6 +3,7 @@ import { useSessionStore } from '../../stores/session'
 import { useT } from '../../hooks/useT'
 import { ProgressBar, LowTokenWarning } from '../shared/ProgressBar'
 import { formatTokens } from '../../lib/format-stats'
+import { exportConversation } from '../../lib/export-conversation'
 import { MoreIcon } from '../shared/icons'
 import { getTextColor } from './token-utils'
 import { DynamicContextPreviewModal } from './DynamicContextPreviewModal'
@@ -113,6 +114,19 @@ export function ContextPopover({ variant = 'popover', onUpdateSystemPrompt }: Co
               </span>
               {needsRebase && <RebaseIndicator />}
             </button>
+            <button
+              onClick={() => {
+                if (sessionId) exportConversation(sessionId, currentSession)
+                setMenuOpen(false)
+              }}
+              className="w-full px-3 py-1.5 text-left text-sm hover:bg-bg-tertiary transition-colors"
+              title={t({
+                en: 'Export all conversation history',
+                fr: 'Exporter tout l’historique de conversation',
+              })}
+            >
+              <span>{t({ en: 'Export all conversation', fr: 'Exporter toute la conversation' })}</span>
+            </button>
           </div>
         </>
       )}
@@ -180,6 +194,18 @@ export function ContextPopover({ variant = 'popover', onUpdateSystemPrompt }: Co
             {t({ en: 'Rebase system prompt', fr: 'Redéfinir le prompt système' })}
           </span>
           {needsRebase && <RebaseIndicator />}
+        </button>
+        <button
+          onClick={() => {
+            if (sessionId) exportConversation(sessionId, currentSession)
+          }}
+          className="w-full px-3 py-1.5 text-left text-sm hover:bg-bg-tertiary transition-colors rounded"
+          title={t({
+            en: 'Export all conversation history',
+            fr: 'Exporter tout l’historique de conversation',
+          })}
+        >
+          <span>{t({ en: 'Export all conversation', fr: 'Exporter toute la conversation' })}</span>
         </button>
       </div>
       {applyModal}

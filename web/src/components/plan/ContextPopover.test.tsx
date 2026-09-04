@@ -4,14 +4,19 @@ import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import { ContextPopover } from './ContextPopover'
 import { SessionScopeProvider } from '../../stores/session/session-scope'
 
-const { sendMock } = vi.hoisted(() => ({
+const { sendMock, exportConversationMock } = vi.hoisted(() => ({
   sendMock: vi.fn(),
+  exportConversationMock: vi.fn(),
 }))
 
 let storeState: Record<string, unknown> = {}
 
 vi.mock('../../stores/session', () => ({
   useSessionStore: (selector: (state: unknown) => unknown) => selector(storeState),
+}))
+
+vi.mock('../../lib/export-conversation', () => ({
+  exportConversation: (...args: unknown[]) => exportConversationMock(...args),
 }))
 
 vi.mock('../../lib/ws', () => ({
@@ -184,5 +189,30 @@ describe('ContextPopover', () => {
       </SessionScopeProvider>,
     )
     expect(screen.queryByText('Update system prompt')).toBeNull()
+  })
+
+  it('renders "Export all conversation" button and triggers export on click (popover variant)', () => {
+    render(
+      <SessionScopeProvider value="s1">
+        <ContextPopover />
+      </SessionScopeProvider>,
+    )
+    const exportBtn = screen.getByText('Export all conversation')
+    expect(exportBtn).toBeDefined()
+    fireEvent.click(exportBtn)
+    expect(exportConversationMock).toHaveBeenCalledWith('s1', expect.anything())
+  })
+
+  it('renders "Export all conversation" button in sidebar menu and triggers export on click', () => {
+    render(
+      <SessionScopeProvider value="s1">
+        <ContextPopover variant="sidebar" />
+      </SessionScopeProvider>,
+    )
+    fireEvent.click(screen.getByTitle('More options'))
+    const exportBtn = screen.getByText('Export all conversation')
+    expect(exportBtn).toBeDefined()
+    fireEvent.click(exportBtn)
+    expect(exportConversationMock).toHaveBeenCalledWith('s1', expect.anything())
   })
 })
