@@ -212,4 +212,20 @@ describe('ProviderRegistry', () => {
       models: [{ id: 'custom-model' }],
     })
   })
+
+  it('registers and lists quota providers', () => {
+    const value = registry()
+    const quotaProvider = {
+      id: 'test-quota',
+      name: 'Test Quota',
+      getQuota: async () => ({
+        id: 'test-quota',
+        name: 'Test Quota',
+        metrics: [],
+      }),
+    }
+    value.registerQuotaProvider(quotaProvider)
+    expect(value.getQuotaProviders()).toHaveLength(1)
+    expect(value.getQuotaProviders()[0]?.id).toBe('test-quota')
+  })
 })

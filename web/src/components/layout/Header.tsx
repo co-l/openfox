@@ -34,8 +34,7 @@ import { useTasksStore } from '../../stores/tasks'
 import { TasksIcon, ArrowRightIcon, QuotaIcon } from '../shared/icons'
 import { useIsSplit } from '../../lib/splitPersistence'
 import { DropdownMenu, type DropdownMenuItem } from '../shared/DropdownMenu'
-import { useQuotaStore } from '../../stores/quota'
-import { isQuotaMetricOverLimit } from '../../lib/quota'
+import { useQuota } from '../../hooks/useQuota'
 
 interface HeaderProps {
   onMenuClick?: () => void
@@ -74,10 +73,7 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
   const terminalIsOpen = useTerminalStore((state) => state.isOpen)
   const updateAvailable = useUpdateStore((state) => state.status === 'available')
   const checkForUpdate = useUpdateStore((state) => state.check)
-  const quotaWarning = useQuotaStore((state) =>
-    (state.report?.sources ?? []).some((s) => s.metrics.some(isQuotaMetricOverLimit)),
-  )
-  const fetchQuota = useQuotaStore((state) => state.fetchQuota)
+  const { hasWarning: quotaWarning, refresh: refreshQuota } = useQuota()
 
   useEffect(() => {
     if (useUpdateStore.getState().status === 'idle') {
@@ -86,12 +82,11 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
   }, [checkForUpdate])
 
   useEffect(() => {
-    void fetchQuota()
     // Refetch on window focus so the warning dot clears after quota recovers.
-    const onFocus = () => void fetchQuota()
+    const onFocus = () => void refreshQuota()
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
-  }, [fetchQuota])
+  }, [refreshQuota])
 
   useEffect(() => {
     const handler = () => setSessionDropdownOpen(true)
@@ -320,8 +315,8 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
           <button
             onClick={() => setQuotaModalOpen(true)}
             className="relative p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
-            title="Usage & quotas"
-            aria-label="Open usage and quotas"
+            title={t({ en: 'Usage & quotas', fr: 'Utilisation & quotas' })}
+            aria-label={t({ en: 'Open usage and quotas', fr: 'Ouvrir l’utilisation et les quotas' })}
           >
             <QuotaIcon />
             {quotaWarning && <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-accent-danger" />}

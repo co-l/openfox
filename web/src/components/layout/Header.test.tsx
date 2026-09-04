@@ -185,13 +185,21 @@ vi.mock('../../stores/update', () => ({
   }),
 }))
 
-vi.mock('../../stores/quota', () => ({
-  useQuotaStore: mockStore({
-    report: null,
-    loading: false,
-    error: null,
-    lastFetched: null,
-    fetchQuota: vi.fn(),
+const quotaState = vi.hoisted(() => ({
+  report: null as any,
+  loading: false,
+  error: null as any,
+  refresh: vi.fn(),
+  hasWarning: false,
+}))
+
+vi.mock('../../hooks/useQuota', () => ({
+  useQuota: () => ({
+    report: quotaState.report,
+    loading: quotaState.loading,
+    error: quotaState.error,
+    refresh: quotaState.refresh,
+    hasWarning: quotaState.hasWarning,
   }),
 }))
 
@@ -250,19 +258,17 @@ describe('Header', () => {
   })
 
   it('shows a warning dot on the quota button when a metric is over limit', async () => {
-    const { useQuotaStore } = await import('../../stores/quota')
-    ;(useQuotaStore as unknown as MockStore).setState({
-      report: {
-        sources: [
-          {
-            id: 'github-copilot-business',
-            name: 'GitHub Copilot Business',
-            metrics: [{ kind: 'token-balance', label: 'Tokens', total: 100, remaining: 0 }],
-          },
-        ],
-        fetchedAt: new Date().toISOString(),
-      },
-    })
+    quotaState.hasWarning = true
+    quotaState.report = {
+      sources: [
+        {
+          id: 'github-copilot-business',
+          name: 'GitHub Copilot Business',
+          metrics: [{ kind: 'token-balance', label: 'Tokens', total: 100, remaining: 0 }],
+        },
+      ],
+      fetchedAt: new Date().toISOString(),
+    }
     const { Header } = await import('./Header')
     const container = render(<Header />)
     const quotaBtn = container.querySelector('[aria-label="Open usage and quotas"]')

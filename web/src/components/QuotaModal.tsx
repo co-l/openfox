@@ -1,7 +1,8 @@
 import { useEffect } from 'react'
 import { Modal } from './shared/Modal'
 import { QuotaIcon } from './shared/icons'
-import { useQuotaStore } from '../stores/quota'
+import { useQuota } from '../hooks/useQuota'
+import { useT } from '../hooks/useT'
 import { isQuotaMetricOverLimit } from '../lib/quota'
 import type { QuotaMetric, QuotaSource } from '@shared/types'
 
@@ -10,21 +11,15 @@ interface QuotaModalProps {
   onClose: () => void
 }
 
-const WINDOW_LABEL: Record<'hour' | 'week' | 'month', string> = {
-  hour: 'per hour',
-  week: 'per week',
-  month: 'per month',
-}
-
 function formatNumber(n: number): string {
   return n.toLocaleString()
 }
 
-function formatReset(iso?: string): string | null {
+function formatReset(iso: string | undefined, t: ReturnType<typeof useT>): string | null {
   if (!iso) return null
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return null
-  return `Resets ${date.toLocaleString()}`
+  return t({ en: 'Resets {{date}}', fr: 'Réinitialisation le {{date}}' }, { date: date.toLocaleString() })
 }
 
 function metricUsage(m: QuotaMetric): number {
@@ -36,30 +31,54 @@ function metricLimit(m: QuotaMetric): number {
 }
 
 function MetricCard({ metric }: { metric: QuotaMetric }) {
+  const t = useT()
   const used = metricUsage(metric)
   const limit = metricLimit(metric)
   const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0
   const over = isQuotaMetricOverLimit(metric)
   const barColor = over ? 'bg-accent-danger' : pct >= 80 ? 'bg-accent-warning' : 'bg-accent-primary'
 
-  const reset = metric.kind === 'windowed' ? formatReset(metric.resetsAt) : null
+  const reset = metric.kind === 'windowed' ? formatReset(metric.resetsAt, t) : null
+
+  const windowLabel =
+    metric.kind === 'windowed'
+      ? metric.window === 'hour'
+        ? t({ en: 'per hour', fr: 'par heure' })
+        : metric.window === 'week'
+          ? t({ en: 'per week', fr: 'par semaine' })
+          : t({ en: 'per month', fr: 'par mois' })
+      : ''
 
   // For windowed: show used/limit + % used. For token-balance: show remaining/total + % remaining.
   const primaryValue = metric.kind === 'windowed' ? formatNumber(used) : formatNumber(metric.remaining)
   const primarySub =
     metric.kind === 'windowed'
-      ? `/ ${formatNumber(limit)} ${WINDOW_LABEL[metric.window]}`
-      : `of ${formatNumber(limit)} total`
-  const pctLabel = metric.kind === 'windowed' ? `${pct}% used` : `${100 - pct}% left`
+      ? t(
+          { en: '/ {{limit}} {{window}}', fr: '/ {{limit}} {{window}}' },
+          { limit: formatNumber(limit), window: windowLabel },
+        )
+      : t({ en: 'of {{total}} total', fr: 'sur {{total}} au total' }, { total: formatNumber(limit) })
+  const pctLabel =
+    metric.kind === 'windowed'
+      ? t({ en: '{{pct}}% used', fr: '{{pct}} % utilisé' }, { pct })
+      : t({ en: '{{pct}}% left', fr: '{{pct}} % restant' }, { pct: 100 - pct })
   // Remaining count shown on the same line as the big value, on the right.
   const remainingLabel =
-    metric.kind === 'windowed' ? `${formatNumber(limit - used)} left` : `${formatNumber(metric.remaining)} left`
+    metric.kind === 'windowed'
+      ? t({ en: '{{count}} left', fr: '{{count}} restant' }, { count: formatNumber(limit - used) })
+      : t({ en: '{{count}} left', fr: '{{count}} restant' }, { count: formatNumber(metric.remaining) })
   // Line under the bar: windowed shows the reset date; token-balance has none.
   const bottomLeft = metric.kind === 'windowed' ? reset : null
   const usedTooltip =
     metric.kind === 'windowed'
-      ? `${formatNumber(used)} used of ${formatNumber(limit)}`
-      : `${formatNumber(metric.remaining)} remaining of ${formatNumber(limit)}`
+      ? t(
+          { en: '{{used}} used of {{limit}}', fr: '{{used}} utilisé sur {{limit}}' },
+          { used: formatNumber(used), limit: formatNumber(limit) },
+        )
+      : t(
+          { en: '{{remaining}} remaining of {{total}}', fr: '{{remaining}} restant sur {{total}}' },
+          { remaining: formatNumber(metric.remaining), total: formatNumber(limit) },
+        )
 
   return (
     <div className="flex-1 min-w-[160px] rounded-lg border border-border bg-bg-tertiary/30 p-3 flex flex-col gap-2">
@@ -67,7 +86,7 @@ function MetricCard({ metric }: { metric: QuotaMetric }) {
         <span className="text-xs font-medium text-text-muted truncate">{metric.label}</span>
         {over && (
           <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-accent-danger/20 text-accent-danger shrink-0">
-            Limit
+            {t({ en: 'Limit', fr: 'Limite' })}
           </span>
         )}
       </div>
@@ -139,37 +158,35 @@ function SourceSection({ source }: { source: QuotaSource }) {
 }
 
 export function QuotaModal({ isOpen, onClose }: QuotaModalProps) {
-  const report = useQuotaStore((state) => state.report)
-  const loading = useQuotaStore((state) => state.loading)
-  const error = useQuotaStore((state) => state.error)
-  const fetchQuota = useQuotaStore((state) => state.fetchQuota)
+  const t = useT()
+  const { report, loading, error, refresh, hasWarning } = useQuota()
 
   useEffect(() => {
     if (!isOpen) return
-    void fetchQuota()
+    void refresh()
     // Keep the modal fresh while open; also clears a stale warning after recovery.
-    const interval = setInterval(() => void fetchQuota(), 30_000)
+    const interval = setInterval(() => void refresh(), 30_000)
     return () => clearInterval(interval)
-  }, [isOpen, fetchQuota])
+  }, [isOpen, refresh])
 
-  const anyWarning = report?.sources.some((s) => s.metrics.some(isQuotaMetricOverLimit)) ?? false
+  const errorMessage = error ? (error instanceof Error ? error.message : String(error)) : null
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Usage & Quotas"
+      title={t({ en: 'Usage & Quotas', fr: 'Utilisation & quotas' })}
       size="xl"
       closeOnBackdropClick
       showCloseButton
       footer={
         <button
           type="button"
-          onClick={() => void fetchQuota()}
+          onClick={() => void refresh()}
           disabled={loading}
           className="px-3 py-1.5 rounded bg-bg-tertiary hover:bg-bg-tertiary/70 text-sm text-text-primary transition-colors disabled:opacity-50"
         >
-          {loading ? 'Refreshing…' : 'Refresh'}
+          {loading ? t({ en: 'Refreshing…', fr: 'Actualisation…' }) : t({ en: 'Refresh', fr: 'Actualiser' })}
         </button>
       }
     >
@@ -180,12 +197,19 @@ export function QuotaModal({ isOpen, onClose }: QuotaModalProps) {
           </div>
         )}
 
-        {error && !loading && (
-          <div className="text-sm text-accent-danger py-8 text-center">Failed to load quota: {error}</div>
+        {errorMessage && !loading && (
+          <div className="text-sm text-accent-danger py-8 text-center">
+            {t(
+              { en: 'Failed to load quota: {{error}}', fr: 'Échec du chargement des quotas : {{error}}' },
+              { error: errorMessage },
+            )}
+          </div>
         )}
 
         {report && report.sources.length === 0 && (
-          <div className="text-sm text-text-muted py-8 text-center">No quota information available.</div>
+          <div className="text-sm text-text-muted py-8 text-center">
+            {t({ en: 'No quota information available.', fr: 'Aucune information de quota disponible.' })}
+          </div>
         )}
 
         {report?.sources.map((source) => (
@@ -193,8 +217,13 @@ export function QuotaModal({ isOpen, onClose }: QuotaModalProps) {
         ))}
       </div>
 
-      {anyWarning && (
-        <div className="mt-4 text-xs text-accent-danger">One or more quotas have reached their limit.</div>
+      {hasWarning && (
+        <div className="mt-4 text-xs text-accent-danger">
+          {t({
+            en: 'One or more quotas have reached their limit.',
+            fr: 'Un ou plusieurs quotas ont atteint leur limite.',
+          })}
+        </div>
       )}
     </Modal>
   )

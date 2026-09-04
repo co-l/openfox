@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createRoot } from 'react-dom/client'
 import { act } from 'react'
+import { setLocale } from '@shared/i18n/index.js'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -10,13 +11,25 @@ vi.mock('../lib/api', () => ({
   authFetch: (...args: unknown[]) => mockAuthFetch(...args),
 }))
 
-import { QuotaModal } from './QuotaModal'
-import { useQuotaStore } from '../stores/quota'
-
-interface MockStore {
-  (selector?: (state: any) => any): any
-  setState: (partial: Record<string, any>) => void
+const mockQuotaState = {
+  report: null as any,
+  loading: false,
+  error: null as any,
+  refresh: vi.fn(),
+  hasWarning: false,
 }
+
+vi.mock('../hooks/useQuota', () => ({
+  useQuota: () => ({
+    report: mockQuotaState.report,
+    loading: mockQuotaState.loading,
+    error: mockQuotaState.error,
+    refresh: mockQuotaState.refresh,
+    hasWarning: mockQuotaState.hasWarning,
+  }),
+}))
+
+import { QuotaModal } from './QuotaModal'
 
 const mountedRoots: Array<{ root: ReturnType<typeof createRoot>; container: HTMLElement }> = []
 
@@ -39,16 +52,16 @@ afterEach(() => {
   }
   vi.clearAllMocks()
   document.body.innerHTML = ''
+  setLocale('en')
 })
 
-function mockQuotaStore(report: unknown, opts: { loading?: boolean; error?: string | null } = {}) {
-  ;(useQuotaStore as unknown as MockStore).setState({
-    report,
-    loading: opts.loading ?? false,
-    error: opts.error ?? null,
-    lastFetched: report ? Date.now() : null,
-    fetchQuota: vi.fn(),
-  })
+function setQuotaData(report: any, opts: { loading?: boolean; error?: string | null } = {}) {
+  mockQuotaState.report = report
+  mockQuotaState.loading = opts.loading ?? false
+  mockQuotaState.error = opts.error ?? null
+  mockQuotaState.hasWarning = (report?.sources ?? []).some((s: any) =>
+    s.metrics.some((m: any) => (m.kind === 'windowed' ? m.used >= m.limit : m.remaining <= 0)),
+  )
 }
 
 const WINDOWED_REPORT = {
@@ -101,30 +114,24 @@ const TOKEN_BALANCE_REPORT = {
 describe('QuotaModal', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    setLocale('en')
+    setQuotaData(null)
   })
 
   it('renders nothing visible when closed', async () => {
-    mockQuotaStore(null)
-    ;(useQuotaStore as unknown as MockStore).setState({
-      report: null,
-      loading: false,
-      error: null,
-      fetchQuota: vi.fn(),
-    })
+    setQuotaData(null)
     const container = render(<QuotaModal isOpen={false} onClose={vi.fn()} />)
     expect(container.textContent).not.toContain('Usage & Quotas')
   })
 
-  it('fetches quota when opened', async () => {
-    const fetchQuota = vi.fn()
-    mockQuotaStore(null)
-    ;(useQuotaStore as unknown as MockStore).setState({ report: null, loading: false, error: null, fetchQuota })
+  it('refreshes quota when opened', async () => {
+    setQuotaData(null)
     render(<QuotaModal isOpen onClose={vi.fn()} />)
-    expect(fetchQuota).toHaveBeenCalled()
+    expect(mockQuotaState.refresh).toHaveBeenCalled()
   })
 
-  it('renders windowed metrics with used/limit and window label', async () => {
-    mockQuotaStore(WINDOWED_REPORT)
+  it('renders windowed metrics with used/limit and window label in English', async () => {
+    setQuotaData(WINDOWED_REPORT)
     const container = render(<QuotaModal isOpen onClose={vi.fn()} />)
     expect(container.textContent).toContain('OpenCode Go')
     expect(container.textContent).toContain('142')
@@ -134,8 +141,19 @@ describe('QuotaModal', () => {
     expect(container.textContent).toContain('per month')
   })
 
+  it('renders windowed metrics in French when locale is set to fr', async () => {
+    setLocale('fr')
+    setQuotaData(WINDOWED_REPORT)
+    const container = render(<QuotaModal isOpen onClose={vi.fn()} />)
+    expect(container.textContent).toContain('OpenCode Go')
+    expect(container.textContent).toContain('par heure')
+    expect(container.textContent).toContain('par semaine')
+    expect(container.textContent).toContain('par mois')
+    expect(container.textContent).toContain('restant')
+  })
+
   it('renders per-model windowed metrics', async () => {
-    mockQuotaStore(PER_MODEL_REPORT)
+    setQuotaData(PER_MODEL_REPORT)
     const container = render(<QuotaModal isOpen onClose={vi.fn()} />)
     expect(container.textContent).toContain('Google Antigravity')
     expect(container.textContent).toContain('gemini')
@@ -143,7 +161,7 @@ describe('QuotaModal', () => {
   })
 
   it('renders token-balance metrics with remaining/total', async () => {
-    mockQuotaStore(TOKEN_BALANCE_REPORT)
+    setQuotaData(TOKEN_BALANCE_REPORT)
     const container = render(<QuotaModal isOpen onClose={vi.fn()} />)
     expect(container.textContent).toContain('GitHub Copilot Business')
     expect(container.textContent).toContain('412,500')
@@ -153,7 +171,7 @@ describe('QuotaModal', () => {
   })
 
   it('shows a warning when a metric is over limit', async () => {
-    mockQuotaStore({
+    setQuotaData({
       sources: [
         {
           id: 'github-copilot-business',
@@ -168,9 +186,15 @@ describe('QuotaModal', () => {
     expect(container.textContent).toContain('One or more quotas have reached their limit')
   })
 
-  it('shows an error message when the store has an error', async () => {
-    mockQuotaStore(null, { error: 'HTTP 500' })
+  it('shows an error message when the hook has an error', async () => {
+    setQuotaData(null, { error: 'HTTP 500' })
     const container = render(<QuotaModal isOpen onClose={vi.fn()} />)
-    expect(container.textContent).toContain('Failed to load quota')
+    expect(container.textContent).toContain('Failed to load quota: HTTP 500')
+  })
+
+  it('shows empty state when report has no sources', async () => {
+    setQuotaData({ sources: [], fetchedAt: new Date().toISOString() })
+    const container = render(<QuotaModal isOpen onClose={vi.fn()} />)
+    expect(container.textContent).toContain('No quota information available.')
   })
 })

@@ -3704,7 +3704,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   // Return the handle with start/close methods
   return {
     httpServer,
-    ctx: { config, sessionManager, llmClient: getLLMClient(), toolRegistry, providerManager },
+    ctx: { config, sessionManager, llmClient: getLLMClient(), toolRegistry, providerManager, providerAdapters },
 
     start: (port?: number) =>
       new Promise((resolve, reject) => {
