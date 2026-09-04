@@ -18,9 +18,10 @@ interface DiffRowProps {
   file: GitDiffFile
   showEditorLink: boolean
   workdir: string | undefined
+  remotePrefix: string
 }
 
-function DiffRow({ file, showEditorLink, workdir }: DiffRowProps) {
+function DiffRow({ file, showEditorLink, workdir, remotePrefix }: DiffRowProps) {
   const t = useT()
   const displayPath = truncateMiddle(file.path, 28)
 
@@ -40,7 +41,7 @@ function DiffRow({ file, showEditorLink, workdir }: DiffRowProps) {
           ? `+${file.additions}, -${file.deletions}`
           : ''
 
-  const href = showEditorLink && workdir ? buildEditorUrl(file.path, undefined, workdir) : undefined
+  const href = showEditorLink && workdir ? buildEditorUrl(file.path, undefined, workdir, remotePrefix) : undefined
 
   const content = (
     <>
@@ -76,6 +77,7 @@ export function DiffViewer() {
   const t = useT()
   const { diff } = useGitStatus()
   const showEditorLink = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_OPEN_IN_EDITOR).value === 'true'
+  const remotePrefix = useSetting(SETTINGS_KEYS.VSCODE_REMOTE_PREFIX).value
   const { currentSession: session } = useScopedContext()
   const workdir = session?.workspace ?? session?.workdir
 
@@ -102,7 +104,7 @@ export function DiffViewer() {
     <ScrollArea className="mt-3 max-h-[150px]">
       <div className="pr-1">
         {diff.files.map((file, i) => (
-          <DiffRow key={i} file={file} showEditorLink={showEditorLink} workdir={workdir} />
+          <DiffRow key={i} file={file} showEditorLink={showEditorLink} workdir={workdir} remotePrefix={remotePrefix} />
         ))}
       </div>
     </ScrollArea>

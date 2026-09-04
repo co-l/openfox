@@ -85,7 +85,7 @@ describe('DiffViewer', () => {
     settingResource.write('true', SETTINGS_KEYS.DISPLAY_SHOW_OPEN_IN_EDITOR)
     render(<DiffViewer />)
     const link = screen.getByTitle('Open src/foo.ts in VSCode')
-    expect(link).toHaveAttribute('href', 'vscode://file//home/user/project/src/foo.ts')
+    expect(link).toHaveAttribute('href', 'vscode://file//home/user/project/src/foo.ts:1:1?windowId=_blank')
   })
 
   it('renders WSL links when platform is WSL', () => {
@@ -93,6 +93,21 @@ describe('DiffViewer', () => {
     settingResource.write('true', SETTINGS_KEYS.DISPLAY_SHOW_OPEN_IN_EDITOR)
     render(<DiffViewer />)
     const link = screen.getByTitle('Open src/foo.ts in VSCode')
-    expect(link).toHaveAttribute('href', 'vscode://vscode-remote/wsl+Ubuntu/home/user/project/src/foo.ts:1')
+    expect(link).toHaveAttribute(
+      'href',
+      'vscode://vscode-remote/wsl+Ubuntu/home/user/project/src/foo.ts:1:1?windowId=_blank',
+    )
+  })
+
+  it('inserts the remote prefix when the setting is set', () => {
+    seedConfig({ isWSL: false, wslDistro: '' })
+    settingResource.write('true', SETTINGS_KEYS.DISPLAY_SHOW_OPEN_IN_EDITOR)
+    settingResource.write('vscode-remote/ssh-remote+ia@192.168.1.35/', SETTINGS_KEYS.VSCODE_REMOTE_PREFIX)
+    render(<DiffViewer />)
+    const link = screen.getByTitle('Open src/foo.ts in VSCode')
+    expect(link).toHaveAttribute(
+      'href',
+      'vscode://vscode-remote/ssh-remote+ia@192.168.1.35/home/user/project/src/foo.ts:1:1?windowId=_blank',
+    )
   })
 })

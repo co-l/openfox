@@ -23,6 +23,7 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
   const cacheWarming = useSetting(SETTINGS_KEYS.CACHE_WARMING).value === 'true'
   const retryPatternsSetting = useSetting(SETTINGS_KEYS.RETRY_PATTERNS).value
   const proxyUrlSetting = useSetting(SETTINGS_KEYS.PROXY_URL).value
+  const vscodeRemotePrefixSetting = useSetting(SETTINGS_KEYS.VSCODE_REMOTE_PREFIX).value
   const defaultAgentSetting = useSetting(SETTINGS_KEYS.DEFAULT_AGENT).value
   const showChangelogSetting = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_CHANGELOG_ON_UPDATE, 'true').value
 
@@ -34,6 +35,7 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
 
   const [retryPatterns, setRetryPatterns] = useState<RetryPatternsValue>({ patterns: [], maxRetriesPerTurn: 10 })
   const [proxyUrl, setProxyUrl] = useState('')
+  const [vscodeRemotePrefix, setVscodeRemotePrefix] = useState('')
   const [defaultAgent, setDefaultAgent] = useState('')
   const [defaultAgentLoaded, setDefaultAgentLoaded] = useState(false)
   const [proxyTestText, proxyTestError, proxyTestSuccess, testProxy] = useTestButton()
@@ -75,6 +77,10 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
   }, [proxyUrlSetting])
 
   useEffect(() => {
+    setVscodeRemotePrefix(vscodeRemotePrefixSetting)
+  }, [vscodeRemotePrefixSetting])
+
+  useEffect(() => {
     if (defaultAgentSetting !== '') {
       setDefaultAgent(defaultAgentSetting)
       setDefaultAgentLoaded(true)
@@ -89,6 +95,11 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
   const handleProxyUrlChange = (value: string) => {
     setProxyUrl(value)
     void setSetting(SETTINGS_KEYS.PROXY_URL, value)
+  }
+
+  const handleVscodeRemotePrefixChange = (value: string) => {
+    setVscodeRemotePrefix(value)
+    void setSetting(SETTINGS_KEYS.VSCODE_REMOTE_PREFIX, value)
   }
 
   function handleTestProxy() {
@@ -256,6 +267,35 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
           enabled={localToggles.openInEditor}
           onToggle={handleToggleOpenInEditor}
         />
+        {localToggles.openInEditor && (
+          <div className="mt-4">
+            <h3 className="text-sm font-medium text-text-primary mb-1">
+              {t({ en: 'VSCode SSH Remote Prefix', fr: 'Préfixe VSCode SSH distant' })}
+            </h3>
+            <p className="text-sm text-text-muted mb-3">
+              {t({
+                en: 'Insert a prefix in every "Open in VSCode" link to open files on a remote host over an SSH tunnel. Requires SSH credentials configured on the local machine running VS Code. Leave empty for local or WSL machines.',
+                fr: 'Insère un préfixe dans chaque lien « Ouvrir dans VSCode » pour ouvrir des fichiers sur un hôte distant via un tunnel SSH. Nécessite des identifiants SSH configurés sur la machine locale exécutant VS Code. Laissez vide pour une machine locale ou WSL.',
+              })}
+            </p>
+            <div className="flex items-center gap-0.5 px-3 py-2 bg-bg-tertiary border border-border rounded font-mono text-sm focus-within:ring-2 focus-within:ring-accent-primary/50 focus-within:border-accent-primary">
+              <span className="text-text-secondary shrink-0 select-none">vscode://</span>
+              <input
+                type="text"
+                value={vscodeRemotePrefix}
+                onChange={(e) => handleVscodeRemotePrefixChange(e.target.value)}
+                placeholder="vscode-remote/ssh-remote+username@192.168.1.100"
+                spellCheck={false}
+                className="flex-1 min-w-0 bg-transparent text-text-primary placeholder-text-muted focus:outline-none"
+              />
+              <span className="text-text-secondary shrink-0 select-none mr-4">/path/to/file</span>
+            </div>
+            <p className="text-xs text-text-muted mt-1">
+              {t({ en: 'Example:', fr: 'Exemple :' })}{' '}
+              <span className="font-mono">vscode://vscode-remote/ssh-remote+username@192.168.1.100/path/to/file</span>
+            </p>
+          </div>
+        )}
       </div>
       <hr className="border-border" />
       <SettingsToggle

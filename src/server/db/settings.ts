@@ -48,6 +48,7 @@ export const SETTINGS_KEYS = {
   PROXY_URL: 'network.proxyUrl',
   DEFAULT_AGENT: 'agent.defaultAgent',
   AGENT_MODEL_OVERRIDES: 'agent.modelOverrides',
+  VSCODE_REMOTE_PREFIX: 'editor.vscodeRemotePrefix',
 } as const
 
 export const SETTINGS_DEFAULTS: Record<string, string> = {
@@ -94,6 +95,7 @@ export const SETTINGS_DEFAULTS: Record<string, string> = {
   [SETTINGS_KEYS.CONFIRM_ON_WORKSPACE_ACTIONS]: 'false',
   [SETTINGS_KEYS.FEATURES_PER_SESSION_MCP]: 'false',
   [SETTINGS_KEYS.MAINTENANCE_SNAPSHOT_STREAMS_MIGRATED]: 'false',
+  [SETTINGS_KEYS.VSCODE_REMOTE_PREFIX]: '',
 }
 
 export type SettingsKey = (typeof SETTINGS_KEYS)[keyof typeof SETTINGS_KEYS]

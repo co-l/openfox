@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { FolderIcon, BranchIcon } from '../shared/icons'
 import { useT } from '../../hooks/useT'
+import { useSetting } from '../../hooks/useSetting'
+import { SETTINGS_KEYS } from '../../lib/resources'
 import { DiffViewer } from './DiffViewer'
 import { WorkspaceModal } from './WorkspaceModal'
 import { BranchModal } from './BranchModal'
@@ -28,6 +30,7 @@ export function WorkspaceBranchSection({
   onEditBranch,
 }: WorkspaceBranchSectionProps) {
   const t = useT()
+  const vscodeRemotePrefix = useSetting(SETTINGS_KEYS.VSCODE_REMOTE_PREFIX).value
   const [showWorkspaceModal, setShowWorkspaceModal] = useState(false)
   const [showBranchModal, setShowBranchModal] = useState(false)
 
@@ -39,7 +42,7 @@ export function WorkspaceBranchSection({
         <div className="flex items-center gap-2 text-sm">
           {showEditorLink && workdir ? (
             <a
-              href={buildWorkspaceUrl(workdir)}
+              href={buildWorkspaceUrl(workdir, vscodeRemotePrefix)}
               className="flex items-center gap-2 min-w-0 flex-1 no-underline group"
               title={t({ en: 'Open workspace in VSCode', fr: 'Ouvrir l’espace de travail dans VSCode' })}
             >
