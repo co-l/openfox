@@ -60,13 +60,20 @@ describe('skill library routes', () => {
     const response = await fetch(`${baseUrl}/api/skills`)
     const body = (await response.json()) as {
       selectedDirectory: { configuredPath: string; resolvedPath: string } | null
-      items: Array<{ id: string; source: string; readOnly: boolean }>
+      items: Array<{ id: string; source: string; readOnly: boolean; estimatedTokens?: number }>
       defaults: unknown[]
       userItems: unknown[]
       projectItems: unknown[]
     }
     expect(body.selectedDirectory?.configuredPath).toBe(library)
-    expect(body.items).toContainEqual(expect.objectContaining({ id: 'portable', source: 'selected', readOnly: false }))
+    expect(body.items).toContainEqual(
+      expect.objectContaining({
+        id: 'portable',
+        source: 'selected',
+        readOnly: false,
+        estimatedTokens: expect.any(Number),
+      }),
+    )
     expect(body).toMatchObject({ defaults: expect.any(Array), userItems: [], projectItems: [] })
   })
 

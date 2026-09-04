@@ -23,6 +23,9 @@ import { SkillLibraryPanel } from './SkillLibraryPanel'
 import { SkillListItem } from './SkillListItem'
 import { SkillDeleteModal } from './SkillDeleteModal'
 import { useT } from '../../hooks/useT'
+import { Toggle } from '../shared/Toggle'
+import { formatTokens } from '../../lib/mcp-utils'
+
 type SkillFormData = {
   name: string
   id: string
@@ -299,24 +302,122 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
     )
   }
 
-  function EditableSkillItems({ items }: { items: SkillInfo[] }) {
-    return items.map((skill) => (
+  function GroupedSkillItems({ items, isBuiltIn }: { items: SkillInfo[]; isBuiltIn?: boolean }) {
+    const ungrouped = items.filter((s) => !s.group)
+    const grouped = items.filter((s) => Boolean(s.group))
+    const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+
+    const toggleGroup = (group: string) => {
+      setExpandedGroups((prev) => {
+        const next = new Set(prev)
+        if (next.has(group)) next.delete(group)
+        else next.add(group)
+        return next
+      })
+    }
+
+    const groups = grouped.reduce<Record<string, SkillInfo[]>>((acc, skill) => {
+      const g = skill.group!
+      if (!acc[g]) acc[g] = []
+      acc[g]!.push(skill)
+      return acc
+    }, {})
+
+    const renderItem = (skill: SkillInfo) => (
       <SkillListItem
         key={skill.id}
         skill={skill}
-        isBuiltIn={false}
+        isBuiltIn={isBuiltIn ?? false}
         isConfirmingDelete={false}
         onView={() => handleView(skill.id)}
-        onEdit={() => handleEdit(skill.id)}
+        onEdit={!isBuiltIn ? () => handleEdit(skill.id) : undefined}
         onDuplicate={() => handleDuplicate(skill.id)}
-        onDelete={() => {
-          setDeleteError('')
-          setPendingDelete(skill)
-        }}
+        onDelete={
+          !isBuiltIn
+            ? () => {
+                setDeleteError('')
+                setPendingDelete(skill)
+              }
+            : undefined
+        }
         onToggle={() => toggleSkill(skill.id, workdir)}
         readOnly={skill.readOnly}
       />
-    ))
+    )
+
+    const groupNames = Object.keys(groups).sort()
+
+    return (
+      <div className="space-y-2">
+        {ungrouped.map(renderItem)}
+        {groupNames.map((g) => {
+          const groupSkills = groups[g]!
+          const isExpanded = expandedGroups.has(g)
+          const totalGroupTokens = groupSkills.reduce((sum, s) => sum + (s.estimatedTokens ?? 0), 0)
+          const allEnabled = groupSkills.length > 0 && groupSkills.every((s) => s.enabled)
+
+          const handleToggleFolder = () => {
+            const targetState = !allEnabled
+            for (const s of groupSkills) {
+              if (s.enabled !== targetState) {
+                void toggleSkill(s.id, workdir)
+              }
+            }
+          }
+
+          return (
+            <div key={g} className="rounded border border-border bg-bg-tertiary overflow-hidden">
+              <div
+                className="flex items-center justify-between p-3 hover:bg-bg-primary/50 transition-colors cursor-pointer"
+                onClick={() => toggleGroup(g)}
+              >
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <span className="text-sm font-medium text-text-primary">{g}</span>
+                  <span className="text-xs text-text-muted">
+                    {t(
+                      {
+                        en: { one: '({{count}} skill)', other: '({{count}} skills)' },
+                        fr: { one: '({{count}} compétence)', other: '({{count}} compétences)' },
+                      },
+                      { count: groupSkills.length },
+                    )}
+                  </span>
+                  {totalGroupTokens > 0 && (
+                    <span className="text-xs text-text-muted">
+                      {t(
+                        { en: '{{tokens}} tokens', fr: '{{tokens}} tokens' },
+                        { tokens: formatTokens(totalGroupTokens) },
+                      )}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                  <Toggle
+                    enabled={allEnabled}
+                    onClick={handleToggleFolder}
+                    label={t(
+                      {
+                        en: 'Toggle all skills in {{group}}',
+                        fr: 'Basculer toutes les compétences dans {{group}}',
+                      },
+                      { group: g },
+                    )}
+                  />
+                  <span className="text-xs text-text-muted cursor-pointer" onClick={() => toggleGroup(g)}>
+                    {isExpanded ? '▲' : '▼'}
+                  </span>
+                </div>
+              </div>
+              {isExpanded && (
+                <div className="border-t border-border p-2 space-y-2 bg-bg-secondary/30">
+                  {groupSkills.map(renderItem)}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    )
   }
 
   return (
@@ -357,30 +458,20 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
       >
         {defaults.length > 0 && (
           <ItemsHeader label={t({ en: 'Built-in', fr: 'Intégrées' })}>
-            {defaults.map((skill) => (
-              <SkillListItem
-                key={skill.id}
-                skill={skill}
-                isBuiltIn={true}
-                isConfirmingDelete={false}
-                onView={() => handleView(skill.id)}
-                onDuplicate={() => handleDuplicate(skill.id)}
-                onToggle={() => toggleSkill(skill.id, workdir)}
-              />
-            ))}
+            <GroupedSkillItems items={defaults} isBuiltIn={true} />
           </ItemsHeader>
         )}
 
         {userItems.length > 0 && (
           <ItemsHeader>
-            <EditableSkillItems items={userItems} />
+            <GroupedSkillItems items={userItems} />
           </ItemsHeader>
         )}
 
         {items.some((skill) => ['global-shared', 'selected', 'project-shared'].includes(skill.source)) && (
           <div className="mt-4">
             <ItemsHeader label={t({ en: 'Shared', fr: 'Partagées' })}>
-              <EditableSkillItems
+              <GroupedSkillItems
                 items={items.filter((skill) => ['global-shared', 'selected', 'project-shared'].includes(skill.source))}
               />
             </ItemsHeader>
@@ -390,7 +481,7 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
         {projectItems.length > 0 && (
           <div className="mt-4">
             <ItemsHeader label={t({ en: 'Project', fr: 'Projet' })}>
-              <EditableSkillItems items={projectItems} />
+              <GroupedSkillItems items={projectItems} />
             </ItemsHeader>
           </div>
         )}
