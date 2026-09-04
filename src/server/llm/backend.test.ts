@@ -103,7 +103,16 @@ describe('backend', () => {
     })
 
     it('does not route effort via chat_template_kwargs for other backends', () => {
-      for (const backend of ['vllm', 'sglang', 'openai', 'anthropic', 'ollama', 'lmstudio', 'opencode-go'] as const) {
+      for (const backend of [
+        'vllm',
+        'sglang',
+        'openai',
+        'anthropic',
+        'ollama',
+        'lmstudio',
+        'unsloth',
+        'opencode-go',
+      ] as const) {
         expect(getBackendCapabilities(backend).routesEffortViaChatTemplateKwargs).toBe(false)
       }
     })
@@ -117,6 +126,7 @@ describe('backend', () => {
         ollama: 'Ollama',
         llamacpp: 'llama.cpp',
         lmstudio: 'LM Studio',
+        unsloth: 'Unsloth Studio',
         'opencode-go': 'OpenCode Go',
         openai: 'OpenAI',
         anthropic: 'Anthropic',

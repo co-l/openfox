@@ -59,6 +59,8 @@ function clickSave() {
 
 const savedProvider = (): ProviderFormData => onSaveMock.mock.calls[0]![0]!
 
+const jsonResponse = (body: unknown) => new Response(JSON.stringify(body), { status: 200 })
+
 const buttonByText = (text: string) =>
   Array.from(document.body.querySelectorAll('button')).find((button) => button.textContent?.trim() === text) as
     HTMLButtonElement | undefined
@@ -434,6 +436,56 @@ describe('ProviderModal - thinkingLevel persistence', () => {
     expect(savedData.backend).toBe(expectedBackend)
     expect(savedData.authAdapter).toBeUndefined()
     expect(savedData.transportAdapter).toBeUndefined()
+  })
+
+  it('re-applies URL and name when switching between engine cards', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/api/provider-presets')) return jsonResponse({ presets: [] })
+        return jsonResponse({ models: [] })
+      }),
+    )
+
+    // Step 1 only: the engine picker lives there.
+    await renderProviderModal({ initialStep: undefined }, 100)
+
+    buttonByText('Ollama')?.click()
+    await tick(0)
+
+    const urlInput = document.body.querySelector('[data-testid="provider-modal-url"]') as HTMLInputElement
+    const nameInput = document.body.querySelector('input[placeholder="My LLM Server"]') as HTMLInputElement
+    expect(urlInput.value).toBe('http://localhost:11434')
+    expect(nameInput.value).toBe('Ollama')
+
+    // Regression: clicking a second card must overwrite the pre-filled values.
+    buttonByText('LM Studio')?.click()
+    await tick(0)
+
+    expect(urlInput.value).toBe('http://localhost:1234')
+    expect(nameInput.value).toBe('LM Studio')
+  })
+
+  it('prefills Unsloth URL and name when its card is clicked', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/api/provider-presets')) return jsonResponse({ presets: [] })
+        return jsonResponse({ models: [] })
+      }),
+    )
+
+    await renderProviderModal({ initialStep: undefined }, 100)
+
+    buttonByText('Unsloth')?.click()
+    await tick(0)
+
+    const urlInput = document.body.querySelector('[data-testid="provider-modal-url"]') as HTMLInputElement
+    const nameInput = document.body.querySelector('input[placeholder="My LLM Server"]') as HTMLInputElement
+    expect(urlInput.value).toBe('http://localhost:8888')
+    expect(nameInput.value).toBe('Unsloth')
   })
 
   it('disables reasoning messages when auto-config detects a rejected history field', async () => {

@@ -2153,7 +2153,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       const models = await fetchModelsWithContext(
         url,
         apiKey,
-        backend as 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'lmstudio' | 'unknown' | undefined,
+        backend as 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'lmstudio' | 'unsloth' | 'unknown' | undefined,
       )
       if (models.length === 0) {
         return res.status(404).json({ error: `No models found at ${buildModelsUrl(url)}`, url })
