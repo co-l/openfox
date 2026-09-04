@@ -25,6 +25,9 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
   const proxyUrlSetting = useSetting(SETTINGS_KEYS.PROXY_URL).value
   const defaultAgentSetting = useSetting(SETTINGS_KEYS.DEFAULT_AGENT).value
   const showChangelogSetting = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_CHANGELOG_ON_UPDATE, 'true').value
+  const claudeCompatSetting = useSetting(SETTINGS_KEYS.COMPAT_CLAUDE_CODE, 'auto').value
+  const claudeCompatMode =
+    claudeCompatSetting === 'true' || claudeCompatSetting === 'false' ? claudeCompatSetting : 'auto'
 
   const [localToggles, setLocalToggles] = useState({
     openInEditor: showOpenInEditor,
@@ -268,6 +271,32 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
         onToggle={handleToggleCacheWarming}
         boldTitle
       />
+      <hr className="border-border" />
+      <div>
+        <h3 className="text-sm font-medium text-text-primary mb-1">
+          {t({ en: 'Claude Code Compatibility', fr: 'Compatibilité Claude Code' })}
+        </h3>
+        <p className="text-sm text-text-muted mb-3">
+          {t({
+            en: 'Also read Claude Code conventions: skills from .claude/skills, memory from .claude/CLAUDE.md and ~/.claude/CLAUDE.md, and @file imports inside instruction files.',
+            fr: 'Lit aussi les conventions Claude Code : skills de .claude/skills, mémoire de .claude/CLAUDE.md et ~/.claude/CLAUDE.md, et imports @fichier dans les fichiers d’instructions.',
+          })}
+        </p>
+        <select
+          value={claudeCompatMode}
+          onChange={(e) => void setSetting(SETTINGS_KEYS.COMPAT_CLAUDE_CODE, e.target.value)}
+          className="w-full px-3 py-2 text-sm bg-bg-primary border border-border rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-accent-primary"
+        >
+          <option value="auto">
+            {t({
+              en: 'Automatic — on when the project has .claude/ or CLAUDE.md',
+              fr: 'Automatique — activé si le projet a .claude/ ou CLAUDE.md',
+            })}
+          </option>
+          <option value="true">{t({ en: 'Always on', fr: 'Toujours activé' })}</option>
+          <option value="false">{t({ en: 'Always off', fr: 'Toujours désactivé' })}</option>
+        </select>
+      </div>
       <hr className="border-border" />
       <div>
         <h3 className="text-sm font-medium text-text-primary mb-3">{t({ en: 'Network', fr: 'Réseau' })}</h3>

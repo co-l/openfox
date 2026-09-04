@@ -11,6 +11,7 @@ import {
   findInstructionFiles,
   getAllInstructions,
   getInstructionsForWorkdir,
+  loadInstructionFiles,
   loadInstructions,
   type InstructionFile,
 } from './instructions.js'
@@ -26,6 +27,9 @@ describe('instructions', () => {
     // Create a unique temp directory for each test
     testDir = join(tmpdir(), `openfox-test-${Date.now()}-${Math.random().toString(36).slice(2)}`)
     await mkdir(testDir, { recursive: true })
+    // Claude Code compatibility defaults to auto-detection; pin it off so the
+    // suite never reaches into the developer's own ~/.claude.
+    setSetting(SETTINGS_KEYS.COMPAT_CLAUDE_CODE, 'false')
   })
 
   afterEach(async () => {
@@ -243,6 +247,183 @@ describe('instructions', () => {
 
       expect(result.content).toBe('')
       expect(result.files).toEqual([])
+    })
+  })
+  describe('deduplication', () => {
+    it('injects duplicated AGENTS.md / CLAUDE.md content only once', async () => {
+      await writeFile(join(testDir, 'AGENTS.md'), '# Same rules')
+      await writeFile(join(testDir, 'CLAUDE.md'), '# Same rules')
+
+      const files = await findInstructionFiles(testDir)
+      expect(files).toHaveLength(2)
+
+      const loaded = await loadInstructionFiles(files)
+      expect(loaded.map((file) => file.path)).toEqual([join(testDir, 'AGENTS.md')])
+    })
+
+    it('keeps files whose content differs', async () => {
+      await writeFile(join(testDir, 'AGENTS.md'), '# Agent rules')
+      await writeFile(join(testDir, 'CLAUDE.md'), '# Claude rules')
+
+      const loaded = await loadInstructionFiles(await findInstructionFiles(testDir))
+      expect(loaded).toHaveLength(2)
+    })
+
+    it('drops empty instruction files', async () => {
+      await writeFile(join(testDir, 'AGENTS.md'), '   \n')
+
+      const loaded = await loadInstructionFiles(await findInstructionFiles(testDir))
+      expect(loaded).toEqual([])
+    })
+
+    it('reports only the injected files', async () => {
+      const project = createProject('OpenFox', testDir)
+      await writeFile(join(testDir, 'AGENTS.md'), '# Same rules')
+      await writeFile(join(testDir, 'CLAUDE.md'), '# Same rules')
+
+      const result = await getAllInstructions(testDir, project.id)
+
+      expect(result.files).toEqual([{ path: join(testDir, 'AGENTS.md'), source: 'agents-md', content: '# Same rules' }])
+    })
+  })
+
+  describe('claude code compatibility', () => {
+    let homeDir: string
+    let projectDir: string
+
+    beforeEach(async () => {
+      homeDir = join(testDir, 'home')
+      projectDir = join(testDir, 'project')
+      await mkdir(join(homeDir, '.claude'), { recursive: true })
+      await mkdir(projectDir, { recursive: true })
+    })
+
+    it('reads ~/.claude/CLAUDE.md before project files', async () => {
+      await writeFile(join(homeDir, '.claude', 'CLAUDE.md'), '# User memory')
+      await writeFile(join(projectDir, 'AGENTS.md'), '# Project rules')
+
+      const files = await findInstructionFiles(projectDir, { claudeCompat: true, homeDir })
+
+      expect(files.map((file) => file.path)).toEqual([
+        join(homeDir, '.claude', 'CLAUDE.md'),
+        join(projectDir, 'AGENTS.md'),
+      ])
+    })
+
+    it('reads .claude/CLAUDE.md inside the project', async () => {
+      await mkdir(join(projectDir, '.claude'))
+      await writeFile(join(projectDir, '.claude', 'CLAUDE.md'), '# Project memory')
+
+      const files = await findInstructionFiles(projectDir, { claudeCompat: true, homeDir })
+
+      expect(files.map((file) => file.path)).toEqual([join(projectDir, '.claude', 'CLAUDE.md')])
+    })
+
+    it('ignores .claude locations when compatibility is off', async () => {
+      await mkdir(join(projectDir, '.claude'))
+      await writeFile(join(projectDir, '.claude', 'CLAUDE.md'), '# Project memory')
+      await writeFile(join(homeDir, '.claude', 'CLAUDE.md'), '# User memory')
+
+      const files = await findInstructionFiles(projectDir, { claudeCompat: false, homeDir })
+
+      expect(files).toEqual([])
+    })
+
+    it('auto-enables for a project carrying a .claude directory', async () => {
+      setSetting(SETTINGS_KEYS.COMPAT_CLAUDE_CODE, 'auto')
+      await mkdir(join(projectDir, '.claude'))
+      await writeFile(join(projectDir, '.claude', 'CLAUDE.md'), '# Project memory')
+
+      const files = await findInstructionFiles(projectDir, { homeDir })
+
+      expect(files.map((file) => file.path)).toContain(join(projectDir, '.claude', 'CLAUDE.md'))
+    })
+
+    it('stays off in auto mode for a project without Claude Code markers', async () => {
+      setSetting(SETTINGS_KEYS.COMPAT_CLAUDE_CODE, 'auto')
+      await writeFile(join(homeDir, '.claude', 'CLAUDE.md'), '# User memory')
+      await writeFile(join(projectDir, 'AGENTS.md'), '# Project rules')
+
+      const files = await findInstructionFiles(projectDir, { homeDir })
+
+      expect(files.map((file) => file.path)).toEqual([join(projectDir, 'AGENTS.md')])
+    })
+
+    it('expands @file imports relative to the importing file', async () => {
+      await writeFile(join(projectDir, 'RTK.md'), '# RTK rules')
+      await writeFile(join(projectDir, 'CLAUDE.md'), '@RTK.md')
+
+      const content = await loadInstructions([{ path: join(projectDir, 'CLAUDE.md'), source: 'agents-md' }], {
+        claudeCompat: true,
+        homeDir,
+      })
+
+      expect(content).toContain('# RTK rules')
+      expect(content).toContain(`Instructions from: ${join(projectDir, 'RTK.md')}`)
+    })
+
+    it('expands ~/ imports against the home directory', async () => {
+      await writeFile(join(homeDir, '.claude', 'RTK.md'), '# Home rules')
+      await writeFile(join(projectDir, 'CLAUDE.md'), 'See @~/.claude/RTK.md for details.')
+
+      const content = await loadInstructions([{ path: join(projectDir, 'CLAUDE.md'), source: 'agents-md' }], {
+        claudeCompat: true,
+        homeDir,
+      })
+
+      expect(content).toContain('# Home rules')
+      expect(content).toContain('for details.')
+    })
+
+    it('leaves unresolved tokens and e-mail addresses untouched', async () => {
+      await writeFile(join(projectDir, 'CLAUDE.md'), 'Ping @nobody and mail@example.com')
+
+      const content = await loadInstructions([{ path: join(projectDir, 'CLAUDE.md'), source: 'agents-md' }], {
+        claudeCompat: true,
+        homeDir,
+      })
+
+      expect(content).toContain('Ping @nobody and mail@example.com')
+    })
+
+    it('does not expand imports inside code fences or code spans', async () => {
+      await writeFile(join(projectDir, 'RTK.md'), '# RTK rules')
+      await writeFile(join(projectDir, 'CLAUDE.md'), ['```', '@RTK.md', '```', 'Inline `@RTK.md` stays.'].join('\n'))
+
+      const content = await loadInstructions([{ path: join(projectDir, 'CLAUDE.md'), source: 'agents-md' }], {
+        claudeCompat: true,
+        homeDir,
+      })
+
+      expect(content).not.toContain('# RTK rules')
+      expect(content).toContain('Inline `@RTK.md` stays.')
+    })
+
+    it('imports each file once even when imports form a cycle', async () => {
+      await writeFile(join(projectDir, 'a.md'), 'A-marker\n@b.md')
+      await writeFile(join(projectDir, 'b.md'), 'B-marker\n@a.md')
+      await writeFile(join(projectDir, 'CLAUDE.md'), '@a.md')
+
+      const content = await loadInstructions([{ path: join(projectDir, 'CLAUDE.md'), source: 'agents-md' }], {
+        claudeCompat: true,
+        homeDir,
+      })
+
+      expect(content.match(/A-marker/g)).toHaveLength(1)
+      expect(content.match(/B-marker/g)).toHaveLength(1)
+    })
+
+    it('does not expand imports when compatibility is off', async () => {
+      await writeFile(join(projectDir, 'RTK.md'), '# RTK rules')
+      await writeFile(join(projectDir, 'CLAUDE.md'), '@RTK.md')
+
+      const content = await loadInstructions([{ path: join(projectDir, 'CLAUDE.md'), source: 'agents-md' }], {
+        claudeCompat: false,
+        homeDir,
+      })
+
+      expect(content).not.toContain('# RTK rules')
+      expect(content).toContain('@RTK.md')
     })
   })
 })

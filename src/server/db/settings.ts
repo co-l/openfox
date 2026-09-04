@@ -44,6 +44,7 @@ export const SETTINGS_KEYS = {
   TOOLS_SHELL: 'tools.shell',
   CONFIRM_ON_WORKSPACE_ACTIONS: 'tools.confirmOnWorkspaceActions',
   FEATURES_PER_SESSION_MCP: 'features.perSessionMcp',
+  COMPAT_CLAUDE_CODE: 'compat.claudeCode',
   MAINTENANCE_SNAPSHOT_STREAMS_MIGRATED: 'maintenance.snapshotStreamsMigratedV1',
   PROXY_URL: 'network.proxyUrl',
   DEFAULT_AGENT: 'agent.defaultAgent',
@@ -93,6 +94,7 @@ export const SETTINGS_DEFAULTS: Record<string, string> = {
   [SETTINGS_KEYS.TOOLS_SHELL]: 'cmd',
   [SETTINGS_KEYS.CONFIRM_ON_WORKSPACE_ACTIONS]: 'false',
   [SETTINGS_KEYS.FEATURES_PER_SESSION_MCP]: 'false',
+  [SETTINGS_KEYS.COMPAT_CLAUDE_CODE]: 'auto',
   [SETTINGS_KEYS.MAINTENANCE_SNAPSHOT_STREAMS_MIGRATED]: 'false',
 }
 

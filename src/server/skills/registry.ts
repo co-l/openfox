@@ -14,7 +14,8 @@ import { homedir } from 'node:os'
 import matter from 'gray-matter'
 import { pathExists, loadItemsFromDir, deleteItemFromDir } from '../shared/item-loader.js'
 import { getSetting, setSetting, deleteSetting } from '../db/settings.js'
-import type { SkillDefinition, SkillSource } from './types.js'
+import { EXTERNAL_SKILL_SOURCES, type SkillDefinition, type SkillSource } from './types.js'
+import { CLAUDE_DIR, resolveClaudeCompat } from '../shared/claude-compat.js'
 
 const __bundleDir = dirname(fileURLToPath(import.meta.url))
 const DEFAULTS_DIR = join(__bundleDir, 'defaults')
@@ -31,9 +32,14 @@ function getProjectSkillsDir(projectDir: string): string {
   return join(projectDir, '.openfox', 'skills')
 }
 
+function getClaudeSkillsDir(baseDir: string): string {
+  return join(baseDir, CLAUDE_DIR, 'skills')
+}
+
 export interface SkillDiscoveryOptions {
   homeDir?: string
   selectedDirectories?: string[]
+  claudeCompat?: boolean
 }
 
 function portableDisplayName(data: Record<string, unknown>, id: string): string {
@@ -185,13 +191,19 @@ export async function loadAllSkillsWithDiagnostics(
   const selected = (options.selectedDirectories ?? getSelectedSkillDirectories()).map((dir) =>
     dir === '~' ? home : dir.startsWith('~/') ? join(home, dir.slice(2)) : dir,
   )
+  const claudeCompat = await resolveClaudeCompat(projectDir, options.claudeCompat)
   const locations: Array<Promise<SkillDefinition[]>> = [
     loadDefaultSkills(),
     loadSkillsDirectory(join(home, '.agents', 'skills'), 'global-shared'),
+    ...(claudeCompat ? [loadSkillsDirectory(getClaudeSkillsDir(home), 'global-claude')] : []),
     loadUserSkills(configDir),
     ...selected.map((dir) => loadSkillsDirectory(dir, 'selected')),
     ...(projectDir
-      ? [loadSkillsDirectory(join(projectDir, '.agents', 'skills'), 'project-shared'), loadProjectSkills(projectDir)]
+      ? [
+          loadSkillsDirectory(join(projectDir, '.agents', 'skills'), 'project-shared'),
+          ...(claudeCompat ? [loadSkillsDirectory(getClaudeSkillsDir(projectDir), 'project-claude')] : []),
+          loadProjectSkills(projectDir),
+        ]
       : []),
   ]
   const groups = await Promise.all(locations)
@@ -202,7 +214,12 @@ export async function loadAllSkillsWithDiagnostics(
       const previous = skillMap.get(skill.metadata.id)
       if (previous) {
         if (previous.directory === skill.directory && previous.legacy === skill.legacy) {
-          diagnostics.push(`Skill "${skill.metadata.id}" reached through multiple paths`)
+          // Same package on disk, reached twice. Only actionable when a directory the
+          // user picked overlaps another root — automatic roots that symlink into each
+          // other (a common `.claude/skills` -> `.agents/skills` setup) are not.
+          if (previous.source === 'selected' || skill.source === 'selected') {
+            diagnostics.push(`Skill "${skill.metadata.id}" reached through multiple paths`)
+          }
         } else {
           diagnostics.push(
             `Skill "${skill.metadata.id}" from ${skill.source ?? 'unknown'} overrides ${previous.source ?? 'unknown'}`,
@@ -317,10 +334,7 @@ function updatedPortableFrontmatter(
 
 function canModifySkill(existing: SkillDefinition): boolean {
   if (existing.source === 'global-openfox' || existing.source === 'project-openfox') return true
-  return (
-    !existing.legacy &&
-    (existing.source === 'global-shared' || existing.source === 'selected' || existing.source === 'project-shared')
-  )
+  return !existing.legacy && EXTERNAL_SKILL_SOURCES.includes(existing.source ?? 'bundled')
 }
 
 export async function updateOwnedSkill(

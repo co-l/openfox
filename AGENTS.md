@@ -225,6 +225,8 @@ Every file in `.openfox/` must be **committable** and **meaningful in the projec
 
 **Rationale:** Clean repo, no leaked personal config, reliable source of truth for CI and collaborators.
 
+**Claude Code compatibility:** the `compat.claudeCode` setting (Settings → Advanced, `auto` by default) makes OpenFox also read Claude Code's conventions — skills from `~/.claude/skills` and `<project>/.claude/skills`, memory from `~/.claude/CLAUDE.md` and `<project>/.claude/CLAUDE.md`, and `@file` imports inside instruction files. On `auto` it switches on when the project holds a `.claude/` directory or a `CLAUDE.md`. Identical instruction files (a repo shipping AGENTS.md and CLAUDE.md as copies of each other) are injected once regardless of the setting. Full design: [docs/DESIGN-CLAUDE-CODE-COMPAT.md](DESIGN-CLAUDE-CODE-COMPAT.md).
+
 **Workflows:** When asked to create or edit a workflow, load the built-in `workflows` skill via `load_skill("workflows")` — it is the authoritative reference for workflow file format, storage locations (project `.openfox/workflows/` vs global `{configDir}/workflows/`), the full JSON schema, step types, transition conditions, and template variables ([docs/WORKFLOWS.md](docs/WORKFLOWS.md) is a pointer to it). Project workflows belong in `.openfox/workflows/` and are committable.
 
 ## TDD Workflow

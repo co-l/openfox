@@ -8,6 +8,7 @@ import {
   selectDirectory,
   removeDirectory,
   installSkill,
+  EXTERNAL_SKILL_SOURCES,
   type SkillFull,
   type SkillInfo,
 } from '../../lib/skills-actions'
@@ -43,6 +44,7 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
   const userItems = data?.userItems ?? []
   const projectItems = data?.projectItems ?? []
   const items = data?.items ?? []
+  const sharedItems = items.filter((skill) => EXTERNAL_SKILL_SOURCES.includes(skill.source))
   const selectedDirectory = data?.selectedDirectory ?? null
   const diagnostics = data?.diagnostics ?? []
   const [pendingDelete, setPendingDelete] = useState<SkillInfo | null>(null)
@@ -377,12 +379,10 @@ export function SkillsContent({ isOpen }: { isOpen: boolean }) {
           </ItemsHeader>
         )}
 
-        {items.some((skill) => ['global-shared', 'selected', 'project-shared'].includes(skill.source)) && (
+        {sharedItems.length > 0 && (
           <div className="mt-4">
             <ItemsHeader label={t({ en: 'Shared', fr: 'Partagées' })}>
-              <EditableSkillItems
-                items={items.filter((skill) => ['global-shared', 'selected', 'project-shared'].includes(skill.source))}
-              />
+              <EditableSkillItems items={sharedItems} />
             </ItemsHeader>
           </div>
         )}
