@@ -129,6 +129,11 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     launch: import('./runner/launch.js').WorkflowLaunchPayload,
   ) => void = () => {}
 
+  // Deferred broadcast for the notifications service. Same rationale as the
+  // tasks broadcast: the WebSocket server doesn't exist yet when the routes and
+  // plugin registry are wired, so notifications are buffered through this hook.
+  let deferNotificationsBroadcast: (message: import('../shared/protocol.js').ServerMessage) => void = () => {}
+
   // Get config directory for loading user items
   const configDir = getGlobalConfigDir(config.mode ?? 'production')
 
@@ -137,6 +142,17 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     mode: config.mode === 'development' ? 'development' : 'production',
     configDirectory: configDir,
   })
+
+  // Notifications service: persists rows and broadcasts to all UIs. The
+  // broadcaster is deferred because the WebSocket server is created later.
+  const { createNotificationsService } = await import('./notifications/service.js')
+  const notificationsService = createNotificationsService({
+    notify: (notification) => {
+      deferNotificationsBroadcast(createServerMessage('notifications.new', { notification }))
+    },
+  })
+  providerAdapters.setNotify((notification) => notificationsService.notify({ source: 'plugin', ...notification }))
+
   const pluginDiagnostics = await loadProviderPlugins({ registry: providerAdapters, configDirectory: configDir })
   for (const diagnostic of pluginDiagnostics) {
     if (!diagnostic.loaded) logger.warn('Provider plugin failed to load', { ...diagnostic })
@@ -544,6 +560,23 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   const tasksRouter = express.Router()
   registerTaskRoutes(tasksRouter, tasksService)
   app.use('/api', tasksRouter)
+
+  // Global in-app notification history. Also mounted before the Vite
+  // middleware; mutations broadcast through the deferred WebSocket sink.
+  const { registerNotificationRoutes } = await import('./routes/notifications.js')
+  const notificationsRouter = express.Router()
+  registerNotificationRoutes(notificationsRouter, {
+    deleted: (id) => {
+      deferNotificationsBroadcast(createServerMessage('notifications.deleted', { id }))
+    },
+    read: () => {
+      deferNotificationsBroadcast(createServerMessage('notifications.read', {}))
+    },
+    cleared: () => {
+      deferNotificationsBroadcast(createServerMessage('notifications.cleared', {}))
+    },
+  })
+  app.use('/api', notificationsRouter)
 
   // Branch management endpoints (project-scoped, repo operations)
 
@@ -3528,6 +3561,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   // Point the tasks service at the live WebSocket broadcaster now that it exists.
   deferTasksBroadcast = (projectId, payload) =>
     wssExports.broadcastForProject(projectId, '', { type: 'tasks.update', payload })
+
+  // Point the notifications service at the live WebSocket broadcaster now that it exists.
+  deferNotificationsBroadcast = (message) => wssExports.broadcastAll(message)
 
   // Point the tasks service at the workflow launcher. Task-seeded workflows run
   // through the same shared launcher as runner.launch (src/server/runner/launch.ts).

@@ -144,6 +144,11 @@ export type ServerMessageType =
   | 'git.status' // Branch and diff info, pushed on interval or session load
   // Project tasks events
   | 'tasks.update' // A task (or task config) changed; clients owning the project update their boards
+  // Notifications events
+  | 'notifications.new' // A new notification was created (broadcast to all clients)
+  | 'notifications.deleted' // A notification was deleted
+  | 'notifications.read' // All notifications were marked as read
+  | 'notifications.cleared' // Notification history was cleared
   // MCP server events
   | 'mcp.servers.changed' // MCP server configuration was modified by agent
   // Other
@@ -529,6 +534,11 @@ export interface TasksUpdatePayload {
   autoLaunched?: { taskId: string; taskTitle: string; sessionId: string; projectId: string } | undefined
   /** Which task changed, when a targeted update is desired (informational). */
   changedTaskId?: string | undefined
+}
+
+// Payloads for notifications
+export interface NotificationsNewPayload {
+  notification: import('./types.js').Notification
 }
 
 // Shared background process types

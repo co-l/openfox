@@ -106,6 +106,9 @@ export async function loadProviderPlugins(options: {
           options.registry.registerPreset(preset)
           diagnostic.presets.push(preset.id)
         },
+        notify(notification) {
+          options.registry.notify(notification)
+        },
       }
       try {
         const module = (await import(pathToFileURL(join(packageDir, plugin)).href)) as {
