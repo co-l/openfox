@@ -262,6 +262,14 @@ export async function runTopLevelAgentLoop(
       return {}
     }
 
+    // Pause gate: block before the next LLM request if the user requested a
+    // pause. The current (in-flight) request is never aborted — the pause only
+    // takes effect here, at the request boundary.
+    const pauseOutcome = await sessionManager.enterPauseGate(sessionId, signal)
+    if (pauseOutcome === 'aborted') {
+      throw new Error('Aborted')
+    }
+
     const session = sessionManager.requireSession(sessionId)
 
     // Inject kickoff prompt (e.g., builder kickoff) on first iteration

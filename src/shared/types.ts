@@ -28,6 +28,16 @@ export type ToolMode = string
 // Workflow phase shown to user (more granular than mode)
 export type SessionPhase = 'plan' | 'build' | 'verification' | 'waiting' | 'blocked' | 'done'
 
+/**
+ * Pause state of a running session (cooperative pause — never aborts the
+ * in-flight LLM request, only gates the NEXT one):
+ * - none: no pause requested
+ * - pending: pause requested, agent is finishing the current LLM request
+ * - paused: agent is blocked before the next LLM request, waiting for resume
+ * - resuming: resume requested, agent is about to issue the next LLM request
+ */
+export type PauseState = 'none' | 'pending' | 'paused' | 'resuming'
+
 // ============================================================================
 // Workflow Types
 // ============================================================================
@@ -90,6 +100,7 @@ export interface Session {
   mode: SessionMode
   phase: SessionPhase // Current workflow phase
   isRunning: boolean // Is the agent actively working?
+  pauseState?: PauseState // Cooperative pause state (default 'none' when absent)
   providerId?: string | null // Per-session provider override
   providerModel?: string | null // Per-session model override
   providerReasoningEffort?: string | null // Per-session reasoning effort override (with providerModel)

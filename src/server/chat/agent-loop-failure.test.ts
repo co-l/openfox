@@ -95,6 +95,7 @@ describe('agent loop LLM failure handling', () => {
     vi.clearAllMocks()
 
     mockSessionManager = {
+      enterPauseGate: vi.fn().mockResolvedValue('released'),
       requireSession: vi.fn().mockReturnValue({
         workdir: '/test',
         projectId: 'test-project',

@@ -87,6 +87,7 @@ export type ServerMessageType =
   | 'session.deleted'
   | 'session.deletedAll'
   | 'session.running' // Real-time running state change
+  | 'session.pause' // Cooperative pause state change (none/pending/paused/resuming)
   | 'session.name_generated' // Session name was auto-generated
   | 'session.confirmation_pending' // Path confirmation waiting in another session (broadcast to all)
   | 'session.confirmation_resolved' // Path confirmation was answered (broadcast to all)
@@ -231,6 +232,10 @@ export interface SessionCreatedPayload {
 
 export interface SessionRunningPayload {
   isRunning: boolean
+}
+
+export interface SessionPausePayload {
+  pauseState: import('./types.js').PauseState
 }
 
 export interface SessionNameGeneratedPayload {

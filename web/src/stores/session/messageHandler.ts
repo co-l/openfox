@@ -5,6 +5,7 @@ import type {
   GitDiffFile,
   SessionListPayload,
   SessionRunningPayload,
+  SessionPausePayload,
   ChatAskUserPayload,
   ChatDeltaPayload,
   ChatThinkingPayload,
@@ -366,6 +367,16 @@ export function handleServerMessage(
       if (payload.isRunning) {
         set((state) => updatePane(state, eventSessionId, (p) => ({ ...p, restoredInput: null, liveTurnStats: null })))
       }
+      break
+    }
+
+    case 'session.pause': {
+      const payload = message.payload as SessionPausePayload
+      const eventSessionId = message.sessionId
+      if (!eventSessionId || !isLivePane(get(), eventSessionId)) {
+        break
+      }
+      set((state) => updatePaneSession(state, eventSessionId, (s) => ({ ...s, pauseState: payload.pauseState })))
       break
     }
 

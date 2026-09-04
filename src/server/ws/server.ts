@@ -58,6 +58,7 @@ import {
   serializeServerMessage,
   createErrorMessage,
   createSessionRunningMessage,
+  createSessionPauseMessage,
   createChatMessageMessage,
   createChatErrorMessage,
   createContextStateMessage,
@@ -666,6 +667,11 @@ export function createWebSocketServer(
 
   // Session update events — broadcast session.state to session-specific clients
   sessionManager.subscribe((event) => {
+    if (event.type === 'pause_changed') {
+      // Lightweight pause-state sync (no full session.state rebuild)
+      broadcastForSession(event.sessionId, createSessionPauseMessage(event.pauseState))
+      return
+    }
     if (event.type === 'session_updated') {
       const updatedSession = event.session
       const eventStore = getEventStore()
@@ -876,6 +882,7 @@ export function createWebSocketServer(
     wss,
     abortSession: (sessionId: string) => {
       abortedSessions.add(sessionId)
+      sessionManager.clearPauseState(sessionId)
       const controller = activeAgents.get(sessionId)
       if (controller) {
         activeAgents.delete(sessionId)

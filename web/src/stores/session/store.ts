@@ -946,6 +946,24 @@ export const useSessionStore = create<SessionState>((set, get) => {
       }
     },
 
+    pauseGeneration: async (sessionId) => {
+      if (!paneFor(get(), sessionId)?.session) return
+      try {
+        await authFetch(`/api/sessions/${sessionId}/pause`, { method: 'POST' })
+      } catch (error) {
+        console.error('Error pausing generation:', error)
+      }
+    },
+
+    resumeGeneration: async (sessionId) => {
+      if (!paneFor(get(), sessionId)?.session) return
+      try {
+        await authFetch(`/api/sessions/${sessionId}/resume`, { method: 'POST' })
+      } catch (error) {
+        console.error('Error resuming generation:', error)
+      }
+    },
+
     launchWorkflow: (sessionId, content?, attachments?, workflowId?, subGroup?, params?, scope?) => {
       if (!paneFor(get(), sessionId)?.session) return
       const payload: Record<string, unknown> = { sessionId }

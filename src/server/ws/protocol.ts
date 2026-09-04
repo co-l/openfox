@@ -8,6 +8,7 @@ import type {
   SessionStatePayload,
   SessionListPayload,
   SessionRunningPayload,
+  SessionPausePayload,
   SessionNameGeneratedPayload,
   PendingPathConfirmationPayload,
   PendingQuestionPayload,
@@ -54,6 +55,7 @@ import type {
   Message,
   ContextState,
   ToolCall,
+  PauseState,
 } from '../../shared/types.js'
 
 /**
@@ -156,6 +158,10 @@ export function createSessionRunningMessage(
   sessionId?: string,
 ): ServerMessage<SessionRunningPayload> {
   return createServerMessage('session.running', { isRunning }, sessionId)
+}
+
+export function createSessionPauseMessage(pauseState: PauseState): ServerMessage<SessionPausePayload> {
+  return createServerMessage('session.pause', { pauseState })
 }
 
 // Project messages

@@ -1617,6 +1617,42 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     res.json({ success: true, queuedMessages })
   })
 
+  // Chat pause (cooperative — pauses the NEXT LLM request, never aborts the current one)
+  app.post('/api/sessions/:id/pause', async (req, res) => {
+    const sessionId = req.params.id
+    const session = sessionManager.getSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+
+    if (!session.isRunning) {
+      return res.status(409).json({ error: 'Session is not running' })
+    }
+
+    const ok = sessionManager.requestPause(sessionId)
+    if (!ok) {
+      return res.status(409).json({ error: 'A pause is already in progress' })
+    }
+
+    res.json({ success: true, pauseState: sessionManager.getPauseState(sessionId) })
+  })
+
+  // Chat resume (cancels a pending pause, or releases a paused agent)
+  app.post('/api/sessions/:id/resume', async (req, res) => {
+    const sessionId = req.params.id
+    const session = sessionManager.getSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+
+    const ok = sessionManager.requestResume(sessionId)
+    if (!ok) {
+      return res.status(409).json({ error: 'Nothing to resume' })
+    }
+
+    res.json({ success: true, pauseState: sessionManager.getPauseState(sessionId) })
+  })
+
   // Truncate session messages at a given index
   app.post('/api/sessions/:id/truncate', async (req, res) => {
     const sessionId = req.params.id as string

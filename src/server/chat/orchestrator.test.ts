@@ -276,6 +276,7 @@ function createSessionManager(state: Record<string, any>) {
       complete: vi.fn(),
       stream: vi.fn(),
     })),
+    enterPauseGate: vi.fn().mockResolvedValue('released'),
   }
 }
 

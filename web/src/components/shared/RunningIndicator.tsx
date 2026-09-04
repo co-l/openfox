@@ -36,7 +36,7 @@ export function RunningIndicator() {
   const lastPromptAt = view.lastPromptAt
   const [now, setNow] = useState(() => Date.now())
 
-  const timerActive = lastPromptAt !== null && (state === 'running' || state === 'waiting')
+  const timerActive = lastPromptAt !== null && (state === 'running' || state === 'waiting' || state === 'pausing')
 
   useEffect(() => {
     if (!timerActive) return
@@ -49,13 +49,15 @@ export function RunningIndicator() {
 
   const statusLabels: Record<string, string> = {
     Running: t({ en: 'Running', fr: 'En cours' }),
+    'Pausing…': t({ en: 'Pausing…', fr: 'Mise en pause…' }),
+    Paused: t({ en: 'Paused', fr: 'En pause' }),
     'Waiting for input': t({ en: 'Waiting for input', fr: 'En attente de votre intervention' }),
     Completed: t({ en: 'Completed', fr: 'Terminé' }),
     Blocked: t({ en: 'Blocked', fr: 'Bloqué' }),
   }
   const label = statusLabels[statusLabel(state)] ?? statusLabel(state)
-  const dotColor = aborting ? 'bg-amber-400' : 'bg-accent-primary'
-  const showBounce = state === 'running'
+  const dotColor = aborting ? 'bg-amber-400' : state === 'paused' ? 'bg-accent-warning' : 'bg-accent-primary'
+  const showBounce = state === 'running' || state === 'pausing'
   const lastPromptAtText = lastPromptAt ? formatTimeSince(lastPromptAt, now) : ''
 
   return (

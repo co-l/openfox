@@ -17,7 +17,7 @@ import { AttachmentPreview } from '../shared/AttachmentPreview.js'
 import { PromptHistoryList } from '../shared/PromptHistory.js'
 import { RunningIndicator } from '../shared/RunningIndicator'
 import { AutoScrollToggle } from '../shared/AutoScrollToggle'
-import { SearchIcon, StopIcon } from '../shared/icons'
+import { PauseIcon, PlayIcon, SearchIcon, StopIcon } from '../shared/icons'
 import { WorkflowBar } from './WorkflowBar'
 import { processFile } from '../../lib/file-processing.js'
 import { mimeTypeToExtension, isSupportedMimeType } from '../../lib/attachment-utils.js'
@@ -112,6 +112,34 @@ export function ChatInput({
   const isRunning = useIsRunning(sessionId)
   const perSessionMcpEnabled = useSetting(SETTINGS_KEYS.FEATURES_PER_SESSION_MCP, 'false').value === 'true'
   const stopGeneration = useSessionStore((state) => state.stopGeneration)
+  const pauseGeneration = useSessionStore((state) => state.pauseGeneration)
+  const resumeGeneration = useSessionStore((state) => state.resumeGeneration)
+  const pauseState = useScopedPaneState(
+    sessionId,
+    (pane) => pane.session?.pauseState ?? 'none',
+    (state) => state.currentSession?.pauseState ?? 'none',
+    'none',
+  )
+  const pauseTooltip =
+    pauseState === 'pending'
+      ? t({
+          en: 'Pausing, waiting for the current turn to finish',
+          fr: 'Mise en pause, en attente de la fin du tour en cours',
+        })
+      : pauseState === 'paused'
+        ? t({ en: 'Paused', fr: 'En pause' })
+        : pauseState === 'resuming'
+          ? t({ en: 'Resuming…', fr: 'Reprise en cours…' })
+          : t({ en: 'Pause', fr: 'Mettre en pause' })
+  const handlePauseResume = () => {
+    if (!sessionId) return
+    if (pauseState === 'none') {
+      pauseGeneration(sessionId)
+    } else {
+      // pending → cancel the pause (no interruption), paused → resume
+      resumeGeneration(sessionId)
+    }
+  }
   const cancelQueued = useSessionStore((state) => state.cancelQueued)
   const queuedMessages = useQueuedMessages(sessionId)
   const restoredInput = useScopedPaneState(
@@ -674,15 +702,33 @@ export function ChatInput({
           </div>
           <div className="flex items-center self-center gap-1.5">
             {isRunning && (
-              <button
-                type="button"
-                onClick={() => sessionId && stopGeneration(sessionId)}
-                data-testid="chat-stop-button"
-                className="flex items-center gap-1 px-4 py-1.5 rounded bg-accent-error/20 text-sm text-accent-error font-medium hover:bg-accent-error/30 transition-colors whitespace-nowrap"
-              >
-                <StopIcon />
-                {t({ en: 'Abort', fr: 'Stopper' })}
-              </button>
+              <div className="flex items-center self-center">
+                <button
+                  type="button"
+                  onClick={handlePauseResume}
+                  disabled={!sessionId || pauseState === 'resuming'}
+                  data-testid="chat-pause-button"
+                  title={pauseTooltip}
+                  aria-label={pauseTooltip}
+                  className="flex items-center justify-center px-3 py-1.5 rounded-l bg-accent-warning/20 text-accent-warning hover:bg-accent-warning/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {pauseState === 'paused' || pauseState === 'resuming' ? (
+                    <PlayIcon className="w-4 h-4" />
+                  ) : (
+                    <PauseIcon className="w-4 h-4" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => sessionId && stopGeneration(sessionId)}
+                  data-testid="chat-stop-button"
+                  title={t({ en: 'Stop', fr: 'Stopper' })}
+                  aria-label={t({ en: 'Stop', fr: 'Stopper' })}
+                  className="flex items-center justify-center px-3 py-1.5 rounded-r bg-accent-error/20 text-accent-error hover:bg-accent-error/30 transition-colors border-l border-black/10 dark:border-white/10"
+                >
+                  <StopIcon />
+                </button>
+              </div>
             )}
             <div className="flex items-center">
               <button
