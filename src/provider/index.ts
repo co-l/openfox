@@ -1,4 +1,4 @@
-import type { ModelConfig } from '../shared/types.js'
+import type { ModelConfig, QuotaSource } from '../shared/types.js'
 import type { LLMCompletionRequest, LLMCompletionResponse, LLMStreamEvent } from '../server/llm/types.js'
 
 // ============================================================================
@@ -105,7 +105,24 @@ export interface ProviderPluginRegistry {
   registerAuth(adapter: ProviderAuthAdapter): void
   registerTransport(adapter: ProviderTransportAdapter): void
   registerPreset(preset: ProviderPreset): void
+  registerQuotaProvider(provider: QuotaProvider): void
   readonly runtime: ProviderPluginRuntime
+}
+
+// ============================================================================
+// Quota Provider (plugin-contributed usage/limit reporting)
+// ============================================================================
+
+/**
+ * A quota provider reports the current usage/limit information for a plugin.
+ * Plugins register one (or more) of these; the server aggregates them into a
+ * single QuotaReport exposed to the UI. The reported shape is generic so the
+ * server and UI never need per-plugin special-casing.
+ */
+export interface QuotaProvider {
+  readonly id: string
+  readonly name: string
+  getQuota(): Promise<QuotaSource>
 }
 
 // ============================================================================

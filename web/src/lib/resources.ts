@@ -14,6 +14,7 @@ import type {
   ProjectTaskCounts,
   ProjectTaskSettings,
   TaskGateConfig,
+  QuotaReport,
 } from '@shared/types.js'
 import type { WorkspaceConfig as SharedWorkspaceConfig } from '@shared/workspace.js'
 import type { DevServerConfig, DevServerStatus } from '@shared/dev-server.js'
@@ -816,3 +817,23 @@ export const agentDefaultResource = resource<AgentFull | null, [string]>({
   fetch: fetchAgentDefaultContent,
   maxAgeMs: 0,
 })
+
+export async function fetchQuota(): Promise<QuotaReport> {
+  const res = await authFetch('/api/quota')
+  if (!res.ok) throw new Error(`Failed to load quota (${res.status})`)
+  return (await res.json()) as QuotaReport
+}
+
+/**
+ * Aggregated usage/quota information across plugins.
+ */
+export const quotaResource = resource<QuotaReport, []>({
+  key: () => 'quota:report',
+  fetch: fetchQuota,
+  maxAgeMs: 30_000,
+})
+
+/** Synchronous cache read for non-hook call sites (event handlers, getState-style reads). */
+export function readQuota(): QuotaReport | undefined {
+  return snapshot<QuotaReport>(quotaResource.keyOf()).data
+}

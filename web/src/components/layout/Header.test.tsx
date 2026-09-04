@@ -178,6 +178,31 @@ vi.mock('../../stores/tasks', () => ({
   }),
 }))
 
+vi.mock('../../stores/update', () => ({
+  useUpdateStore: mockStore({
+    status: 'idle',
+    check: vi.fn(),
+  }),
+}))
+
+const quotaState = vi.hoisted(() => ({
+  report: null as any,
+  loading: false,
+  error: null as any,
+  refresh: vi.fn(),
+  hasWarning: false,
+}))
+
+vi.mock('../../hooks/useQuota', () => ({
+  useQuota: () => ({
+    report: quotaState.report,
+    loading: quotaState.loading,
+    error: quotaState.error,
+    refresh: quotaState.refresh,
+    hasWarning: quotaState.hasWarning,
+  }),
+}))
+
 const mountedRoots: Array<{ root: ReturnType<typeof createRoot>; container: HTMLElement }> = []
 
 function render(ui: React.ReactElement): HTMLElement {
@@ -217,6 +242,38 @@ describe('Header', () => {
     const container = render(<Header />)
     const btn = container.querySelector('[title="Settings"]')
     expect(btn).toBeTruthy()
+  })
+
+  it('renders a quota button immediately left of the settings button', async () => {
+    const { Header } = await import('./Header')
+    const container = render(<Header />)
+    const quotaBtn = container.querySelector('[aria-label="Open usage and quotas"]')
+    const settingsBtn = container.querySelector('[title="Settings"]')
+    expect(quotaBtn).toBeTruthy()
+    expect(settingsBtn).toBeTruthy()
+    const buttons = Array.from(container.querySelectorAll('button'))
+    expect(buttons.indexOf(quotaBtn as HTMLButtonElement)).toBeLessThan(
+      buttons.indexOf(settingsBtn as HTMLButtonElement),
+    )
+  })
+
+  it('shows a warning dot on the quota button when a metric is over limit', async () => {
+    quotaState.hasWarning = true
+    quotaState.report = {
+      sources: [
+        {
+          id: 'github-copilot-business',
+          name: 'GitHub Copilot Business',
+          metrics: [{ kind: 'token-balance', label: 'Tokens', total: 100, remaining: 0 }],
+        },
+      ],
+      fetchedAt: new Date().toISOString(),
+    }
+    const { Header } = await import('./Header')
+    const container = render(<Header />)
+    const quotaBtn = container.querySelector('[aria-label="Open usage and quotas"]')
+    expect(quotaBtn).toBeTruthy()
+    expect(quotaBtn!.querySelector('.bg-accent-danger')).toBeTruthy()
   })
 
   it('renders logout button', async () => {
