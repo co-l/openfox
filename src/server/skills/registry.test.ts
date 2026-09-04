@@ -188,6 +188,28 @@ describe('loadUserSkills', () => {
     expect(skills[0]).toMatchObject({ prompt: 'Portable prompt.', legacy: false })
   })
 
+  it('loads portable skills recursively from subdirectories and assigns group', async () => {
+    const categoryDir = join(tempDir, 'skills', 'tools')
+    await mkdir(categoryDir, { recursive: true })
+    await createPortableInRoot(categoryDir, 'nested-tool', 'Tool prompt.')
+
+    const subCategoryDir = join(tempDir, 'skills', 'dev', 'frontend')
+    await mkdir(subCategoryDir, { recursive: true })
+    await createPortableInRoot(subCategoryDir, 'react-helper', 'React helper prompt.')
+
+    const skills = await loadUserSkills(tempDir)
+
+    const nested = skills.find((s) => s.metadata.id === 'nested-tool')
+    expect(nested).toBeDefined()
+    expect(nested?.metadata.group).toBe('tools')
+    expect(nested?.prompt).toBe('Tool prompt.')
+
+    const deepNested = skills.find((s) => s.metadata.id === 'react-helper')
+    expect(deepNested).toBeDefined()
+    expect(deepNested?.metadata.group).toBe('dev/frontend')
+    expect(deepNested?.prompt).toBe('React helper prompt.')
+  })
+
   it('should skip files without an id', async () => {
     const skillsDir = join(tempDir, 'skills')
     await mkdir(skillsDir, { recursive: true })

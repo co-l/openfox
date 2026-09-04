@@ -54,10 +54,15 @@ function portableVersion(data: Record<string, unknown>): string {
   return data['version'] === undefined ? '' : String(data['version'])
 }
 
-async function loadPortableSkills(dir: string, source: SkillSource): Promise<SkillDefinition[]> {
+async function loadPortableSkills(
+  dir: string,
+  source: SkillSource,
+  currentDir: string = dir,
+  group?: string,
+): Promise<SkillDefinition[]> {
   let entries
   try {
-    entries = await readdir(dir, { withFileTypes: true })
+    entries = await readdir(currentDir, { withFileTypes: true })
   } catch {
     return []
   }
@@ -65,42 +70,53 @@ async function loadPortableSkills(dir: string, source: SkillSource): Promise<Ski
   const skills: SkillDefinition[] = []
   for (const entry of entries) {
     if (!entry.isDirectory() && !entry.isSymbolicLink()) continue
-    const packageDir = join(dir, entry.name)
+    const packageDir = join(currentDir, entry.name)
     const entrypoint = join(packageDir, 'SKILL.md')
     try {
-      const content = await readFile(entrypoint, 'utf-8')
-      const parsed = matter(content)
-      const data = parsed.data as Record<string, unknown>
-      const id = typeof data['name'] === 'string' ? data['name'].trim() : ''
-      const description = typeof data['description'] === 'string' ? data['description'].trim() : ''
-      const prompt = parsed.content.trim()
-      if (!id || !description || !prompt) continue
-      const resolvedDirectory = await realpath(packageDir)
-      const warnings: string[] = []
-      if (id.length > 64 || !PORTABLE_NAME_REGEX.test(id)) {
-        warnings.push('Skill name must use 1-64 lowercase letters, numbers, and single hyphens')
+      if (await pathExists(entrypoint)) {
+        const content = await readFile(entrypoint, 'utf-8')
+        const parsed = matter(content)
+        const data = parsed.data as Record<string, unknown>
+        const id = typeof data['name'] === 'string' ? data['name'].trim() : ''
+        const description = typeof data['description'] === 'string' ? data['description'].trim() : ''
+        const prompt = parsed.content.trim()
+        if (id && description && prompt) {
+          const resolvedDirectory = await realpath(packageDir)
+          const warnings: string[] = []
+          if (id.length > 64 || !PORTABLE_NAME_REGEX.test(id)) {
+            warnings.push('Skill name must use 1-64 lowercase letters, numbers, and single hyphens')
+          }
+          if (id !== entry.name) {
+            warnings.push(`Skill name "${id}" does not match package directory "${entry.name}"`)
+          }
+          skills.push({
+            metadata: {
+              id,
+              name: portableDisplayName(data, id),
+              description,
+              version: portableVersion(data),
+              ...(group ? { group } : {}),
+            },
+            prompt,
+            rawMetadata: data,
+            entrypoint,
+            directory: resolvedDirectory,
+            source,
+            legacy: false,
+            warnings,
+          })
+          // If this directory is a skill package, we don't recurse inside its internal subdirectories (e.g. assets, scripts)
+          continue
+        }
       }
-      if (id !== entry.name) {
-        warnings.push(`Skill name "${id}" does not match package directory "${entry.name}"`)
-      }
-      skills.push({
-        metadata: {
-          id,
-          name: portableDisplayName(data, id),
-          description,
-          version: portableVersion(data),
-        },
-        prompt,
-        rawMetadata: data,
-        entrypoint,
-        directory: resolvedDirectory,
-        source,
-        legacy: false,
-        warnings,
-      })
     } catch {
       // Invalid or unreadable packages do not block discovery.
     }
+
+    // Not a skill package directly — recurse into subdirectory
+    const subGroup = group ? `${group}/${entry.name}` : entry.name
+    const nestedSkills = await loadPortableSkills(dir, source, packageDir, subGroup)
+    skills.push(...nestedSkills)
   }
   return skills
 }

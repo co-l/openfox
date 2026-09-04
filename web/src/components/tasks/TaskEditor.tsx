@@ -14,7 +14,14 @@ import { useTasksStore } from '../../stores/tasks'
 import { useAgents } from '../../hooks/useAgents'
 import { useProviders } from '../../hooks/useProviders'
 import { useResource } from '../../hooks/useResource'
-import { commandsResource, projectResource, workflowsResource, selectAllWorkflows } from '../../lib/resources'
+import {
+  commandsResource,
+  projectResource,
+  workflowsResource,
+  skillsResource,
+  selectAllWorkflows,
+  selectActiveSkills,
+} from '../../lib/resources'
 import { useProjectStore } from '../../stores/project'
 import { useProjects } from '../../hooks/useProjects'
 import { dedupById } from '../../lib/modal-utils'
@@ -58,6 +65,7 @@ export function TaskEditor({ projectId, initialTask, onClose, onSaved }: TaskEdi
   const agents = allAgents.filter((a) => !a.subagent)
   const { data: commandsData } = useResource(commandsResource, workdir)
   const { data: workflowsData } = useResource(workflowsResource, workdir)
+  const { data: skillsData } = useResource(skillsResource, workdir)
 
   // Agents, commands, and workflows all load via the resource cache
   // (implicit loadership) — no imperative fetch to remember here.
@@ -286,6 +294,7 @@ export function TaskEditor({ projectId, initialTask, onClose, onSaved }: TaskEdi
   const commands = commandsData
     ? dedupById(dedupById(commandsData.defaults, commandsData.userItems), commandsData.projectItems)
     : []
+  const skills = selectActiveSkills(skillsData)
 
   const slashParamCount = (() => {
     if (activeSlashParams.length === 0) return 0
@@ -379,6 +388,7 @@ export function TaskEditor({ projectId, initialTask, onClose, onSaved }: TaskEdi
               cursorPos={cursorPosRef.current}
               workflows={workflows}
               commands={commands}
+              skills={skills}
               anchorRef={composerWrapRef}
               onSelect={handleSelectSlash}
             />

@@ -4,7 +4,7 @@ import { useSessionStore, useIsRunning, useQueuedMessages } from '../../stores/s
 import { useScopedPaneState } from '../../stores/session/session-scope'
 import { useResource } from '../../hooks/useResource'
 import { useWorkflows } from '../../hooks/useWorkflows'
-import { commandsResource, commandResource } from '../../lib/resources'
+import { commandsResource, commandResource, skillsResource, selectActiveSkills } from '../../lib/resources'
 import { authFetch } from '../../lib/api'
 import { parseSlashCommand, extractTemplateParams } from '../../lib/parse-slash-command'
 import { insertSuggestionAtCursor, focusTextareaAt, resolveSlashParamIds } from '../../lib/composer-utils'
@@ -103,6 +103,7 @@ export function ChatInput({
 }: ChatInputProps) {
   const t = useT()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const composerWrapRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const prevLenRef = useRef(0)
   const cursorPosRef = useRef(0)
@@ -147,6 +148,8 @@ export function ChatInput({
     ? dedupById(dedupById(commandsData.defaults, commandsData.userItems), commandsData.projectItems)
     : []
   const { workflows } = useWorkflows(workdir)
+  const { data: skillsData } = useResource(skillsResource, workdir)
+  const activeSkills = selectActiveSkills(skillsData)
 
   // Clear inline param hints when input is emptied (after send, escape, etc.)
   useEffect(() => {
@@ -617,6 +620,7 @@ export function ChatInput({
         />
 
         <div
+          ref={composerWrapRef}
           className={`flex items-end gap-3 p-3 rounded transition-colors ${
             dragOver ? 'bg-accent-primary/10' : 'bg-primary'
           }`}
@@ -652,6 +656,7 @@ export function ChatInput({
               cursorPos={cursorPosRef.current}
               workflows={workflows}
               commands={commands}
+              skills={activeSkills}
               onSelect={handleSelectSlash}
             />
             {activeSlashParams.length > 0 &&

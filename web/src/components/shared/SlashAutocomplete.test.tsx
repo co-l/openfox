@@ -1,9 +1,17 @@
 // @vitest-environment happy-dom
-import { describe, expect, it, vi, afterEach } from 'vitest'
+import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react'
-import { SlashAutocomplete } from './SlashAutocomplete'
+import { SlashAutocomplete, type SkillSlashInfo } from './SlashAutocomplete'
+import { SETTINGS_KEYS } from '../../lib/resources'
+import { setLocale } from '@shared/i18n/index.js'
 import type { WorkflowInfo } from '../../lib/parse-slash-command'
 import type { CommandInfo } from '../../lib/parse-slash-command'
+
+const mockSettings: Record<string, string> = {}
+
+vi.mock('../../hooks/useSetting', () => ({
+  useSetting: (key: string, fallback = '') => ({ value: mockSettings[key] ?? fallback, loading: false }),
+}))
 
 const workflows: WorkflowInfo[] = [
   {
@@ -21,10 +29,15 @@ const commands: CommandInfo[] = [
   { id: 'greet', name: 'Greet' },
 ]
 
+const skills: SkillSlashInfo[] = [
+  { id: 'caveman', name: 'Caveman Mode', description: 'Terse communication style' },
+  { id: 'browser', name: 'Browser Skill' },
+]
+
 function renderAutocomplete(
   text: string,
   cursorPos: number,
-  overrides: { workflows?: WorkflowInfo[]; commands?: CommandInfo[] } = {},
+  overrides: { workflows?: WorkflowInfo[]; commands?: CommandInfo[]; skills?: SkillSlashInfo[] } = {},
 ) {
   return render(
     <SlashAutocomplete
@@ -32,13 +45,22 @@ function renderAutocomplete(
       cursorPos={cursorPos}
       workflows={overrides.workflows ?? workflows}
       commands={overrides.commands ?? commands}
+      skills={overrides.skills ?? skills}
       onSelect={vi.fn()}
     />,
   )
 }
 
 describe('SlashAutocomplete', () => {
-  afterEach(() => cleanup())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    Object.keys(mockSettings).forEach((k) => delete mockSettings[k])
+    setLocale('en')
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
 
   it('renders nothing when no slash at cursor', () => {
     const { container } = renderAutocomplete('hello', 5)
@@ -66,10 +88,18 @@ describe('SlashAutocomplete', () => {
     expect(screen.queryByText('Project')).toBeNull()
   })
 
-  it('shows param count badge for parameterized items', () => {
+  it('shows param count badge for parameterized items in English', () => {
     const { container } = renderAutocomplete('/rev', 4)
     const badges = container.querySelectorAll('[class*="rounded"]')
-    const paramBadge = Array.from(badges).find((b) => b.textContent === '1 param')
+    const paramBadge = Array.from(badges).find((b) => b.textContent?.includes('1 param'))
+    expect(paramBadge).toBeDefined()
+  })
+
+  it('shows param count badge for parameterized items in French', () => {
+    setLocale('fr')
+    const { container } = renderAutocomplete('/rev', 4)
+    const badges = container.querySelectorAll('[class*="rounded"]')
+    const paramBadge = Array.from(badges).find((b) => b.textContent?.includes('1 paramètre'))
     expect(paramBadge).toBeDefined()
   })
 
@@ -81,6 +111,30 @@ describe('SlashAutocomplete', () => {
   it('matches commands', () => {
     renderAutocomplete('/sum', 4)
     expect(screen.getByText('/summarize')).toBeDefined()
+  })
+
+  it('matches skills and renders with text-accent-success and Skill badge in English', () => {
+    renderAutocomplete('/cave', 5)
+    const cmdLabel = screen.getByText('/caveman')
+    expect(cmdLabel).toBeDefined()
+    expect(cmdLabel.className).toContain('text-accent-success')
+    expect(screen.getByText('Caveman Mode')).toBeDefined()
+    expect(screen.getByText('Skill')).toBeDefined()
+  })
+
+  it('matches skills and renders with Compétence badge in French', () => {
+    setLocale('fr')
+    renderAutocomplete('/cave', 5)
+    const cmdLabel = screen.getByText('/caveman')
+    expect(cmdLabel).toBeDefined()
+    expect(cmdLabel.className).toContain('text-accent-success')
+    expect(screen.getByText('Caveman Mode')).toBeDefined()
+    expect(screen.getByText('Compétence')).toBeDefined()
+  })
+
+  it('matches skills by description', () => {
+    renderAutocomplete('/terse', 6)
+    expect(screen.getByText('/caveman')).toBeDefined()
   })
 
   it('carries the scope on selected workflow suggestions', () => {
@@ -103,12 +157,16 @@ describe('SlashAutocomplete', () => {
     )
   })
 
-  it('renders in place with absolute positioning when no anchorRef is given', () => {
+  it('renders fullscreen sizing 10px under header when DISPLAY_FULLSCREEN_SLASH_COMMAND is true', () => {
+    mockSettings[SETTINGS_KEYS.DISPLAY_FULLSCREEN_SLASH_COMMAND] = 'true'
+
     const { container } = renderAutocomplete('/rev', 4)
-    const listbox = container.querySelector('[role="listbox"]')
+    const listbox = container.querySelector('[role="listbox"]') as HTMLElement
     expect(listbox).toBeTruthy()
-    expect(listbox!.className).toContain('absolute')
-    expect(listbox!.className).toContain('bottom-full')
+    expect(listbox.style.top).toBe('42px')
+    expect(listbox.style.bottom).toBe('84px')
+    const scrollArea = listbox.querySelector('[class*="bg-bg-secondary"]')
+    expect(scrollArea).toBeTruthy()
   })
 
   it('renders into a portal with fixed positioning when an anchorRef is given', () => {
