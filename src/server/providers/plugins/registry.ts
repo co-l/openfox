@@ -5,14 +5,24 @@ import type {
   ProviderPluginRuntime,
   ProviderPreset,
   ProviderTransportAdapter,
+  PluginNotification,
 } from '../../../provider/index.js'
 
 export class ProviderRegistry implements ProviderPluginRegistry {
   private readonly authAdapters = new Map<string, ProviderAuthAdapter>()
   private readonly transportAdapters = new Map<string, ProviderTransportAdapter>()
   private readonly presets = new Map<string, ProviderPreset>()
+  private notifyFn: ((notification: PluginNotification) => void) | null = null
 
   constructor(readonly runtime: ProviderPluginRuntime) {}
+
+  setNotify(fn: (notification: PluginNotification) => void): void {
+    this.notifyFn = fn
+  }
+
+  notify(notification: PluginNotification): void {
+    this.notifyFn?.(notification)
+  }
 
   registerAuth(adapter: ProviderAuthAdapter): void {
     this.register(this.authAdapters, adapter.id, adapter, 'auth adapter')

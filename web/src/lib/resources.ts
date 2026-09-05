@@ -14,6 +14,7 @@ import type {
   ProjectTaskCounts,
   ProjectTaskSettings,
   TaskGateConfig,
+  Notification,
 } from '@shared/types.js'
 import type { WorkspaceConfig as SharedWorkspaceConfig } from '@shared/workspace.js'
 import type { DevServerConfig, DevServerStatus } from '@shared/dev-server.js'
@@ -816,3 +817,26 @@ export const agentDefaultResource = resource<AgentFull | null, [string]>({
   fetch: fetchAgentDefaultContent,
   maxAgeMs: 0,
 })
+
+export interface NotificationsData {
+  notifications: Notification[]
+}
+
+export async function fetchNotifications(): Promise<Notification[]> {
+  const res = await authFetch('/api/notifications')
+  if (!res.ok) throw new Error(`Failed to load notifications (${res.status})`)
+  const data = (await res.json()) as Partial<NotificationsData>
+  return data.notifications ?? []
+}
+
+/** Global notifications list. WS events push write-through directly. */
+export const notificationsResource = resource<Notification[], []>({
+  key: () => 'notifications:list',
+  fetch: fetchNotifications,
+  maxAgeMs: 60_000,
+})
+
+/** Synchronous cache read for non-hook call sites (event handlers, getState-style reads). */
+export function readNotifications(): Notification[] | undefined {
+  return snapshot<Notification[]>(notificationsResource.keyOf()).data
+}

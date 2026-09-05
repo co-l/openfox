@@ -320,4 +320,18 @@ describe('db migrations', () => {
 
     db.close()
   })
+
+  it('creates notifications table on a fresh database', () => {
+    const config = loadConfig()
+    config.database.path = dbPath
+    initDatabase(config)
+
+    const db = new Database(dbPath)
+    const columns = db.prepare(`PRAGMA table_info(notifications)`).all() as { name: string }[]
+    const columnNames = columns.map((c) => c.name)
+
+    expect(columnNames).toEqual(expect.arrayContaining(['id', 'title', 'body', 'source', 'read', 'created_at']))
+
+    db.close()
+  })
 })

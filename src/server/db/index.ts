@@ -444,5 +444,18 @@ function runMigrations(db: Database.Database): void {
     )
   `)
 
+  // Global in-app notification history
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'system',
+      read INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    )
+  `)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at)`)
+
   logger.info('Database migrations completed')
 }
