@@ -9,9 +9,12 @@ import { mcpServersResource } from '../../lib/resources'
 import { mcpStatusColor, mcpStatusDot, formatTokens } from '../../lib/mcp-utils'
 import { authFetch } from '../../lib/api'
 import { useClickOutside } from '../../hooks/useClickOutside'
+import { useIsTouchDevice } from '../../hooks/useIsTouchDevice'
+import { DropdownPanel } from '../shared/DropdownPanel'
 
 export function McpSelector() {
   const t = useT()
+  const isTouch = useIsTouchDevice()
   const { data: serversData, refresh: refreshServers } = useResource(mcpServersResource)
   const servers = serversData ?? []
   const currentSession = useSessionStore((s) => s.currentSession)
@@ -122,7 +125,12 @@ export function McpSelector() {
       </button>
 
       {isOpen && (
-        <div className="absolute bottom-full right-0 mb-1 min-w-72 max-w-[100vw] bg-bg-secondary border border-border rounded-lg shadow-lg z-50 flex flex-col max-h-[80vh]">
+        <DropdownPanel
+          isModal={isTouch}
+          testId="mcp-dropdown"
+          anchoredClassName="max-h-[80vh]"
+          onClose={() => setIsOpen(false)}
+        >
           <ScrollArea className="flex-1 min-h-0">
             {servers.length === 0 ? (
               <div className="px-4 py-3 text-sm text-text-muted text-center">
@@ -181,7 +189,7 @@ export function McpSelector() {
               </span>
             )}
           </div>
-        </div>
+        </DropdownPanel>
       )}
     </div>
   )

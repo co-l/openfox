@@ -168,3 +168,14 @@
     border-color: rgb(var(--color-accent-success) / 0.45);
   }
 }
+
+/* iOS auto-zooms the page when a focused field renders below 16px. With
+   pinch-zoom disabled in the viewport meta, this closes the last zoom path on
+   touch devices; !important beats per-element text-size utilities. */
+@media (hover: none) and (pointer: coarse) {
+  input,
+  select,
+  textarea {
+    font-size: max(1em, 16px) !important;
+  }
+}
