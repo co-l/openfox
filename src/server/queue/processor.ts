@@ -64,6 +64,7 @@ export class QueueProcessor {
 
   abortSession(sessionId: string): boolean {
     this.abortedSessions.add(sessionId)
+    this.deps.sessionManager.clearPauseState(sessionId)
     const controller = this.activeAgents.get(sessionId)
     if (controller) {
       controller.abort()

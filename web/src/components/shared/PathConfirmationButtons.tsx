@@ -74,10 +74,16 @@ export function PathConfirmationButtons({ confirmation }: PathConfirmationButton
 
   const isGitNoVerify = confirmation.reason === 'git_no_verify'
 
-  const handleEnableDangerousAndAllow = () => {
+  const handleEnableDangerousAndAllow = async () => {
     if (!sessionId) return
-    switchDangerLevel(sessionId, 'dangerous')
-    confirmPath(sessionId, confirmation.callId, true, false)
+    // Switching to dangerous mode makes the server auto-approve every pending
+    // confirmation for the session, so this single call lets the whole batch
+    // of tool calls continue. If the switch fails, fall back to approving just
+    // this confirmation so the click is never a silent no-op.
+    const switched = await switchDangerLevel(sessionId, 'dangerous')
+    if (!switched) {
+      confirmPath(sessionId, confirmation.callId, true, false)
+    }
   }
 
   return (

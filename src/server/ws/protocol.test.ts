@@ -24,6 +24,7 @@ import {
   createProjectListMessage,
   createProjectStateMessage,
   createSessionListMessage,
+  createSessionPauseMessage,
   createSessionRunningMessage,
   createSessionStateMessage,
   parseClientMessage,
@@ -228,6 +229,24 @@ describe('ws/protocol', () => {
         },
       })
       expect(createSessionRunningMessage(true)).toEqual({ type: 'session.running', payload: { isRunning: true } })
+    })
+  })
+
+  describe('createSessionPauseMessage', () => {
+    it('builds a session.pause message with the pause state', () => {
+      expect(createSessionPauseMessage('paused')).toEqual({
+        type: 'session.pause',
+        payload: { pauseState: 'paused' },
+      })
+    })
+
+    it('covers all pause states', () => {
+      for (const pauseState of ['none', 'pending', 'paused', 'resuming'] as const) {
+        expect(createSessionPauseMessage(pauseState)).toEqual({
+          type: 'session.pause',
+          payload: { pauseState },
+        })
+      }
     })
   })
 

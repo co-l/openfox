@@ -25,6 +25,7 @@ import {
   createProject,
   createSession,
   setSessionMode,
+  setSessionDangerLevel,
   answerPathConfirmation,
   type TestClient,
   type TestProject,
@@ -390,6 +391,93 @@ describe('Path Security', () => {
       }
 
       await client.waitFor('chat.done').catch(() => null)
+    })
+  })
+
+  describe('Danger Mode Switch', () => {
+    async function collectConfirmations(): Promise<string[]> {
+      const callIds: string[] = []
+      const deadline = Date.now() + 3000
+      while (Date.now() < deadline && callIds.length < 3) {
+        const pending = client
+          .allEvents()
+          .filter((e) => e.type === 'chat.path_confirmation')
+          .map((e) => (e.payload as PathConfirmationPayload).callId)
+        for (const callId of pending) {
+          if (!callIds.includes(callId)) {
+            callIds.push(callId)
+          }
+        }
+        if (callIds.length < 3) {
+          await new Promise((resolve) => setTimeout(resolve, 25))
+        }
+      }
+      return callIds
+    }
+
+    it('auto-approves every pending confirmation of a batch when switching to dangerous mode', async () => {
+      client.clearEvents()
+
+      // The mock LLM emits three write_file calls to outside-workdir paths in a
+      // single response, so three path confirmations go pending in parallel.
+      await client.send('chat.send', {
+        content: 'Write three files outside the project',
+      })
+
+      const callIds = await collectConfirmations()
+      expect(callIds.length).toBe(3)
+
+      // Switching to dangerous mode must resolve all three pending confirmations.
+      const session = client.getSession()!
+      await setSessionDangerLevel(server.url, session.id, 'dangerous')
+
+      // Wait for the broadcast of each resolved confirmation.
+      const resolved = await client.waitFor('session.confirmation_resolved', undefined, 3000).catch(() => null)
+      expect(resolved).not.toBeNull()
+      for (const callId of callIds) {
+        const msg = await client
+          .waitFor<{ callId: string }>('session.confirmation_resolved', (p) => p.callId === callId, 2000)
+          .catch(() => null)
+        expect(msg, `expected confirmation_resolved for ${callId}`).not.toBeNull()
+      }
+
+      // The whole batch completes without further prompting.
+      await client.waitFor('chat.done', undefined, 5000).catch(() => null)
+      const toolResults = client.allEvents().filter((e) => e.type === 'chat.tool_result')
+      expect(toolResults.length).toBeGreaterThanOrEqual(3)
+    })
+
+    it('switching to dangerous mid-confirmation lets the turn finish and the next turn skips prompting', async () => {
+      client.clearEvents()
+
+      await client.send('chat.send', {
+        content: 'Write to /home/test/approved.txt with content "approved"',
+      })
+
+      const confirmation = await client.waitFor('chat.path_confirmation', undefined, 3000).catch(() => null)
+      expect(confirmation).not.toBeNull()
+      const callId = (confirmation!.payload as PathConfirmationPayload).callId
+
+      // Switch to dangerous while the confirmation is pending: it must resolve
+      // and the tool call must complete.
+      const session = client.getSession()!
+      await setSessionDangerLevel(server.url, session.id, 'dangerous')
+
+      const resolved = await client
+        .waitFor<{ callId: string }>('session.confirmation_resolved', (p) => p.callId === callId, 3000)
+        .catch(() => null)
+      expect(resolved).not.toBeNull()
+      await client.waitFor('chat.done', undefined, 5000).catch(() => null)
+
+      // A follow-up message to an outside path must not prompt again: the new
+      // run starts in dangerous mode.
+      client.clearEvents()
+      await client.send('chat.send', {
+        content: 'Write to /home/test/approved.txt with content "approved"',
+      })
+      await client.waitFor('chat.done', undefined, 5000).catch(() => null)
+      const confirmations = client.allEvents().filter((e) => e.type === 'chat.path_confirmation')
+      expect(confirmations.length).toBe(0)
     })
   })
 })

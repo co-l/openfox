@@ -951,6 +951,24 @@ export const useSessionStore = create<SessionState>((set, get) => {
       }
     },
 
+    pauseGeneration: async (sessionId) => {
+      if (!paneFor(get(), sessionId)?.session) return
+      try {
+        await authFetch(`/api/sessions/${sessionId}/pause`, { method: 'POST' })
+      } catch (error) {
+        console.error('Error pausing generation:', error)
+      }
+    },
+
+    resumeGeneration: async (sessionId) => {
+      if (!paneFor(get(), sessionId)?.session) return
+      try {
+        await authFetch(`/api/sessions/${sessionId}/resume`, { method: 'POST' })
+      } catch (error) {
+        console.error('Error resuming generation:', error)
+      }
+    },
+
     launchWorkflow: (sessionId, content?, attachments?, workflowId?, subGroup?, params?, scope?) => {
       if (!paneFor(get(), sessionId)?.session) return
       const payload: Record<string, unknown> = { sessionId }
@@ -1048,8 +1066,8 @@ export const useSessionStore = create<SessionState>((set, get) => {
       }
     },
 
-    switchDangerLevel: async (sessionId, dangerLevel) => {
-      if (!paneFor(get(), sessionId)?.session) return
+    switchDangerLevel: async (sessionId, dangerLevel): Promise<boolean> => {
+      if (!paneFor(get(), sessionId)?.session) return false
       try {
         const res = await authFetch(`/api/sessions/${sessionId}/danger-level`, {
           method: 'PUT',
@@ -1058,14 +1076,16 @@ export const useSessionStore = create<SessionState>((set, get) => {
         })
         if (!res.ok) {
           console.error('Failed to switch danger level:', await res.json())
-          return
+          return false
         }
         const data = await res.json()
         if (data.session) {
           set((state) => updatePaneSession(state, sessionId, () => data.session))
         }
+        return true
       } catch (error) {
         console.error('Error switching danger level:', error)
+        return false
       }
     },
 

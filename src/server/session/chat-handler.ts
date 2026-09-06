@@ -170,5 +170,8 @@ export function stopSessionExecution(sessionId: string, sessionManager: SessionM
     controller.abort()
   }
 
+  // Release a paused gate immediately (setRunning(false) also clears it, but
+  // this gives the UI instant feedback on Stop).
+  sessionManager.clearPauseState(sessionId)
   sessionManager.setRunning(sessionId, false)
 }

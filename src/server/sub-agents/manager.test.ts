@@ -87,6 +87,7 @@ function createMockSessionManager(): SessionManager {
     updateMessage: vi.fn(),
     getQueueState: vi.fn().mockReturnValue({ queued: 0, processing: false }),
     resolveEffectiveProviderModel: vi.fn(() => ({ providerId: null, model: null })),
+    enterPauseGate: vi.fn().mockResolvedValue('released'),
   } as unknown as SessionManager
 }
 

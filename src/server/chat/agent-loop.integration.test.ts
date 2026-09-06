@@ -127,6 +127,7 @@ function createMockSessionManager(overrides?: Record<string, any>): SessionManag
     getCurrentWindowMessages: vi.fn().mockReturnValue([]),
     updateMessage: vi.fn(),
     getQueueState: vi.fn().mockReturnValue({ queued: 0, processing: false }),
+    enterPauseGate: vi.fn().mockResolvedValue('released'),
     ...overrides,
   } as any
 }
@@ -322,6 +323,41 @@ describe('agentLoop integration', () => {
     // Should emit chat.done at the end
     const chatDoneEvents = append.mock.calls.filter((args: unknown[]) => (args[0] as any).type === 'chat.done')
     expect(chatDoneEvents.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('picks up a danger level change made mid-run on the next batch', async () => {
+    const append = vi.fn()
+    // requireSession simulates a fresh DB read per call, so each batch context
+    // sees the danger level as it is at that moment.
+    const state = { dangerLevel: 'normal' as 'normal' | 'dangerous' }
+    const requireSession = vi.fn(() => ({
+      workdir: '/test',
+      projectId: 'test-project',
+      executionState: null,
+      criteria: [],
+      isRunning: false,
+      dangerLevel: state.dangerLevel,
+    }))
+    const sessionManager = createMockSessionManager({ requireSession })
+    const toolCall: ToolCall = { id: 'call-1', name: 'run_command', arguments: { command: 'echo hi' } }
+
+    ;(consumeStreamGenerator as any)
+      .mockResolvedValueOnce(makeStreamResult({ toolCalls: [toolCall], finishReason: 'tool_calls' }))
+      .mockResolvedValueOnce(makeStreamResult({ toolCalls: [toolCall], finishReason: 'tool_calls' }))
+    ;(executeTools as any).mockImplementation(async () => {
+      // Simulate the user switching the session to dangerous mode while batch 1 runs.
+      state.dangerLevel = 'dangerous'
+      return { toolMessages: [{ role: 'tool', content: 'output', source: 'history', toolCallId: 'call-1' }] }
+    })
+
+    await runTopLevelAgentLoop(makeConfig({ sessionManager, append }), turnMetrics)
+
+    // Guard: the danger level change must apply from the next batch (each batch
+    // context is built from a fresh session read, not a run-start snapshot).
+    const batchContexts = (executeTools as any).mock.calls.map((c: unknown[]) => c[2] as any)
+    expect(batchContexts.length).toBeGreaterThanOrEqual(2)
+    expect(batchContexts[0].dangerLevel).toBe('normal')
+    expect(batchContexts[batchContexts.length - 1].dangerLevel).toBe('dangerous')
   })
 
   it('auto-compacts within the loop when threshold is exceeded, then continues normally', async () => {

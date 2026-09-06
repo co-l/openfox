@@ -30,6 +30,7 @@ export {
   setSetting,
   setSessionMode,
   setSessionCriteria,
+  setSessionDangerLevel,
   stopSessionChat,
   continueSessionChat,
   answerPathConfirmation,

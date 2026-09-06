@@ -276,6 +276,15 @@ export const RULES: MockRule[] = [
     response: 'Wrote to the approved path.',
   },
   {
+    match: /write.*(?:three|3).*outside|three.*files.*outside/i,
+    tools: [
+      { name: 'write_file', arguments: { path: '/home/test/alpha.txt', content: 'alpha' } },
+      { name: 'write_file', arguments: { path: '/home/test/beta.txt', content: 'beta' } },
+      { name: 'write_file', arguments: { path: '/home/test/gamma.txt', content: 'gamma' } },
+    ],
+    response: 'Wrote three files outside the project.',
+  },
+  {
     match: /write.*\/home\/test\/denied/i,
     tools: [{ name: 'write_file', arguments: { path: '/home/test/denied.txt', content: 'denied' } }],
     response: 'Wrote to the denied path.',

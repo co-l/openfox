@@ -1553,6 +1553,36 @@ export function cancelPathConfirmationsForSession(sessionId: string, reason: str
 }
 
 /**
+ * Auto-approve every pending path confirmation for a session.
+ * Used when a session switches to dangerous mode: pending confirmations
+ * (e.g. sibling tool calls of the same batch) resolve as approved so their
+ * tool calls continue without further prompting.
+ *
+ * git_no_verify confirmations are never auto-approved — they always require
+ * explicit user confirmation, even in dangerous mode.
+ *
+ * @param sessionId - The session whose confirmations should be resolved
+ * @returns The callIds that were auto-approved
+ */
+export function autoApprovePendingConfirmationsForSession(sessionId: string): string[] {
+  const resolvedCallIds: string[] = []
+  for (const callId of [...pendingConfirmations.keys()]) {
+    const pending = pendingConfirmations.get(callId)
+    if (!pending || pending.sessionId !== sessionId) {
+      continue
+    }
+    if (pending.reason === 'git_no_verify') {
+      continue
+    }
+    const result = providePathConfirmation(callId, true, false)
+    if (result.found) {
+      resolvedCallIds.push(callId)
+    }
+  }
+  return resolvedCallIds
+}
+
+/**
  * Check if there's a pending path confirmation.
  *
  * @param callId - The confirmation's unique ID

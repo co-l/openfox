@@ -1353,6 +1353,22 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
 
     sessionManager.setDangerLevel(sessionId, dangerLevel)
+
+    // Entering dangerous mode resolves every pending confirmation for the
+    // session (except git_no_verify, which always requires explicit consent),
+    // so sibling tool calls of the same batch continue without prompting again.
+    if (dangerLevel === 'dangerous') {
+      const { autoApprovePendingConfirmationsForSession } = await import('./tools/index.js')
+      const approvedCallIds = autoApprovePendingConfirmationsForSession(sessionId)
+      for (const callId of approvedCallIds) {
+        wssExports.broadcastForSession(sessionId, {
+          type: 'session.confirmation_resolved',
+          sessionId,
+          payload: { sessionId, callId },
+        })
+      }
+    }
+
     const updatedSession = sessionManager.getSession(sessionId)
 
     res.json({ session: toClientSession(updatedSession!) })
@@ -1644,6 +1660,42 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: false } })
 
     res.json({ success: true, queuedMessages })
+  })
+
+  // Chat pause (cooperative — pauses the NEXT LLM request, never aborts the current one)
+  app.post('/api/sessions/:id/pause', async (req, res) => {
+    const sessionId = req.params.id
+    const session = sessionManager.getSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+
+    if (!session.isRunning) {
+      return res.status(409).json({ error: 'Session is not running' })
+    }
+
+    const ok = sessionManager.requestPause(sessionId)
+    if (!ok) {
+      return res.status(409).json({ error: 'A pause is already in progress' })
+    }
+
+    res.json({ success: true, pauseState: sessionManager.getPauseState(sessionId) })
+  })
+
+  // Chat resume (cancels a pending pause, or releases a paused agent)
+  app.post('/api/sessions/:id/resume', async (req, res) => {
+    const sessionId = req.params.id
+    const session = sessionManager.getSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+
+    const ok = sessionManager.requestResume(sessionId)
+    if (!ok) {
+      return res.status(409).json({ error: 'Nothing to resume' })
+    }
+
+    res.json({ success: true, pauseState: sessionManager.getPauseState(sessionId) })
   })
 
   // Truncate session messages at a given index

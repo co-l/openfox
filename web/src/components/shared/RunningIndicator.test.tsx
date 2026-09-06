@@ -446,3 +446,50 @@ describe('RunningIndicator — factually-derived state from existing client data
     expect(el?.textContent).not.toMatch(/\d+(\.\d+)?s/)
   })
 })
+
+describe('RunningIndicator — pause states', () => {
+  it('renders "Pausing…" with the bounce still active while the pause is pending', () => {
+    useSessionStore.setState({
+      currentSession: makeSession({ phase: 'build', isRunning: true, pauseState: 'pending' }),
+    })
+    const container = render()
+    const el = container.querySelector('[data-testid="session-status-indicator"]')
+    expect(el?.getAttribute('data-state')).toBe('pausing')
+    expect(el?.textContent).toContain('Pausing…')
+    expect(el?.textContent).not.toContain('Running')
+    const bounceDots = el?.querySelectorAll('.animate-bounce') ?? []
+    expect(bounceDots.length).toBeGreaterThan(0)
+  })
+
+  it('renders "Paused" without the bounce when the agent is blocked', () => {
+    useSessionStore.setState({
+      currentSession: makeSession({ phase: 'build', isRunning: true, pauseState: 'paused' }),
+    })
+    const container = render()
+    const el = container.querySelector('[data-testid="session-status-indicator"]')
+    expect(el?.getAttribute('data-state')).toBe('paused')
+    expect(el?.textContent).toContain('Paused')
+    expect(el?.textContent).not.toContain('Running')
+    const bounceDots = el?.querySelectorAll('.animate-bounce') ?? []
+    expect(bounceDots.length).toBe(0)
+  })
+
+  it('renders "Paused" during the transient resuming state as well', () => {
+    useSessionStore.setState({
+      currentSession: makeSession({ phase: 'build', isRunning: true, pauseState: 'resuming' }),
+    })
+    const container = render()
+    const el = container.querySelector('[data-testid="session-status-indicator"]')
+    expect(el?.getAttribute('data-state')).toBe('paused')
+  })
+
+  it('waiting for user input takes priority over a pending pause', () => {
+    useSessionStore.setState({
+      currentSession: makeSession({ phase: 'build', isRunning: true, pauseState: 'pending' }),
+      pendingQuestions: [{ callId: 'q1', question: 'Pick?', type: 'choice', options: undefined }],
+    })
+    const container = render()
+    const el = container.querySelector('[data-testid="session-status-indicator"]')
+    expect(el?.getAttribute('data-state')).toBe('waiting')
+  })
+})

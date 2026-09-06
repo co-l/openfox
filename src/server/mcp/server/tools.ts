@@ -142,6 +142,7 @@ function buildSessionStatusPayload(sessionId: string, deps: OpenFoxMcpToolDeps):
   return {
     ...status,
     isRunning: session.isRunning,
+    pauseState: session.pauseState ?? 'none',
     pending: { questions: pendingQuestions, confirmations: pendingConfirmations },
     workflow: workflowPayload(activeExecution),
   }

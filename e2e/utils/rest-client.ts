@@ -193,6 +193,28 @@ export async function setSessionMode(
 }
 
 /**
+ * Set session danger level via REST API.
+ */
+export async function setSessionDangerLevel(
+  baseUrl: string,
+  sessionId: string,
+  dangerLevel: 'normal' | 'dangerous',
+): Promise<{ session: Session }> {
+  const response = await fetch(`${baseUrl}/api/sessions/${sessionId}/danger-level`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dangerLevel }),
+  })
+
+  if (!response.ok) {
+    const error = (await response.json().catch(() => ({}))) as { error?: string }
+    throw new Error(error.error || `Failed to set session danger level: ${response.status}`)
+  }
+
+  return response.json() as Promise<{ session: Session }>
+}
+
+/**
  * Set session criteria via REST API
  */
 export async function setSessionCriteria(baseUrl: string, sessionId: string, criteria: unknown[]): Promise<void> {

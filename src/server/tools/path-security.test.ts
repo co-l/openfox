@@ -18,6 +18,7 @@ import {
   cancelPathConfirmationsForSession,
   cancelPathConfirmation,
   hasPendingPathConfirmation,
+  autoApprovePendingConfirmationsForSession,
   isSensitivePath,
   registerPathConfirmation,
   requestPathAccess,
@@ -1272,6 +1273,82 @@ describe('path-security', () => {
       await Promise.all([rejectedA, rejectedB])
       expect(cancelPathConfirmation('call-c', 'cleanup')).toBe(true)
       await expect(pendingC).rejects.toThrow('cleanup')
+    })
+
+    it('auto-approves all pending confirmations for a session when switching to dangerous mode', async () => {
+      const pendingA = registerPathConfirmation(
+        'danger-a',
+        ['/tmp/a'],
+        'session-danger',
+        'read_file',
+        '/tmp',
+        'outside_workdir',
+      )
+      const pendingB = registerPathConfirmation(
+        'danger-b',
+        ['/tmp/b'],
+        'session-danger',
+        'write_file',
+        '/tmp',
+        'sensitive_file',
+      )
+      const pendingOther = registerPathConfirmation(
+        'danger-other',
+        ['/tmp/c'],
+        'session-other',
+        'read_file',
+        '/tmp',
+        'outside_workdir',
+      )
+
+      const approvedA = expect(pendingA).resolves.toBe(true)
+      const approvedB = expect(pendingB).resolves.toBe(true)
+
+      const resolved = autoApprovePendingConfirmationsForSession('session-danger')
+      expect(resolved.sort()).toEqual(['danger-a', 'danger-b'])
+      expect(hasPendingPathConfirmation('danger-a')).toBe(false)
+      expect(hasPendingPathConfirmation('danger-b')).toBe(false)
+      expect(hasPendingPathConfirmation('danger-other')).toBe(true)
+      expect(autoApprovePendingConfirmationsForSession('session-danger')).toEqual([])
+
+      await Promise.all([approvedA, approvedB])
+      expect(cancelPathConfirmation('danger-other', 'cleanup')).toBe(true)
+      await expect(pendingOther).rejects.toThrow('cleanup')
+    })
+
+    it('auto-approve keeps git_no_verify confirmations pending even in dangerous mode', async () => {
+      const pendingGit = registerPathConfirmation(
+        'danger-git',
+        ['/tmp'],
+        'session-git',
+        'run_command',
+        '/tmp',
+        'git_no_verify',
+      )
+      const pendingCmd = registerPathConfirmation(
+        'danger-cmd',
+        ['rm -rf /'],
+        'session-git',
+        'run_command',
+        '/tmp',
+        'dangerous_command',
+      )
+
+      const approvedCmd = expect(pendingCmd).resolves.toBe(true)
+
+      const resolved = autoApprovePendingConfirmationsForSession('session-git')
+      expect(resolved).toEqual(['danger-cmd'])
+      expect(hasPendingPathConfirmation('danger-git')).toBe(true)
+      expect(hasPendingPathConfirmation('danger-cmd')).toBe(false)
+
+      await approvedCmd
+      expect(providePathConfirmation('danger-git', true)).toEqual({
+        found: true,
+        sessionId: 'session-git',
+        approved: true,
+      })
+      await expect(pendingGit).resolves.toBe(true)
+      expect(hasPendingPathConfirmation('danger-git')).toBe(false)
     })
 
     it('requests path access, emits confirmation events, and resolves approval/denial', async () => {

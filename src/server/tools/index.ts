@@ -438,6 +438,7 @@ export {
   PathAccessDeniedError,
   requestPathAccess,
   cancelPathConfirmationsForSession,
+  autoApprovePendingConfirmationsForSession,
   providePathConfirmation,
   getConfirmationSessionId,
 } from './path-security.js'

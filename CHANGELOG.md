@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.0.138 - 2026-09-06
+
+### Features
+
+- **Pause button** — pause the next LLM request without aborting the in-flight turn
+- **Resume a paused run from the chat input** — session status shows Pausing…/Paused
+
+### Bug Fixes
+
+- **Dangerous mode applies immediately** — switching auto-approves every pending path confirmation
+- **Allow Everything clears the whole batch** — sibling tool calls continue without re-prompting
+
 ## 2.0.137 - 2026-09-03
 
 ### Bug Fixes
