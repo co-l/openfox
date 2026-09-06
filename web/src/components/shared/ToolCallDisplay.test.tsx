@@ -237,6 +237,7 @@ describe('ToolCallDisplay — PathConfirmationButtons placement', () => {
           gitStatus: null,
           error: null,
           llmRetry: null,
+          autoLaunch: null,
           liveTurnStats: null,
         },
       },

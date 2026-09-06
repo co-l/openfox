@@ -143,7 +143,16 @@ export async function executeTools(
       // Signal to the client that the agent is waiting for user input
       append(createChatDoneEvent(assistantMsgId, 'waiting_for_user'))
 
-      const { awaitAnswer } = await import('../tools/ask.js')
+      // Arm the auto-answer countdown after the question event was appended,
+      // so clients always receive chat.ask_user before its countdown.
+      const { armAutoAnswer, awaitAnswer, consumeAutoAnswered } = await import('../tools/ask.js')
+      armAutoAnswer({
+        callId: error.callId,
+        sessionId: ctx.sessionId,
+        projectId: ctx.sessionManager.getSession(ctx.sessionId)?.projectId,
+        type: error.type,
+        options: error.options,
+      })
       const answerPromise = awaitAnswer(error.callId)
       if (!answerPromise) {
         throw new Error(
@@ -162,6 +171,7 @@ export async function executeTools(
         output: answer,
         durationMs: Date.now() - startTime,
         truncated: false,
+        ...(consumeAutoAnswered(error.callId) ? { metadata: { autoAnswered: true } } : {}),
       }
     } else if (error instanceof Error && (error.message === 'Aborted' || error.name === 'AbortError')) {
       return createInterruptedResult(startTime)

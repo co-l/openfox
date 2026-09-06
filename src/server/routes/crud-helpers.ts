@@ -103,6 +103,8 @@ export interface CrudRouteConfig<T> {
   /** Opt in to scope annotation (GET /) and ?scope= handling (GET/:id, PUT, DELETE). Workflows only. */
   annotateScope?: boolean
   extraGetData?: (effectiveProjectDir?: string) => Promise<{ [key: string]: unknown }>
+  /** Runs after a successful delete; used by workflows to prune dangling favorite references. */
+  afterDelete?: (id: string, ctx: { configDir: string; projectDir?: string }) => Promise<void> | void
   extraRoutes?: (router: Router) => void
 }
 
@@ -248,6 +250,13 @@ export function createCrudRoutes<T extends { metadata: { id: string; name: strin
             ? serverT({ en: 'Failed to delete project item', fr: 'Échec de suppression de l’élément de projet' })
             : (result.reason ?? serverT({ en: 'Cannot delete this item', fr: 'Impossible de supprimer cet élément' })),
       })
+    }
+    if (config.afterDelete) {
+      try {
+        await config.afterDelete(id, { configDir, ...(effectiveProjectDir ? { projectDir: effectiveProjectDir } : {}) })
+      } catch {
+        // Config cleanup must never fail the delete response.
+      }
     }
     res.json({ success: true })
   })

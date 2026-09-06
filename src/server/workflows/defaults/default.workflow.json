@@ -70,7 +70,12 @@
           },
           "goto": "verify"
         },
-        { "when": { "type": "always" }, "goto": "build" }
+        {
+          "when": {
+            "type": "always"
+          },
+          "goto": "build"
+        }
       ]
     },
     {
@@ -83,10 +88,21 @@
       "prompt": "## Criteria\n{{criteriaList}}\n\n## Modified Files\n{{modifiedFiles}}\n\nVerify each criterion marked [NEEDS VERIFICATION]. Read the code, run tests if applicable, then use session_metadata to update each criterion's status to passed or failed.",
       "transitions": [
         {
-          "when": { "type": "metadata_all_match", "key": "criteria", "field": "status", "value": "passed" },
+          "when": {
+            "type": "metadata_all_match",
+            "key": "criteria",
+            "field": "status",
+            "value": "passed"
+          },
           "goto": "code_review"
         },
-        { "when": { "type": "always" }, "goto": "build", "subGroup": "verify" }
+        {
+          "when": {
+            "type": "always"
+          },
+          "goto": "build",
+          "subGroup": "verify"
+        }
       ]
     },
     {
@@ -97,7 +113,14 @@
       "subAgentType": "code_reviewer",
       "subGroup": "code review",
       "prompt": "## Modified Files\n{{modifiedFiles}}\n\nReview the **git diff** of the modified files rather than reading the full files. Focus on:\n1. **UX interaction** — does this feel good to use? Any rough edges, confusing behavior, or unnecessary friction?\n2. **Project bloat** — does this follow project conventions? Is it maintainable? Does it add unnecessary complexity?\n\nUse session_metadata to create review_findings entries for any issues you find (status: open). If re-reviewing existing findings, update their status to resolved or dismissed as appropriate. Then call return_value with your findings.",
-      "transitions": [{ "when": { "type": "always" }, "goto": "finalize" }]
+      "transitions": [
+        {
+          "when": {
+            "type": "always"
+          },
+          "goto": "finalize"
+        }
+      ]
     },
     {
       "id": "finalize",
@@ -118,7 +141,12 @@
           },
           "goto": "summarize"
         },
-        { "when": { "type": "always" }, "goto": "finalize" }
+        {
+          "when": {
+            "type": "always"
+          },
+          "goto": "finalize"
+        }
       ]
     },
     {
@@ -128,8 +156,15 @@
       "phase": "verification",
       "agentId": "builder",
       "subGroup": "summarize",
-      "prompt": "Produce a concise summary of what was accomplished in this session. Include:\n- What was implemented or fixed\n- Key files modified\n- Any notable decisions or tradeoffs\n- **What to test** — a short, actionable mini-tutorial from the user's perspective:\n  - Concrete UI flows or interactions to try, with the expected outcome\n  - Edge cases worth poking at\n  - One action per line, numbered, so the user can follow along without extra context\n\nCall step_done() when done.",
-      "transitions": [{ "when": { "type": "always" }, "goto": "$done" }]
+      "prompt": "Produce a concise summary of what was accomplished in this session. Include:\n- What was implemented or fixed\n- Key files modified\n- Any notable decisions or tradeoffs\n- **What to test** — a short, actionable mini-tutorial from the user's perspective:\n  - Concrete UI flows or interactions to try, with the expected outcome\n  - Edge cases worth poking at\n  - One action per line, numbered, so the user can follow along without extra context\n\nIf this session is bound to a board task and all criteria are complete, move it to review with `project_tasks` (action move, to \"review\") — never done. Call step_done() when done.",
+      "transitions": [
+        {
+          "when": {
+            "type": "always"
+          },
+          "goto": "$done"
+        }
+      ]
     }
   ],
   "startCondition": {

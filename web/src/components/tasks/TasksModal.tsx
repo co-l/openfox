@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, useRef } from 'react'
+import { useLocation } from 'wouter'
 import { Modal } from '../shared/SelfContainedModal'
 import { Button } from '../shared/Button'
 import { Input } from '../shared/Input'
@@ -14,6 +15,7 @@ import { TaskColumn } from './TaskColumn'
 import { TaskEditor } from './TaskEditor'
 import { GatesEditor } from './GatesEditor'
 import type { ProjectTask, TaskStatus } from '@shared/types.js'
+import { columnMeta } from './column-meta'
 import { useT } from '../../hooks/useT'
 
 interface TasksModalProps {
@@ -24,10 +26,12 @@ interface TasksModalProps {
 
 export function TasksModal({ isOpen, onClose, projectId }: TasksModalProps) {
   const t = useT()
+  const [, navigate] = useLocation()
   const { data: board } = useResource(boardResource, projectId)
   const tasks = board?.tasks ?? []
   const settings = board?.settings ?? { slotLimit: 1, queuePaused: false }
   const moveTask = useTasksStore((state) => state.moveTask)
+  const startTaskPlan = useTasksStore((state) => state.startTaskPlan)
   const reorderTask = useTasksStore((state) => state.reorderTask)
   const deleteTask = useTasksStore((state) => state.deleteTask)
   const duplicateTask = useTasksStore((state) => state.duplicateTask)
@@ -52,6 +56,7 @@ export function TasksModal({ isOpen, onClose, projectId }: TasksModalProps) {
   }, [tasks, search])
 
   const byColumn = useMemo(() => {
+    const backlog = filteredTasks.filter((t) => t.status === 'backlog').sort((a, b) => a.position - b.position)
     const todo = filteredTasks.filter((t) => t.status === 'todo').sort((a, b) => a.position - b.position)
     const inProgress = filteredTasks
       .filter((t) => t.status === 'in_progress')
@@ -59,8 +64,9 @@ export function TasksModal({ isOpen, onClose, projectId }: TasksModalProps) {
         if ((a.runState === 'running') !== (b.runState === 'running')) return a.runState === 'running' ? -1 : 1
         return a.position - b.position
       })
+    const review = filteredTasks.filter((t) => t.status === 'review').sort((a, b) => a.position - b.position)
     const done = filteredTasks.filter((t) => t.status === 'done').sort((a, b) => a.position - b.position)
-    return { todo, in_progress: inProgress, done }
+    return { backlog, todo, in_progress: inProgress, review, done }
   }, [filteredTasks])
 
   const queueRank = useMemo(() => {
@@ -100,6 +106,18 @@ export function TasksModal({ isOpen, onClose, projectId }: TasksModalProps) {
       await moveTask(projectId, task.id, to)
     },
     [moveTask, projectId],
+  )
+
+  const handleStartPlan = useCallback(
+    async (task: ProjectTask) => {
+      const result = await startTaskPlan(projectId, task.id)
+      // Start plan creates the session and jumps straight into it.
+      if (result?.sessionId) {
+        onClose()
+        navigate(`/p/${projectId}/s/${result.sessionId}`)
+      }
+    },
+    [startTaskPlan, projectId, onClose, navigate],
   )
 
   const handleDropOnColumn = useCallback(
@@ -184,6 +202,7 @@ export function TasksModal({ isOpen, onClose, projectId }: TasksModalProps) {
     onMoveDown: handleMoveDown,
     onDuplicate: handleDuplicate,
     onDelete: (task: ProjectTask) => setDeleteTarget(task),
+    onStartPlan: (task: ProjectTask) => void handleStartPlan(task),
     onDragStart: (task: ProjectTask) => {
       draggedRef.current = { task }
     },
@@ -191,38 +210,28 @@ export function TasksModal({ isOpen, onClose, projectId }: TasksModalProps) {
   }
 
   const renderColumn = (status: TaskStatus) => {
-    const meta = {
-      todo: {
-        title: t({ en: 'To Do', fr: 'À faire' }),
-        accentClass: 'border-t-2 border-t-blue-500/60',
-      },
-      in_progress: {
-        title: t({ en: 'In Progress', fr: 'En cours' }),
-        accentClass: 'border-t-2 border-t-amber-500/60',
-        hint: t({
-          en: 'Moving a task here starts it automatically.',
-          fr: 'Déplacer une tâche ici la démarre automatiquement.',
-        }),
-      },
-      done: {
-        title: t({ en: 'Done', fr: 'Terminées' }),
-        accentClass: 'border-t-2 border-t-emerald-500/60',
-      },
-    }[status]!
+    const meta = columnMeta(status)
+    const hint =
+      status === 'in_progress'
+        ? t({
+            en: 'Moving a task here starts it automatically.',
+            fr: 'Déplacer une tâche ici la démarre automatiquement.',
+          })
+        : undefined
 
     return (
       <TaskColumn
         key={status}
-        title={meta.title}
+        title={t(meta.title)}
         accentClass={meta.accentClass}
-        hint={'hint' in meta ? meta.hint : undefined}
+        hint={hint}
         tasks={byColumn[status]}
         headerAction={
-          status === 'todo' ? (
+          status === 'backlog' ? (
             <Button variant="primary" onClick={() => setEditor({ mode: 'create' })}>
               <PlusIcon className="w-4 h-4 mr-1 inline-block" /> {t({ en: 'New Task', fr: 'Nouvelle tâche' })}
             </Button>
-          ) : status === 'done' ? (
+          ) : status === 'review' ? (
             <Button onClick={() => setGatesOpen(true)}>{t({ en: 'Gates', fr: 'Portes' })}</Button>
           ) : undefined
         }
@@ -356,8 +365,10 @@ export function TasksModal({ isOpen, onClose, projectId }: TasksModalProps) {
         )}
 
         <div className="flex gap-3 overflow-x-auto pb-2 h-full">
+          {renderColumn('backlog')}
           {renderColumn('todo')}
           {renderColumn('in_progress')}
+          {renderColumn('review')}
           {renderColumn('done')}
         </div>
       </Modal>

@@ -32,6 +32,8 @@ export type ClientMessageType =
   | 'runner.launch' // Start the auto-loop runner (build → verify → done)
   // Workflow
   | 'workflow.exit' // Exit/cancel a paused workflow
+  | 'workflow.cancel_autolaunch' // Cancel the pending favorite-workflow auto-launch countdown
+  | 'chat.cancel_autoanswer' // Cancel the pending ask_user auto-answer countdown (first keystroke)
   // Chat
   | 'chat.retry' // Re-run the last turn after an LLM failure (no user message re-added)
   | 'chat.llm_retry_now' // Interrupt the current LLM-retry backoff wait and retry immediately
@@ -111,12 +113,14 @@ export type ServerMessageType =
   | 'chat.llm_retry_failed' // The LLM retry window was exhausted — definitive Retry available
   | 'chat.path_confirmation' // Request user confirmation for outside-workdir path access
   | 'chat.ask_user' // Request user answer to a question
+  | 'chat.autoanswer' // Ask-user auto-answer countdown started/cancelled
   // Mode events
   | 'mode.changed' // Mode was changed
   // Phase events
   | 'phase.changed' // Workflow phase changed (plan/build/verification/done)
   // Workflow events
   | 'workflow.execution_changed' // Workflow execution state changed (status, step, etc.)
+  | 'workflow.autolaunch' // Favorite-workflow auto-launch countdown started/cancelled
   // Task completion
   | 'task.completed' // Task finished with summary stats
   // Criteria events
@@ -192,6 +196,19 @@ export interface PendingQuestionPayload {
   question: string
   type: 'text' | 'confirm' | 'choice'
   options: ChoiceOption[] | undefined
+  /** Epoch ms when the recommended answer is auto-applied (only while the countdown runs). */
+  autoAnswerDeadline?: number
+}
+
+// Ask-user auto-answer countdown (server → client)
+export interface ChatAutoAnswerPayload {
+  active: boolean
+  callId?: string
+  /** Epoch ms when the recommended answer is auto-applied (only while active). */
+  deadline?: number
+  /** Set on the cleared broadcast fired when the countdown expired: the
+   * question was auto-answered server-side, so clients drop it from pending. */
+  answered?: boolean
 }
 
 export interface SessionStatePayload {
@@ -211,6 +228,16 @@ export interface WorkflowWaitingPayload {
   stepName: string
   stepOutput: Record<string, string>
   params?: Record<string, string>
+}
+
+// Favorite-workflow auto-launch countdown (server → client)
+export interface WorkflowAutoLaunchPayload {
+  active: boolean
+  workflowId?: string
+  workflowName?: string
+  scope?: import('./types.js').WorkflowScope
+  /** Epoch ms when the workflow auto-launches (only while active). */
+  deadline?: number
 }
 
 export interface PendingPathConfirmationPayload {

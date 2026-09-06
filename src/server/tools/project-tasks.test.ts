@@ -63,7 +63,7 @@ describe('project_tasks tool', () => {
     const result = await execute('create', { prompt: 'Write the docs' }, projectId)
     expect(result.success).toBe(true)
     const task = JSON.parse(result.output!) as { id: string; status: string; prompt: string }
-    expect(task.status).toBe('todo')
+    expect(task.status).toBe('backlog')
     expect(task.prompt).toBe('Write the docs')
   })
 
@@ -90,7 +90,9 @@ describe('project_tasks tool', () => {
     const created = await execute('create', { prompt: 'Ship it' }, projectId)
     const task = JSON.parse(created.output!) as { id: string }
     await execute('move', { taskId: task.id, to: 'in_progress' }, projectId)
-    await execute('move', { taskId: task.id, to: 'done' }, projectId)
+    // Only the human closes a task (review -> done).
+    await service.move(projectId, task.id, 'review', { actor: 'human' })
+    await service.move(projectId, task.id, 'done', { actor: 'human' })
 
     const open = await execute('list', {}, projectId)
     const openParsed = JSON.parse(open.output!) as { tasks: unknown[] }
@@ -160,7 +162,8 @@ describe('project_tasks tool', () => {
     const listed = await execute('list', {}, projectId)
     const tasks = (JSON.parse(listed.output!) as { tasks: { id: string }[] }).tasks
     await execute('move', { taskId: tasks[0]!.id, to: 'in_progress' }, projectId)
-    await execute('move', { taskId: tasks[0]!.id, to: 'done' }, projectId)
+    await service.move(projectId, tasks[0]!.id, 'review', { actor: 'human' })
+    await service.move(projectId, tasks[0]!.id, 'done', { actor: 'human' })
 
     const all = await execute('list', { status: 'all', limit: 5 }, projectId)
     const allParsed = JSON.parse(all.output!) as { tasks: unknown[]; total: number; hasMore: boolean }
@@ -232,15 +235,20 @@ describe('project_tasks tool', () => {
     const task = JSON.parse(created.output!) as { id: string }
     await execute('move', { taskId: task.id, to: 'in_progress' }, projectId)
 
-    const moved = await execute('move', { taskId: task.id, to: 'done' }, projectId)
+    const moved = await execute('move', { taskId: task.id, to: 'review' }, projectId)
     expect(moved.success).toBe(false)
     expect(moved.error).toContain('commit')
     expect(moved.error).toContain('set_gate_value')
 
     const filled = await execute('set_gate_value', { taskId: task.id, gateId: 'commit', value: 'abc123' }, projectId)
     expect(filled.success).toBe(true)
-    const movedAgain = await execute('move', { taskId: task.id, to: 'done' }, projectId)
+    const movedAgain = await execute('move', { taskId: task.id, to: 'review' }, projectId)
     expect(movedAgain.success).toBe(true)
+
+    // Done stays human-only.
+    const doneAttempt = await execute('move', { taskId: task.id, to: 'done' }, projectId)
+    expect(doneAttempt.success).toBe(false)
+    expect(doneAttempt.error).toContain('Only the user')
   })
 
   it('denies a move when only the list action is permitted', async () => {
@@ -290,7 +298,7 @@ describe('project_tasks tool', () => {
 
   it('keeps the LLM-facing definition lean', () => {
     const desc = projectTasksTool.definition.function.description
-    expect(desc.length).toBeLessThanOrEqual(1000)
+    expect(desc.length).toBeLessThanOrEqual(1200)
     for (const removed of ['duplicate', 'reorder', 'set_gates']) {
       expect(desc).not.toContain(removed)
     }

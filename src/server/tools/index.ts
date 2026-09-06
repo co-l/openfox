@@ -433,6 +433,7 @@ export function createToolRegistry(): ToolRegistry {
 // Re-export types and utilities
 export type { Tool, ToolRegistry, ToolContext } from './types.js'
 export { AskUserInterrupt, cancelQuestionsForSession, provideAnswer, getPendingQuestionsForSession } from './ask.js'
+export { initAutoAnswer, isAutoAnswerEnabled, cancelAutoAnswersForSession } from './ask.js'
 export {
   PathAccessDeniedError,
   requestPathAccess,

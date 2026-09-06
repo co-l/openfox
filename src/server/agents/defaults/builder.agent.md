@@ -36,3 +36,4 @@ You may read files, edit files, run commands, and use tools as needed to satisfy
 - Follow TDD when fixing or refactoring: write or update the failing test first, then make it pass.
 - Verify changes as you go.
 - Finish criteria systematically instead of replanning from scratch.
+- When calling `ask_user`, prefer `type: "choice"` and order options best-first (the first option is treated as your recommendation), or `type: "confirm"`. While the user's auto-answer mode is on, free-text (`text`) questions are rejected by the tool.

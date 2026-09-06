@@ -68,6 +68,21 @@ describe('AskUserCard', () => {
     expect(container.textContent).toContain('React')
   })
 
+  it('shows "Answered automatically" when the result metadata flags an auto-answer', () => {
+    const tc = makeToolCall({
+      result: {
+        success: true,
+        output: 'React',
+        durationMs: 100,
+        truncated: false,
+        metadata: { autoAnswered: true },
+      },
+    })
+    const container = render(<AskUserCard toolCall={tc} />)
+    expect(container.textContent).toContain('Answered automatically')
+    expect(container.textContent).toContain('React')
+  })
+
   it('shows skipped state when result is [user skipped]', () => {
     const tc = makeToolCall({
       result: { success: true, output: '[user skipped]', durationMs: 100, truncated: false },
@@ -302,6 +317,44 @@ describe('AskUserCard', () => {
     expect(container.textContent).not.toContain('[object Object]')
   })
 
+  it('renders the countdown inside the recommended option only, ringed with the accent', () => {
+    useSessionStore.setState({
+      pendingQuestions: [
+        {
+          callId: 'call-rec',
+          question: 'Pick:',
+          type: 'choice',
+          options: [
+            { value: 'A', label: 'Recommended way' },
+            { value: 'B', label: 'Other way' },
+          ] as ChoiceOption[],
+          autoAnswerDeadline: Date.now() + 5000,
+        },
+      ],
+    })
+    const tc = makeToolCall({
+      id: 'call-rec',
+      arguments: {
+        question: 'Pick:',
+        type: 'choice',
+        options: [
+          { value: 'A', label: 'Recommended way' },
+          { value: 'B', label: 'Other way' },
+        ],
+      },
+    })
+    const container = render(<AskUserCard toolCall={tc} />)
+    const countdown = container.querySelector('[data-testid="autoanswer-countdown"]')!
+    const recommended = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Recommended way'),
+    )!
+    const other = Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.includes('Other way'))!
+    expect(recommended).toBeTruthy()
+    expect(recommended.className).toContain('shadow-[0_0')
+    expect(recommended.contains(countdown)).toBe(true)
+    expect(other.className).not.toMatch(/(^|\s)border-accent-primary(\s|$)/)
+    expect(other.contains(countdown)).toBe(false)
+  })
   it('submits answer on Enter', () => {
     const answerQuestion = vi.fn()
     useSessionStore.setState({
@@ -369,5 +422,34 @@ describe('AskUserCard', () => {
     } finally {
       errorSpy.mockRestore()
     }
+  })
+})
+
+describe('AskUserCard auto-answer countdown', () => {
+  it('renders the countdown and typing an answer cancels it', async () => {
+    const wsSend = vi.spyOn((await import('../../lib/ws')).wsClient, 'send').mockImplementation(() => 'id')
+    const deadline = Date.now() + 120_000
+    useSessionStore.setState({
+      pendingQuestions: [
+        {
+          callId: 'call-aa',
+          question: 'Pick:',
+          type: 'choice',
+          options: [{ value: 'A', label: 'A' }] as ChoiceOption[],
+          autoAnswerDeadline: deadline,
+        },
+      ],
+    })
+    const tc = makeToolCall({ id: 'call-aa', arguments: { question: 'Pick:', type: 'choice' } })
+    const container = render(<AskUserCard toolCall={tc} />)
+    expect(container.textContent).toContain('auto-answer')
+
+    const textarea = container.querySelector('textarea')!
+    fireEvent.change(textarea, { target: { value: 'custom' } })
+
+    expect(wsSend).toHaveBeenCalledWith('chat.cancel_autoanswer', expect.objectContaining({}))
+    const question = useSessionStore.getState().pendingQuestions.find((q) => q.callId === 'call-aa')!
+    expect(question.autoAnswerDeadline).toBeUndefined()
+    wsSend.mockRestore()
   })
 })

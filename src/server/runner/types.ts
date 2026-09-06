@@ -52,6 +52,8 @@ export interface OrchestratorOptions {
   userChoice?: string
   /** User-provided message to inject after workflow-started marker */
   userMessage?: { content: string; attachments?: Attachment[] }
+  /** Launched by the favorite-workflow countdown; tags the feed marker */
+  autoLaunched?: boolean
   /** For path confirmation dialogs (sent directly, not through EventStore) */
   onMessage?: (msg: ServerMessage) => void
   /** Re-resolve the session's LLM client per retry attempt so a provider

@@ -40,6 +40,7 @@ interface TaskRow {
   agent_id: string | null
   provider_id: string | null
   model: string | null
+  workflow_choice?: string | null
   created_at: string
   updated_at: string
 }
@@ -101,12 +102,12 @@ export function createTask(projectId: string, input: CreateTaskInput): ProjectTa
   const id = randomBytes(8).toString('hex')
 
   const position = db
-    .prepare(`SELECT COALESCE(MAX(position), -1) + 1 AS pos FROM tasks WHERE project_id = ? AND status = 'todo'`)
+    .prepare(`SELECT COALESCE(MAX(position), -1) + 1 AS pos FROM tasks WHERE project_id = ? AND status = 'backlog'`)
     .get(projectId) as { pos: number }
 
   db.prepare(
     `INSERT INTO tasks (id, project_id, prompt, attachments, status, run_state, position, version, agent_id, provider_id, model, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 'todo', NULL, ?, 1, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, 'backlog', NULL, ?, 1, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     projectId,
@@ -198,6 +199,17 @@ export function setTaskRunState(id: string, runState: TaskRunState | null): void
   )
 }
 
+/** Persist the workflow picked for a task after planning (null clears it). */
+export function setTaskWorkflowChoice(id: string, workflowId: string | null): void {
+  const db = getDatabase()
+  const now = new Date().toISOString()
+  db.prepare(`UPDATE tasks SET workflow_choice = ?, version = version + 1, updated_at = ? WHERE id = ?`).run(
+    workflowId,
+    now,
+    id,
+  )
+}
+
 export function deleteTask(id: string): void {
   const db = getDatabase()
   db.prepare(`DELETE FROM tasks WHERE id = ?`).run(id)
@@ -284,6 +296,15 @@ export function listTaskLinks(taskId: string): TaskLinkRow[] {
 export function clearActiveTaskLink(taskId: string): void {
   const db = getDatabase()
   db.prepare(`UPDATE task_links SET active = 0 WHERE task_id = ?`).run(taskId)
+}
+
+/** Most recently linked task for a session (board lookup from the session side). */
+export function findTaskIdBySession(sessionId: string): string | null {
+  const db = getDatabase()
+  const row = db
+    .prepare(`SELECT task_id FROM task_links WHERE session_id = ? ORDER BY created_at DESC LIMIT 1`)
+    .get(sessionId) as { task_id: string } | undefined
+  return row?.task_id ?? null
 }
 
 /** Drop a link entirely (revert to To Do) or all links (task deleted). */
@@ -451,6 +472,7 @@ function hydrateTask(row: TaskRow): ProjectTask {
     ...(row.agent_id ? { agentId: row.agent_id } : {}),
     ...(row.provider_id ? { providerId: row.provider_id } : {}),
     ...(row.model ? { model: row.model } : {}),
+    ...(row.workflow_choice ? { workflowChoice: row.workflow_choice } : {}),
     sessionIds,
     ...(activeLink ? { activeSessionId: activeLink.session_id } : {}),
     gateValues: getGateValues(row.id),

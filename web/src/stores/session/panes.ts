@@ -19,6 +19,7 @@ export function emptyPane(): SessionPane {
     gitStatus: null,
     error: null,
     llmRetry: null,
+    autoLaunch: null,
     liveTurnStats: null,
   }
 }
@@ -42,6 +43,7 @@ export function paneFromFlat(state: SessionState): SessionPane {
     gitStatus: state.gitStatus,
     error: state.error,
     llmRetry: state.llmRetry,
+    autoLaunch: state.autoLaunch,
     liveTurnStats: state.liveTurnStats,
   }
 }
@@ -65,6 +67,7 @@ export function mirror(pane: SessionPane): Partial<SessionState> {
     gitStatus: pane.gitStatus,
     error: pane.error,
     llmRetry: pane.llmRetry,
+    autoLaunch: pane.autoLaunch,
     liveTurnStats: pane.liveTurnStats,
   }
 }

@@ -28,11 +28,22 @@ export interface PendingQuestion {
   question: string
   type: 'text' | 'confirm' | 'choice'
   options: ChoiceOption[] | undefined
+  /** Epoch ms when the recommended answer is auto-applied; absent while no countdown runs. */
+  autoAnswerDeadline?: number
 }
 
 /** Live status of an LLM failure: backing off before a retry, or the window exhausted. */
 export type LLMRetryState =
   { status: 'retrying'; attempt: number; retryInMs: number; error: string } | { status: 'failed'; error: string }
+
+/** Pending favorite-workflow auto-launch countdown (mirrors workflow.autolaunch). */
+export interface AutoLaunchState {
+  workflowId: string
+  workflowName: string
+  scope: WorkflowLaunchScope
+  /** Epoch ms when the workflow auto-launches. */
+  deadline: number
+}
 
 export interface StreamingBuffer {
   messageId: string | null
@@ -78,6 +89,8 @@ export interface SessionPane {
   error: { code: string; message: string } | null
   /** Live status of an LLM failure: backing off before a retry, or the window exhausted. */
   llmRetry: LLMRetryState | null
+  /** Pending favorite-workflow auto-launch countdown; null when none. */
+  autoLaunch: AutoLaunchState | null
   /** Cumulative turn stats streamed while a turn is running; null when idle. */
   liveTurnStats: MessageStats | null
 }
@@ -108,6 +121,8 @@ export interface SessionState {
   error: { code: string; message: string } | null
   /** Live status of an LLM failure: backing off before a retry, or the window exhausted. */
   llmRetry: LLMRetryState | null
+  /** Pending favorite-workflow auto-launch countdown; null when none. */
+  autoLaunch: AutoLaunchState | null
   /** Cumulative turn stats streamed while a turn is running; null when idle. */
   liveTurnStats: MessageStats | null
   sessionsHasMore: boolean
@@ -165,6 +180,10 @@ export interface SessionState {
    *  turn (regular chat) or re-launches the blocked workflow step (resume). */
   retryLLM: (sessionId: string) => void
   exitWorkflow: (sessionId: string) => void
+  /** Cancel a pending favorite-workflow auto-launch countdown. */
+  cancelAutoLaunch: (sessionId: string) => void
+  /** Cancel every pending ask_user auto-answer countdown in a session. */
+  cancelAutoAnswers: (sessionId: string) => void
   switchMode: (sessionId: string, mode: SessionMode) => void
   switchDangerLevel: (sessionId: string, dangerLevel: 'normal' | 'dangerous') => void
   editCriteria: (sessionId: string, criteria: Criterion[]) => void

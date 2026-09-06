@@ -98,14 +98,22 @@ function makeStubConfig(calls: StubCalls, opts: { annotateScope?: boolean } = {}
 
 async function mountRouter(
   calls: StubCalls,
-  opts: { annotateScope?: boolean; extraRoutes?: (router: Router) => void } = {},
+  opts: {
+    annotateScope?: boolean
+    extraRoutes?: (router: Router) => void
+    afterDelete?: (id: string, ctx: { configDir: string; projectDir?: string }) => void
+  } = {},
 ) {
   const app = express()
   app.use(express.json())
   app.use(
     '/api/items',
     createCrudRoutes(
-      { ...makeStubConfig(calls, opts), ...(opts.extraRoutes ? { extraRoutes: opts.extraRoutes } : {}) },
+      {
+        ...makeStubConfig(calls, opts),
+        ...(opts.extraRoutes ? { extraRoutes: opts.extraRoutes } : {}),
+        ...(opts.afterDelete ? { afterDelete: opts.afterDelete } : {}),
+      },
       '/config',
       '/project',
     ),
@@ -200,6 +208,55 @@ describe('createCrudRoutes scope support', () => {
       expect(res.status).toBe(200)
       expect(calls.deleteProject).toEqual(['review'])
       expect(calls.delete).toEqual([])
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
+
+  it('runs afterDelete with the deleted id and dirs after a successful delete', async () => {
+    const calls: StubCalls = { save: [], delete: [], saveProject: [], deleteProject: [] }
+    const seen: Array<[string, string, string | undefined]> = []
+    const { server, baseUrl } = await mountRouter(calls, {
+      annotateScope: true,
+      afterDelete: (id, ctx) => seen.push([id, ctx.configDir, ctx.projectDir]),
+    })
+    try {
+      const res = await fetch(`${baseUrl}/api/items/review?scope=project&workdir=/other`, { method: 'DELETE' })
+      expect(res.status).toBe(200)
+      expect(seen).toEqual([['review', '/config', '/other']])
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
+
+  it('still answers 403 without running afterDelete when the delete fails', async () => {
+    const calls: StubCalls = { save: [], delete: [], saveProject: [], deleteProject: [] }
+    let ran = false
+    const app = express()
+    app.use(express.json())
+    app.use(
+      '/api/items',
+      createCrudRoutes(
+        {
+          ...makeStubConfig(calls),
+          delete: async () => ({ success: false, reason: 'Cannot delete built-in defaults' }),
+          afterDelete: () => {
+            ran = true
+          },
+        },
+        '/config',
+        '/project',
+      ),
+    )
+    const server = await new Promise<ReturnType<express.Express['listen']>>((resolve) => {
+      const s = app.listen(0, () => resolve(s))
+    })
+    try {
+      const res = await fetch(`http://localhost:${(server.address() as AddressInfo).port}/api/items/defaults-only`, {
+        method: 'DELETE',
+      })
+      expect(res.status).toBe(403)
+      expect(ran).toBe(false)
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()))
     }

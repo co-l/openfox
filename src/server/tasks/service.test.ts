@@ -15,6 +15,12 @@ interface FakeSession {
   projectId: string
   title?: string
   messages?: unknown[]
+  isRunning?: boolean
+}
+
+interface FakeExecution {
+  workflowId: string
+  status: string
 }
 
 interface FakeSessionManager {
@@ -23,6 +29,7 @@ interface FakeSessionManager {
   queued: { sessionId: string; content: string; attachments?: Attachment[] }[]
   sessions: Map<string, FakeSession>
   modes: Map<string, string>
+  executions: Map<string, FakeExecution>
 }
 
 function makeSessionManager(): FakeSessionManager & {
@@ -31,6 +38,7 @@ function makeSessionManager(): FakeSessionManager & {
   queueMessage: (sessionId: string, mode: string, content?: string, attachments?: Attachment[]) => void
   setMode: (sessionId: string, mode: string) => void
   getSession: (id: string) => FakeSession | null
+  getLatestWorkflowExecution: (id: string) => FakeExecution | null
 } {
   const mgr = {
     createdSessions: [] as FakeSession[],
@@ -38,6 +46,7 @@ function makeSessionManager(): FakeSessionManager & {
     queued: [] as { sessionId: string; content: string; attachments?: Attachment[] }[],
     sessions: new Map<string, FakeSession>(),
     modes: new Map<string, string>(),
+    executions: new Map<string, FakeExecution>(),
   }
 
   const counter = { n: 0 }
@@ -66,6 +75,7 @@ function makeSessionManager(): FakeSessionManager & {
       mgr.modes.set(sessionId, mode)
     },
     getSession: (id: string) => mgr.sessions.get(id) ?? null,
+    getLatestWorkflowExecution: (id: string) => mgr.executions.get(id) ?? null,
   }
 }
 
@@ -170,9 +180,9 @@ describe('project tasks service', () => {
   const create = (prompt: string, extra: Record<string, unknown> = {}) =>
     service.create(projectId, { prompt, ...extra }, { actor: 'human' })
 
-  it('creates a task in To Do and broadcasts', () => {
+  it('creates a task in Backlog and broadcasts', () => {
     const task = create('Fix the login flow\nIt is broken')
-    expect(task.status).toBe('todo')
+    expect(task.status).toBe('backlog')
     expect(task.prompt).toBe('Fix the login flow\nIt is broken')
     expect(task.auditTrail[0]?.action).toBe('create')
     expect(broadcasts.at(-1)?.tasks).toHaveLength(1)
@@ -200,11 +210,11 @@ describe('project tasks service', () => {
     expect(task.attachments).toHaveLength(1)
   })
 
-  it('duplicates a task into To Do', () => {
+  it('duplicates a task into Backlog', () => {
     const task = create('Original prompt')
     const copy = service.duplicate(projectId, task.id, { actor: 'human' })
     expect(copy.id).not.toBe(task.id)
-    expect(copy.status).toBe('todo')
+    expect(copy.status).toBe('backlog')
     expect(copy.prompt).toBe('Original prompt')
   })
 
@@ -233,8 +243,10 @@ describe('project tasks service', () => {
       expect(sm.reminders[0]?.sessionId).toBe(session.id)
       expect(sm.reminders[0]?.content).toContain('<system-reminder>')
       expect(sm.reminders[0]?.metadata).toMatchObject({ type: 'task' })
-      // Prompt queued so the agent turn starts
-      expect(sm.queued[0]?.content).toBe('Do the thing')
+      // No plan yet: the session starts through the bundled plan workflow,
+      // seeded with the task prompt as user content.
+      expect(launchSpy).toHaveBeenCalledTimes(1)
+      expect(launchSpy.mock.calls[0]![1]).toMatchObject({ workflowId: 'plan', content: 'Do the thing' })
     })
 
     it('seeds the session without a prompt-derived title so auto-naming applies', async () => {
@@ -253,6 +265,18 @@ describe('project tasks service', () => {
 
       expect(result.task.runState).toBe('queued')
       expect(sm.createdSessions).toHaveLength(1) // no new session for queued
+    })
+
+    it('human move to In Progress parks in the queue when auto-launch is paused', async () => {
+      const task = create('Paused arrival')
+      service.setSettings(projectId, { queuePaused: true })
+      const result = await service.move(projectId, task.id, 'in_progress', { actor: 'human' })
+
+      expect(result.task.status).toBe('in_progress')
+      expect(result.task.runState).toBe('queued')
+      // Paused queue: the task parks without seeding or launching anything.
+      expect(sm.createdSessions).toHaveLength(0)
+      expect(launchSpy).not.toHaveBeenCalled()
     })
 
     it('surfaces the FIFO queue position server-side (1-based)', async () => {
@@ -286,8 +310,8 @@ describe('project tasks service', () => {
       // Reminder + queued prompt land in the bound session, like a seeded one.
       expect(sm.reminders[0]?.sessionId).toBe('sess-current')
       expect(sm.reminders[0]?.content).toContain('<system-reminder>')
-      expect(sm.queued[0]?.sessionId).toBe('sess-current')
-      expect(sm.queued[0]?.content).toBe('Start me here')
+      expect(launchSpy.mock.calls[0]![0]).toBe('sess-current')
+      expect(launchSpy.mock.calls[0]![1]).toMatchObject({ workflowId: 'plan', content: 'Start me here' })
     })
 
     it('falls back to seeding a new session when the supplied sessionId is foreign', async () => {
@@ -343,7 +367,7 @@ describe('project tasks service', () => {
       expect(launched.activeSessionId).toBe('sess-home')
       expect(sm.createdSessions).toHaveLength(1) // still no orphan session
       expect(sm.reminders.some((r) => r.sessionId === 'sess-home')).toBe(true)
-      expect(sm.queued.some((q) => q.sessionId === 'sess-home')).toBe(true)
+      expect(launchSpy.mock.calls.some((c) => c[0] === 'sess-home')).toBe(true)
     })
 
     it('agent move binds the current session and never creates a new one', async () => {
@@ -376,8 +400,9 @@ describe('project tasks service', () => {
       expect(result.autoLaunched?.taskId).toBe(second.id)
       expect(result.autoLaunched?.projectId).toBe(projectId)
       expect(result.autoLaunched?.sessionId).toBeTruthy()
-      // The reverted task's link was removed (unbound)
-      expect(service.get(projectId, first.id)!.sessionIds).toEqual([])
+      // The reverted task keeps its session attached (link merely deactivated).
+      expect(service.get(projectId, first.id)!.activeSessionId).toBeUndefined()
+      expect(service.get(projectId, first.id)!.sessionIds).toHaveLength(1)
     })
 
     it('paused queue suppresses auto-launch', async () => {
@@ -415,12 +440,12 @@ describe('project tasks service', () => {
         { actor: 'human' },
       )
 
-    it('blocks Done until required gates carry a value, with an actionable error', async () => {
+    it('blocks Review until required gates carry a value, with an actionable error', async () => {
       configureDoneGate()
       const task = create('Ship it')
       await service.move(projectId, task.id, 'in_progress', { actor: 'human' })
 
-      const promise = service.move(projectId, task.id, 'done', { actor: 'human' })
+      const promise = service.move(projectId, task.id, 'review', { actor: 'human' })
       await expect(promise).rejects.toSatisfy(isTaskGateError)
       await promise.catch((err: unknown) => {
         if (isTaskGateError(err)) {
@@ -433,7 +458,7 @@ describe('project tasks service', () => {
       expect(service.get(projectId, task.id)!.status).toBe('in_progress')
     })
 
-    it('records gate value actor + timestamp, then permits Done', async () => {
+    it('records gate value actor + timestamp, then permits Review', async () => {
       configureDoneGate()
       const task = create('Ship it')
       await service.move(projectId, task.id, 'in_progress', { actor: 'human' })
@@ -450,10 +475,10 @@ describe('project tasks service', () => {
       expect(withValue.gateValues[0]).toMatchObject({ gateId: 'commit', value: 'abc123', actor: 'agent' })
       expect(withValue.gateValues[0]?.timestamp).toBeTruthy()
 
-      const result = await service.move(projectId, task.id, 'done', { actor: 'agent', sessionId: 'sess-agent' })
-      expect(result.task.status).toBe('done')
-      // Done reminder landed in the bound session with gate evidence
-      const doneReminder = sm.reminders.find((r) => r.content.includes('was marked Done'))
+      const result = await service.move(projectId, task.id, 'review', { actor: 'agent', sessionId: 'sess-agent' })
+      expect(result.task.status).toBe('review')
+      // Review reminder landed in the bound session with gate evidence
+      const doneReminder = sm.reminders.find((r) => r.content.includes('moved to Review'))
       expect(doneReminder).toBeTruthy()
       expect(doneReminder?.content).toContain('abc123')
     })
@@ -534,7 +559,186 @@ describe('project tasks service', () => {
           throw err
         }
       })
-      expect(service.get(projectId, task.id)!.status).toBe('todo')
+      expect(service.get(projectId, task.id)!.status).toBe('backlog')
+    })
+  })
+
+  describe('review flow & planning', () => {
+    it('refuses an agent move to Done — only the user closes a task', async () => {
+      const task = create('Agent done attempt')
+      await service.move(projectId, task.id, 'in_progress', { actor: 'agent', sessionId: 'sess-x' })
+      await expect(service.move(projectId, task.id, 'done', { actor: 'agent', sessionId: 'sess-x' })).rejects.toThrow(
+        /Only the user can move a task to Done/,
+      )
+      expect(service.get(projectId, task.id)!.status).toBe('in_progress')
+    })
+
+    it('lets the human move a Review task to Done manually', async () => {
+      const task = create('Human closes it')
+      await service.move(projectId, task.id, 'in_progress', { actor: 'human' })
+      await service.move(projectId, task.id, 'review', { actor: 'human' })
+      const closed = await service.move(projectId, task.id, 'done', { actor: 'human' })
+      expect(closed.task.status).toBe('done')
+    })
+
+    it('moves Backlog to To Do without creating a session until Start plan is clicked', async () => {
+      const task = create('Plan me later')
+      const result = await service.move(projectId, task.id, 'todo', { actor: 'human' })
+
+      expect(result.task.status).toBe('todo')
+      // No planner session is prepared on the move — only "Start plan" creates one.
+      expect(sm.createdSessions).toHaveLength(0)
+      expect(result.sessionId).toBeUndefined()
+      expect(result.task.runState).toBeUndefined()
+      expect(result.task.activeSessionId).toBeUndefined()
+      expect(sm.queued).toHaveLength(0)
+      expect(launchSpy).not.toHaveBeenCalled()
+    })
+
+    describe('start plan', () => {
+      it('launches the plan workflow in the bound planner session without touching slots', async () => {
+        const occupying = create('Occupying the only slot')
+        await service.move(projectId, occupying.id, 'in_progress', { actor: 'human' })
+
+        const task = create('Plan me now')
+        await service.move(projectId, task.id, 'todo', { actor: 'human' })
+
+        const result = await service.startPlan(projectId, task.id)
+        const plannerSession = result.sessionId
+
+        expect(result.sessionId).toBe(plannerSession)
+        const planCalls = launchSpy.mock.calls.filter((c) => c[0] === plannerSession)
+        expect(planCalls).toHaveLength(1)
+        expect(planCalls[0]![1]).toMatchObject({ workflowId: 'plan' })
+        const fresh = service.get(projectId, task.id)!
+        expect(fresh.status).toBe('todo')
+        expect(fresh.runState).toBeUndefined()
+        expect(fresh.activeSessionId).toBe(plannerSession)
+      })
+
+      it('skips the plan when the linked session already carries criteria', async () => {
+        const task = create('Already planned')
+        await service.move(projectId, task.id, 'todo', { actor: 'human' })
+        await service.startPlan(projectId, task.id)
+        const plannerSession = sm.createdSessions.at(-1)!
+        ;(plannerSession as { metadataEntries?: Record<string, unknown> }).metadataEntries = {
+          criteria: [{ id: 'c1', description: 'x', status: { type: 'pending' } }],
+        }
+        sm.executions.set(plannerSession.id, { workflowId: 'plan', status: 'completed' })
+
+        const result = await service.move(projectId, task.id, 'in_progress', { actor: 'human' })
+
+        expect(result.task.status).toBe('in_progress')
+        expect(result.task.runState).toBe('running')
+        expect(result.task.activeSessionId).toBe(plannerSession.id)
+        // No extra session — the planner session is resumed into the build.
+        expect(sm.createdSessions).toHaveLength(1)
+        const buildCalls = launchSpy.mock.calls.filter((c) => c[0] === plannerSession.id)
+        expect(buildCalls.at(-1)![1]).toMatchObject({ workflowId: 'default' })
+      })
+
+      it('does not resume a finished build session when re-opening — fresh attempt', async () => {
+        const task = create('Reopened after build')
+        await service.move(projectId, task.id, 'todo', { actor: 'human' })
+        await service.startPlan(projectId, task.id)
+        const plannerSession = sm.createdSessions.at(-1)!
+        ;(plannerSession as { metadataEntries?: Record<string, unknown> }).metadataEntries = {
+          criteria: [{ id: 'c1', description: 'x', status: { type: 'pending' } }],
+        }
+        // The last run in that session was the build, not the plan.
+        sm.executions.set(plannerSession.id, { workflowId: 'default', status: 'completed' })
+
+        await service.move(projectId, task.id, 'review', { actor: 'human' })
+        await service.move(projectId, task.id, 'done', { actor: 'human' })
+        const reopened = await service.move(projectId, task.id, 'in_progress', { actor: 'human' })
+
+        // A brand-new session carries the new attempt; the old one stays as history.
+        expect(reopened.task.activeSessionId).not.toBe(plannerSession.id)
+        expect(sm.createdSessions).toHaveLength(2)
+        expect(reopened.task.sessionIds).toContain(plannerSession.id)
+      })
+
+      it('launches the picked workflow when resuming a planned session', async () => {
+        const task = create('Picked build')
+        await service.move(projectId, task.id, 'todo', { actor: 'human' })
+        await service.startPlan(projectId, task.id)
+        const plannerSession = sm.createdSessions.at(-1)!
+        ;(plannerSession as { metadataEntries?: Record<string, unknown> }).metadataEntries = {
+          criteria: [{ id: 'c1', description: 'x', status: { type: 'pending' } }],
+        }
+        sm.executions.set(plannerSession.id, { workflowId: 'plan', status: 'completed' })
+
+        const picked = service.setWorkflowChoice(projectId, task.id, 'fixit')
+        expect(picked.workflowChoice).toBe('fixit')
+
+        await service.move(projectId, task.id, 'in_progress', { actor: 'human' })
+        const buildCalls = launchSpy.mock.calls.filter((c) => c[0] === plannerSession.id)
+        expect(buildCalls.at(-1)![1]).toMatchObject({ workflowId: 'fixit' })
+      })
+
+      it('refuses to start a second plan while one is already running', async () => {
+        const task = create('Double click')
+        await service.move(projectId, task.id, 'todo', { actor: 'human' })
+        await service.startPlan(projectId, task.id)
+        const planner = sm.createdSessions.at(-1)!
+        planner.isRunning = true
+
+        await expect(service.startPlan(projectId, task.id)).rejects.toThrow(/already running/)
+        // Still exactly one plan launch in that session.
+        expect(launchSpy.mock.calls.filter((c) => c[0] === planner.id)).toHaveLength(1)
+      })
+
+      it('keeps sessions attached across In Progress ↔ To Do round-trips', async () => {
+        const task = create('Round tripper')
+        await service.move(projectId, task.id, 'todo', { actor: 'human' })
+        const first = await service.startPlan(projectId, task.id)
+        const planner = sm.sessions.get(first.sessionId)!
+        ;(planner as { metadataEntries?: Record<string, unknown> }).metadataEntries = {
+          criteria: [{ id: 'c1', description: 'x', status: { type: 'pending' } }],
+        }
+        sm.executions.set(planner.id, { workflowId: 'plan', status: 'completed' })
+
+        const launched = await service.move(projectId, task.id, 'in_progress', { actor: 'human' })
+        expect(launched.task.activeSessionId).toBe(planner.id)
+
+        // Revert to To Do: the link is deactivated but kept — never orphaned.
+        await service.move(projectId, task.id, 'todo', { actor: 'human' })
+        const parked = service.get(projectId, task.id)!
+        expect(parked.activeSessionId).toBeUndefined()
+        expect(parked.sessionIds).toEqual([planner.id])
+
+        // Back to In Progress: the same session resumes, no duplicate created.
+        const again = await service.move(projectId, task.id, 'in_progress', { actor: 'human' })
+        expect(again.task.activeSessionId).toBe(planner.id)
+        expect(again.task.sessionIds).toEqual([planner.id])
+        expect(sm.createdSessions).toHaveLength(1)
+      })
+
+      it('reuses the planner session across Backlog round-trips', async () => {
+        const task = create('Ping-ponger')
+        await service.move(projectId, task.id, 'todo', { actor: 'human' })
+        const first = await service.startPlan(projectId, task.id)
+        const planner = first.sessionId
+
+        await service.move(projectId, task.id, 'backlog', { actor: 'human' })
+        await service.move(projectId, task.id, 'todo', { actor: 'human' })
+        // Start plan on the way back reuses the kept session instead of piling up orphans.
+        const second = await service.startPlan(projectId, task.id)
+
+        expect(second.sessionId).toBe(planner)
+        expect(sm.createdSessions).toHaveLength(1)
+      })
+    })
+
+    it('runs a To Do plan without consuming a slot, even when the queue is paused', async () => {
+      const task = create('Paused-queue plan')
+      service.setSettings(projectId, { queuePaused: true })
+      await service.move(projectId, task.id, 'todo', { actor: 'human' })
+
+      const result = await service.startPlan(projectId, task.id)
+      expect(result.task.status).toBe('todo')
+      expect(result.task.runState).toBeUndefined()
+      expect(launchSpy).toHaveBeenCalledTimes(1)
     })
   })
 
@@ -573,10 +777,10 @@ describe('project tasks service', () => {
       const a = create('A')
       const b = create('B')
       const c = create('C')
-      service.reorder(projectId, c.id, 'todo', 0)
+      service.reorder(projectId, c.id, 'backlog', 0)
       const ids = service
         .list(projectId)
-        .filter((t) => t.status === 'todo')
+        .filter((t) => t.status === 'backlog')
         .map((t) => t.id)
       expect(ids).toEqual([c.id, a.id, b.id])
     })
@@ -599,8 +803,8 @@ describe('project tasks service', () => {
       const first = create('First')
       const second = create('Second')
       await service.move(projectId, first.id, 'in_progress', { actor: 'human' })
-      // Human launch from To Do
-      expect(sm.reminders[0]!.content).toContain('To Do → In Progress')
+      // Human launch from Backlog
+      expect(sm.reminders[0]!.content).toContain('Backlog → In Progress')
 
       // Second queues; freeing the slot auto-launches it into a fresh session.
       await service.move(projectId, second.id, 'in_progress', { actor: 'human' })
@@ -612,7 +816,7 @@ describe('project tasks service', () => {
       // The opening context must reflect the queued → running transition,
       // not a made-up "todo → In Progress".
       expect(autoReminder.content).toContain('Queued → In Progress')
-      expect(autoReminder.content).not.toContain('To Do → In Progress')
+      expect(autoReminder.content).not.toContain('Backlog → In Progress')
     })
 
     it('instructs the agent not to move the task or fill gates without approval', async () => {
@@ -692,25 +896,28 @@ describe('project tasks service', () => {
       expect(sm.queued[0]?.content).toBe('Do stuff now')
     })
 
-    it('falls back to the raw prompt when a command leaves params unfilled', async () => {
+    it('plans instead of queuing the raw prompt when a command leaves params unfilled', async () => {
       const task = create('/fixme crash')
       await service.move(projectId, task.id, 'in_progress', { actor: 'human' })
-      expect(launchSpy).not.toHaveBeenCalled()
-      expect(sm.queued[0]?.content).toBe('/fixme crash')
+      expect(launchSpy).toHaveBeenCalledTimes(1)
+      expect(launchSpy.mock.calls[0]![1]).toMatchObject({ workflowId: 'plan', content: '/fixme crash' })
     })
 
-    it('falls back to the raw prompt for an unknown slash id', async () => {
+    it('plans instead of queuing the raw prompt for an unknown slash id', async () => {
       const task = create('/definitely-not-a-thing some args')
       await service.move(projectId, task.id, 'in_progress', { actor: 'human' })
-      expect(launchSpy).not.toHaveBeenCalled()
-      expect(sm.queued[0]?.content).toBe('/definitely-not-a-thing some args')
+      expect(launchSpy).toHaveBeenCalledTimes(1)
+      expect(launchSpy.mock.calls[0]![1]).toMatchObject({
+        workflowId: 'plan',
+        content: '/definitely-not-a-thing some args',
+      })
     })
 
-    it('queues plain prompts unchanged', async () => {
+    it('plans plain prompts, seeded as user content of the plan workflow', async () => {
       const task = create('Just a regular task')
       await service.move(projectId, task.id, 'in_progress', { actor: 'human' })
-      expect(launchSpy).not.toHaveBeenCalled()
-      expect(sm.queued[0]?.content).toBe('Just a regular task')
+      expect(launchSpy).toHaveBeenCalledTimes(1)
+      expect(launchSpy.mock.calls[0]![1]).toMatchObject({ workflowId: 'plan', content: 'Just a regular task' })
     })
 
     it('auto-launched queued tasks resolve slash commands too', async () => {
@@ -732,14 +939,14 @@ describe('project tasks service', () => {
       expect(launchSpy.mock.calls[0]![1].attachments).toEqual([att])
     })
 
-    it('degrades a workflow with a missing required param to the raw prompt instead of wedging a slot', async () => {
+    it('degrades a workflow with a missing required param to the plan instead of wedging a slot', async () => {
       const task = create('/reqwf')
       const result = await service.move(projectId, task.id, 'in_progress', { actor: 'human' })
 
-      expect(launchSpy).not.toHaveBeenCalled()
-      // The task still launches (raw prompt) so no slot is wedged on a dead run.
+      // The task still launches (planning first) so no slot is wedged on a dead run.
       expect(result.task.runState).toBe('running')
-      expect(sm.queued[0]?.content).toBe('/reqwf')
+      expect(launchSpy).toHaveBeenCalledTimes(1)
+      expect(launchSpy.mock.calls[0]![1]).toMatchObject({ workflowId: 'plan', content: '/reqwf' })
     })
   })
 })

@@ -1,0 +1,24 @@
+{
+  "metadata": {
+    "id": "plan",
+    "name": "Plan",
+    "description": "Planning phase: explore the codebase, question the user, rewrite the task prompt and define acceptance criteria. Stops at the end of the plan; its last step is proposing to move the task to In Progress.",
+    "version": "1.0.0",
+    "color": "#a855f7"
+  },
+  "entryStep": "plan",
+  "settings": {
+    "maxIterations": 12
+  },
+  "steps": [
+    {
+      "id": "plan",
+      "name": "Plan",
+      "type": "agent",
+      "phase": "plan",
+      "agentId": "planner",
+      "prompt": "You are the planner for this task. Explore the codebase, ask the user clarifying questions (prefer `ask_user` with type \"choice\", best option first, or \"confirm\"), then:\n\n1. Rewrite the task so it is unambiguous: use `project_tasks` with action edit to update the task prompt with what you learned.\n2. Define the acceptance criteria with `session_metadata` (action add, key criteria) — each criterion self-contained and verifiable.\n3. As your last step, propose moving the task to In Progress (ask_user choice, \"Move to In Progress\" first). If the user approves, use `project_tasks` action move with to \"in_progress\", then confirm in one line.\n\nDo NOT implement anything — planning only. When the plan is agreed (and handed off if approved), call step_done().",
+      "transitions": [{ "when": { "type": "always" }, "goto": "$done" }]
+    }
+  ]
+}

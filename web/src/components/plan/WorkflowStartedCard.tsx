@@ -10,6 +10,7 @@ interface WorkflowStartedData {
   workflowName: string
   workflowId: string
   workflowColor?: string
+  autoLaunched?: boolean
 }
 
 export const WorkflowStartedCard = memo(function WorkflowStartedCard({ data }: { data: WorkflowStartedData }) {
@@ -26,7 +27,11 @@ export const WorkflowStartedCard = memo(function WorkflowStartedCard({ data }: {
       <span className="text-sm font-medium" style={{ color }}>
         {data.workflowName}
       </span>
-      <span className="text-text-muted text-sm">{t({ en: 'started', fr: 'démarré' })}</span>
+      <span className="text-text-muted text-sm">
+        {data.autoLaunched
+          ? t({ en: 'automatically started', fr: 'démarré automatiquement' })
+          : t({ en: 'started', fr: 'démarré' })}
+      </span>
     </div>
   )
 })

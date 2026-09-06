@@ -9,6 +9,9 @@ export interface Project {
   customInstructions?: string // Project-specific instructions injected into prompts
   dangerLevel?: DangerLevel // Project default danger level for new sessions
   defaultAgent?: string // Project default agent for new sessions (overrides global)
+  favoriteWorkflowId?: string // Project favorite workflow id (overrides global favorite workflow)
+  autoAnswerQuestions?: boolean // Project auto-answer override (undefined inherits the global setting)
+  autoActionTimeoutSeconds?: number // Project auto-action countdown override in seconds (undefined inherits the global setting)
   isStarred?: boolean // Whether the project is starred for quick access
   workspaceRootDir?: string // Custom workspace root directory (user-specific, stored in DB)
   mcpOverrides?: Record<string, { disabled?: boolean; disabledTools?: string[] }> // Project-level MCP server overrides
@@ -441,7 +444,9 @@ export type ToolName =
 // Project Tasks
 // ============================================================================
 
-export type TaskStatus = 'todo' | 'in_progress' | 'done'
+export type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'review' | 'done'
+/** Column order on the board, left to right. */
+export const TASK_COLUMN_ORDER: TaskStatus[] = ['backlog', 'todo', 'in_progress', 'review', 'done']
 /** Active state of an in-progress task: launched (occupies a slot) or queued (waiting for a slot). */
 export type TaskRunState = 'running' | 'queued'
 export type TaskActor = 'human' | 'agent' | 'system'
@@ -452,9 +457,9 @@ export interface TaskGateConfig {
   name: string
   /** Description of acceptable proof, e.g. "all green — every criterion passes with evidence". */
   description: string
-  /** Whether the gate blocks Done until satisfied. */
+  /** Whether the gate blocks Review until satisfied. */
   required: boolean
-  /** 'done' = definition of done (blocks entering Done). 'ready' = definition of ready (off by default). */
+  /** 'done' = definition of done (blocks entering Review). 'ready' = definition of ready (off by default). */
   variant: 'done' | 'ready'
 }
 
@@ -494,6 +499,10 @@ export interface ProjectTask {
   agentId?: string
   providerId?: string
   model?: string
+  /** Workflow picked for the task after planning; presence suppresses favorite auto-launch. */
+  workflowChoice?: string
+  /** True when a linked session carries a completed plan with acceptance criteria. */
+  planned?: boolean
   /** Linked sessions, active working session first, then historical attempts. */
   sessionIds: string[]
   activeSessionId?: string
@@ -510,12 +519,14 @@ export interface ProjectTaskSettings {
 
 export interface ProjectTaskCounts {
   open: number
+  backlog: number
   todo: number
   inProgress: number
   /** Actively running (occupying a slot). */
   running: number
   /** Waiting for a slot to free. */
   queued: number
+  review: number
   done: number
 }
 

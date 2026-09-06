@@ -19,9 +19,25 @@ import { runChatTurn } from '../chat/orchestrator.js'
 import { interruptLLMRetryWait, hasRecentLLMFailure } from '../chat/stream-pure.js'
 
 import { launchWorkflowRun } from '../runner/launch.js'
+import {
+  initAutoLaunch,
+  scheduleAutoLaunch,
+  cancelAutoLaunch,
+  getAutoLaunchMessage,
+  hasAutoLaunchPending,
+} from '../workflows/autolaunch.js'
+import type { AutoLaunchFavorite } from '../workflows/autolaunch.js'
+import { resolveFavoriteWorkflow } from '../workflows/favorite.js'
+import {
+  findTaskIdBySession,
+  getTask as dbGetTaskById,
+  setTaskWorkflowChoice as dbSetTaskWorkflowChoice,
+} from '../db/tasks.js'
 import { appendCompactionPrompt } from '../context/compactor.js'
 import { computeSessionHash, applyDynamicContext, computeUnifiedDiff } from '../chat/dynamic-context.js'
 import { provideAnswer } from '../tools/index.js'
+import { resolveAutoActionTimeoutSeconds } from '../utils/auto-action-timeout.js'
+import { initAutoAnswer, cancelAutoAnswersForSession } from '../tools/index.js'
 import { logger } from '../utils/logger.js'
 import { devServerManager } from '../dev-server/manager.js'
 import { onProcessEvent } from '../tools/background-process/manager.js'
@@ -29,6 +45,7 @@ import { buildMessagesFromStoredEvents, foldPendingConfirmations } from '../even
 import { getPendingQuestionsForSession } from '../tools/index.js'
 import { generateSessionNameForSession, needsNameGeneration } from '../session/name-generator.js'
 import { getSessionMessageCount } from '../utils/session-utils.js'
+import { getGlobalConfigDir } from '../../cli/paths.js'
 import { serverT } from '../i18n.js'
 import type { Translation } from '../../shared/i18n/index.js'
 
@@ -641,6 +658,140 @@ export function createWebSocketServer(
     }
   }
 
+  // ============================================================================
+  // Favorite-workflow auto-launch countdown
+  // ============================================================================
+
+  const fireAutoLaunch = (sessionId: string, favorite: AutoLaunchFavorite): void => {
+    // Defensive re-check: something may have started since scheduling (e.g. a
+    // retry turn) — never hijack an in-flight run.
+    if (!isStartBuildingState(sessionId)) {
+      logger.debug('Auto-launch skipped: no longer at the start-building choice point', { sessionId })
+      return
+    }
+    const existing = activeAgents.get(sessionId)
+    if (existing) {
+      logger.warn('Auto-launch aborting existing agent before starting favorite workflow', { sessionId })
+      existing.abort()
+    }
+    const controller = new AbortController()
+    activeAgents.set(sessionId, controller)
+    launchWorkflowRun(
+      {
+        sessionManager,
+        sessionId,
+        controller,
+        llmClient: llmForSession(sessionId),
+        getSessionLLMClient: () => llmForSession(sessionId),
+        statsIdentity: statsForSession(sessionId),
+        broadcastForSession: (sid, msg) => broadcastForSession(sid, msg),
+        onFinished: () => cleanupAfterTurn(sessionId, controller, sendForSessionSink, true),
+      },
+      { workflowId: favorite.id, scope: favorite.scope, autoLaunched: true },
+    )
+  }
+
+  const sendForSessionSink = (sessionId: string, msg: ServerMessage) => {
+    broadcastForSession(sessionId, msg)
+  }
+
+  const autoActionDelayMs = (projectId?: string): number => resolveAutoActionTimeoutSeconds(projectId) * 1000
+
+  initAutoLaunch({
+    broadcast: (sessionId, msg) => broadcastForSession(sessionId, msg),
+    fire: fireAutoLaunch,
+    resolveDelayMs: autoActionDelayMs,
+  })
+
+  initAutoAnswer({
+    broadcast: (sessionId, msg) => broadcastForSession(sessionId, msg),
+    resolveDelayMs: autoActionDelayMs,
+  })
+
+  // The session is idle at the post-planner "start building" choice point —
+  // same shape the frontend gates its workflow buttons on.
+  const isStartBuildingState = (sessionId: string): boolean => {
+    const session = sessionManager.getSession(sessionId)
+    if (!session || session.isRunning) return false
+    // A settled `plan` run leaves the phase done — that's exactly the chained
+    // start-building point; any other done session is not a choice point.
+    const latest = sessionManager.getLatestWorkflowExecution(sessionId)
+    const planSettled = latest?.workflowId === 'plan' && latest.status === 'completed'
+    if (session.phase === 'done' && !planSettled) return false
+    const eventStore = getEventStore()
+    const { snapshot, events: eventsSinceSnapshot } = eventStore.getEventsSinceSnapshot(sessionId)
+    const events = combineEventsWithSnapshot(sessionId, snapshot, eventsSinceSnapshot)
+    const messages = buildMessagesFromStoredEvents(events).messages
+    if (!messages.some((m) => m.role === 'assistant')) return false
+    const criteria = session.metadataEntries?.['criteria'] ?? []
+    if (!criteria.some((c) => c.status === 'pending')) return false
+    const exec = sessionManager.getDisplayWorkflowExecution(sessionId)
+    return exec?.status !== 'running' && exec?.status !== 'waiting'
+  }
+
+  // Debounced: waits for the run-settled + criteria state to converge, then
+  // verifies every start-building condition still holds server-side.
+  const scheduleTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  function scheduleAutoLaunchIfEligible(sessionId: string): void {
+    if (hasAutoLaunchPending(sessionId)) return
+    const existingTimer = scheduleTimers.get(sessionId)
+    if (existingTimer) clearTimeout(existingTimer)
+    scheduleTimers.set(
+      sessionId,
+      setTimeout(() => {
+        scheduleTimers.delete(sessionId)
+        void (async () => {
+          try {
+            if (!isStartBuildingState(sessionId)) return
+            const session = sessionManager.getSession(sessionId)
+            if (!session) return
+            // A workflow already picked for the linked board task wins over the
+            // favorite: the user (or a pick button) explicitly decided.
+            const linkedTaskId = findTaskIdBySession(sessionId)
+            const linkedTask = linkedTaskId ? dbGetTaskById(linkedTaskId) : null
+            if (linkedTask?.workflowChoice) return
+            // Auto-launch while no build has run yet in this session: a settled
+            // plan run is exactly the choice point to chain into; any other
+            // execution means the user already decided manually.
+            const latest = sessionManager.getLatestWorkflowExecution(sessionId)
+            if (latest && latest.workflowId !== 'plan') return
+            const configDir = getGlobalConfigDir(_config.mode ?? 'production')
+            const favorite = await resolveFavoriteWorkflow(configDir, session.projectId, session.workdir)
+            if (!favorite) return
+            // Re-check after the async catalog read — the user may have acted.
+            if (!isStartBuildingState(sessionId)) return
+            scheduleAutoLaunch(sessionId, favorite, session.projectId)
+          } catch (err) {
+            logger.debug('Auto-launch scheduling skipped', {
+              sessionId,
+              error: err instanceof Error ? err.message : String(err),
+            })
+          }
+        })()
+      }, 1000),
+    )
+    scheduleTimers.get(sessionId)?.unref?.()
+  }
+
+  sessionManager.subscribe((event) => {
+    if ('sessionId' in event && event.sessionId) {
+      if (event.type === 'running_changed' && !event.isRunning) {
+        scheduleAutoLaunchIfEligible(event.sessionId)
+      } else if (
+        event.type === 'criteria_updated' ||
+        event.type === 'metadata_updated' ||
+        event.type === 'phase_changed'
+      ) {
+        cancelAutoLaunch(event.sessionId)
+        scheduleAutoLaunchIfEligible(event.sessionId)
+      } else if (event.type === 'queue_added' || event.type === 'message_added') {
+        cancelAutoLaunch(event.sessionId)
+      } else if (event.type === 'session_deleted') {
+        cancelAutoLaunch(event.sessionId)
+      }
+    }
+  })
+
   // Global dev server event listeners — broadcast to all WS clients
   devServerManager.onOutput((workdir, chunk) => {
     broadcastAll(
@@ -1008,7 +1159,10 @@ async function handleClientMessage(
 
       ensureEventStoreSubscription(session.id)
 
-      // Acknowledge without sending full session data
+      // Sync any pending favorite-workflow auto-launch countdown (reload/reconnect)
+      const pendingAutoLaunch = getAutoLaunchMessage(session.id)
+      if (pendingAutoLaunch) send({ ...pendingAutoLaunch, sessionId: session.id })
+
       // Frontend should use REST API to fetch session data
       send({ type: 'ack', payload: { sessionId: session.id }, id: message.id })
 
@@ -1331,6 +1485,34 @@ async function handleClientMessage(
         return
       }
 
+      // A manual pick (or any explicit launch) kills the pending auto-launch.
+      cancelAutoLaunch(sessionId)
+
+      // Persisting a manual workflow pick for the linked board task: at the
+      // post-plan choice point this is the user's explicit decision, so it
+      // replaces the default build on In Progress and suppresses the favorite
+      // countdown (schedule check below reads workflow_choice).
+      {
+        const pickedWorkflowId = (message.payload as { workflowId?: string } | undefined)?.workflowId
+        if (pickedWorkflowId) {
+          try {
+            const linkedTaskId = findTaskIdBySession(sessionId)
+            const linkedTask = linkedTaskId ? dbGetTaskById(linkedTaskId) : null
+            const latestExec = sessionManager.getLatestWorkflowExecution(sessionId)
+            const atPlanChoicePoint = !latestExec || latestExec.workflowId === 'plan'
+            if (linkedTask && linkedTask.status !== 'done' && atPlanChoicePoint) {
+              // The bar PUTs the choice before launching; only write when the
+              // value actually changed to avoid double version bumps.
+              if (linkedTask.workflowChoice !== pickedWorkflowId) {
+                dbSetTaskWorkflowChoice(linkedTask.id, pickedWorkflowId)
+              }
+            }
+          } catch {
+            // Board persistence must never block a launch.
+          }
+        }
+      }
+
       const session = sessionManager.requireSession(sessionId)
 
       // If running, queue for later processing instead of rejecting
@@ -1550,6 +1732,30 @@ async function handleClientMessage(
     // Workflow
     // =========================================================================
 
+    // =========================================================================
+    // Favorite-workflow auto-launch: cancel the pending countdown (first
+    // keystroke in the chat input, or the countdown's close button)
+    // =========================================================================
+    case 'workflow.cancel_autolaunch': {
+      const payload = message.payload as { sessionId?: string } | undefined
+      const sessionId = payload?.sessionId ?? client.activeSessionId
+      if (sessionId) cancelAutoLaunch(sessionId)
+      send({ type: 'ack', payload: {}, id: message.id })
+      break
+    }
+
+    // =========================================================================
+    // Ask-user auto-answer: cancel every pending countdown in the session
+    // (first keystroke in the chat input takes over for the user)
+    // =========================================================================
+    case 'chat.cancel_autoanswer': {
+      const payload = message.payload as { sessionId?: string } | undefined
+      const sessionId = payload?.sessionId ?? client.activeSessionId
+      if (sessionId) cancelAutoAnswersForSession(sessionId)
+      send({ type: 'ack', payload: {}, id: message.id })
+      break
+    }
+
     case 'workflow.exit': {
       const payload = message.payload as { sessionId?: string } | undefined
       const exitSessionId = payload?.sessionId ?? client.activeSessionId
@@ -1620,6 +1826,8 @@ async function handleClientMessage(
         return
       }
 
+      // An explicit retry means the user took over — stop any pending countdown.
+      cancelAutoLaunch(retrySessionId)
       const retrySession = sessionManager.getSession(retrySessionId)
       if (!retrySession) {
         send(createErrorMessage('NOT_FOUND', serverT(MSG_SESSION_NOT_FOUND), message.id))

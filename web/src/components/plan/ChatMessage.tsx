@@ -311,7 +311,12 @@ export const ChatMessage = memo(function ChatMessage({
 
   if (message.messageKind === 'workflow-started') {
     try {
-      const data = JSON.parse(message.content) as { workflowName: string; workflowId: string; workflowColor?: string }
+      const data = JSON.parse(message.content) as {
+        workflowName: string
+        workflowId: string
+        workflowColor?: string
+        autoLaunched?: boolean
+      }
       return <WorkflowStartedCard data={data} />
     } catch {
       // Fall through to default rendering

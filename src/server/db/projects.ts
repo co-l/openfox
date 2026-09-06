@@ -90,6 +90,9 @@ export function updateProject(
     customInstructions?: string | null
     dangerLevel?: DangerLevel | null
     defaultAgent?: string | null
+    favoriteWorkflowId?: string | null
+    autoAnswerQuestions?: boolean | null
+    autoActionTimeoutSeconds?: number | null
     workspaceRootDir?: string | null
     mcpOverrides?: Record<string, { disabled?: boolean; disabledTools?: string[] }> | null
   },
@@ -98,7 +101,7 @@ export function updateProject(
   const now = new Date().toISOString()
 
   const sets: string[] = ['updated_at = ?']
-  const values: (string | null)[] = [now]
+  const values: (string | number | null)[] = [now]
 
   if (updates.name !== undefined) {
     sets.push('name = ?')
@@ -118,6 +121,21 @@ export function updateProject(
   if (updates.defaultAgent !== undefined) {
     sets.push('default_agent = ?')
     values.push(updates.defaultAgent)
+  }
+
+  if (updates.favoriteWorkflowId !== undefined) {
+    sets.push('favorite_workflow_id = ?')
+    values.push(updates.favoriteWorkflowId)
+  }
+
+  if (updates.autoAnswerQuestions !== undefined) {
+    sets.push('auto_answer_questions = ?')
+    values.push(updates.autoAnswerQuestions === null ? null : updates.autoAnswerQuestions ? 'true' : 'false')
+  }
+
+  if (updates.autoActionTimeoutSeconds !== undefined) {
+    sets.push('auto_action_timeout = ?')
+    values.push(updates.autoActionTimeoutSeconds)
   }
 
   if (updates.workspaceRootDir !== undefined) {
@@ -171,6 +189,53 @@ export function getProjectDefaultAgent(projectId: string): string | null {
   }
 }
 
+export function getProjectFavoriteWorkflowId(projectId: string): string | null {
+  try {
+    const db = getDatabase()
+    const row = db.prepare('SELECT favorite_workflow_id FROM projects WHERE id = ?').get(projectId) as
+      { favorite_workflow_id: string | null } | undefined
+    return row?.favorite_workflow_id ?? null
+  } catch {
+    return null
+  }
+}
+
+/** Tri-state project auto-answer preference: true/false override, null inherits global. */
+export function getProjectAutoAnswerQuestions(projectId: string): boolean | null {
+  try {
+    const db = getDatabase()
+    const row = db.prepare('SELECT auto_answer_questions FROM projects WHERE id = ?').get(projectId) as
+      { auto_answer_questions: string | null } | undefined
+    if (row?.auto_answer_questions === 'true') return true
+    if (row?.auto_answer_questions === 'false') return false
+    return null
+  } catch {
+    return null
+  }
+}
+
+/** Project auto-action timeout override in seconds; null inherits the global setting. */
+export function getProjectAutoActionTimeout(projectId: string): number | null {
+  try {
+    const db = getDatabase()
+    const row = db.prepare('SELECT auto_action_timeout FROM projects WHERE id = ?').get(projectId) as
+      { auto_action_timeout: number | null } | undefined
+    return row?.auto_action_timeout ?? null
+  } catch {
+    return null
+  }
+}
+
+/** Point a project's favorite-workflow override back at the system default. */
+export function clearProjectFavoriteWorkflowId(projectId: string): void {
+  try {
+    const db = getDatabase()
+    db.prepare('UPDATE projects SET favorite_workflow_id = NULL WHERE id = ?').run(projectId)
+  } catch {
+    // ignore: cleanup is best-effort
+  }
+}
+
 // ============================================================================
 // Row Types
 // ============================================================================
@@ -182,6 +247,9 @@ interface ProjectRow {
   custom_instructions: string | null
   danger_level: string | null
   default_agent: string | null
+  favorite_workflow_id: string | null
+  auto_answer_questions: string | null
+  auto_action_timeout: number | null
   is_starred: number
   workspace_root_dir: string | null
   mcp_overrides: string | null
@@ -197,6 +265,13 @@ function rowToProject(row: ProjectRow): Project {
     ...(row.custom_instructions ? { customInstructions: row.custom_instructions } : {}),
     ...(row.danger_level ? { dangerLevel: row.danger_level as DangerLevel } : {}),
     ...(row.default_agent ? { defaultAgent: row.default_agent } : {}),
+    ...(row.favorite_workflow_id ? { favoriteWorkflowId: row.favorite_workflow_id } : {}),
+    ...(row.auto_answer_questions === 'true' || row.auto_answer_questions === 'false'
+      ? { autoAnswerQuestions: row.auto_answer_questions === 'true' }
+      : {}),
+    ...(row.auto_action_timeout !== null && row.auto_action_timeout !== undefined
+      ? { autoActionTimeoutSeconds: row.auto_action_timeout }
+      : {}),
     isStarred: !!row.is_starred,
     ...(row.workspace_root_dir ? { workspaceRootDir: row.workspace_root_dir } : {}),
     ...(row.mcp_overrides

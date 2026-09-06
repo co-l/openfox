@@ -432,6 +432,7 @@ export async function executeWorkflow(
           workflowName: workflow.metadata.name,
           workflowId: workflow.metadata.id,
           workflowColor: workflow.metadata.color,
+          ...(options.autoLaunched ? { autoLaunched: true } : {}),
         }),
         { ...(startWindowOpts ?? {}), isSystemGenerated: true, messageKind: 'workflow-started' },
       ),

@@ -58,7 +58,7 @@ export function GatesEditor({ projectId, onClose }: GatesEditorProps) {
     <Modal
       isOpen
       onClose={onClose}
-      title={t({ en: 'Definition of Done', fr: 'Définition de Terminé' })}
+      title={t({ en: 'Definition of Review', fr: 'Définition de Revue' })}
       size="lg"
       footer={
         <div className="flex items-center justify-between gap-2">
@@ -67,7 +67,7 @@ export function GatesEditor({ projectId, onClose }: GatesEditorProps) {
               en: 'Gates define what a task must carry before it may enter',
               fr: 'Les portes définissent ce qu’une tâche doit comporter avant d’entrer dans',
             })}{' '}
-            <strong>{t({ en: 'Done', fr: 'Terminé' })}</strong>.{' '}
+            <strong>{t({ en: 'Review', fr: 'Revue' })}</strong>.{' '}
             {t({
               en: 'Values are set by you or the agent, each recorded with actor + timestamp.',
               fr: 'Les valeurs sont définies par vous ou l’agent, chacune enregistrée avec acteur + horodatage.',
@@ -86,8 +86,8 @@ export function GatesEditor({ projectId, onClose }: GatesEditorProps) {
         {localGates.length === 0 && (
           <p className="text-sm text-text-muted">
             {t({
-              en: 'No gates configured — any task can move straight to Done. Add a gate like “all green” (every criterion passes with evidence) or “commit” (work committed with a commit reference).',
-              fr: 'Aucune porte configurée — toute tâche peut passer directement à Terminé. Ajoutez une porte comme « all green » (chaque critère passe avec preuve) ou « commit » (travail validé avec une référence de commit).',
+              en: 'No gates configured — any finished task can move straight to Review. Add a gate like “all green” (every criterion passes with evidence) or “commit” (work committed with a commit reference).',
+              fr: 'Aucune porte configurée — toute tâche terminée peut passer directement en Revue. Ajoutez une porte comme « all green » (chaque critère passe avec preuve) ou « commit » (travail validé avec une référence de commit).',
             })}
           </p>
         )}
@@ -140,7 +140,7 @@ export function GatesEditor({ projectId, onClose }: GatesEditorProps) {
                   checked={gate.variant === 'done'}
                   onChange={() => updateGate(index, { variant: 'done' })}
                 />
-                {t({ en: 'Blocks Done', fr: 'Bloque Terminé' })}
+                {t({ en: 'Blocks Review', fr: 'Bloque Revue' })}
               </label>
               <label className="flex items-center gap-1.5">
                 <input

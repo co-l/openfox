@@ -2,6 +2,7 @@ import { memo } from 'react'
 import { OptionalScrollArea } from './OptionalScrollArea'
 import { useT } from '../../hooks/useT'
 import type { Translation } from '@shared/i18n/index.js'
+import { COLUMN_META, findColumnMeta } from '../tasks/column-meta'
 
 interface ProjectTasksViewProps {
   result: string
@@ -36,21 +37,6 @@ interface GateConfigView {
 interface ListData {
   gates?: GateConfigView[]
   tasks?: TaskView[]
-}
-
-const STATUS_META: Record<string, { label: Translation; className: string }> = {
-  todo: {
-    label: { en: 'To Do', fr: 'À faire' },
-    className: 'bg-accent-warning/10 text-accent-warning border-accent-warning/30',
-  },
-  in_progress: {
-    label: { en: 'In Progress', fr: 'En cours' },
-    className: 'bg-accent-primary/10 text-accent-primary border-accent-primary/30',
-  },
-  done: {
-    label: { en: 'Done', fr: 'Terminées' },
-    className: 'bg-accent-success/10 text-accent-success border-accent-success/30',
-  },
 }
 
 const SINGLE_TASK_ACTIONS = new Set(['get', 'create', 'edit', 'move', 'set_gate_value', 'duplicate', 'reorder'])
@@ -113,10 +99,12 @@ function Board({
 }) {
   const tasks = (data.tasks ?? []).map(parseTask)
   const gates = data.gates ?? []
-  const todo = tasks.filter((t) => t.status === 'todo')
-  const inProgress = tasks.filter((t) => t.status === 'in_progress')
-  const done = tasks.filter((t) => t.status === 'done')
-  const other = tasks.filter((t) => t.status !== 'todo' && t.status !== 'in_progress' && t.status !== 'done')
+  const columns = COLUMN_META.map((meta) => ({
+    status: meta.status,
+    meta,
+    tasks: tasks.filter((t) => t.status === meta.status),
+  }))
+  const other = tasks.filter((t) => findColumnMeta(t.status) === null)
 
   return (
     <div className="space-y-2 text-xs">
@@ -150,9 +138,9 @@ function Board({
         </div>
       ) : (
         <>
-          <Column title={t({ en: 'To Do', fr: 'À faire' })} tasks={todo} t={t} />
-          <Column title={t({ en: 'In Progress', fr: 'En cours' })} tasks={inProgress} t={t} />
-          <Column title={t({ en: 'Done', fr: 'Terminées' })} tasks={done} t={t} />
+          {columns.map((col) => (
+            <Column key={col.status} title={t(col.meta.title)} tasks={col.tasks} t={t} />
+          ))}
           <Column title={t({ en: 'Other', fr: 'Autres' })} tasks={other} t={t} />
         </>
       )}
@@ -189,14 +177,14 @@ function TaskCard({
   task: TaskView
   t: (tx: Translation, vars?: Record<string, string | number>) => string
 }) {
-  const meta = STATUS_META[task.status] ?? null
+  const meta = findColumnMeta(task.status)
   return (
     <div className="rounded-md border border-border bg-bg-tertiary px-2.5 py-2">
       <div className="flex flex-wrap items-center gap-1.5">
         <span
-          className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium ${meta?.className ?? 'bg-bg-tertiary text-text-secondary border-border'}`}
+          className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium ${meta?.badgeClass ?? 'bg-bg-tertiary text-text-secondary border-border'}`}
         >
-          {meta ? t(meta.label) : task.status}
+          {meta ? t(meta.title) : task.status}
         </span>
         {task.runState === 'running' && (
           <span className="inline-flex items-center gap-1 rounded-full border border-accent-success/40 bg-accent-success/10 px-1.5 py-0.5 text-[10px] font-medium text-accent-success">

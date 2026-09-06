@@ -56,6 +56,10 @@ vi.mock('../../hooks/useResource', async () => {
   }
 })
 
+vi.mock('../../hooks/useSetting', () => ({
+  useSetting: (_key: string, fallback = '') => ({ value: fallback, loading: false }),
+}))
+
 vi.mock('../../stores/project', () => ({
   useProjectStore: (selector: any) =>
     selector({
@@ -614,6 +618,73 @@ describe('ProjectSettingsModal — rootDir validation (Criterion 0 & 1)', () => 
     await user.click(cancelBtn)
 
     expectNoSave()
+  })
+
+  it('sends autoAnswerQuestions override when the project select changes', async () => {
+    const user = userEvent.setup()
+
+    render(<ProjectSettingsModal isOpen={true} onClose={vi.fn()} project={defaultProject} />)
+
+    const select = screen.getByLabelText('Auto-answer Agent Questions') as HTMLSelectElement
+    expect(select.value).toBe('inherit')
+
+    await user.selectOptions(select, 'true')
+    await user.click(screen.getByTestId('save-btn'))
+
+    expect(mockUpdateProject).toHaveBeenCalledWith(
+      defaultProject.id,
+      expect.objectContaining({ autoAnswerQuestions: true }),
+    )
+  })
+
+  it('shows the stored project override and keeps save disabled when untouched', () => {
+    render(
+      <ProjectSettingsModal
+        isOpen={true}
+        onClose={vi.fn()}
+        project={{ ...defaultProject, autoAnswerQuestions: true }}
+      />,
+    )
+
+    const select = screen.getByLabelText('Auto-answer Agent Questions') as HTMLSelectElement
+    expect(select.value).toBe('true')
+    expect((screen.getByTestId('save-btn') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('hides the automatic actions timeout unless a behavior override is set', () => {
+    render(<ProjectSettingsModal isOpen={true} onClose={vi.fn()} project={defaultProject} />)
+    expect(screen.queryByLabelText('Automatic Actions Timeout')).toBeNull()
+
+    render(
+      <ProjectSettingsModal
+        isOpen={true}
+        onClose={vi.fn()}
+        project={{ ...defaultProject, autoAnswerQuestions: true }}
+      />,
+    )
+    expect(screen.getByLabelText('Automatic Actions Timeout')).toBeTruthy()
+  })
+
+  it('sends the project timeout override', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <ProjectSettingsModal
+        isOpen={true}
+        onClose={vi.fn()}
+        project={{ ...defaultProject, autoAnswerQuestions: false }}
+      />,
+    )
+
+    const input = screen.getByLabelText('Automatic Actions Timeout') as HTMLInputElement
+    await user.clear(input)
+    await user.type(input, '30')
+    await user.click(screen.getByTestId('save-btn'))
+
+    expect(mockUpdateProject).toHaveBeenCalledWith(
+      defaultProject.id,
+      expect.objectContaining({ autoActionTimeoutSeconds: 30 }),
+    )
   })
 
   it('skips validation when rootDir field is empty', async () => {

@@ -169,6 +169,21 @@ function runMigrations(db: Database.Database): void {
     db.exec(`ALTER TABLE projects ADD COLUMN mcp_overrides TEXT`)
   }
 
+  if (!projectColumnNames.includes('favorite_workflow_id')) {
+    logger.info('Migrating projects table: adding favorite_workflow_id column')
+    db.exec(`ALTER TABLE projects ADD COLUMN favorite_workflow_id TEXT`)
+  }
+
+  if (!projectColumnNames.includes('auto_answer_questions')) {
+    logger.info('Migrating projects table: adding auto_answer_questions column')
+    db.exec(`ALTER TABLE projects ADD COLUMN auto_answer_questions TEXT`)
+  }
+
+  if (!projectColumnNames.includes('auto_action_timeout')) {
+    logger.info('Migrating projects table: adding auto_action_timeout column')
+    db.exec(`ALTER TABLE projects ADD COLUMN auto_action_timeout INTEGER`)
+  }
+
   // Migration: Add mcp_disabled_servers column to sessions table
   if (!columnNames.includes('mcp_disabled_servers')) {
     logger.info('Migrating sessions table: adding mcp_disabled_servers column')
@@ -365,7 +380,7 @@ function runMigrations(db: Database.Database): void {
       project_id TEXT NOT NULL,
       prompt TEXT NOT NULL DEFAULT '',
       attachments TEXT NOT NULL DEFAULT '[]',
-      status TEXT NOT NULL DEFAULT 'todo',
+      status TEXT NOT NULL DEFAULT 'backlog',
       run_state TEXT,
       position INTEGER NOT NULL DEFAULT 0,
       version INTEGER NOT NULL DEFAULT 0,
@@ -378,6 +393,14 @@ function runMigrations(db: Database.Database): void {
     )
   `)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id, status)`)
+
+  // Migration: Add workflow_choice column (workflow picked for the task after planning;
+  // its presence also marks "a choice was made", which suppresses the favorite auto-launch).
+  const taskColumns = db.prepare(`PRAGMA table_info(tasks)`).all() as { name: string }[]
+  if (!taskColumns.some((c) => c.name === 'workflow_choice')) {
+    logger.info('Migrating tasks table: adding workflow_choice column')
+    db.exec(`ALTER TABLE tasks ADD COLUMN workflow_choice TEXT`)
+  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS task_links (

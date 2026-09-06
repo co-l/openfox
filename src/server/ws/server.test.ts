@@ -111,6 +111,8 @@ vi.mock('../tools/index.js', () => ({
   cancelQuestionsForSession: vi.fn(),
   cancelPathConfirmationsForSession: vi.fn(),
   getPendingQuestionsForSession: vi.fn(() => []),
+  initAutoAnswer: vi.fn(),
+  cancelAutoAnswersForSession: vi.fn(),
 }))
 
 vi.mock('../agents/registry.js', () => {

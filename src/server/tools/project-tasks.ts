@@ -39,7 +39,9 @@ type TaskAction = 'list' | 'create' | 'edit' | 'move' | 'set_gate_value' | 'dele
 
 const VALID_ACTIONS: TaskAction[] = ['list', 'create', 'edit', 'move', 'set_gate_value', 'delete']
 
-const LIST_STATUSES = ['todo', 'in_progress', 'done', 'all'] as const
+const TASK_STATUSES = ['backlog', 'todo', 'in_progress', 'review', 'done'] as const
+type TaskStatusArg = (typeof TASK_STATUSES)[number]
+const LIST_STATUSES = [...TASK_STATUSES, 'all'] as const
 
 const LIST_DEFAULT_LIMIT = 10
 const LIST_MAX_LIMIT = 25
@@ -52,11 +54,11 @@ interface ProjectTasksArgs {
   agentId?: string
   providerId?: string
   model?: string
-  to?: 'todo' | 'in_progress' | 'done'
+  to?: TaskStatusArg
   reason?: string
   gateId?: string
   value?: string
-  status?: 'todo' | 'in_progress' | 'done' | 'all'
+  status?: TaskStatusArg | 'all'
   limit?: number
   offset?: number
   expectedVersion?: number
@@ -69,20 +71,22 @@ export const projectTasksTool = createTool<ProjectTasksArgs>(
     function: {
       name: 'project_tasks',
       description:
-        'Kanban task board for this project. Core loop: list → move → set_gate_value.\n\n' +
+        'Kanban task board for this project (columns, left to right: backlog → todo → in_progress → review → done). ' +
+        'Core loop: list → move → set_gate_value.\n\n' +
         'Rules:\n' +
         '- Moving to in_progress binds the task to YOUR current session.\n' +
-        '- Do not move tasks or fill gate values without explicit user approval or a system instruction — ' +
-        'complete the work, then let the user review before the task advances.\n' +
-        '- Moving to done is blocked by unmet gates: the error names the missing fields — fill them only with ' +
+        '- Do not move tasks or fill gate values without explicit user approval or a system instruction. ' +
+        'When your work is complete, move the task to review (NOT done): only the user completes a task. ' +
+        'Planning sessions end by proposing the move to in_progress.\n' +
+        '- Moving to review is blocked by unmet gates: the error names the missing fields — fill them only with ' +
         'user approval, then retry the move.\n' +
         '- Stale writes fail with CONFLICT — re-list and retry.\n\n' +
         'Actions:\n' +
         '- list: tasks (status, gate values, queue position, bound session, audit trail); defaults to open tasks, ' +
-        'filter via status (todo | in_progress | done | all); paginated — limit 10 max 25, page with offset\n' +
-        '- create: add a task to To Do (prompt required)\n' +
+        'filter via status (backlog | todo | in_progress | review | done | all); paginated — limit 10 max 25, page with offset\n' +
+        '- create: add a task to Backlog (prompt required)\n' +
         '- edit: update prompt/attachments/agent/model (taskId + fields)\n' +
-        '- move: change column (to: todo | in_progress | done; optional reason)\n' +
+        '- move: change column (to: backlog | todo | in_progress | review | done; optional reason)\n' +
         '- set_gate_value: fill a gate field (taskId, gateId, value)\n' +
         '- delete: remove a task (taskId)',
       parameters: {
@@ -107,13 +111,13 @@ export const projectTasksTool = createTool<ProjectTasksArgs>(
           agentId: { type: 'string', description: 'Selected agent id' },
           providerId: { type: 'string', description: 'Provider id used when a session is spawned' },
           model: { type: 'string', description: 'Model label used when a session is spawned' },
-          to: { type: 'string', enum: ['todo', 'in_progress', 'done'], description: 'Destination column for move' },
+          to: { type: 'string', enum: [...TASK_STATUSES], description: 'Destination column for move' },
           reason: { type: 'string', description: 'Optional short reason (recorded in the audit trail) for reverts' },
           gateId: { type: 'string', description: 'Gate field id for set_gate_value' },
           value: { type: 'string', description: 'Proof/evidence value for set_gate_value' },
           status: {
             type: 'string',
-            enum: ['todo', 'in_progress', 'done', 'all'],
+            enum: [...LIST_STATUSES],
             description: 'Column filter for action=list (default: open tasks)',
           },
           limit: {
@@ -153,8 +157,8 @@ export const projectTasksTool = createTool<ProjectTasksArgs>(
             return helpers.error(
               serverT(
                 {
-                  en: 'Invalid "status" filter for action=list: "{{status}}". Expected one of: todo, in_progress, done, all.',
-                  fr: 'Filtre « status » invalide pour action=list : « {{status}} ». Valeurs attendues : todo, in_progress, done, all.',
+                  en: 'Invalid "status" filter for action=list: "{{status}}". Expected one of: backlog, todo, in_progress, review, done, all.',
+                  fr: 'Filtre « status » invalide pour action=list : « {{status}} ». Valeurs attendues : backlog, todo, in_progress, review, done, all.',
                 },
                 { status: String(status) },
               ),

@@ -31,7 +31,7 @@ const makeTask = (
   ...extra,
 })
 
-const EMPTY_COUNTS = { open: 0, todo: 0, inProgress: 0, running: 0, queued: 0, done: 0 }
+const EMPTY_COUNTS = { open: 0, backlog: 0, todo: 0, inProgress: 0, running: 0, queued: 0, review: 0, done: 0 }
 
 function seedBoard(projectId = 'proj-1') {
   boardResource.write(
@@ -53,7 +53,7 @@ describe('useTasksStore', () => {
         projectId: 'proj-1',
         tasks: [makeTask('a', 'in_progress', { runState: 'queued' }) as never],
         settings: { slotLimit: 1, queuePaused: true },
-        counts: { open: 1, todo: 0, inProgress: 1, running: 1, queued: 0, done: 0 },
+        counts: { open: 1, backlog: 0, todo: 0, inProgress: 1, running: 1, queued: 0, review: 0, done: 0 },
       }
       useTasksStore.getState().handleTasksUpdate(payload)
 
@@ -66,7 +66,7 @@ describe('useTasksStore', () => {
     it('writes counts into the per-project summaries resource', () => {
       useTasksStore.getState().handleTasksUpdate({
         projectId: 'p-other',
-        counts: { open: 2, todo: 1, inProgress: 1, running: 1, queued: 0, done: 0 },
+        counts: { open: 2, backlog: 0, todo: 1, inProgress: 1, running: 1, queued: 0, review: 0, done: 0 },
       } as TasksUpdatePayload)
       expect(snapshot<TaskCountsData>(summariesResource.keyOf('p-other')).data?.counts.running).toBe(1)
     })

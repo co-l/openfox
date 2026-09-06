@@ -25,6 +25,7 @@ function makeSM(): FakeSM & {
   queueMessage: (sessionId: string, mode: string, content?: string) => void
   addMessage: () => void
   getSession: () => null
+  getLatestWorkflowExecution: () => null
 } {
   const sm: FakeSM = { createdSessions: [], queued: [], modes: new Map() }
   const counter = { n: 0 }
@@ -42,6 +43,7 @@ function makeSM(): FakeSM & {
     },
     addMessage: () => undefined,
     getSession: () => null,
+    getLatestWorkflowExecution: () => null,
   }
 }
 
@@ -79,15 +81,15 @@ describe('project tasks service — slash resolver failure handling', () => {
     await rm(root, { recursive: true, force: true })
   })
 
-  it('degrades to the raw prompt when resolution throws', async () => {
+  it('degrades to the plan workflow when resolution throws', async () => {
     resolveSlashLaunchMock.mockRejectedValue(new Error('corrupt config'))
     const task = service.create(projectId, { prompt: '/broken cmd' }, { actor: 'human' })
     const result = await service.move(projectId, task.id, 'in_progress', { actor: 'human' })
 
     expect(result.task.status).toBe('in_progress')
-    expect(launchWorkflow).not.toHaveBeenCalled()
-    expect(sm.queued).toHaveLength(1)
-    expect(sm.queued[0]?.content).toBe('/broken cmd')
+    expect(launchWorkflow).toHaveBeenCalledTimes(1)
+    expect(launchWorkflow.mock.calls[0]![1]).toMatchObject({ workflowId: 'plan', content: '/broken cmd' })
+    expect(sm.queued).toHaveLength(0)
   })
 
   it('launches a workflow when resolution succeeds', async () => {

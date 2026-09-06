@@ -30,6 +30,8 @@ export interface WorkflowLaunchPayload {
   stepOutput?: Record<string, string>
   /** Branch chosen by the user at a paused user step. */
   userChoice?: string
+  /** Launched by the favorite-workflow countdown; tags the feed marker. */
+  autoLaunched?: boolean
   content?: string
   attachments?: Attachment[]
 }
@@ -88,6 +90,7 @@ export function launchWorkflowRun(deps: LaunchWorkflowRunDeps, payload: Workflow
     statsIdentity,
     scope: normalizeWorkflowScope(payload.scope),
     ...(payload.workflowId ? { workflowId: payload.workflowId } : {}),
+    ...(payload.autoLaunched ? { autoLaunched: true } : {}),
     ...(payload.subGroup ? { subGroup: payload.subGroup } : {}),
     ...(payload.params ? { params: payload.params } : {}),
     ...(payload.resumeFrom ? { resumeFromStep: payload.resumeFrom } : {}),

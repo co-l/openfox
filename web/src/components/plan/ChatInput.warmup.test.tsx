@@ -4,9 +4,11 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ChatInput } from './ChatInput'
 
-const { authFetchMock, currentSessionMock } = vi.hoisted(() => ({
+const { authFetchMock, currentSessionMock, cancelAutoLaunchMock, cancelAutoAnswersMock } = vi.hoisted(() => ({
   authFetchMock: vi.fn(() => Promise.resolve({ ok: true })),
   currentSessionMock: { id: 's1', workdir: '/tmp', projectId: 'p1', messageCount: 0 },
+  cancelAutoLaunchMock: vi.fn(),
+  cancelAutoAnswersMock: vi.fn(),
 }))
 
 vi.mock('../../lib/api', () => ({
@@ -24,6 +26,8 @@ vi.mock('../../stores/session', () => ({
       queuedMessages: [],
       restoredInput: null,
       clearRestoredInput: vi.fn(),
+      cancelAutoLaunch: cancelAutoLaunchMock,
+      cancelAutoAnswers: cancelAutoAnswersMock,
     }),
   useIsRunning: () => false,
   useQueuedMessages: () => [],
@@ -110,5 +114,15 @@ describe('ChatInput warmup', () => {
     fireEvent.change(textarea, { target: { value: 'hello' } })
 
     expect(authFetchMock).not.toHaveBeenCalledWith('/api/sessions/s1/warmup', { method: 'POST' })
+  })
+
+  it('cancels a pending auto-launch countdown on first keystroke', () => {
+    currentSessionMock.messageCount = 5
+    renderChatInput()
+
+    const textarea = screen.getByTestId('chat-input-textarea')
+    fireEvent.change(textarea, { target: { value: 'h' } })
+
+    expect(cancelAutoLaunchMock).toHaveBeenCalledWith('s1')
   })
 })

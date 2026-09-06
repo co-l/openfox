@@ -116,8 +116,14 @@ beforeEach(() => {
   // Seed the per-project counts so useResource serves from cache and no
   // out-of-act fetch fires on mount.
   clearCache()
-  summariesResource.write({ counts: { open: 4, todo: 1, inProgress: 2, running: 1, queued: 1, done: 3 } }, 'p1')
-  summariesResource.write({ counts: { open: 0, todo: 0, inProgress: 0, running: 0, queued: 0, done: 0 } }, 'p2')
+  summariesResource.write(
+    { counts: { open: 4, backlog: 0, todo: 1, inProgress: 2, running: 1, queued: 1, review: 0, done: 3 } },
+    'p1',
+  )
+  summariesResource.write(
+    { counts: { open: 0, backlog: 0, todo: 0, inProgress: 0, running: 0, queued: 0, review: 0, done: 0 } },
+    'p2',
+  )
   const authFetchMock = vi.mocked(authFetch)
   authFetchMock.mockReset()
   authFetchMock.mockImplementation(async (url: string) => {
@@ -125,7 +131,7 @@ beforeEach(() => {
       return {
         ok: true,
         json: async () => ({
-          counts: { open: 4, todo: 1, inProgress: 2, running: 1, queued: 1, done: 3 },
+          counts: { open: 4, backlog: 0, todo: 1, inProgress: 2, running: 1, queued: 1, review: 0, done: 3 },
         }),
       } as unknown as Response
     }
@@ -133,7 +139,7 @@ beforeEach(() => {
       return {
         ok: true,
         json: async () => ({
-          counts: { open: 0, todo: 0, inProgress: 0, running: 0, queued: 0, done: 0 },
+          counts: { open: 0, backlog: 0, todo: 0, inProgress: 0, running: 0, queued: 0, review: 0, done: 0 },
         }),
       } as unknown as Response
     }
@@ -142,7 +148,7 @@ beforeEach(() => {
       json: async () => ({
         tasks: [],
         settings: { slotLimit: 1, queuePaused: false },
-        counts: { open: 0, todo: 0, inProgress: 0, running: 0, queued: 0, done: 0 },
+        counts: { open: 0, backlog: 0, todo: 0, inProgress: 0, running: 0, queued: 0, review: 0, done: 0 },
         gates: [],
       }),
     } as unknown as Response

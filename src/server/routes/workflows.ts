@@ -14,6 +14,7 @@ import {
   getDefaultWorkflowIds,
 } from '../workflows/registry.js'
 import { TEMPLATE_VARIABLES } from '../workflows/executor.js'
+import { sweepFavoritesAfterDelete } from '../workflows/favorite.js'
 import type { WorkflowDefinition } from '../workflows/types.js'
 import type { Config } from '../../shared/types.js'
 import { createCrudRoutes, type CrudRouteConfig } from './crud-helpers.js'
@@ -49,6 +50,7 @@ export function createWorkflowRoutes(configDir: string, config: Config, projectD
       } as unknown as { [key: string]: unknown }
     },
     extraGetData: () => Promise.resolve({ activeWorkflowId: config.activeWorkflowId ?? 'default' }),
+    afterDelete: (id, ctx) => sweepFavoritesAfterDelete(id, ctx.configDir, ctx.projectDir),
     extraRoutes: (router) => {
       router.get('/template-variables', (_req, res) => {
         res.json({ variables: TEMPLATE_VARIABLES })

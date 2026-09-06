@@ -1,4 +1,4 @@
-import { memo, useState, useRef, useCallback, useEffect, useLayoutEffect, type ReactNode } from 'react'
+import { memo, useState, useCallback, useEffect, useLayoutEffect, type ReactNode } from 'react'
 import type { OverlayScrollbarsComponentRef } from 'overlayscrollbars-react'
 import { ScrollArea } from '../shared/ScrollArea'
 import type { ScrollbarGestureKind } from '../shared/ScrollArea'
@@ -7,13 +7,17 @@ import { useViewport } from '../../hooks/useViewport'
 import { useSessionStore, useIsRunning } from '../../stores/session'
 import { useWorkflows } from '../../hooks/useWorkflows'
 import { useSessionWorkdir } from '../../hooks/useSessionWorkdir'
-import { SCOPE_LABELS } from '../../lib/workflow-scope'
 import { useDisplaySettings } from '../../hooks/useDisplaySettings'
 import { ChatFeedItems } from './ChatFeedItems'
+import { AutoLaunchCountdown } from './AutoLaunchCountdown'
+import { PostPlanLaunchBar } from './PostPlanLaunchBar'
+import { WorkflowButton } from './WorkflowButton'
+import { useResourceWhen } from '../../hooks/useResource'
+import { taskFromSessionResource } from '../../lib/resources'
+import { hexToRgba } from '../../lib/colors'
 import { CloseButton } from '../shared/CloseButton'
 import { Modal } from '../shared/Modal'
 import { ChevronUpIcon, InfoIcon } from '../shared/icons'
-import { useClickOutside } from '../../hooks/useClickOutside'
 import { useSessionScope, useScopedPaneState } from '../../stores/session/session-scope'
 import type { DisplayItem } from './groupMessages.js'
 import type { MetadataEntry, WorkflowScope } from '@shared/types.js'
@@ -147,6 +151,13 @@ export const MessageList = memo(function MessageList({
     null,
   )
   const continueWorkflow = useSessionStore((state) => state.continueWorkflow)
+  const autoLaunch = useScopedPaneState(
+    scopeId,
+    (pane) => pane.autoLaunch ?? null,
+    (state) => state.autoLaunch,
+    null,
+  )
+  const cancelAutoLaunch = useSessionStore((state) => state.cancelAutoLaunch)
   const llmRetry = useScopedPaneState(
     scopeId,
     (pane) => pane.llmRetry ?? null,
@@ -186,6 +197,18 @@ export const MessageList = memo(function MessageList({
     (state) => state.currentSession?.projectId,
     undefined,
   )
+  // Board task linked to this session — when one exists, the post-plan choice
+  // point renders the decision bar instead of the plain workflow buttons. The
+  // bar only makes sense while the task still awaits a build decision.
+  const { data: linkedTask } = useResourceWhen(
+    showStartBuilding && !!projectId && !!sessionId,
+    taskFromSessionResource,
+    projectId ?? '',
+    sessionId ?? '',
+  )
+  const postPlanBarTask =
+    linkedTask && (linkedTask.status === 'todo' || linkedTask.status === 'in_progress') ? linkedTask : null
+
   const [popupBlocked, setPopupBlocked] = useState(false)
   const [isScrollable, setIsScrollable] = useState(false)
   const [scrolledPastTop, setScrolledPastTop] = useState(false)
@@ -407,28 +430,50 @@ export const MessageList = memo(function MessageList({
               </div>
             )}
 
-            {showStartBuilding && (
-              <div className="flex justify-center gap-2 feed-item flex-wrap">
+            {showStartBuilding && postPlanBarTask && projectId && (
+              <PostPlanLaunchBar
+                task={postPlanBarTask}
+                projectId={projectId}
+                workflows={workflows}
+                onLaunchWorkflow={onLaunchWorkflow}
+                autoLaunch={autoLaunch ? { workflowId: autoLaunch.workflowId, deadline: autoLaunch.deadline } : null}
+                onCancelAutoLaunch={() => (sessionId ?? scopeId) && cancelAutoLaunch(sessionId ?? scopeId!)}
+              />
+            )}
+
+            {showStartBuilding && !postPlanBarTask && (
+              <div className="flex justify-center gap-2 feed-item flex-wrap items-start">
                 {workflows.map((w) => {
                   const c = w.color ?? '#3b82f6'
-                  const r = parseInt(c.slice(1, 3), 16),
-                    g = parseInt(c.slice(3, 5), 16),
-                    b = parseInt(c.slice(5, 7), 16)
-                  const bg = `rgba(${r},${g},${b},0.12)`
-                  const bgHover = `rgba(${r},${g},${b},0.22)`
-                  const border = `rgba(${r},${g},${b},0.25)`
+                  const bg = hexToRgba(c, 0.12)
+                  const bgHover = hexToRgba(c, 0.22)
+                  const border = hexToRgba(c, 0.25)
+                  const isAutoLaunching =
+                    autoLaunch?.workflowId === w.id &&
+                    (autoLaunch.scope === 'auto' || autoLaunch.scope === undefined || autoLaunch.scope === w.scope)
                   return (
-                    <WorkflowButton
-                      key={`${w.id}-${w.scope}`}
-                      workflowName={w.name}
-                      scope={w.scope}
-                      color={c}
-                      bg={bg}
-                      bgHover={bgHover}
-                      border={border}
-                      subGroups={w.subGroups}
-                      onLaunch={(subGroup?: string) => onLaunchWorkflow(w.id, subGroup, undefined, w.scope)}
-                    />
+                    <div key={`${w.id}-${w.scope}`} className="flex flex-col items-center gap-1">
+                      <WorkflowButton
+                        workflowName={w.name}
+                        scope={w.scope}
+                        color={c}
+                        bg={bg}
+                        bgHover={bgHover}
+                        border={border}
+                        subGroups={w.subGroups}
+                        onLaunch={(subGroup?: string) => {
+                          if (scopeId) cancelAutoLaunch(sessionId ?? scopeId)
+                          onLaunchWorkflow(w.id, subGroup, undefined, w.scope)
+                        }}
+                      />
+                      {isAutoLaunching && autoLaunch && (sessionId ?? scopeId) && (
+                        <AutoLaunchCountdown
+                          deadline={autoLaunch.deadline}
+                          color={c}
+                          onCancel={() => cancelAutoLaunch(sessionId ?? scopeId!)}
+                        />
+                      )}
+                    </div>
                   )
                 })}
               </div>
@@ -452,99 +497,3 @@ export const MessageList = memo(function MessageList({
     </div>
   )
 })
-
-function WorkflowButton({
-  workflowName,
-  scope,
-  color,
-  bg,
-  bgHover,
-  border,
-  subGroups,
-  onLaunch,
-}: {
-  workflowName: string
-  scope: WorkflowScope
-  color: string
-  bg: string
-  bgHover: string
-  border: string
-  subGroups?: string[]
-  onLaunch: (subGroup?: string) => void
-}) {
-  const t = useT()
-  const [menuOpen, setMenuOpen] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
-
-  useClickOutside(menuRef, () => setMenuOpen(false), menuOpen)
-
-  const hasSubGroups = subGroups && subGroups.length > 0
-
-  return (
-    <div className="relative flex">
-      <button
-        onClick={() => onLaunch()}
-        data-testid="workflow-run-button"
-        className={`px-4 py-1.5 text-sm font-medium transition-colors ${hasSubGroups ? 'rounded-l' : 'rounded'}`}
-        style={{
-          backgroundColor: bg,
-          color,
-          border: `1px solid ${border}`,
-          ...(hasSubGroups ? { borderRight: 'none' } : {}),
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.backgroundColor = bgHover
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.backgroundColor = bg
-        }}
-      >
-        ▶ {workflowName}{' '}
-        <span className="text-[10px] font-normal opacity-70 whitespace-nowrap">{SCOPE_LABELS[scope]}</span>
-      </button>
-      {hasSubGroups && (
-        <div ref={menuRef} className="relative flex">
-          <button
-            onClick={() => setMenuOpen(!menuOpen)}
-            className="px-2.5 py-1.5 rounded-r text-sm font-medium transition-colors flex items-center"
-            style={{ backgroundColor: bg, color, border: `1px solid ${border}` }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = bgHover
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = bg
-            }}
-          >
-            ⋮
-          </button>
-          {menuOpen && (
-            <div className="absolute top-full right-0 mt-1 w-40 bg-bg-secondary border border-border rounded-lg shadow-xl z-50 overflow-hidden">
-              <button
-                onClick={() => {
-                  onLaunch()
-                  setMenuOpen(false)
-                }}
-                className="w-full text-left px-3 py-2 text-sm text-text-primary hover:bg-bg-tertiary transition-colors"
-              >
-                {t({ en: 'Full workflow', fr: 'Workflow complet' })}
-              </button>
-              <div className="border-t border-border/50" />
-              {subGroups.map((sg) => (
-                <button
-                  key={sg}
-                  onClick={() => {
-                    onLaunch(sg)
-                    setMenuOpen(false)
-                  }}
-                  className="w-full text-left px-3 py-2 text-sm text-text-primary hover:bg-bg-tertiary transition-colors"
-                >
-                  {sg}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}

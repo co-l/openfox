@@ -432,10 +432,12 @@ export function readConfig(): ConfigData | undefined {
 
 export const EMPTY_TASK_COUNTS: ProjectTaskCounts = {
   open: 0,
+  backlog: 0,
   todo: 0,
   inProgress: 0,
   running: 0,
   queued: 0,
+  review: 0,
   done: 0,
 }
 
@@ -475,6 +477,21 @@ export const boardResource = resource<BoardData, [string]>({
 export function readBoard(projectId: string): BoardData | undefined {
   return snapshot<BoardData>(boardResource.keyOf(projectId)).data
 }
+
+export async function fetchTaskFromSession(projectId: string, sessionId: string): Promise<ProjectTask | null> {
+  if (!projectId || !sessionId) return null
+  const res = await authFetch(`/api/projects/${projectId}/tasks/from-session/${sessionId}`)
+  if (!res.ok) return null
+  const data = (await res.json()) as { task?: ProjectTask | null }
+  return data.task ?? null
+}
+
+/** Board task linked to a session (post-plan decision bar). Fresh on mount. */
+export const taskFromSessionResource = resource<ProjectTask | null, [string, string]>({
+  key: (projectId, sessionId) => `tasks:from-session:${projectId}:${sessionId}`,
+  fetch: fetchTaskFromSession,
+  maxAgeMs: 0,
+})
 
 export interface TaskCountsData {
   counts: ProjectTaskCounts
@@ -612,6 +629,9 @@ export const SETTINGS_KEYS = {
   FEATURES_PER_SESSION_MCP: 'features.perSessionMcp',
   PROXY_URL: 'network.proxyUrl',
   DEFAULT_AGENT: 'agent.defaultAgent',
+  FAVORITE_WORKFLOW: 'workflow.favoriteWorkflow',
+  AUTO_ANSWER_QUESTIONS: 'agent.autoAnswerQuestions',
+  AUTO_ACTION_TIMEOUT: 'agent.autoActionTimeoutSeconds',
 } as const
 
 export const DISPLAY_SETTINGS_KEYS = [

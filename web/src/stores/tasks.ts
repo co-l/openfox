@@ -50,10 +50,13 @@ interface TasksState {
     to: TaskStatus,
     options?: TaskMoveOptions,
   ) => Promise<TaskMoveResult | null>
+  startTaskPlan: (projectId: string, taskId: string) => Promise<TaskMoveResult | null>
   setGateValue: (projectId: string, taskId: string, gateId: string, value: string) => Promise<ProjectTask | null>
   setGateConfig: (projectId: string, gates: TaskGateConfig[]) => Promise<boolean>
   setSettings: (projectId: string, settings: Partial<ProjectTaskSettings>) => Promise<boolean>
   reorderTask: (projectId: string, taskId: string, status: TaskStatus, index: number) => Promise<boolean>
+  /** Persist the workflow picked for a planned task (drives its In Progress launch). */
+  setWorkflowChoice: (projectId: string, taskId: string, workflowId: string | null) => Promise<ProjectTask | null>
   clearAutoLaunch: () => void
   clearError: () => void
 }
@@ -180,6 +183,23 @@ export const useTasksStore = create<TasksState>((set) => ({
     }
   },
 
+  startTaskPlan: async (projectId, taskId) => {
+    try {
+      const res = await authFetch(`/api/projects/${projectId}/tasks/${taskId}/start-plan`, { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) {
+        set({ lastError: data.error ?? 'Failed to start plan' })
+        return null
+      }
+      set({ lastError: null })
+      await refreshBoard(projectId)
+      return data as TaskMoveResult
+    } catch {
+      set({ lastError: 'Failed to start plan' })
+      return null
+    }
+  },
+
   setGateValue: async (projectId, taskId, gateId, value) => {
     try {
       const res = await authFetch(`/api/projects/${projectId}/tasks/${taskId}/gate-values/${gateId}`, {
@@ -249,6 +269,22 @@ export const useTasksStore = create<TasksState>((set) => ({
       return true
     } catch {
       return false
+    }
+  },
+
+  setWorkflowChoice: async (projectId, taskId, workflowId) => {
+    try {
+      const res = await authFetch(`/api/projects/${projectId}/tasks/${taskId}/workflow-choice`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workflowId }),
+      })
+      const data = await res.json()
+      if (!res.ok) return null
+      await refreshBoard(projectId)
+      return data.task as ProjectTask
+    } catch {
+      return null
     }
   },
 

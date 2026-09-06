@@ -461,10 +461,12 @@ describe('Header', () => {
       {
         counts: {
           open: 5,
+          backlog: 0,
           todo: 3,
           inProgress: 2,
           running: 2,
           queued: 0,
+          review: 0,
           done: 0,
         },
       },
@@ -491,10 +493,12 @@ describe('Header', () => {
       {
         counts: {
           open: 5,
+          backlog: 0,
           todo: 3,
           inProgress: 2,
           running: 0,
           queued: 2,
+          review: 0,
           done: 0,
         },
       },
@@ -750,7 +754,10 @@ describe('Header mobile menu', () => {
     projectState.currentProject = { id: 'p1', name: 'P', workdir: '/tmp' }
     projectState.projects = [{ id: 'p1', name: 'P', workdir: '/tmp' }]
     const { summariesResource } = await import('../../lib/resources')
-    summariesResource.write({ counts: { open: 0, todo: 0, inProgress: 0, running: 3, queued: 0, done: 0 } }, 'p1')
+    summariesResource.write(
+      { counts: { open: 0, backlog: 0, todo: 0, inProgress: 0, running: 3, queued: 0, review: 0, done: 0 } },
+      'p1',
+    )
     const { useLocation } = await import('wouter')
     vi.mocked(useLocation).mockReturnValue(['/p/p1/', vi.fn()])
 

@@ -1,6 +1,6 @@
 import { authFetch } from './api'
 import { saveEntity, duplicateEntity } from './entity-mutations'
-import { workflowsResource, workflowResource } from './resources'
+import { projectsResource, settingResource, SETTINGS_KEYS, workflowsResource, workflowResource } from './resources'
 import type { WorkflowParameter, WorkflowScope } from '@shared/types.js'
 
 export type { WorkflowParameter }
@@ -112,6 +112,10 @@ export async function deleteWorkflow(
     if (res.ok) {
       await workflowsResource.refresh(workdir)
       workflowResource.invalidate(id, workdir, scope)
+      // The server resets any favorite-workflow config referencing the deleted
+      // id; drop the cached config reads so the fields show the defaults again.
+      settingResource.invalidate(SETTINGS_KEYS.FAVORITE_WORKFLOW)
+      projectsResource.invalidate()
       return { success: true }
     }
     return { success: false, error: data.error ?? 'Failed to delete' }

@@ -35,7 +35,7 @@ describe('boardResource', () => {
     expect(readBoard('p1')).toEqual({
       tasks: [],
       settings: { slotLimit: 1, queuePaused: false },
-      counts: { open: 0, todo: 0, inProgress: 0, running: 0, queued: 0, done: 0 },
+      counts: { open: 0, backlog: 0, todo: 0, inProgress: 0, running: 0, queued: 0, review: 0, done: 0 },
       gates: [],
     })
   })
@@ -94,7 +94,7 @@ describe('WS write-through reconciliation', () => {
     const pushed = {
       tasks: [{ id: 'b' }],
       settings: { slotLimit: 3, queuePaused: true },
-      counts: { open: 0, todo: 0, inProgress: 0, running: 0, queued: 0, done: 0 },
+      counts: { open: 0, backlog: 0, todo: 0, inProgress: 0, running: 0, queued: 0, review: 0, done: 0 },
       gates: [],
     } as unknown as BoardData
     boardResource.write(
@@ -115,7 +115,7 @@ describe('WS write-through reconciliation', () => {
       {
         tasks: [],
         settings: { slotLimit: 1, queuePaused: false },
-        counts: { open: 0, todo: 0, inProgress: 0, running: 0, queued: 0, done: 0 },
+        counts: { open: 0, backlog: 0, todo: 0, inProgress: 0, running: 0, queued: 0, review: 0, done: 0 },
         gates: [],
       },
       'p2',

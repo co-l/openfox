@@ -7,6 +7,12 @@ export interface DropdownMenuItem {
   label: string | React.ReactNode
   icon?: React.ReactNode
   labelAction?: React.ReactNode
+  /** Full-height color stripe pinned to the item's left edge. */
+  stripeClass?: string
+  /** Stripe color as a raw hex, for runtime-colored entries (workflow palette). */
+  stripeHex?: string
+  /** Purely visual full-width horizontal divider bar: no click target, keyboard-skipped. */
+  decorativeBar?: boolean
   onClick?: (event?: React.MouseEvent) => void
   href?: string
   danger?: boolean
@@ -150,6 +156,7 @@ export function DropdownMenu({
   }, [isOpen, allItems])
 
   function isHeaderItem(item: DropdownMenuItem) {
+    if (item.decorativeBar) return true
     const el = item.label as React.ReactElement<{ className?: string }> | null
     if (!el) return false
     const className = String(el.props?.className ?? '')
@@ -210,6 +217,19 @@ export function DropdownMenu({
   function renderItem(item: DropdownMenuItem, index: number, total: number, baseIndex: number) {
     const isHeader = isHeaderItem(item)
     const isSelected = !isHeader && baseIndex === selectedIndex
+    if (item.decorativeBar) {
+      const showBarBorder = index !== total - 1
+      return (
+        <div key={baseIndex} className={`relative ${showBarBorder ? 'border-b border-border' : ''}`}>
+          <div
+            aria-hidden
+            data-testid="menu-decorative-bar"
+            className={`h-1 w-full ${item.stripeClass ?? 'bg-transparent'}`}
+            style={item.stripeHex ? { backgroundColor: item.stripeHex } : undefined}
+          />
+        </div>
+      )
+    }
     const content = (
       <>
         {item.icon && <span className="w-4 h-4 flex-shrink-0">{item.icon}</span>}
@@ -261,7 +281,15 @@ export function DropdownMenu({
     }
 
     return (
-      <div key={baseIndex} className={borderClass}>
+      <div key={baseIndex} className={`relative ${borderClass}`}>
+        {item.stripeClass && <span aria-hidden className={`absolute left-0 top-0 bottom-0 w-1 ${item.stripeClass}`} />}
+        {item.stripeHex && !item.stripeClass && (
+          <span
+            aria-hidden
+            className="absolute left-0 top-0 bottom-0 w-1"
+            style={{ backgroundColor: item.stripeHex }}
+          />
+        )}
         {linkOrButton}
       </div>
     )

@@ -1,23 +1,36 @@
 import { useState } from 'react'
 import { Link } from 'wouter'
 import { getLocale } from '@shared/i18n/index.js'
-import type { ProjectTask, TaskStatus } from '@shared/types.js'
+import type { ProjectTask } from '@shared/types.js'
 import type { AgentInfo } from '../../lib/agents-actions'
 import { getAgentColor } from '../../lib/agents-actions'
 import { useT } from '../../hooks/useT'
-import { DropdownMenu, type DropdownMenuItem } from '../shared/DropdownMenu'
+import { useSetting } from '../../hooks/useSetting'
+import { useProject } from '../../hooks/useProject'
+import { useWorkflows } from '../../hooks/useWorkflows'
+import { useProjects } from '../../hooks/useProjects'
+import { SETTINGS_KEYS } from '../../lib/resources'
+import { useTasksStore } from '../../stores/tasks'
+import { DropdownMenu } from '../shared/DropdownMenu'
 import {
-  EllipsisIcon,
-  ChevronDownIcon,
-  ChevronUpIcon,
-  PlayIcon,
-  PauseIcon,
-  CopyIcon,
-  TrashIcon,
-  EditSmallIcon,
-  OpenExternalIcon,
-  InfoIcon,
-} from '../shared/icons'
+  buildCardMenuItems,
+  buildCardMenuFooterItems,
+  type CardActionCallbacks,
+  type CardMenuDeps,
+} from './task-card-menu'
+import { EllipsisIcon, PlayIcon, PauseIcon, OpenExternalIcon } from '../shared/icons'
+
+type T = ReturnType<typeof useT>
+
+/** Shared "Running / Queued · n" status label (card badge and edit-menu bar). */
+function runStateLabel(t: T, task: ProjectTask, queuePosition?: number): string {
+  return task.runState === 'running'
+    ? t({ en: 'Running', fr: 'En cours' })
+    : t(
+        { en: 'Queued{{pos}}', fr: 'En file{{pos}}' },
+        { pos: queuePosition !== undefined ? ` · ${queuePosition}` : '' },
+      )
+}
 
 /** Drag-and-drop callbacks shared by cards and columns. */
 export interface TaskDragHandlers {
@@ -25,13 +38,8 @@ export interface TaskDragHandlers {
 }
 
 /** Interaction callbacks shared by cards and columns (columns forward them to cards). */
-export interface TaskCallbacks {
-  onEdit: (task: ProjectTask) => void
-  onMove: (task: ProjectTask, to: TaskStatus) => void
-  onMoveUp: (task: ProjectTask) => void
-  onMoveDown: (task: ProjectTask) => void
-  onDuplicate: (task: ProjectTask) => void
-  onDelete: (task: ProjectTask) => void
+export interface TaskCallbacks extends CardActionCallbacks {
+  onStartPlan: (task: ProjectTask) => void
   onDropOnCard: (task: ProjectTask) => void
   /** Invoked when a card's session link is opened (lets a host modal dismiss itself). */
   onOpenSession?: (sessionId: string) => void
@@ -55,6 +63,7 @@ export function TaskCard({
   onMoveDown,
   onDuplicate,
   onDelete,
+  onStartPlan,
   onDragStart,
   onDropOnCard,
   onOpenSession,
@@ -62,58 +71,38 @@ export function TaskCard({
   const t = useT()
   const [showAudit, setShowAudit] = useState(false)
 
+  // A configured favorite workflow auto-picks the build after planning, so
+  // the manual "Start" entry point is hidden in that case.
+  const { project } = useProject(projectId)
+  const globalFavorite = useSetting(SETTINGS_KEYS.FAVORITE_WORKFLOW).value
+  const hasFavoriteWorkflow = !!(project?.favoriteWorkflowId ?? globalFavorite)
+
+  const moveTask = useTasksStore((s) => s.moveTask)
+  const setWorkflowChoice = useTasksStore((s) => s.setWorkflowChoice)
+  const { projects } = useProjects()
+  const workdir = projects.find((p) => p.id === projectId)?.workdir
+  const { workflows } = useWorkflows(workdir)
+
   const agent = agents.find((a) => a.id === task.agentId)
   const agentColor = task.agentId ? getAgentColor(agents, task.agentId) : undefined
   const images = task.attachments.filter((a) => a.mimeType.startsWith('image/'))
   const sessionToOpen = task.activeSessionId ?? task.sessionIds[task.sessionIds.length - 1]
 
-  const menuItems: DropdownMenuItem[] = [
-    {
-      label: t({ en: 'Edit', fr: 'Modifier' }),
-      icon: <EditSmallIcon className="w-3.5 h-3.5" />,
-      onClick: () => onEdit(task),
-    },
-    {
-      label: t({ en: 'History & evidence', fr: 'Historique et preuves' }),
-      icon: <InfoIcon className="w-3.5 h-3.5" />,
-      onClick: () => setShowAudit((prev) => !prev),
-    },
-    {
-      label: (
-        <div className="px-3 py-2 text-text-muted text-xs font-medium cursor-default">
-          {t({ en: 'Move to…', fr: 'Déplacer vers…' })}
-        </div>
-      ),
-      onClick: () => {},
-    },
-    { label: t({ en: 'To Do', fr: 'À faire' }), onClick: () => onMove(task, 'todo') },
-    { label: t({ en: 'In Progress', fr: 'En cours' }), onClick: () => onMove(task, 'in_progress') },
-    { label: t({ en: 'Done', fr: 'Terminé' }), onClick: () => onMove(task, 'done') },
-    {
-      label: t({ en: 'Move up', fr: 'Monter' }),
-      icon: <ChevronUpIcon className="w-3.5 h-3.5" />,
-      onClick: () => onMoveUp(task),
-    },
-    {
-      label: t({ en: 'Move down', fr: 'Descendre' }),
-      icon: <ChevronDownIcon className="w-3.5 h-3.5" />,
-      onClick: () => onMoveDown(task),
-    },
-  ]
-
-  const menuFooterItems: DropdownMenuItem[] = [
-    {
-      label: t({ en: 'Duplicate', fr: 'Dupliquer' }),
-      icon: <CopyIcon className="w-3.5 h-3.5" />,
-      onClick: () => onDuplicate(task),
-    },
-    {
-      label: t({ en: 'Delete', fr: 'Supprimer' }),
-      icon: <TrashIcon className="w-3.5 h-3.5" />,
-      danger: true,
-      onClick: () => onDelete(task),
-    },
-  ]
+  const menuDeps: CardMenuDeps = {
+    t,
+    task,
+    projectId,
+    workflows,
+    onEdit,
+    onToggleAudit: () => setShowAudit((prev) => !prev),
+    onMove,
+    onMoveUp,
+    onMoveDown,
+    onDuplicate,
+    onDelete,
+    moveTask,
+    setWorkflowChoice,
+  }
 
   return (
     <div
@@ -142,12 +131,7 @@ export function TaskCard({
           }`}
         >
           {task.runState === 'running' ? <PlayIcon className="w-2.5 h-2.5" /> : <PauseIcon className="w-2.5 h-2.5" />}
-          {task.runState === 'running'
-            ? t({ en: 'Running', fr: 'En cours' })
-            : t(
-                { en: 'Queued{{pos}}', fr: 'En file{{pos}}' },
-                { pos: queuePosition !== undefined ? ` · ${queuePosition}` : '' },
-              )}
+          {runStateLabel(t, task, queuePosition)}
         </span>
       )}
 
@@ -157,8 +141,8 @@ export function TaskCard({
 
       <div className="absolute top-2 right-2" onClick={(e) => e.stopPropagation()}>
         <DropdownMenu
-          items={menuItems}
-          footerItems={menuFooterItems}
+          items={buildCardMenuItems(menuDeps)}
+          footerItems={buildCardMenuFooterItems(menuDeps)}
           minWidth="176px"
           align="right"
           trigger={
@@ -175,6 +159,30 @@ export function TaskCard({
       </div>
 
       <div className="mt-2 flex items-center gap-2 flex-wrap">
+        {task.status === 'todo' && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onStartPlan(task)
+            }}
+            className="text-xs px-1.5 py-1 rounded bg-purple-500/15 text-purple-300 hover:bg-purple-500/25 flex items-center gap-1"
+          >
+            <PlayIcon className="w-2.5 h-2.5" /> {t({ en: 'Start plan', fr: 'Démarrer le plan' })}
+          </button>
+        )}
+        {task.status === 'todo' && task.planned && !hasFavoriteWorkflow && sessionToOpen && (
+          <Link
+            href={`/p/${projectId}/s/${sessionToOpen}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              onOpenSession?.(sessionToOpen)
+            }}
+            className="text-xs px-1.5 py-1 rounded bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 flex items-center gap-1"
+          >
+            <PlayIcon className="w-2.5 h-2.5" /> {t({ en: 'Start', fr: 'Démarrer' })}
+          </Link>
+        )}
         {task.attachments.length > 0 && (
           <span
             className="text-xs text-text-muted flex items-center gap-1"

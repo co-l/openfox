@@ -38,7 +38,7 @@ Goals:
 On project pages, a **Tasks** button sits in the header, immediately to the left of the terminal toggle button (same icon cluster, same placement rules).
 
 - Opens the Tasks modal centered over the current view.
-- Shows a small **count badge** of open tasks (To Do + In Progress) so the board's backlog is visible at a glance even when the modal is closed.
+- Shows a small **count badge** of open tasks (Backlog + To Do + In Progress + Review) so the board is visible at a glance even when the modal is closed.
 - Accessible via keyboard; standard modal dismissal (Esc, click outside, close button).
 
 ### 4.2 "Work on next task" on an empty chat feed
@@ -54,13 +54,15 @@ When a session has an **empty chat feed** (no messages yet) and there is **at le
 
 ### 5.1 Layout & columns
 
-Three columns, classic kanban, horizontally scrollable within the modal:
+Five columns, classic kanban, left to right, horizontally scrollable within the modal:
 
-- **To Do** — all tasks not yet started.
-- **In Progress** — tasks being worked on. Contains both **active** tasks (launched, occupying a slot) and **queued** tasks (waiting for a slot, visually distinct). Carries a hint that moving a card here starts it automatically (§7.2).
-- **Done** — completed tasks.
+- **Backlog** (gray accent) — ideas not yet groomed. New tasks are created here.
+- **To Do** — tasks with a prepared planner session, waiting for a human kick-off. Dragging Backlog → To Do only prepares the plan session; it never launches anything and never takes a slot. A "Start plan" button on the card runs the plan workflow on demand.
+- **In Progress** — tasks being worked on. Contains both **active** tasks (launched, occupying a slot) and **queued** tasks (waiting for a slot, visually distinct). Tasks without a prior plan run the `plan` builtin workflow first; when a plan already exists, the drag resumes straight into the build phase of the planner session. Carries a hint that moving a card here starts it automatically (§7.2).
+- **Review** (violet accent) — the builder stopped here with its work done and gates satisfied, waiting for human inspection. The Gates editor lives on this column header.
+- **Done** — completed tasks. Only a human can move a card into Done.
 
-Each column header shows its **count**. Columns collapse/expand on demand (chevron) so a crowded Done column doesn't dominate.
+Each column header shows its **count**.
 
 ### 5.2 Task cards
 
@@ -72,7 +74,8 @@ Each card shows:
 - Model chip (the agent/model the task will run with).
 - Status badge while in In Progress: **Running** (launched, occupies a slot) or **Queued** (waiting for a slot, position in queue). A card's exact state is always explicit, so the single In Progress column stays unambiguous.
 - Session link: an "Open session" button when the task is bound to a session.
-- Overflow menu (⋯): Edit, Move to…, Duplicate, Delete.
+- Overflow menu (⋯): Edit, History & evidence, then one entry per other column to move the card directly, and finally Duplicate / Delete. Each destination entry carries a full-height stripe in its exact column color plus a small arrow icon pointing left/right depending on whether the target column sits before or after the current one. No "Move to…" header, no nested fly-out.
+- A card in To Do also shows a purple **"Start plan"** button that kicks off the linked planner session (§7.2).
 
 Cards are **draggable** vertically within a column (reorder) and across columns (change state). Keyboard equivalents (menu actions) exist for every drag operation.
 
@@ -122,23 +125,34 @@ Validation rules:
         (create)
             │
             ▼
-      ┌─────────┐   drag / agent move    ┌──────────────────┐
-      │  To Do  │ ─────────────────────► │  In Progress     │
-      └─────────┘                        │  ├ active (slot) │
-            ▲                            │  └ queued        │
-            │   revert / requeue         └────────┬─────────┘
-            └─────────────────────────────────────┤  gates met
-                                                  ▼
-                                          ┌──────────┐
-                                          │   Done   │  ◄── revert (always allowed)
-                                          └──────────┘
+      ┌─────────┐                    ┌──────────────────┐
+      │ Backlog │ ── drag / move ──► │  To Do           │
+      └─────────┘   (prepares plan    └────────┬─────────┘
+                    session, idle)     start plan (button)
+                                                 │ drag / agent move
+                                                 ▼
+                                        ┌──────────────────┐
+                                        │  In Progress     │
+                                        │  ├ active (slot) │
+                                        │  └ queued        │
+                                        └────────┬─────────┘
+                              gates met          │  builder finishes → review
+                                                 ▼
+                                        ┌──────────┐   human only   ┌────────┐
+                                        │  Review  │ ─────────────► │  Done  │
+                                        └──────────┘                └────────┘
+                                             ▲                           │
+                          revert (always allowed) ◄──────────────────────┘
 ```
 
-Transitions are **enforced server-side** — no client or agent can bypass a gate by acting "smart".
+Transitions are **enforced server-side** — no client or agent can bypass a gate by acting "smart". A drag is never refused for ordering reasons; the server materializes whatever side effects each destination requires.
 
-### 7.2 To Do → In Progress (launch rules)
+### 7.2 Backlog → To Do (plan preparation) and To Do → In Progress (launch rules)
 
+- **Backlog → To Do** creates (or reuses) a planner session linked to the task but **inactive**: never launched, never queued, never occupies a slot, unaffected by Pause queue. The card shows a **"Start plan"** button which runs the builtin `plan` workflow in that session (explore → questions → acceptance criteria → improved prompt → propose In Progress). A plan never auto-starts on this transition.
 - Dragging a card to In Progress **claims it**: a new session is created, seeded with the task's title, prompt, attachments, and stored model, then the session opens (user is navigated to it).
+- If a plan was already executed for the task (a linked planner session holds acceptance criteria), the plan phase is **skipped**: the drag resumes the planner session itself directly into the build workflow — same session, same context and criteria.
+- Without a prior plan, the launched session runs the `plan` workflow first; when the plan settles and its auto-launch countdown elapses (or the user confirms early), the build phase chains in automatically. The chain only stops for genuinely blocking user questions.
 - The prompt is preceded by a situational reminder so the agent starts oriented (§11).
 - If slots are free, the task launches immediately.
 - If the limit is reached, the card drops into **queued** state at the top of In Progress (marked "Queued · N") and launches automatically when a slot frees (§8).
@@ -160,12 +174,12 @@ Both paths produce the same linked-card state, the same "Open session" button, a
 - Moving a task back to To Do unbinds it and **frees its slot** immediately (the session itself is untouched; it simply no longer represents this task).
 - If the task's session is left idle without reaching Done, the task remains active and keeps its slot — a strict, predictable WIP limit.
 
-### 7.5 → Done
+### 7.5 → Review → Done
 
-- Transitioning to Done runs the **gate check** (§9). If required gate fields are unsatisfied, the move is refused with an actionable message: which fields are missing and what acceptable proof looks like.
-- Chosen model: **agent-autonomous** — once gates are satisfied, the agent may move the task to Done itself. A human may also move it by drag. Both paths require the gates to pass.
-- The human can **revert** any Done task back to In Progress or To Do at any time, optionally attaching a short reason. Reverts are recorded in the task's audit trail (§10.4).
-- **Re-opening a Done task** (moving it back to In Progress) creates a **fresh session** for the new attempt; the previous attempt's session stays linked to the task as history, not as the active work session.
+- Transitioning to **Review** runs the **gate check**. If required gate fields are unsatisfied, the move is refused with an actionable message: which fields are missing and what acceptable proof looks like.
+- Chosen model: **agent stops at Review** — when the builder finishes with gates satisfied it moves the task to Review; an agent attempting `move(..., "done")` is refused ("only the user can complete a task"). The human reviews the evidence, then drags (or menus) the card to Done.
+- The human can **revert** any Review/Done task back to In Progress or To Do at any time, optionally attaching a short reason. Reverts are recorded in the task's audit trail (§10.4).
+- **Re-opening** a Review/Done task (moving it back to In Progress) creates a **fresh session** for the new attempt; the previous attempt's session stays linked to the task as history, not as the active work session.
 
 ### 7.6 Delete
 
@@ -184,15 +198,15 @@ Both paths produce the same linked-card state, the same "Open session" button, a
 
 ## 9. Column Gates (Definition of Done)
 
-- Gates are a **per-project configuration** edited in the modal ("Gates" → "Definition of Done").
+- Gates are a **per-project configuration** edited in the modal ("Gates", on the Review column header → "Definition of Review").
 - A gate is a named requirement with a **description of acceptable proof**, e.g. "all green" (all acceptance criteria pass with evidence) or "commit" (work committed with a commit reference). Names and labels are illustrative, not prescriptive.
-- Gates define what a task must carry before it may enter **Done**. (Gates guarding the In Progress boundary — a "definition of ready" — are a supported variant of the same mechanism, off by default.)
+- Gates define what a task must carry before it may enter **Review** ("Blocks Review"). (Gates guarding the In Progress boundary — a "definition of ready" — are a supported variant of the same mechanism, off by default.) Storage keys are unchanged (`done` / `ready` variants); only the labels were renamed with the Review column.
 - Each task carries **values** for the required fields. Values are set by the human (via the modal) or by the agent (via the tool, filling proof/evidence as part of its work).
 - Every value records **who set it and when** (actor + timestamp), and the audit trail is visible on the card/modal — the human can always see what evidence drove a Done transition.
 
 ### 9.1 Blocked-move experience
 
-When a move toward Done hits a gate gap:
+When a move toward Review hits a gate gap:
 
 - **For the human:** the drag is refused with an inline notice on the card listing the missing fields and what counts as acceptable proof, plus a shortcut to fill them.
 - **For the agent:** the move call returns a structured error naming the missing fields and exactly what to do first (e.g. "use project_tasks reqs to set field 'commit' with a commit SHA before calling move again"). The agent can then fill the fields and retry — this is the intended loop, not a dead end.
@@ -229,7 +243,8 @@ Emission rules:
 
 - **→ In Progress (human drag / Start task):** the reminder lands in the newly created session, positioned as its opening context _immediately before_ the task prompt. The agent's first sight is: which task it is working on, from which board, with which gates ahead.
 - **→ In Progress (agent move):** the reminder lands in the agent's current session, confirming "this session is now working on task X", its state, and outstanding gates.
-- **→ Done:** the reminder lands in the task's bound session, stating the task was marked Done, summarizing the gate evidence that satisfied it — so a still-active agent winds down cleanly instead of continuing.
+- **→ Review (agent finish / human drag):** the reminder lands in the task's bound session, stating the work stopped for human review and summarizing the gate evidence — so a still-active agent winds down cleanly instead of continuing.
+- **→ Done (human only):** moving to Done is refused for agents ("move to Review instead"); a human completing a task lands the confirmation reminder in any linked session.
 - **→ To Do (revert / unbind):** the reminder notes the task is no longer active in this session, preventing a resumed agent from chasing a dead assignment.
 
 Reminder content always includes: task title, previous → new state, and (relevant) the remaining or satisfied gate requirements.

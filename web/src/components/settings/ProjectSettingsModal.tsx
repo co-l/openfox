@@ -13,11 +13,15 @@ import {
   saveWorkspaceConfig,
   type WorkspaceConfigResponse,
 } from '../../lib/resources'
+import { SETTINGS_KEYS } from '../../lib/resources'
+import { useSetting } from '../../hooks/useSetting'
 import { mcpStatusColor, mcpStatusDot } from '../../lib/mcp-utils'
 import { wsClient } from '../../lib/ws'
 import { authFetch } from '../../lib/api'
 import { formatRootDir, getRootDirBlockReason, suggestRootDirChild } from '@shared/workspace.js'
 import { dedupById } from '../../lib/modal-utils'
+import { useWorkflows } from '../../hooks/useWorkflows'
+import { SCOPE_LABELS } from '../../lib/workflow-scope'
 import { useT } from '../../hooks/useT'
 
 interface ProjectSettingsModalProps {
@@ -29,6 +33,8 @@ interface ProjectSettingsModalProps {
 export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettingsModalProps) {
   const t = useT()
   const updateProject = useProjectStore((state) => state.updateProject)
+  const autoActionTimeoutSetting = useSetting(SETTINGS_KEYS.AUTO_ACTION_TIMEOUT, '90').value
+  const autoActionSeconds = /^\d+$/.test(autoActionTimeoutSetting) ? autoActionTimeoutSetting : '90'
   const { data: wsConfig, loading: wsLoading } = useResource(workspaceConfigResource, project.workdir)
   const { data } = useResource(agentsResource, project.workdir)
   const defaultAgents = data?.defaults ?? []
@@ -40,6 +46,11 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
     project: projectAgents.filter((a) => !a.subagent),
   }
   const topLevelAgents = dedupById(dedupById(topLevelByScope.builtin, topLevelByScope.user), topLevelByScope.project)
+  const { workflows: scopedWorkflows } = useWorkflows(project.workdir)
+  // Dedup by id keeping the LAST entry (defaults → user → project), mirroring
+  // the server's effective catalog: for a favorite stored by id, the orchestrator
+  // launches the project definition when one exists (project > user > builtin).
+  const workflows = Array.from(new Map(scopedWorkflows.map((w) => [w.id, w])).values())
   const scopeOrder = [
     { label: 'Project', agents: topLevelByScope.project },
     { label: 'User', agents: topLevelByScope.user },
@@ -67,12 +78,24 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
   const [customInstructions, setCustomInstructions] = useState(project.customInstructions ?? '')
   const [dangerLevel, setDangerLevel] = useState<DangerLevel | ''>(project.dangerLevel ?? '')
   const [defaultAgent, setDefaultAgent] = useState(project.defaultAgent ?? '')
+  const [favoriteWorkflow, setFavoriteWorkflow] = useState(project.favoriteWorkflowId ?? '')
+  const [autoAnswer, setAutoAnswer] = useState<'inherit' | 'true' | 'false'>(
+    project.autoAnswerQuestions === undefined ? 'inherit' : project.autoAnswerQuestions ? 'true' : 'false',
+  )
+  const [autoActionTimeout, setAutoActionTimeout] = useState(
+    project.autoActionTimeoutSeconds === undefined ? '' : String(project.autoActionTimeoutSeconds),
+  )
   const [instructionsDirty, setInstructionsDirty] = useState(false)
   const [dangerLevelDirty, setDangerLevelDirty] = useState(false)
   const [defaultAgentDirty, setDefaultAgentDirty] = useState(false)
+  const [favoriteWorkflowDirty, setFavoriteWorkflowDirty] = useState(false)
+  const [autoAnswerDirty, setAutoAnswerDirty] = useState(false)
+  const [autoActionTimeoutDirty, setAutoActionTimeoutDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const currentAgentMissing = defaultAgent !== '' && !topLevelAgents.some((a) => a.id === defaultAgent)
+  const currentFavoriteMissing = favoriteWorkflow !== '' && !workflows.some((w) => w.id === favoriteWorkflow)
+  const showAutoActionTimeout = favoriteWorkflow !== '' || autoAnswer !== 'inherit'
 
   const [setupCmd, setSetupCmd] = useState('')
   const [setupDirty, setSetupDirty] = useState(false)
@@ -89,22 +112,43 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
   const [mcpDirty, setMcpDirty] = useState(false)
   const [expandedServers, setExpandedServers] = useState<Set<string>>(new Set())
 
-  const isDirty = instructionsDirty || dangerLevelDirty || defaultAgentDirty || setupDirty || rootDirDirty || mcpDirty
+  const isDirty =
+    instructionsDirty ||
+    dangerLevelDirty ||
+    defaultAgentDirty ||
+    favoriteWorkflowDirty ||
+    autoAnswerDirty ||
+    autoActionTimeoutDirty ||
+    setupDirty ||
+    rootDirDirty ||
+    mcpDirty
+
+  const resetForm = useCallback(() => {
+    setCustomInstructions(project.customInstructions ?? '')
+    setDangerLevel(project.dangerLevel ?? '')
+    setDefaultAgent(project.defaultAgent ?? '')
+    setFavoriteWorkflow(project.favoriteWorkflowId ?? '')
+    setAutoAnswer(
+      project.autoAnswerQuestions === undefined ? 'inherit' : project.autoAnswerQuestions ? 'true' : 'false',
+    )
+    setAutoActionTimeout(project.autoActionTimeoutSeconds === undefined ? '' : String(project.autoActionTimeoutSeconds))
+    setInstructionsDirty(false)
+    setDangerLevelDirty(false)
+    setDefaultAgentDirty(false)
+    setFavoriteWorkflowDirty(false)
+    setAutoAnswerDirty(false)
+    setAutoActionTimeoutDirty(false)
+    setSetupDirty(false)
+    setRootDirDirty(false)
+  }, [project])
 
   useEffect(() => {
     if (isOpen) {
-      setCustomInstructions(project.customInstructions ?? '')
-      setDangerLevel(project.dangerLevel ?? '')
-      setDefaultAgent(project.defaultAgent ?? '')
-      setInstructionsDirty(false)
-      setDangerLevelDirty(false)
-      setDefaultAgentDirty(false)
-      setSetupDirty(false)
-      setRootDirDirty(false)
+      resetForm()
       setMcpDirty(false)
       setExpandedServers(new Set())
     }
-  }, [isOpen, project])
+  }, [isOpen, project, resetForm])
 
   useEffect(() => {
     if (wsConfig?.setup && wsConfig.setup.length > 0) {
@@ -189,12 +233,27 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
       customInstructions: string | null
       dangerLevel: DangerLevel | null
       defaultAgent?: string | null
+      favoriteWorkflowId?: string | null
+      autoAnswerQuestions?: boolean | null
+      autoActionTimeoutSeconds?: number | null
     } = {
       customInstructions: customInstructions || null,
       dangerLevel: dangerLevelValue,
     }
     if (defaultAgentDirty) {
       projectUpdates.defaultAgent = defaultAgent === '' ? null : defaultAgent
+    }
+    if (favoriteWorkflowDirty) {
+      projectUpdates.favoriteWorkflowId = favoriteWorkflow === '' ? null : favoriteWorkflow
+    }
+    if (autoAnswerDirty) {
+      projectUpdates.autoAnswerQuestions = autoAnswer === 'inherit' ? null : autoAnswer === 'true'
+    }
+    if (autoActionTimeoutDirty) {
+      const trimmed = autoActionTimeout.trim()
+      const parsed = Number(trimmed)
+      projectUpdates.autoActionTimeoutSeconds =
+        trimmed === '' ? null : Number.isInteger(parsed) && parsed >= 1 ? parsed : null
     }
     await updateProject(project.id, projectUpdates)
     if (setupDirty || rootDirDirty || mcpDirty) {
@@ -213,6 +272,9 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
     setInstructionsDirty(false)
     setDangerLevelDirty(false)
     setDefaultAgentDirty(false)
+    setFavoriteWorkflowDirty(false)
+    setAutoAnswerDirty(false)
+    setAutoActionTimeoutDirty(false)
     setSetupDirty(false)
     setRootDirDirty(false)
     setMcpDirty(false)
@@ -223,6 +285,12 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
     customInstructions,
     defaultAgent,
     defaultAgentDirty,
+    favoriteWorkflow,
+    favoriteWorkflowDirty,
+    autoAnswer,
+    autoAnswerDirty,
+    autoActionTimeout,
+    autoActionTimeoutDirty,
     setupCmd,
     rootDir,
     mcpOverrides,
@@ -393,14 +461,7 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
   const handleCancel = () => {
     setShowCreateDirModal(false)
     setShowMigrationWarning(false)
-    setCustomInstructions(project.customInstructions ?? '')
-    setDangerLevel(project.dangerLevel ?? '')
-    setDefaultAgent(project.defaultAgent ?? '')
-    setInstructionsDirty(false)
-    setDangerLevelDirty(false)
-    setDefaultAgentDirty(false)
-    setSetupDirty(false)
-    setRootDirDirty(false)
+    resetForm()
     handleClose()
   }
 
@@ -533,6 +594,123 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
             </p>
           )}
         </div>
+
+        <div>
+          <label
+            htmlFor="project-favorite-workflow"
+            className="block text-sm font-medium text-text-primary mb-1 flex-shrink-0"
+          >
+            {t({ en: 'Favorite Workflow', fr: 'Workflow favori' })}
+          </label>
+          <p className="text-sm text-text-muted mb-3">
+            {t(
+              {
+                en: 'When a task finishes planning, this workflow auto-launches after a {{seconds}}s countdown instead of waiting for you to choose. Choose "Use system default" to follow the global favorite workflow; "No favorite" to always pick manually. Existing sessions are not affected.',
+                fr: 'Quand une tâche termine son plan, ce workflow se lance automatiquement après un compte à rebours de {{seconds}} s au lieu d’attendre votre choix. Choisissez « Utiliser le défaut système » pour suivre le workflow favori global ; « Aucun favori » pour choisir manuellement. Les sessions existantes ne sont pas affectées.',
+              },
+              { seconds: autoActionSeconds },
+            )}
+          </p>
+          <select
+            id="project-favorite-workflow"
+            value={favoriteWorkflow}
+            onChange={(e) => {
+              setFavoriteWorkflow(e.target.value)
+              setFavoriteWorkflowDirty(true)
+            }}
+            className="w-full px-3 py-2 text-sm bg-bg-primary border border-border rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-accent-primary"
+            disabled={saving}
+          >
+            <option value="">{t({ en: 'Use system default', fr: 'Utiliser le défaut système' })}</option>
+            {currentFavoriteMissing && (
+              <option value={favoriteWorkflow}>
+                {favoriteWorkflow} {t({ en: '(missing workflow)', fr: '(workflow manquant)' })}
+              </option>
+            )}
+            {workflows.map((w) => (
+              <option key={`${w.id}-${w.scope}`} value={w.id}>
+                {w.name} — {SCOPE_LABELS[w.scope]}
+              </option>
+            ))}
+          </select>
+          {currentFavoriteMissing && (
+            <p className="text-xs text-red-400 mt-1">
+              {t(
+                {
+                  en: 'The stored favorite workflow "{{workflow}}" no longer exists. Pick another workflow to restore a valid favorite.',
+                  fr: 'Le workflow favori enregistré « {{workflow}} » n’existe plus. Choisissez un autre workflow pour restaurer un favori valide.',
+                },
+                { workflow: favoriteWorkflow },
+              )}
+            </p>
+          )}
+        </div>
+
+        <div>
+          <label
+            htmlFor="project-auto-answer"
+            className="block text-sm font-medium text-text-primary mb-1 flex-shrink-0"
+          >
+            {t({ en: 'Auto-answer Agent Questions', fr: 'Réponse automatique aux questions de l\u2019agent' })}
+          </label>
+          <p className="text-sm text-text-muted mb-3">
+            {t(
+              {
+                en: 'When the agent asks a choice or confirmation question, the recommended answer (the first option, or "Yes") is applied automatically after a {{seconds}}s countdown. Choose "Use system default" to follow the global setting. Free-text questions are disabled while this mode is on. Applies from the next question onward, including in running sessions.',
+                fr: 'Quand l’agent pose une question à choix ou de confirmation, la réponse recommandée (la première option, ou « Oui ») est appliquée automatiquement après un compte à rebours de {{seconds}} s. Choisissez « Utiliser le défaut système » pour suivre le réglage global. Les questions texte libres sont désactivées quand ce mode est activé. S’applique dès la question suivante, y compris dans les sessions en cours.',
+              },
+              { seconds: autoActionSeconds },
+            )}
+          </p>
+          <select
+            id="project-auto-answer"
+            value={autoAnswer}
+            onChange={(e) => {
+              setAutoAnswer(e.target.value as 'inherit' | 'true' | 'false')
+              setAutoAnswerDirty(true)
+            }}
+            className="w-full px-3 py-2 text-sm bg-bg-primary border border-border rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-accent-primary"
+            disabled={saving}
+          >
+            <option value="inherit">{t({ en: 'Use system default', fr: 'Utiliser le défaut système' })}</option>
+            <option value="true">{t({ en: 'Enabled for this project', fr: 'Activé pour ce projet' })}</option>
+            <option value="false">{t({ en: 'Disabled for this project', fr: 'Désactivé pour ce projet' })}</option>
+          </select>
+        </div>
+
+        {showAutoActionTimeout && (
+          <div>
+            <label
+              htmlFor="project-auto-action-timeout"
+              className="block text-sm font-medium text-text-primary mb-1 flex-shrink-0"
+            >
+              {t({ en: 'Automatic Actions Timeout', fr: 'Timeout des actions automatiques' })}
+            </label>
+            <p className="text-sm text-text-muted mb-3">
+              {t({
+                en: 'Seconds before the automatic behaviors fire: favorite-workflow auto-launch and question auto-answer. Leave empty to follow the global setting (default 90).',
+                fr: 'Secondes avant le déclenchement des comportements automatiques : lancement automatique du workflow favori et réponse automatique aux questions. Laissez vide pour suivre le réglage global (par défaut 90).',
+              })}
+            </p>
+            <input
+              id="project-auto-action-timeout"
+              type="number"
+              min={1}
+              step={1}
+              value={autoActionTimeout}
+              onChange={(e) => {
+                setAutoActionTimeout(e.target.value)
+                setAutoActionTimeoutDirty(true)
+              }}
+              placeholder={t(
+                { en: 'Use system default ({{seconds}})', fr: 'Défaut système ({{seconds}})' },
+                { seconds: autoActionTimeoutSetting || '90' },
+              )}
+              className="w-full px-3 py-2 text-sm bg-bg-primary border border-border rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-accent-primary"
+              disabled={saving}
+            />
+          </div>
+        )}
 
         <div>
           <label className="block text-sm font-medium text-text-primary mb-1 flex-shrink-0">

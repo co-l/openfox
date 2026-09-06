@@ -53,7 +53,7 @@ function seedBoard(tasks: ProjectTask[]) {
     {
       tasks,
       settings: { slotLimit: 1, queuePaused: false },
-      counts: { open: 0, todo: 0, inProgress: 0, running: 0, queued: 0, done: 0 },
+      counts: { open: 0, backlog: 0, todo: 0, inProgress: 0, running: 0, queued: 0, review: 0, done: 0 },
       gates: [],
     },
     'proj-1',
@@ -148,7 +148,7 @@ describe('FeedTaskPreview', () => {
     const board = {
       tasks: [top],
       settings: { slotLimit: 1, queuePaused: false },
-      counts: { open: 0, todo: 0, inProgress: 0, running: 0, queued: 0, done: 0 },
+      counts: { open: 0, backlog: 0, todo: 0, inProgress: 0, running: 0, queued: 0, review: 0, done: 0 },
       gates: [],
     }
     seedBoard(board.tasks)

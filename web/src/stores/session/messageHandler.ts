@@ -5,7 +5,9 @@ import type {
   GitDiffFile,
   SessionListPayload,
   SessionRunningPayload,
+  WorkflowAutoLaunchPayload,
   ChatAskUserPayload,
+  ChatAutoAnswerPayload,
   ChatDeltaPayload,
   ChatThinkingPayload,
   ChatToolPreparingPayload,
@@ -888,6 +890,32 @@ export function handleServerMessage(
       break
     }
 
+    case 'chat.autoanswer': {
+      const sessionId = message.sessionId
+      const payload = message.payload as ChatAutoAnswerPayload
+      if (!payload.callId) break
+      if (!payload.active && payload.answered) {
+        applyChat(set, get, sessionId, (pane) => ({
+          ...pane,
+          pendingQuestions: pane.pendingQuestions.filter((q) => q.callId !== payload.callId),
+        }))
+        break
+      }
+      applyChat(set, get, sessionId, (pane) => ({
+        ...pane,
+        pendingQuestions: pane.pendingQuestions.map((q) => {
+          if (q.callId !== payload.callId) return q
+          if (!payload.active || payload.deadline === undefined) {
+            const rest = { ...q }
+            delete rest.autoAnswerDeadline
+            return rest
+          }
+          return { ...q, autoAnswerDeadline: payload.deadline }
+        }),
+      }))
+      break
+    }
+
     case 'mode.changed': {
       const sessionId = message.sessionId
       const payload = message.payload as ModeChangedPayload
@@ -958,6 +986,26 @@ export function handleServerMessage(
       ) {
         markBackgroundSessionUnread(set, message)
       }
+      break
+    }
+
+    case 'workflow.autolaunch': {
+      const sessionId = message.sessionId
+      if (!sessionId) break
+      const payload = message.payload as WorkflowAutoLaunchPayload
+      set((state) =>
+        updatePane(state, sessionId, (p) => ({
+          ...p,
+          autoLaunch: payload.active
+            ? {
+                workflowId: payload.workflowId ?? '',
+                workflowName: payload.workflowName ?? payload.workflowId ?? '',
+                scope: payload.scope ?? 'auto',
+                deadline: payload.deadline ?? Date.now(),
+              }
+            : null,
+        })),
+      )
       break
     }
 

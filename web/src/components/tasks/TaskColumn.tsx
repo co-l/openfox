@@ -36,6 +36,7 @@ export function TaskColumn({
   onMoveDown,
   onDuplicate,
   onDelete,
+  onStartPlan,
   onDragStart,
   onDropOnColumn,
   onDropOnCard,
@@ -80,6 +81,7 @@ export function TaskColumn({
             onMoveDown={onMoveDown}
             onDuplicate={onDuplicate}
             onDelete={onDelete}
+            onStartPlan={onStartPlan}
             onDragStart={onDragStart}
             onDropOnCard={onDropOnCard}
             onOpenSession={onOpenSession}

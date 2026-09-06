@@ -29,6 +29,7 @@ import type { Attachment, WorkflowLaunchScope } from '../../shared/types.js'
 import { parseDefaultModelSelection } from '../provider-manager.js'
 import { getProject } from '../db/projects.js'
 import { resolveSlashLaunch, type SlashLaunch } from './slash.js'
+import { resolveFavoriteWorkflow } from '../workflows/favorite.js'
 import {
   createTask as dbCreateTask,
   updateTask as dbUpdateTask,
@@ -39,9 +40,9 @@ import {
   reorderTask as dbReorderTask,
   setTaskStatus as dbSetTaskStatus,
   setTaskRunState as dbSetTaskRunState,
+  setTaskWorkflowChoice as dbSetTaskWorkflowChoice,
   addTaskLink as dbAddTaskLink,
   listTaskLinks as dbListTaskLinks,
-  removeTaskLinks as dbRemoveTaskLinks,
   clearActiveTaskLink as dbClearActiveTaskLink,
   appendToBottom as dbAppendToBottom,
   getGateConfig as dbGetGateConfig,
@@ -54,7 +55,7 @@ import {
 import type { TaskGateConfig, TaskActor } from '../../shared/types.js'
 import { serverT } from '../i18n.js'
 
-export type TaskDestination = 'todo' | 'in_progress' | 'done'
+export type TaskDestination = 'backlog' | 'todo' | 'in_progress' | 'review' | 'done'
 
 export interface TaskActorInfo {
   actor: TaskActor
@@ -125,6 +126,9 @@ export interface TasksService {
   setGateConfig(projectId: string, gates: TaskGateConfig[], actor: TaskActorInfo): TaskGateConfig[]
   setSettings(projectId: string, settings: Partial<ProjectTaskSettings>): Promise<ProjectTaskSettings>
   reorder(projectId: string, taskId: string, status: TaskDestination, toIndex: number): ProjectTask
+  startPlan(projectId: string, taskId: string): Promise<{ task: ProjectTask; sessionId: string }>
+  /** Record the workflow picked for a planned task (drives auto-launch + suppresses favorite countdown). */
+  setWorkflowChoice(projectId: string, taskId: string, workflowId: string | null): ProjectTask
   counts(projectId: string): ProjectTaskCounts
 }
 
@@ -158,11 +162,15 @@ export interface TasksServiceDeps {
       params?: Record<string, string>
       scope?: WorkflowLaunchScope
       attachments?: Attachment[]
+      content?: string
     },
   ) => void
 }
 
 const REMINDER_COLOR = '#3b82f6'
+/** Bundled workflows launched by the board flow (src/server/workflows/defaults/). */
+const PLAN_WORKFLOW_ID = 'plan'
+const BUILD_WORKFLOW_ID = 'default'
 
 // ============================================================================
 // Locking (per-project serialization)
@@ -191,11 +199,16 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
   const { sessionManager, config, broadcast, configDir, launchWorkflow } = deps
 
   function snapshot(projectId: string) {
-    const tasks = dbListTasks(projectId)
+    const tasks = listEnriched(projectId)
     const settings = dbGetTaskSettings(projectId)
     const counts = computeCounts(tasks)
     const gates = dbGetGateConfig(projectId)
     return { tasks, settings, counts, gates }
+  }
+
+  /** Board tasks enriched with the `planned` flag (a settled plan run carrying criteria). */
+  function listEnriched(projectId: string): ProjectTask[] {
+    return dbListTasks(projectId).map((t) => ({ ...t, planned: !!plannedSessionId(t) }))
   }
 
   function publish(projectId: string, changedTaskId?: string, autoLaunched?: TasksUpdatePayload['autoLaunched']) {
@@ -269,7 +282,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
       ...(input.providerId ? { providerId: input.providerId } : {}),
       ...(input.model ? { model: input.model } : {}),
     })
-    dbAddAuditEntry(task.id, actor.actor, 'create', `Task created in To Do`, actor.actorName)
+    dbAddAuditEntry(task.id, actor.actor, 'create', `Task created in Backlog`, actor.actorName)
     const fresh = dbGetTask(task.id)!
     publish(projectId, fresh.id)
     return fresh
@@ -365,17 +378,29 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
           emitReminder(opts.sessionId, reminderForInProgress(task, opts.sessionId, from))
           sessionId = opts.sessionId
         } else {
+          // A session already running for this task (e.g. the user launched a
+          // workflow manually from the post-plan bar) simply claims its slot —
+          // reseeding would start a duplicate attempt.
+          const activeRunning = task.activeSessionId ? sessionManager.getSession(task.activeSessionId) : null
+          const alreadyRunning = !!activeRunning && activeRunning.projectId === projectId && activeRunning.isRunning
+
           // Human drag / Start task: allocate a slot or queue.
           const runningCount = activeCount(projectId)
-          const launched = runningCount < settings.slotLimit && !settings.queuePaused
+          const launched = alreadyRunning || (runningCount < settings.slotLimit && !settings.queuePaused)
           dbSetTaskRunState(taskId, launched ? 'running' : 'queued')
           if (launched) {
-            // Reuse the session the human is already in when it's still fresh
-            // (Up-next Start) — otherwise seed a new one.
-            const seeded = await seedSession(projectId, task, from, reusableTarget(projectId, opts.sessionId))
-            dbAddTaskLink(taskId, seeded.session.id, true)
-            dbAddAuditEntry(taskId, 'human', 'move', `Moved to In Progress (running)`, opts.actorName)
-            sessionId = seeded.session.id
+            if (alreadyRunning) {
+              dbAddTaskLink(taskId, task.activeSessionId!, true)
+              dbAddAuditEntry(taskId, 'human', 'move', `Moved to In Progress (running in its session)`, opts.actorName)
+              sessionId = task.activeSessionId!
+            } else {
+              // Reuse the session the human is already in when it's still fresh
+              // (Up-next Start) — otherwise seed a new one.
+              const seeded = await seedSession(projectId, task, from, reusableTarget(projectId, opts.sessionId))
+              dbAddTaskLink(taskId, seeded.session.id, true)
+              dbAddAuditEntry(taskId, 'human', 'move', `Moved to In Progress (running)`, opts.actorName)
+              sessionId = seeded.session.id
+            }
           } else {
             // Queued: append at the bottom of In Progress so FIFO order (oldest
             // first) matches the visible stacking and the per-task queue rank.
@@ -387,11 +412,26 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
             dbAddAuditEntry(taskId, 'human', 'move', `Moved to In Progress (queued)`, opts.actorName)
           }
         }
-      } else if (to === 'done') {
+      } else if (to === 'review') {
         const doneGates = requiredGates(projectId, 'done')
         const missing = missingGateFields(task, doneGates)
         if (missing.length > 0) {
-          throw gateBlockedError(task, 'Done', missing)
+          throw gateBlockedError(task, 'Review', missing)
+        }
+        dbSetTaskStatus(taskId, 'review')
+        dbClearActiveTaskLink(taskId)
+        dbAddAuditEntry(taskId, opts.actor, 'move', `Moved to Review`, opts.actorName)
+        if (task.activeSessionId) {
+          emitReminder(task.activeSessionId, reminderForReview(task))
+        }
+      } else if (to === 'done') {
+        if (opts.actor === 'agent') {
+          throw new Error(
+            serverT({
+              en: 'Only the user can move a task to Done. When your work is complete, move it to Review instead.',
+              fr: 'Seul l’utilisateur peut déplacer une tâche vers Terminé. Une fois votre travail terminé, déplacez-la vers Revue.',
+            }),
+          )
         }
         dbSetTaskStatus(taskId, 'done')
         dbClearActiveTaskLink(taskId)
@@ -399,11 +439,20 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
         if (task.activeSessionId) {
           emitReminder(task.activeSessionId, reminderForDone(task))
         }
-      } else {
-        // → todo (revert / unbind) from in_progress or done
+      } else if (to === 'todo' && from === 'backlog') {
+        // Backlog → To Do: only flip the column. No session is created here —
+        // the human explicitly kicks planning off with "Start plan" from the
+        // card, which creates and binds the planner session on demand.
         dbSetTaskStatus(taskId, 'todo')
-        dbRemoveTaskLinks(taskId)
-        const detailParts = [`Moved back to To Do`]
+        dbAddAuditEntry(taskId, opts.actor, 'move', `Moved to To Do`, opts.actorName)
+      } else {
+        // → backlog / todo reverts: deactivate the working link but KEEP the
+        // session attached to the task — reverting In Progress → To Do (or
+        // Backlog) must never orphan a session; it stays in the task history
+        // and round-trips don't pile up duplicates. Let the next queued task launch.
+        dbSetTaskStatus(taskId, to)
+        dbClearActiveTaskLink(taskId)
+        const detailParts = [`Moved back to ${prettyStatus(to)}`]
         if (opts.reason) detailParts.push(`Reason: ${opts.reason}`)
         dbAddAuditEntry(taskId, opts.actor, 'move', detailParts.join('. '), opts.actorName)
         if (task.activeSessionId) {
@@ -413,7 +462,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
 
       const fresh = dbGetTask(taskId)!
       let autoLaunched: TasksUpdatePayload['autoLaunched'] | undefined
-      if (wasRunning || (to === 'todo' && from === 'in_progress')) {
+      if (wasRunning || (from === 'in_progress' && to !== 'in_progress')) {
         autoLaunched = await maybeAutoLaunch(projectId)
       }
       publish(projectId, fresh.id, autoLaunched)
@@ -499,12 +548,14 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
   // ==========================================================================
 
   function computeCounts(tasks: ProjectTask[]): ProjectTaskCounts {
+    const backlog = tasks.filter((t) => t.status === 'backlog').length
     const todo = tasks.filter((t) => t.status === 'todo').length
     const inProgress = tasks.filter((t) => t.status === 'in_progress').length
     const running = tasks.filter((t) => t.status === 'in_progress' && t.runState === 'running').length
     const queued = tasks.filter((t) => t.status === 'in_progress' && t.runState === 'queued').length
+    const review = tasks.filter((t) => t.status === 'review').length
     const done = tasks.filter((t) => t.status === 'done').length
-    return { open: todo + inProgress, todo, inProgress, running, queued, done }
+    return { open: backlog + todo + inProgress + review, backlog, todo, inProgress, running, queued, review, done }
   }
 
   function requiredGates(projectId: string, variant: 'done' | 'ready'): TaskGateConfig[] {
@@ -520,7 +571,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
 
   function gateBlockedError(
     task: ProjectTask,
-    destination: 'In Progress' | 'Done',
+    destination: 'In Progress' | 'Review' | 'Done',
     missing: { gateId: string; name: string; description: string }[],
   ) {
     const err = new Error(
@@ -542,12 +593,156 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
     return dbListTasks(projectId).filter((t) => t.status === 'in_progress' && t.runState === 'running').length
   }
 
+  /** Whether a session already carries planned acceptance criteria for this task. */
+  function hasPlannedCriteria(sessionId: string | undefined): boolean {
+    if (!sessionId) return false
+    const session = sessionManager.getSession(sessionId)
+    return (session?.metadataEntries?.['criteria']?.length ?? 0) > 0
+  }
+
+  /** True when the session's latest workflow run was a completed `plan`. */
+  function isPlannerSession(sessionId: string): boolean {
+    const getLatest = sessionManager.getLatestWorkflowExecution
+    if (typeof getLatest !== 'function') return false
+    let latest: { workflowId?: string; status?: string } | null
+    try {
+      latest = getLatest.call(sessionManager, sessionId) ?? null
+    } catch {
+      return false
+    }
+    return latest?.workflowId === PLAN_WORKFLOW_ID && latest.status === 'completed'
+  }
+
+  /**
+   * The task's already-planned session, preferring the most recent link. Only
+   * sessions whose last run was the plan workflow qualify — a finished build
+   * also carries criteria, but re-opening must start a fresh attempt instead
+   * of resuming it (spec §7.5).
+   */
+  function plannedSessionId(task: ProjectTask): string | undefined {
+    return [...task.sessionIds].reverse().find((id) => isPlannerSession(id) && hasPlannedCriteria(id))
+  }
+
+  /**
+   * Bind an idle planner session to a task and launch the plan workflow in it.
+   * The plan runs outside the In Progress slot/queue system: it never queues,
+   * no matter the queue settings.
+   */
+  async function startPlan(projectId: string, taskId: string) {
+    return withLock(projectId, async () => {
+      const task = assertOwned(projectId, taskId)
+      if (task.status !== 'todo') {
+        throw new Error(
+          serverT({
+            en: 'Plans only start from the To Do column',
+            fr: 'Les plans ne se démarrent que depuis la colonne À faire',
+          }),
+        )
+      }
+      const existing = task.sessionIds
+        .map((id) => sessionManager.getSession(id))
+        .filter((s) => s !== null && s !== undefined)
+      if (existing.some((s) => s.isRunning)) {
+        throw new Error(
+          serverT({
+            en: 'A plan is already running for this task',
+            fr: 'Un plan est déjà en cours pour cette tâche',
+          }),
+        )
+      }
+      // Reuse an idle planner-eligible session instead of piling up empty ones.
+      const sessionId = reusablePlanSession(task) ?? (await preparePlanSession(projectId, task))
+
+      dbAddTaskLink(taskId, sessionId, true)
+      // Planning deliberately skips the slot/queue system: a To Do plan runs
+      // outside both — it never occupies an In Progress slot nor gets queued.
+      dbAddAuditEntry(taskId, 'human', 'plan_start', `Plan started in session ${sessionId}`, 'user')
+      const fresh = dbGetTask(taskId)!
+      publish(projectId, fresh.id)
+      launchWorkflow?.(sessionId, { workflowId: PLAN_WORKFLOW_ID, scope: 'auto', content: task.prompt })
+      return { task: fresh, sessionId }
+    })
+  }
+
+  /**
+   * Persist the user's workflow pick for a planned task. The choice drives the
+   * In Progress launch (the picked workflow replaces the default build) and
+   * suppresses the favorite-workflow auto-launch countdown in its planner
+   * session, since a choice has been made explicitly.
+   */
+  function setWorkflowChoice(projectId: string, taskId: string, workflowId: string | null): ProjectTask {
+    assertOwned(projectId, taskId)
+    dbSetTaskWorkflowChoice(taskId, workflowId)
+    if (workflowId) {
+      dbAddAuditEntry(taskId, 'human', 'edit', `Workflow picked: ${workflowId}`, 'user')
+    } else {
+      dbAddAuditEntry(taskId, 'human', 'edit', `Workflow pick cleared`, 'user')
+    }
+    const fresh = dbGetTask(taskId)!
+    publish(projectId, fresh.id)
+    return fresh
+  }
+
+  /** Create a session primed for planning this task; returns its id. */
+  async function preparePlanSession(projectId: string, task: ProjectTask): Promise<string> {
+    const defaults = parseDefaultModelSelection(config.defaultModelSelection)
+    const providerId = task.providerId ?? defaults.providerId ?? null
+    const model = task.model ?? defaults.model ?? null
+    const session = sessionManager.createSession(projectId, undefined, providerId, model)
+    emitReminder(session.id, reminderForPlan(task, session.id))
+    return session.id
+  }
+
+  /**
+   * Reuse a linked, idle session that was only ever used for planning (never
+   * run, or last run was the plan workflow), so parking a card back and forth
+   * never piles up orphan planner sessions. Build-attempt sessions stay out of
+   * it — they are history, not a fresh planning ground.
+   */
+  function reusablePlanSession(task: ProjectTask): string | undefined {
+    return [...task.sessionIds].reverse().find((id) => {
+      const session = sessionManager.getSession(id)
+      if (!session || session.isRunning) return false
+      const latest = sessionManager.getLatestWorkflowExecution(id)
+      return !latest || latest.workflowId === PLAN_WORKFLOW_ID
+    })
+  }
+
+  /**
+   * Resume a task's planner session straight into the build workflow: the
+   * plan already produced criteria and context, so no new session is seeded.
+   * The launch workflow is the task's explicit pick first, then the project/
+   * global favorite, then the default build.
+   */
+  async function resumePlannedSession(projectId: string, task: ProjectTask, sessionId: string) {
+    const session = sessionManager.getSession(sessionId)
+    if (!session || session.projectId !== projectId || session.isRunning) return null
+    emitReminder(
+      sessionId,
+      [
+        `This session resumes as the builder for task "${promptLabel(task.prompt)}" — the plan is done.`,
+        'The acceptance criteria and planning context are already in this session. Implement them now.',
+        'When all criteria are complete, move the task to Review (never to Done) using the project_tasks tool.',
+      ].join('\n'),
+    )
+    let workflowId = task.workflowChoice ?? null
+    if (!workflowId) {
+      const favorite = await resolveFavoriteWorkflow(configDir, projectId, getProject(projectId)?.workdir)
+      workflowId = favorite?.id ?? BUILD_WORKFLOW_ID
+    }
+    launchWorkflow?.(sessionId, { workflowId, scope: 'auto' })
+    return { session }
+  }
+
   /**
    * Seed a session for a claimed task: reminder first (opening context), then
-   * the task's work — the plain prompt queued, a slash command expanded into
-   * its command prompt, or a slash workflow launched directly. When a target
-   * session is supplied it is reused (bind-in-place, no orphan session);
-   * otherwise a brand-new session is created.
+   * the task's work — the plain prompt launched through the plan workflow, a
+   * slash command expanded into its command prompt, or a slash workflow
+   * launched directly. When the task already has a planned session (accepted
+   * criteria recorded), the plan is skipped: that session is resumed straight
+   * into the build workflow. When a target session is supplied it is reused
+   * (bind-in-place, no orphan session); otherwise a brand-new session is
+   * created.
    */
   async function seedSession(
     projectId: string,
@@ -555,6 +750,12 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
     from: TaskStatus | 'queued',
     targetSessionId?: string,
   ) {
+    const planned = plannedSessionId(task)
+    if (planned) {
+      const resumed = await resumePlannedSession(projectId, task, planned)
+      if (resumed) return resumed
+    }
+
     let session: Session
     if (targetSessionId) {
       const existing = sessionManager.getSession(targetSessionId)
@@ -610,7 +811,18 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
         }
       }
       sessionManager.queueMessage(session.id, 'asap', slash.prompt, attachments, 'command')
+    } else if (launchWorkflow && !task.agentId) {
+      // No plan yet: run the bundled plan workflow first — it stops after the
+      // plan, and the favorite-workflow countdown can chain into the build.
+      launchWorkflow(session.id, {
+        workflowId: PLAN_WORKFLOW_ID,
+        scope: 'auto',
+        content: task.prompt,
+        ...(attachments ? { attachments } : {}),
+      })
     } else {
+      // Agent-pinned task (or no launcher wired): seed the raw prompt so the
+      // session still starts with the task's content.
       sessionManager.queueMessage(session.id, 'asap', task.prompt, attachments)
     }
     return { session }
@@ -669,31 +881,51 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
       `Previous state: ${prettyStatus(from)} → In Progress. Session: ${sessionId.slice(0, 8)}.`,
       gateLine,
       'Do not move the task, fill gate values, or commit changes without explicit user approval or a system instruction.',
+      'When the work is complete, move the task to Review — only the user can move it to Done.',
     ].join('\n')
   }
 
-  function reminderForDone(task: ProjectTask): string {
+  function reminderForPlan(task: ProjectTask, sessionId: string): string {
+    return [
+      `This session is the planning session for task "${promptLabel(task.prompt)}" from the project task board.`,
+      `Session: ${sessionId.slice(0, 8)}. Plan mode is active: explore, ask the user questions, and define acceptance criteria — do not implement.`,
+      'When the plan is agreed, propose moving the task to In Progress via the project_tasks tool (with user approval).',
+    ].join('\n')
+  }
+
+  function reminderForReview(task: ProjectTask): string {
     const evidence = task.gateValues
       .filter((v) => v.value.trim().length > 0)
       .map((v) => `  - ${v.gateId}: ${v.value} (set by ${v.actor})`)
     const evidenceLine = evidence.length > 0 ? evidence.join('\n') : '  - (no gate values recorded)'
     return [
-      `Task "${promptLabel(task.prompt)}" was marked Done.`,
+      `Task "${promptLabel(task.prompt)}" was moved to Review — the work is complete, awaiting human review.`,
       `Gate evidence that satisfied it:\n${evidenceLine}`,
+      `Wind down cleanly — only the user can move the task from Review to Done. This task is no longer active.`,
+    ].join('\n')
+  }
+
+  function reminderForDone(task: ProjectTask): string {
+    return [
+      `Task "${promptLabel(task.prompt)}" was marked Done by the user.`,
       `Wind down cleanly — this task is no longer active.`,
     ].join('\n')
   }
 
   function reminderForTodo(task: ProjectTask): string {
-    return `Task "${promptLabel(task.prompt)}" is no longer active in this session (reverted to To Do). Do not continue working on it.`
+    return `Task "${promptLabel(task.prompt)}" is no longer active in this session (reverted to an earlier column). Do not continue working on it.`
   }
 
   function prettyStatus(s: string): string {
     switch (s) {
+      case 'backlog':
+        return 'Backlog'
       case 'todo':
         return 'To Do'
       case 'in_progress':
         return 'In Progress'
+      case 'review':
+        return 'Review'
       case 'done':
         return 'Done'
       case 'queued':
@@ -724,6 +956,8 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
     setGateConfig,
     setSettings,
     reorder,
+    startPlan,
+    setWorkflowChoice,
     counts,
   }
 }

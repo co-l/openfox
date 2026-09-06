@@ -17,34 +17,37 @@ import { Spinner } from './shared/Spinner'
 import { fuzzyMatch, highlightMatches } from '../lib/modal-utils'
 import { shouldAutofocus } from '../lib/device'
 import { TasksModal } from './tasks/TasksModal'
+import { columnMeta } from './tasks/column-meta'
 import type { Translation } from '@shared/i18n/index.js'
 import type { SessionSummary, ProjectTaskCounts } from '@shared/types.js'
 
-/** Color-coded task-state chips shown on each project's Tasks button. */
-const TASK_STATE_CHIPS: {
-  key: keyof Pick<ProjectTaskCounts, 'todo' | 'queued' | 'running' | 'done'>
-  label: Translation
-  color: string
-}[] = [
-  { key: 'todo', label: { en: 'To Do', fr: 'À faire' }, color: 'text-blue-400' },
-  { key: 'queued', label: { en: 'Queued', fr: 'En file' }, color: 'text-amber-400' },
-  { key: 'running', label: { en: 'Running', fr: 'En cours' }, color: 'text-emerald-400' },
-  { key: 'done', label: { en: 'Done', fr: 'Terminé' }, color: 'text-text-muted' },
-]
+/** Task-state chips shown on each project's Tasks button; colors come from the board columns. */
+type ChipKey = keyof Pick<ProjectTaskCounts, 'backlog' | 'todo' | 'queued' | 'running' | 'review' | 'done'>
+
+const CHIP_KEYS: ChipKey[] = ['backlog', 'todo', 'queued', 'running', 'review', 'done']
+
+const QUEUED_CHIP: Translation = { en: 'Queued', fr: 'En file' }
+
+function chipSpec(key: ChipKey): { label: Translation; color: string; glow?: boolean } {
+  if (key === 'queued') return { label: QUEUED_CHIP, color: 'text-amber-500/70' }
+  const meta = columnMeta(key === 'running' ? 'in_progress' : key)
+  return { label: meta.title, color: meta.dotClass, glow: key === 'running' }
+}
 
 function TaskStateChips({ counts }: { counts?: ProjectTaskCounts }) {
   const t = useT()
   if (!counts) return null
-  const total = counts.todo + counts.queued + counts.running + counts.done
+  const total = counts.backlog + counts.todo + counts.queued + counts.running + counts.review + counts.done
   if (total === 0) return null
   return (
     <span className="flex items-center gap-1.5">
-      {TASK_STATE_CHIPS.map((chip) => {
-        const count = counts[chip.key]
+      {CHIP_KEYS.map((key) => {
+        const count = counts[key]
         if (count === 0) return null
+        const chip = chipSpec(key)
         return (
-          <span key={chip.key} title={t(chip.label)} className={`flex items-center gap-1 ${chip.color}`}>
-            <span className="w-1.5 h-1.5 rounded-full bg-current" />
+          <span key={key} title={t(chip.label)} className={`flex items-center gap-1 ${chip.color}`}>
+            <span className={`w-1.5 h-1.5 rounded-full bg-current ${chip.glow ? 'animate-chip-glow' : ''}`} />
             {count}
           </span>
         )
