@@ -5,9 +5,6 @@ import type { ProjectTask } from '@shared/types.js'
 import type { AgentInfo } from '../../lib/agents-actions'
 import { getAgentColor } from '../../lib/agents-actions'
 import { useT } from '../../hooks/useT'
-import { useWorkflows } from '../../hooks/useWorkflows'
-import { useProjects } from '../../hooks/useProjects'
-import { useTasksStore } from '../../stores/tasks'
 import { DropdownMenu } from '../shared/DropdownMenu'
 import {
   buildCardMenuItems,
@@ -68,12 +65,6 @@ export function TaskCard({
   const t = useT()
   const [showAudit, setShowAudit] = useState(false)
 
-  const moveTask = useTasksStore((s) => s.moveTask)
-  const setWorkflowChoice = useTasksStore((s) => s.setWorkflowChoice)
-  const { projects } = useProjects()
-  const workdir = projects.find((p) => p.id === projectId)?.workdir
-  const { workflows } = useWorkflows(workdir)
-
   const agent = agents.find((a) => a.id === task.agentId)
   const agentColor = task.agentId ? getAgentColor(agents, task.agentId) : undefined
   const images = task.attachments.filter((a) => a.mimeType.startsWith('image/'))
@@ -81,8 +72,6 @@ export function TaskCard({
   const menuDeps: CardMenuDeps = {
     t,
     task,
-    projectId,
-    workflows,
     onEdit,
     onToggleAudit: () => setShowAudit((prev) => !prev),
     onMove,
@@ -90,8 +79,6 @@ export function TaskCard({
     onMoveDown,
     onDuplicate,
     onDelete,
-    moveTask,
-    setWorkflowChoice,
   }
 
   return (
@@ -138,7 +125,7 @@ export function TaskCard({
           trigger={
             <button
               type="button"
-              className="p-1 rounded hover:bg-bg-secondary text-text-muted hover:text-text-primary transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+              className="p-1 rounded hover:bg-bg-secondary text-text-muted hover:text-text-primary transition-colors"
               title={t({ en: 'Task actions', fr: 'Actions de la tâche' })}
               aria-label={`Actions for ${task.prompt.slice(0, 40)}`}
             >
@@ -171,7 +158,7 @@ export function TaskCard({
             data-testid="plan-ready-link"
             className="text-xs px-1.5 py-1 rounded bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 flex items-center gap-1"
           >
-            ☑️ {t({ en: 'Plan Ready', fr: 'Plan prêt' })}
+            ✅ {t({ en: 'Plan Ready', fr: 'Plan prêt' })}
           </Link>
         )}
         {task.attachments.length > 0 && (

@@ -724,3 +724,18 @@ export function clearWorkflowExecution(executionId: string): void {
   const now = Date.now()
   db.prepare(`UPDATE workflow_executions SET updated_at = ? WHERE id = ?`).run(now, executionId)
 }
+
+/** Whether a session ever completed the given workflow (not just its latest run). */
+export function hasCompletedWorkflow(sessionId: string, workflowId: string): boolean {
+  try {
+    const db = getDatabase()
+    const row = db
+      .prepare(
+        `SELECT 1 AS hit FROM workflow_executions WHERE session_id = ? AND workflow_id = ? AND status = 'completed' LIMIT 1`,
+      )
+      .get(sessionId, workflowId) as { hit: number } | undefined
+    return !!row
+  } catch {
+    return false
+  }
+}

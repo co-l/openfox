@@ -171,6 +171,12 @@ export interface TasksServiceDeps {
   broadcast: (projectId: string, payload: TasksUpdatePayload) => void
   /** Global config dir — slash commands/workflows are resolved from here (plus the project dir). */
   configDir: string
+  /**
+   * Quick pre-request naming a fresh session from its first prompt. Awaited
+   * before the real workflow launches so the title lands first (sequenced, not
+   * concurrent). Wired to generateSessionNameForSession in server/index.ts.
+   */
+  nameSession?: (sessionId: string, userMessage: string) => Promise<void>
   /** Starts a workflow run in a seeded session (wired to the runner in server/index.ts). */
   launchWorkflow?: (
     sessionId: string,
@@ -213,19 +219,66 @@ function withLock<T>(projectId: string, fn: () => Promise<T> | T): Promise<T> {
 // ============================================================================
 
 export function createTasksService(deps: TasksServiceDeps): TasksService {
-  const { sessionManager, config, broadcast, configDir, launchWorkflow } = deps
+  const { sessionManager, config, broadcast, configDir, launchWorkflow, nameSession } = deps
 
   function snapshot(projectId: string) {
     const tasks = listEnriched(projectId)
     const settings = dbGetTaskSettings(projectId)
     const counts = computeCounts(tasks)
     const gates = dbGetGateConfig(projectId)
-    return { tasks, settings, counts, gates }
+    return { tasks, settings, counts, gates, sessionStatus: sessionStatusMap(tasks) }
   }
+
+  // The `planned` flag is computed lazily (plan run completed + criteria), but
+  // nothing re-publishes the board when a plan finishes out-of-band. Re-emit
+  // each touched project's board whenever a linked session's criteria/phase
+  // change, so the "Plan ready" badge flips live without a page reload.
+  sessionManager.subscribe((event) => {
+    if (event.type !== 'criteria_updated' && event.type !== 'phase_changed') {
+      return
+    }
+    if (!event.sessionId) return
+    for (const boardProjectId of dbFindProjectsBySession(event.sessionId)) {
+      publish(boardProjectId)
+    }
+  })
 
   /** Board tasks enriched with the `planned` flag (a settled plan run carrying criteria). */
   function listEnriched(projectId: string): ProjectTask[] {
-    return dbListTasks(projectId).map((t) => ({ ...t, planned: !!plannedSessionId(t) }))
+    return dbListTasks(projectId).map((t) => ({ ...t, planned: plannedForDisplay(t) }))
+  }
+
+  /** Session → board column map for every linked session (session cards' status chip). */
+  function sessionStatusMap(tasks: ProjectTask[]): Record<string, TaskStatus> {
+    const map: Record<string, TaskStatus> = {}
+    for (const t of tasks) {
+      for (const sid of t.sessionIds) map[sid] = t.status
+    }
+    return map
+  }
+
+  /**
+   * Name a fresh session before its real work starts. Sequenced on purpose:
+   * the quick title request completes (or fails) first, then the workflow
+   * launch proceeds — no concurrent duplicate model calls.
+   */
+  async function nameSessionFirst(sessionId: string, userMessage: string): Promise<void> {
+    if (!nameSession) return
+    try {
+      // Cap the wait so a slow/hung provider cannot stall the project's board
+      // lock for long (naming runs inside serialized moves). A title is a
+      // quick pre-request; beyond this, launch without waiting.
+      await Promise.race([nameSession(sessionId, userMessage), sleep(8_000)])
+    } catch {
+      // Naming is best-effort; the task launch must proceed regardless.
+    }
+  }
+
+  function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      const t = setTimeout(resolve, ms)
+      t.unref?.()
+    })
   }
 
   function publish(projectId: string, changedTaskId?: string, autoLaunched?: TasksUpdatePayload['autoLaunched']) {
@@ -236,6 +289,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
       settings,
       counts,
       gates,
+      sessionStatus: sessionStatusMap(tasks),
       ...(changedTaskId ? { changedTaskId } : {}),
       ...(autoLaunched ? { autoLaunched } : {}),
     })
@@ -439,6 +493,22 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
           }
         }
       } else if (to === 'review') {
+        // A planner session must never skip the build phase: a Review move
+        // coming from a session whose last run was the plan workflow (and a
+        // task still parked in backlog/To Do) is rejected outright.
+        if (
+          opts.actor === 'agent' &&
+          (from === 'backlog' || from === 'todo') &&
+          opts.sessionId &&
+          sessionLaunchedFromPlan(opts.sessionId)
+        ) {
+          throw new Error(
+            serverT({
+              en: 'A planning session cannot move a task straight to Review. Propose In Progress instead — implementation happens in a separate build phase.',
+              fr: 'Une session de planification ne peut pas déplacer une tâche directement en Revue. Proposez En cours — l’implémentation a lieu dans une phase de build distincte.',
+            }),
+          )
+        }
         const doneGates = requiredGates(projectId, 'done')
         const missing = missingGateFields(task, doneGates)
         if (missing.length > 0) {
@@ -489,7 +559,13 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
       const fresh = dbGetTask(taskId)!
       let autoLaunched: TasksUpdatePayload['autoLaunched'] | undefined
       if (wasRunning || (from === 'in_progress' && to !== 'in_progress')) {
-        autoLaunched = await maybeAutoLaunch(projectId)
+        // A failed auto-launch (e.g. a seeding error on the NEXT queued task)
+        // must never hide this move: the publish below is unconditional.
+        try {
+          autoLaunched = await maybeAutoLaunch(projectId)
+        } catch (err) {
+          console.error('[tasks] auto-launch after move failed', { projectId, taskId, error: err })
+        }
       }
       publish(projectId, fresh.id, autoLaunched)
       return {
@@ -702,15 +778,28 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
 
   /** True when the session's latest workflow run was a completed `plan`. */
   function isPlannerSession(sessionId: string): boolean {
-    const getLatest = sessionManager.getLatestWorkflowExecution
-    if (typeof getLatest !== 'function') return false
-    let latest: { workflowId?: string; status?: string } | null
-    try {
-      latest = getLatest.call(sessionManager, sessionId) ?? null
-    } catch {
-      return false
-    }
+    const latest = sessionManager.getLatestWorkflowExecution(sessionId)
     return latest?.workflowId === PLAN_WORKFLOW_ID && latest.status === 'completed'
+  }
+
+  /**
+   * Whether the session completed a plan run at any point (not just its last
+   * run): after a planned session resumes straight into a build, its latest
+   * execution is no longer the plan — yet the plan stays ready.
+   */
+  function hasCompletedPlanRun(sessionId: string): boolean {
+    if (isPlannerSession(sessionId)) return true
+    return sessionManager.hasCompletedWorkflowExecution(sessionId, PLAN_WORKFLOW_ID)
+  }
+
+  /**
+   * Whether a session's latest workflow run was the plan workflow (any status)
+   * — a planner is forbidden from skipping straight to Review while the task
+   * still sits in backlog/To Do, even before its plan formally completed.
+   */
+  function sessionLaunchedFromPlan(sessionId: string): boolean {
+    const latest = sessionManager.getLatestWorkflowExecution(sessionId)
+    return latest?.workflowId === PLAN_WORKFLOW_ID
   }
 
   /**
@@ -721,6 +810,16 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
    */
   function plannedSessionId(task: ProjectTask): string | undefined {
     return [...task.sessionIds].reverse().find((id) => isPlannerSession(id) && hasPlannedCriteria(id))
+  }
+
+  /**
+   * Display-only variant: a plan counts as ready when ANY linked session has
+   * completed the plan workflow with criteria — even after that session moved
+   * on to a build run (In Progress round-trips keep "Plan ready" on the card).
+   */
+  function plannedForDisplay(task: ProjectTask): boolean {
+    if (plannedSessionId(task)) return true
+    return [...task.sessionIds].reverse().some((id) => hasCompletedPlanRun(id) && hasPlannedCriteria(id))
   }
 
   /**
@@ -759,6 +858,9 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
       dbAddAuditEntry(taskId, 'human', 'plan_start', `Plan started in session ${sessionId}`, 'user')
       const fresh = dbGetTask(taskId)!
       publish(projectId, fresh.id)
+      // Sequenced: the quick title request completes BEFORE the plan workflow
+      // starts — the two model calls never run concurrently.
+      await nameSessionFirst(sessionId, task.prompt)
       launchWorkflow?.(sessionId, { workflowId: PLAN_WORKFLOW_ID, scope: 'auto', content: task.prompt })
       return { task: fresh, sessionId }
     })
@@ -880,6 +982,10 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
     emitReminder(session.id, reminderForInProgress(task, session.id, from))
     const attachments = task.attachments.length > 0 ? task.attachments : undefined
 
+    // Sequenced naming: the quick title request completes before any workflow
+    // or prompt below is launched (skipped internally when the session
+    // already has a real title).
+    await nameSessionFirst(session.id, task.prompt)
     const projectDir = getProject(projectId)?.workdir
     let slash: SlashLaunch
     try {
@@ -990,6 +1096,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
       `This session is the planning session for task "${promptLabel(task.prompt)}" from the project task board.`,
       `Session: ${sessionId.slice(0, 8)}. Plan mode is active: explore, ask the user questions, and define acceptance criteria — do not implement.`,
       'When the plan is agreed, propose moving the task to In Progress via the project_tasks tool (with user approval).',
+      'NEVER move this task directly to Review or Done, even when the work looks trivial — implementation belongs to a separate In Progress phase. In Progress is the only destination you may ever move it to.',
     ].join('\n')
   }
 

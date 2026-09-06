@@ -51,6 +51,11 @@ export function PostPlanLaunchBar({
   const todoColor = columnMeta('todo').stripeHex
   const inProgressColor = columnMeta('in_progress').stripeHex
 
+  // The column decision only makes sense while the task still awaits it: once
+  // it is In Progress (explicit switch or an agreed agent move), the two
+  // decision buttons disappear and only the workflow launches remain.
+  const showDecision = task.status === 'todo'
+
   const switchToInProgress = async () => {
     setBusy(true)
     setMoveFailed(false)
@@ -68,16 +73,8 @@ export function PostPlanLaunchBar({
   }
 
   const stayInTodo = async () => {
-    // Already In Progress: demote back to To Do (sessions stay linked, just
-    // deactivated), otherwise this just opens the board.
-    if (task.status !== 'todo') {
-      setBusy(true)
-      try {
-        await moveTask(projectId, task.id, 'todo')
-      } finally {
-        setBusy(false)
-      }
-    }
+    // Already on the board: no move needed, just leave the session. (The
+    // button only renders while the task is in To Do.)
     navigate(`/p/${projectId}`)
   }
 
@@ -91,36 +88,38 @@ export function PostPlanLaunchBar({
       data-testid="post-plan-launch-bar"
       className="feed-item rounded-lg border border-border bg-bg-secondary/60 p-3 space-y-2"
     >
-      <div className="flex justify-center gap-2 flex-wrap">
-        <button
-          type="button"
-          onClick={() => void stayInTodo()}
-          disabled={busy}
-          data-testid="post-plan-stay-todo"
-          className="px-4 py-1.5 text-sm font-medium rounded border transition-colors disabled:opacity-50"
-          style={{
-            color: todoColor,
-            borderColor: hexToRgba(todoColor, 0.3),
-            backgroundColor: hexToRgba(todoColor, 0.12),
-          }}
-        >
-          {t({ en: 'Stay in To Do', fr: 'Rester en À faire' })}
-        </button>
-        <button
-          type="button"
-          onClick={() => void switchToInProgress()}
-          disabled={busy}
-          data-testid="post-plan-switch-inprogress"
-          className="px-4 py-1.5 text-sm font-medium rounded border transition-colors disabled:opacity-50"
-          style={{
-            color: inProgressColor,
-            borderColor: hexToRgba(inProgressColor, 0.3),
-            backgroundColor: hexToRgba(inProgressColor, 0.12),
-          }}
-        >
-          {t({ en: 'Switch to In Progress', fr: 'Passer en En cours' })}
-        </button>
-      </div>
+      {showDecision && (
+        <div className="flex justify-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={() => void stayInTodo()}
+            disabled={busy}
+            data-testid="post-plan-stay-todo"
+            className="px-4 py-1.5 text-sm font-medium rounded border transition-colors disabled:opacity-50"
+            style={{
+              color: todoColor,
+              borderColor: hexToRgba(todoColor, 0.3),
+              backgroundColor: hexToRgba(todoColor, 0.12),
+            }}
+          >
+            {t({ en: 'Stay in To Do', fr: 'Rester en À faire' })}
+          </button>
+          <button
+            type="button"
+            onClick={() => void switchToInProgress()}
+            disabled={busy}
+            data-testid="post-plan-switch-inprogress"
+            className="px-4 py-1.5 text-sm font-medium rounded border transition-colors disabled:opacity-50"
+            style={{
+              color: inProgressColor,
+              borderColor: hexToRgba(inProgressColor, 0.3),
+              backgroundColor: hexToRgba(inProgressColor, 0.12),
+            }}
+          >
+            {t({ en: 'Switch to In Progress', fr: 'Passer en En cours' })}
+          </button>
+        </div>
+      )}
       {moveFailed && (
         <div data-testid="post-plan-move-error" className="text-xs text-red-400 text-center">
           {lastError ?? t({ en: 'Move failed', fr: 'Échec du déplacement' })}

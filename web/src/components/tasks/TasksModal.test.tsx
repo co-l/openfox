@@ -323,52 +323,17 @@ describe('TasksModal', () => {
     await waitFor(() => expect(screen.queryByTestId('session-dropdown-menu')).toBeNull())
   })
 
-  it('shows post-plan launch entries for a planned To Do task and wires them to the API', async () => {
-    vi.mocked(authFetch).mockImplementation(async (url: string) => {
-      if (url.includes('/api/workflows')) {
-        return {
-          ok: true,
-          json: async () => ({
-            defaults: [],
-            userItems: [{ id: 'fixit', name: 'Fix it', description: '', version: '1.0.0', scope: 'user' }],
-            projectItems: [],
-            activeWorkflowId: 'default',
-          }),
-        } as unknown as Response
-      }
-      if (url.endsWith('/workflow-choice')) {
-        return { ok: true, json: async () => ({ task: task({ id: 't5', planned: true }) }) } as unknown as Response
-      }
-      if (url.endsWith('/tasks/gates')) {
-        return { ok: true, json: async () => ({ gates: [] }) } as unknown as Response
-      }
-      return { ok: true, json: async () => board } as unknown as Response
-    })
+  it('hides the removed After-plan section on a planned To Do task and keeps every transition', async () => {
     render(<TasksModal isOpen onClose={() => {}} projectId="proj-1" />)
     fireEvent.click(screen.getByRole('button', { name: /actions for plan twice/i }))
     const menu = await screen.findByTestId('session-dropdown-menu')
 
-    fireEvent.click(within(menu).getByText('Stay in To Do'))
-    await waitFor(() => {
-      expect(vi.mocked(authFetch)).toHaveBeenCalledWith(
-        '/api/projects/proj-1/tasks/t5/move',
-        expect.objectContaining({ method: 'POST', body: expect.stringContaining('"todo"') }),
-      )
-    })
-
-    fireEvent.click(screen.getByRole('button', { name: /actions for plan twice/i }))
-    const menu2 = await screen.findByTestId('session-dropdown-menu')
-    fireEvent.click(within(menu2).getByText(/Fix it/))
-    await waitFor(() => {
-      expect(vi.mocked(authFetch)).toHaveBeenCalledWith(
-        '/api/projects/proj-1/tasks/t5/workflow-choice',
-        expect.objectContaining({ method: 'PUT', body: expect.stringContaining('fixit') }),
-      )
-      expect(vi.mocked(authFetch)).toHaveBeenCalledWith(
-        '/api/projects/proj-1/tasks/t5/move',
-        expect.objectContaining({ method: 'POST', body: expect.stringContaining('"in_progress"') }),
-      )
-    })
+    expect(within(menu).queryByText('After plan')).toBeNull()
+    expect(within(menu).queryByText('Stay in To Do')).toBeNull()
+    expect(within(menu).queryByText('Switch to In Progress')).toBeNull()
+    // The transitions list stays complete for a planned task.
+    expect(within(menu).getByText('In Progress')).toBeTruthy()
+    expect(within(menu).getByText('Review')).toBeTruthy()
     fireEvent.keyDown(window, { key: 'Escape' })
   })
 
@@ -404,6 +369,15 @@ describe('TasksModal', () => {
     expect(within(card).queryByRole('button', { name: /Start plan/ })).toBeNull()
     const link = within(card).getByRole('link', { name: /Plan Ready/i })
     expect(link.getAttribute('href')).toBe('/p/proj-1/s/sess-plan')
+  })
+
+  it('opens the card actions menu from the always-rendered trigger (touch devices have no hover)', async () => {
+    render(<TasksModal isOpen onClose={() => {}} projectId="proj-1" />)
+    const trigger = screen.getByRole('button', { name: /actions for wire the kanban/i })
+    fireEvent.click(trigger)
+    const menu = await screen.findByTestId('session-dropdown-menu')
+    expect(within(menu).getByText('Edit')).toBeTruthy()
+    fireEvent.keyDown(window, { key: 'Escape' })
   })
 
   it('steps the slot limit on rapid clicks without waiting for the server', async () => {

@@ -559,6 +559,16 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     broadcast: (projectId, payload) => deferTasksBroadcast(projectId, payload),
     configDir,
     launchWorkflow: (sessionId, launch) => deferTasksLaunchWorkflow(sessionId, launch),
+    nameSession: async (sessionId, userMessage) => {
+      const { generateSessionNameForSession } = await import('./session/name-generator.js')
+      await generateSessionNameForSession(sessionId, userMessage, {
+        sessionManager,
+        providerManager,
+        broadcastForSession: (sid, msg) => wssExports.broadcastForSession(sid, msg),
+        eventStore: getEventStore(),
+        getLLMClientForProvider,
+      })
+    },
   })
   setTasksService(tasksService)
   const tasksRouter = express.Router()

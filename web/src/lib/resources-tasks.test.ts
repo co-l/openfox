@@ -1,7 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { authFetch } from './api'
 import { clearCache, snapshot } from './resourceCache'
-import { boardResource, summariesResource, readBoard, EMPTY_TASK_COUNTS, type BoardData } from './resources'
+import {
+  boardResource,
+  summariesResource,
+  readBoard,
+  unlinkSessionFromBoards,
+  EMPTY_TASK_COUNTS,
+  type BoardData,
+} from './resources'
+import type { ProjectTask } from '@shared/types.js'
 
 vi.mock('./api', () => ({
   authFetch: vi.fn(),
@@ -122,5 +130,77 @@ describe('WS write-through reconciliation', () => {
     )
     expect(snapshot<BoardData>(boardResource.keyOf('p2')).data?.settings.slotLimit).toBe(1)
     expect(authFetch).not.toHaveBeenCalled()
+  })
+})
+
+describe('unlinkSessionFromBoards (instant detach on session.deleted)', () => {
+  const task = (id: string, extra: Record<string, unknown> = {}): ProjectTask => ({
+    id,
+    projectId: 'p1',
+    prompt: 'x',
+    attachments: [],
+    status: 'todo' as const,
+    position: 0,
+    version: 1,
+    sessionIds: [],
+    gateValues: [],
+    auditTrail: [],
+    createdAt: '',
+    updatedAt: '',
+    ...extra,
+  })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    clearCache()
+  })
+
+  it('drops the deleted session from cached boards immediately', () => {
+    boardResource.write(
+      {
+        tasks: [
+          task('t1', { sessionIds: ['s-dead', 's-alive'], activeSessionId: 's-dead' }),
+          task('t2', { sessionIds: ['s-other'] }),
+        ],
+        settings: { slotLimit: 1, queuePaused: false },
+        counts: EMPTY_TASK_COUNTS,
+        gates: [],
+      },
+      'p1',
+    )
+
+    unlinkSessionFromBoards('s-dead')
+
+    const board = readBoard('p1')!
+    expect(board.tasks.find((t) => t.id === 't2')?.sessionIds).toEqual(['s-other'])
+    const t1 = board.tasks.find((t) => t.id === 't1')!
+    expect(t1.sessionIds).toEqual(['s-alive'])
+    expect(t1.activeSessionId).toBeUndefined()
+  })
+
+  it('clears the planned flag when the last session of a planned todo card dies', () => {
+    boardResource.write(
+      {
+        tasks: [task('t1', { sessionIds: ['s-dead'], activeSessionId: 's-dead', planned: true })],
+        settings: { slotLimit: 1, queuePaused: false },
+        counts: EMPTY_TASK_COUNTS,
+        gates: [],
+      },
+      'p1',
+    )
+
+    unlinkSessionFromBoards('s-dead')
+
+    const t1 = readBoard('p1')!.tasks.find((t) => t.id === 't1')!
+    expect(t1.planned).toBeFalsy()
+  })
+
+  it('invalidates from-session views keyed by the deleted session', async () => {
+    const { taskFromSessionResource } = await import('./resources')
+    taskFromSessionResource.write(task('t1', { sessionIds: ['s-dead'] }) as never, 'p1', 's-dead')
+
+    unlinkSessionFromBoards('s-dead')
+
+    expect(snapshot(taskFromSessionResource.keyOf('p1', 's-dead')).data).toBeUndefined()
   })
 })

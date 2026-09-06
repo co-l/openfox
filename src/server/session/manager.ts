@@ -43,6 +43,7 @@ import {
   updateWorkflowExecutionStatus,
   getActiveWorkflowExecution as dbGetActiveWorkflowExecution,
   getLatestWorkflowExecution as dbGetLatestWorkflowExecution,
+  hasCompletedWorkflow as dbHasCompletedWorkflow,
   clearWorkflowExecution,
   type DangerLevel,
 } from '../db/sessions.js'
@@ -1321,6 +1322,10 @@ export class SessionManager {
    * shared type. Used to locate a blocked execution when the user retries its
    * step — blocked rows are excluded from getActiveWorkflowExecution.
    */
+  hasCompletedWorkflowExecution(sessionId: string, workflowId: string): boolean {
+    return dbHasCompletedWorkflow(sessionId, workflowId)
+  }
+
   getLatestWorkflowExecution(sessionId: string): import('../../shared/types.js').WorkflowExecution | null {
     const row = dbGetLatestWorkflowExecution(sessionId)
     if (!row) return null

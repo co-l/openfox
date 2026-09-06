@@ -85,7 +85,7 @@ describe('PostPlanLaunchBar', () => {
     expect(screen.getByTestId('post-plan-move-error').textContent).toContain('GATE_BLOCKED')
   })
 
-  it('stay in To Do demotes an in-progress task back to todo before navigating', async () => {
+  it('hides both decision buttons once the task is In Progress', () => {
     render(
       <PostPlanLaunchBar
         task={{ ...task, status: 'in_progress' }}
@@ -94,9 +94,10 @@ describe('PostPlanLaunchBar', () => {
         onLaunchWorkflow={vi.fn()}
       />,
     )
-    fireEvent.click(screen.getByTestId('post-plan-stay-todo'))
-    await waitFor(() => expect(moveTask).toHaveBeenCalledWith('p1', 't1', 'todo'))
-    expect(navigate).toHaveBeenCalledWith('/p/p1')
+    expect(screen.queryByTestId('post-plan-stay-todo')).toBeNull()
+    expect(screen.queryByTestId('post-plan-switch-inprogress')).toBeNull()
+    // Workflow launch buttons stay available.
+    expect(screen.getByTestId('post-plan-workflow-default')).toBeTruthy()
   })
 
   it('a workflow pick persists the choice on the task and launches it directly', async () => {

@@ -70,7 +70,7 @@ export default tseslint.config(
           '$',
           '📍',
           '⚠️',
-          '☑️',
+          '✅',
           '●',
           '└',
           '↻',

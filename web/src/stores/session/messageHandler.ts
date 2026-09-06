@@ -41,7 +41,12 @@ import type { AgentType } from '../notifications'
 import type { SessionState, PendingQuestion, SessionPane } from './types'
 import { handleGlobalSoundEffects, resolveAgentType } from './sounds'
 import { getBuffer, scheduleStreamingFlush, cancelStreamingFlush } from './streamingBuffer'
-import { mcpServersResource, type McpServerInfo } from '../../lib/resources'
+import {
+  mcpServersResource,
+  unlinkSessionFromBoards,
+  unlinkSessionsFromBoard,
+  type McpServerInfo,
+} from '../../lib/resources'
 import {
   emptyPane,
   paneFromFlat,
@@ -321,6 +326,9 @@ export function handleServerMessage(
     case 'session.deleted': {
       const payload = message.payload as { sessionId: string }
       const deletedId = payload.sessionId
+      // Task cards must forget the session instantly (optimistic board
+      // write-through) instead of waiting for the server's board re-publish.
+      unlinkSessionFromBoards(deletedId)
       // Resolve the deleted session's projectId before removing it, so the
       // reload can be scoped to its project instead of fetching globally.
       const projectId = resolveSessionProjectId(get(), deletedId)
@@ -342,6 +350,7 @@ export function handleServerMessage(
     case 'session.deletedAll': {
       // The server broadcasts sessionId = projectId for deletedAll
       const projectId = message.sessionId
+      if (projectId) unlinkSessionsFromBoard(projectId)
       set((state) => ({
         searchSessions: null,
         sessions: projectId !== undefined ? state.sessions.filter((s) => s.projectId !== projectId) : state.sessions,

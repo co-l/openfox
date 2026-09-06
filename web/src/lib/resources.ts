@@ -1,5 +1,5 @@
 import { authFetch } from './api'
-import { resource, snapshot } from './resourceCache'
+import { resource, snapshot, write, invalidate, keysWithPrefix } from './resourceCache'
 import type { AgentInfo } from './agents-actions'
 import type { AgentFull } from './agents-actions'
 import type { CommandInfo, CommandFull } from './commands-actions'
@@ -14,6 +14,7 @@ import type {
   ProjectTaskCounts,
   ProjectTaskSettings,
   TaskGateConfig,
+  TaskStatus,
 } from '@shared/types.js'
 import type { WorkspaceConfig as SharedWorkspaceConfig } from '@shared/workspace.js'
 import type { DevServerConfig, DevServerStatus } from '@shared/dev-server.js'
@@ -446,6 +447,8 @@ export interface BoardData {
   settings: ProjectTaskSettings
   counts: ProjectTaskCounts
   gates: TaskGateConfig[]
+  /** Session id → linked task column (server-computed, for session-card chips). */
+  sessionStatus?: Record<string, TaskStatus> | undefined
 }
 
 export async function fetchBoard(projectId: string): Promise<BoardData> {
@@ -460,6 +463,7 @@ export async function fetchBoard(projectId: string): Promise<BoardData> {
     settings: data.settings ?? { slotLimit: 1, queuePaused: false },
     counts: data.counts ?? EMPTY_TASK_COUNTS,
     gates: data.gates ?? [],
+    ...(data.sessionStatus ? { sessionStatus: data.sessionStatus } : {}),
   }
 }
 
@@ -476,6 +480,64 @@ export const boardResource = resource<BoardData, [string]>({
 /** Synchronous cache read for non-hook call sites (event handlers, getState-style reads). */
 export function readBoard(projectId: string): BoardData | undefined {
   return snapshot<BoardData>(boardResource.keyOf(projectId)).data
+}
+
+function taskWithoutSession(task: ProjectTask, sessionId: string): ProjectTask {
+  const hadSession = task.sessionIds.includes(sessionId) || task.activeSessionId === sessionId
+  if (!hadSession) return task
+  const next: ProjectTask = { ...task, sessionIds: task.sessionIds.filter((id) => id !== sessionId) }
+  if (task.activeSessionId === sessionId) delete next.activeSessionId
+  // `planned` derives from linked planner sessions; with the last link gone
+  // the flag is unverifiable client-side — clear it so the card falls back to
+  // "Start plan" until the server re-publishes the truth.
+  if (task.planned && task.status === 'todo' && next.sessionIds.length === 0) {
+    delete next.planned
+  }
+  return next
+}
+
+/**
+ * Optimistically detach a deleted session from every cached board and drop its
+ * from-session views, so task cards forget it the instant the WS event lands —
+ * long before the (potentially slow) server-side cleanup re-publishes.
+ */
+export function unlinkSessionFromBoards(sessionId: string): void {
+  const PREFIX = 'tasks:board:'
+  for (const key of keysWithPrefix(PREFIX)) {
+    const projectId = key.slice(PREFIX.length)
+    const board = readBoard(projectId)
+    if (!board || !board.tasks.some((t) => t.sessionIds.includes(sessionId) || t.activeSessionId === sessionId)) {
+      continue
+    }
+    boardResource.write({ ...board, tasks: board.tasks.map((t) => taskWithoutSession(t, sessionId)) }, projectId)
+  }
+  for (const key of keysWithPrefix('tasks:from-session:')) {
+    if (key.endsWith(`:${sessionId}`)) invalidate(key)
+  }
+}
+
+/** Same detachment for a whole project at once (delete-all-sessions). */
+export function unlinkSessionsFromBoard(projectId: string): void {
+  const board = readBoard(projectId)
+  if (!board) return
+  const cleared = board.tasks.map((t) => {
+    const next = { ...t, sessionIds: [] }
+    delete next.activeSessionId
+    if (t.planned && t.status === 'todo') delete next.planned
+    return next
+  })
+  boardResource.write({ ...board, tasks: cleared }, projectId)
+}
+
+/**
+ * Write a fresh task snapshot into every cached from-session view whose task
+ * matches, so live consumers (post-plan bar) converge without a refetch.
+ */
+export function writeThroughTaskViews(task: ProjectTask): void {
+  for (const key of keysWithPrefix('tasks:from-session:')) {
+    const cached = snapshot<ProjectTask | null>(key).data
+    if (cached && cached.id === task.id) write<ProjectTask>(key, task)
+  }
 }
 
 export async function fetchTaskFromSession(projectId: string, sessionId: string): Promise<ProjectTask | null> {

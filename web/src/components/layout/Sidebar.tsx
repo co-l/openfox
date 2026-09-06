@@ -29,6 +29,11 @@ import {
 import { groupSessionsByDate, formatDateHeader, formatTime } from '../../lib/format-date.js'
 import { fuzzyMatch, highlightMatches } from '../../lib/modal-utils.js'
 import { shouldAutofocus } from '../../lib/device'
+import { useResource } from '../../hooks/useResource'
+import { boardResource } from '../../lib/resources'
+import { TaskStatusChip } from './TaskStatusChip'
+import { columnMeta } from '../tasks/column-meta'
+import type { TaskStatus } from '@shared/types.js'
 import { useBinding, useKeybindings } from '../../hooks/useKeybindings.js'
 import { hasStoredToken, downloadSessionExport, importSession } from '../../lib/api'
 import { useResizable } from '../../hooks/useResizable'
@@ -58,6 +63,8 @@ export function Sidebar({ projectId, isOpen = true, overlay = false, onClose }: 
   const sessions = useSessionStore((state) => state.sessions)
   const currentSession = useSessionStore((state) => state.currentSession)
   const unreadSessionIds = useSessionStore((state) => state.unreadSessionIds)
+  // Server-computed session→board-column map (session-card status chips).
+  const { data: board } = useResource(boardResource, projectId)
   const deleteSession = useSessionStore((state) => state.deleteSession)
   const deleteAllSessions = useSessionStore((state) => state.deleteAllSessions)
   const loadMoreSessions = useSessionStore((state) => state.loadMoreSessions)
@@ -490,6 +497,7 @@ export function Sidebar({ projectId, isOpen = true, overlay = false, onClose }: 
                       searchQuery,
                       focusedIndex,
                       t,
+                      board?.sessionStatus,
                     )}
                   </div>
                   {sessionsPaginationLoading && (
@@ -546,6 +554,7 @@ function renderSessionList(
     tx: { en: string | Record<string, string>; fr: string | Record<string, string> },
     vars?: Record<string, string | number>,
   ) => string,
+  sessionStatus?: Record<string, TaskStatus>,
 ) {
   let flatIdx = 0
 
@@ -652,6 +661,12 @@ function renderSessionList(
             <span className="text-text-muted text-xs flex-shrink-0">
               {t({ en: '{{count}} messages', fr: '{{count}} messages' }, { count: session.messageCount })}
             </span>
+            {sessionStatus?.[session.id] && (
+              <TaskStatusChip
+                status={sessionStatus[session.id]!}
+                label={t(columnMeta(sessionStatus[session.id]!).title)}
+              />
+            )}
           </div>
         </Link>
       </div>

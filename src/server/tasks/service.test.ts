@@ -30,6 +30,7 @@ interface FakeSessionManager {
   sessions: Map<string, FakeSession>
   modes: Map<string, string>
   executions: Map<string, FakeExecution>
+  completedWorkflows: Map<string, string[]>
 }
 
 function makeSessionManager(): FakeSessionManager & {
@@ -39,6 +40,8 @@ function makeSessionManager(): FakeSessionManager & {
   setMode: (sessionId: string, mode: string) => void
   getSession: (id: string) => FakeSession | null
   getLatestWorkflowExecution: (id: string) => FakeExecution | null
+  hasCompletedWorkflowExecution: (id: string, workflowId: string) => boolean
+  subscribe: (cb: (e: { type: string; sessionId?: string }) => void) => () => void
 } {
   const mgr = {
     createdSessions: [] as FakeSession[],
@@ -47,12 +50,16 @@ function makeSessionManager(): FakeSessionManager & {
     sessions: new Map<string, FakeSession>(),
     modes: new Map<string, string>(),
     executions: new Map<string, FakeExecution>(),
+    completedWorkflows: new Map<string, string[]>(),
   }
 
   const counter = { n: 0 }
 
   return {
     ...mgr,
+    hasCompletedWorkflowExecution: (id: string, workflowId: string) =>
+      (mgr.completedWorkflows.get(id) ?? []).includes(workflowId),
+    subscribe: () => () => {},
     createSession: (_pid: string, title?: unknown) => {
       counter.n += 1
       const session: FakeSession = { id: `sess-${counter.n}`, projectId: _pid }
@@ -1052,6 +1059,164 @@ describe('project tasks service', () => {
       expect(result.task.runState).toBe('running')
       expect(launchSpy).toHaveBeenCalledTimes(1)
       expect(launchSpy.mock.calls[0]![1]).toMatchObject({ workflowId: 'plan', content: '/reqwf' })
+    })
+  })
+
+  describe('regression batch (C1/C4/C5/C8/C9/C10)', () => {
+    const criteria = { criteria: [{ id: 'c1', description: 'x', status: { type: 'pending' } }] }
+
+    it('C1: an In Progress → To Do revert always publishes the full board and keeps the task visible', async () => {
+      const task = create('Round-trip me')
+      await service.move(projectId, task.id, 'todo', { actor: 'human' })
+      await service.move(projectId, task.id, 'in_progress', { actor: 'human' })
+      broadcasts.length = 0
+
+      await service.move(projectId, task.id, 'todo', { actor: 'human' })
+
+      const pushed = broadcasts.at(-1)!
+      const inBoard = pushed.tasks.find((t) => t.id === task.id)
+      expect(inBoard).toBeTruthy()
+      expect(inBoard!.status).toBe('todo')
+      // The reverted card is enumerated inside its destination column.
+      expect(inBoard!.position).toBeGreaterThanOrEqual(0)
+
+      await service.move(projectId, task.id, 'backlog', { actor: 'human' })
+      const pushed2 = broadcasts.at(-1)!
+      expect(pushed2.tasks.find((t) => t.id === task.id)?.status).toBe('backlog')
+    })
+
+    it('C4: start-plan awaits the session naming pre-request before launching the workflow', async () => {
+      const order: string[] = []
+      service = createTasksService({
+        sessionManager: sm as unknown as import('../session/manager.js').SessionManager,
+        config: loadConfig(),
+        broadcast: (_pid, payload) => broadcasts.push(payload),
+        configDir: join(root, 'config'),
+        launchWorkflow: ((sessionId: string) => {
+          order.push(`launch:${sessionId}`)
+        }) as never,
+        nameSession: (async (sessionId: string) => {
+          order.push(`name:${sessionId}`)
+        }) as never,
+      })
+
+      const task = create('Name me first')
+      await service.move(projectId, task.id, 'todo', { actor: 'human' })
+      const { sessionId } = await service.startPlan(projectId, task.id)
+
+      expect(order).toEqual([`name:${sessionId}`, `launch:${sessionId}`])
+    })
+
+    it('C4: seeding an In Progress launch names the session before launching', async () => {
+      const order: string[] = []
+      service = createTasksService({
+        sessionManager: sm as unknown as import('../session/manager.js').SessionManager,
+        config: loadConfig(),
+        broadcast: (_pid, payload) => broadcasts.push(payload),
+        configDir: join(root, 'config'),
+        launchWorkflow: ((sessionId: string) => {
+          order.push(`launch:${sessionId}`)
+        }) as never,
+        nameSession: (async () => {
+          order.push('name')
+        }) as never,
+      })
+
+      const task = create('Build me')
+      await service.move(projectId, task.id, 'in_progress', { actor: 'human' })
+
+      expect(order[0]).toBe('name')
+      expect(order[1]!.startsWith('launch:')).toBe(true)
+    })
+
+    it('C5: every board publish carries the session→status map', async () => {
+      const task = create('Chipped task')
+      await service.move(projectId, task.id, 'todo', { actor: 'human' })
+      const { sessionId } = await service.startPlan(projectId, task.id)
+
+      broadcasts.length = 0
+      service.publishBoard(projectId)
+      expect(broadcasts.at(-1)?.sessionStatus).toMatchObject({ [sessionId]: 'todo' })
+
+      await service.move(projectId, task.id, 'in_progress', { actor: 'human' })
+      expect(broadcasts.at(-1)?.sessionStatus).toMatchObject({ [sessionId]: 'in_progress' })
+    })
+
+    it('C8: an agent planner session cannot move its task straight to Review', async () => {
+      const task = create('Sneaky plan')
+      await service.move(projectId, task.id, 'todo', { actor: 'human' })
+      const { sessionId } = await service.startPlan(projectId, task.id)
+      sm.executions.set(sessionId, { workflowId: 'plan', status: 'completed' })
+
+      await expect(service.move(projectId, task.id, 'review', { actor: 'agent', sessionId })).rejects.toThrow(
+        /In Progress/,
+      )
+
+      // A human may still move it manually.
+      const moved = await service.move(projectId, task.id, 'review', { actor: 'human' })
+      expect(moved.task.status).toBe('review')
+    })
+
+    it('C8: the plan reminder forbids skipping straight to Review/Done', async () => {
+      const task = create('Reminder check')
+      await service.move(projectId, task.id, 'todo', { actor: 'human' })
+      await service.startPlan(projectId, task.id)
+      const reminder = sm.reminders.at(-1)!.content
+      expect(reminder).toContain('NEVER move this task directly to Review or Done')
+    })
+
+    it('C9: planned stays true after an In Progress round-trip (even once a build ran)', async () => {
+      const task = create('Plan then revert')
+      await service.move(projectId, task.id, 'todo', { actor: 'human' })
+      const { sessionId } = await service.startPlan(projectId, task.id)
+      const planner = sm.sessions.get(sessionId)!
+      ;(planner as { metadataEntries?: Record<string, unknown> }).metadataEntries = criteria
+      sm.executions.set(sessionId, { workflowId: 'plan', status: 'completed' })
+      expect(service.snapshot(projectId).tasks.find((t) => t.id === task.id)?.planned).toBe(true)
+
+      // Park in In Progress then back to To Do.
+      await service.move(projectId, task.id, 'in_progress', { actor: 'human', park: true })
+      await service.move(projectId, task.id, 'todo', { actor: 'human' })
+      expect(service.snapshot(projectId).tasks.find((t) => t.id === task.id)?.planned).toBe(true)
+
+      // Even after a build attempt overwrote the latest execution, the plan
+      // history keeps the card at "Plan ready".
+      sm.completedWorkflows.set(sessionId, ['plan'])
+      sm.executions.set(sessionId, { workflowId: 'default', status: 'completed' })
+      expect(service.snapshot(projectId).tasks.find((t) => t.id === task.id)?.planned).toBe(true)
+    })
+
+    it('C10: a criteria update on a linked planner re-publishes the board with planned=true', async () => {
+      let emit: ((e: { type: string; sessionId?: string }) => void) | null = null
+      service = createTasksService({
+        sessionManager: {
+          ...(sm as unknown as import('../session/manager.js').SessionManager),
+          subscribe: (cb: (e: { type: string; sessionId?: string }) => void) => {
+            emit = cb
+            return () => {}
+          },
+        } as unknown as import('../session/manager.js').SessionManager,
+        config: loadConfig(),
+        broadcast: (_pid, payload) => broadcasts.push(payload),
+        configDir: join(root, 'config'),
+        launchWorkflow: launchSpy as never,
+      })
+
+      const task = create('Live badge')
+      await service.move(projectId, task.id, 'todo', { actor: 'human' })
+      const { sessionId } = await service.startPlan(projectId, task.id)
+      const planner = sm.sessions.get(sessionId)!
+
+      broadcasts.length = 0
+      // The plan completes right now: criteria recorded + completed run.
+      ;(planner as { metadataEntries?: Record<string, unknown> }).metadataEntries = criteria
+      sm.executions.set(sessionId, { workflowId: 'plan', status: 'completed' })
+      expect(service.snapshot(projectId).tasks.find((t) => t.id === task.id)?.planned).toBe(true)
+
+      emit!({ type: 'criteria_updated', sessionId })
+
+      const pushed = broadcasts.at(-1)!
+      expect(pushed.tasks.find((t) => t.id === task.id)?.planned).toBe(true)
     })
   })
 })

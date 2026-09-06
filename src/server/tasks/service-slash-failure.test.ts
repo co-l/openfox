@@ -26,6 +26,8 @@ function makeSM(): FakeSM & {
   addMessage: () => void
   getSession: () => null
   getLatestWorkflowExecution: () => null
+  subscribe: () => () => void
+  hasCompletedWorkflowExecution: (id: string, workflowId: string) => boolean
 } {
   const sm: FakeSM = { createdSessions: [], queued: [], modes: new Map() }
   const counter = { n: 0 }
@@ -44,6 +46,8 @@ function makeSM(): FakeSM & {
     addMessage: () => undefined,
     getSession: () => null,
     getLatestWorkflowExecution: () => null,
+    subscribe: () => () => {},
+    hasCompletedWorkflowExecution: () => false,
   }
 }
 

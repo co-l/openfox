@@ -187,6 +187,18 @@ export function setTaskStatus(id: string, status: TaskStatus): void {
     now,
     id,
   )
+  // Re-assign the destination column's positions so the task is properly
+  // enumerated there: keeping a stale/out-of-range position made reverts
+  // (e.g. In Progress → To Do) render inconsistently against sibling cards.
+  const rows = db
+    .prepare(
+      `SELECT id FROM tasks WHERE project_id = (SELECT project_id FROM tasks WHERE id = ?) AND status = ? ORDER BY position ASC, created_at ASC`,
+    )
+    .all(id, status) as { id: string }[]
+  const update = db.prepare(`UPDATE tasks SET position = ? WHERE id = ?`)
+  for (const [idx, row] of rows.entries()) {
+    update.run(idx, row.id)
+  }
 }
 
 export function setTaskRunState(id: string, runState: TaskRunState | null): void {

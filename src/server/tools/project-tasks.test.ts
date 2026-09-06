@@ -15,6 +15,8 @@ function makeContext(projectId: string): ToolContext {
     sessionId: 'sess-agent',
     sessionManager: {
       getSession: (id: string) => (id === 'sess-agent' ? { id, projectId } : null),
+      getLatestWorkflowExecution: () => null,
+      nameSession: undefined,
     } as unknown as ToolContext['sessionManager'],
   }
 }
@@ -45,6 +47,9 @@ describe('project_tasks tool', () => {
         createSession: () => ({ id: 'unused' }),
         addMessage: () => undefined,
         queueMessage: () => undefined,
+        subscribe: () => () => {},
+        getLatestWorkflowExecution: () => null,
+        hasCompletedWorkflowExecution: () => false,
       } as unknown as Parameters<typeof createTasksService>[0]['sessionManager'],
       config: loadConfig(),
       broadcast: () => undefined,

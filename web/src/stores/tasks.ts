@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { authFetch } from '../lib/api'
-import { boardResource, summariesResource, readBoard, EMPTY_TASK_COUNTS } from '../lib/resources'
+import { boardResource, summariesResource, readBoard, writeThroughTaskViews, EMPTY_TASK_COUNTS } from '../lib/resources'
 import type { ProjectTask, ProjectTaskSettings, TaskGateConfig, TaskStatus } from '@shared/types.js'
 import type { TasksUpdatePayload } from '@shared/protocol.js'
 
@@ -89,9 +89,12 @@ export const useTasksStore = create<TasksState>((set) => ({
         settings: payload.settings ?? existing.settings,
         counts: payload.counts ?? existing.counts,
         gates: payload.gates ?? existing.gates,
+        sessionStatus: payload.sessionStatus ?? existing.sessionStatus,
       },
       payload.projectId,
     )
+    // From-session views (post-plan bar) converge on the same snapshot.
+    for (const t of payload.tasks ?? []) writeThroughTaskViews(t)
     if (payload.autoLaunched) set({ lastAutoLaunch: payload.autoLaunched })
   },
 
@@ -173,6 +176,10 @@ export const useTasksStore = create<TasksState>((set) => ({
       const data = await res.json()
       if (!res.ok) {
         set({ lastError: data.error ?? 'Failed to move task' })
+        // A rejected move (CONFLICT/GATE_BLOCKED) means the local board is
+        // stale — resync so the card snaps back to its real column instead of
+        // lingering where the drag dropped it.
+        await refreshBoard(projectId)
         return null
       }
       set({ lastError: null })

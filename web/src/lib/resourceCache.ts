@@ -181,6 +181,15 @@ export function invalidate(key: string): void {
   emit()
 }
 
+/** Cache keys currently held under a prefix — for namespace-wide write-through. */
+export function keysWithPrefix(prefix: string): string[] {
+  const keys: string[] = []
+  for (const key of entries.keys()) {
+    if (key.startsWith(prefix)) keys.push(key)
+  }
+  return keys
+}
+
 /**
  * Write-through for WS-pushed payloads (or optimistic updates): replace the
  * entry data and bump the version so subscribers re-render, WITHOUT issuing a

@@ -557,6 +557,9 @@ export interface TasksUpdatePayload {
   tasks: import('./types.js').ProjectTask[]
   settings: import('./types.js').ProjectTaskSettings
   counts: import('./types.js').ProjectTaskCounts
+  /** Session id → board column of the linked task, computed server-side so
+   *  session cards can show a status chip without client-side joins. */
+  sessionStatus?: Record<string, import('./types.js').TaskStatus> | undefined
   /** Current gate configuration — pushed with every board update so config changes sync to all clients. */
   gates?: import('./types.js').TaskGateConfig[] | undefined
   /** Set when a queued task auto-launched so clients can offer to open the session. */
