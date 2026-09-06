@@ -14,7 +14,7 @@ import { REASONING_EFFORT_VALUES } from '../../lib/model-value'
 import { isSmallContext } from '../../lib/context-warning'
 import { groupModeFamilies, MODE_SUFFIXES, splitModeSuffix } from '@shared/reasoning-effort.js'
 
-const COMMON_PORTS = [8080, 11434, 8000, 1234]
+const COMMON_PORTS = [8080, 11434, 8000, 1234, 8888]
 
 interface ProviderPreset {
   id: string
@@ -1458,7 +1458,7 @@ export function ProviderModal({
             ? t({ en: 'Edit Provider', fr: 'Modifier le fournisseur' })
             : t({ en: 'Add Provider', fr: 'Ajouter un fournisseur' })
         }
-        size="lg"
+        size="xl"
         footer={footer}
         closeOnBackdropClick={false}
         closeOnEscape={!showDefaults && !rawModalData}
@@ -1482,7 +1482,9 @@ export function ProviderModal({
               <label className="block text-sm text-text-secondary mb-2">
                 {t({ en: 'Inference engine', fr: 'Moteur d’inférence' })}
               </label>
-              <div className="grid grid-cols-5 gap-2">
+              {/* Engine cards share one row on wide screens and wrap into equal-width
+                  rows when the viewport narrows, so labels never truncate. */}
+              <div className="flex flex-wrap gap-2">
                 {providerPresets.map((preset) => (
                   <button
                     key={preset.id}
@@ -1498,7 +1500,7 @@ export function ProviderModal({
                       setFetchError(null)
                       resetStep2()
                     }}
-                    className={`p-2 rounded border text-center text-sm transition-colors ${
+                    className={`flex-1 min-w-fit px-2 py-2 whitespace-nowrap rounded border text-center text-sm transition-colors ${
                       formTransportAdapter && formTransportAdapter === preset.transportAdapter
                         ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
                         : 'border-border hover:border-text-muted text-text-secondary'
@@ -1518,7 +1520,7 @@ export function ProviderModal({
                     setFetchError(null)
                     resetStep2()
                   }}
-                  className={`p-2 rounded border text-center text-sm transition-colors ${
+                  className={`flex-1 min-w-fit px-2 py-2 whitespace-nowrap rounded border text-center text-sm transition-colors ${
                     formBackend === 'unknown'
                       ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
                       : 'border-border hover:border-text-muted text-text-secondary'
@@ -1532,20 +1534,22 @@ export function ProviderModal({
                     11434: 'ollama',
                     8080: 'llamacpp',
                     1234: 'lmstudio',
+                    8888: 'unsloth',
                   }
                   const nameMap: Record<number, string> = {
                     8000: 'vLLM',
                     11434: 'Ollama',
                     8080: 'llama.cpp',
                     1234: 'LM Studio',
+                    8888: 'Unsloth',
                   }
                   return (
                     <button
                       key={port}
                       type="button"
                       onClick={() => {
-                        setFormName((prev) => prev || (nameMap[port] ?? ''))
-                        setFormUrl((prev) => prev || `http://localhost:${port}`)
+                        setFormName(nameMap[port] ?? '')
+                        setFormUrl(`http://localhost:${port}`)
                         setFormBackend(backendMap[port] ?? '')
                         setFormIsLocal(true)
                         setFormAuthAdapter(undefined)
@@ -1553,7 +1557,7 @@ export function ProviderModal({
                         setFetchError(null)
                         resetStep2()
                       }}
-                      className={`p-2 rounded border text-center text-sm transition-colors ${
+                      className={`flex-1 min-w-fit px-2 py-2 whitespace-nowrap rounded border text-center text-sm transition-colors ${
                         formBackend === backendMap[port]
                           ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
                           : 'border-border hover:border-text-muted text-text-secondary'

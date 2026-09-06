@@ -66,6 +66,7 @@ vi.mock('../../stores/config', () => ({
       ollama: 'Ollama',
       llamacpp: 'llama.cpp',
       lmstudio: 'LM Studio',
+      unsloth: 'Unsloth Studio',
       openai: 'OpenAI',
       anthropic: 'Anthropic',
       'opencode-go': 'OpenCode Go',

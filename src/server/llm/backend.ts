@@ -4,7 +4,16 @@
  */
 
 export type Backend =
-  'vllm' | 'sglang' | 'ollama' | 'llamacpp' | 'lmstudio' | 'opencode-go' | 'openai' | 'anthropic' | 'unknown'
+  | 'vllm'
+  | 'sglang'
+  | 'ollama'
+  | 'llamacpp'
+  | 'lmstudio'
+  | 'unsloth'
+  | 'opencode-go'
+  | 'openai'
+  | 'anthropic'
+  | 'unknown'
 
 export interface BackendCapabilities {
   /** Whether chat_template_kwargs with enable_thinking works (vLLM/SGLang) */
@@ -70,6 +79,14 @@ const BACKEND_CAPABILITIES: Record<Backend, BackendCapabilities> = {
     usesMaxCompletionTokens: false,
   },
   lmstudio: {
+    supportsChatTemplateKwargs: false,
+    supportsTopK: true,
+    supportsNumCtx: false,
+    routesEffortViaChatTemplateKwargs: false,
+    usesMaxCompletionTokens: false,
+  },
+  // Unsloth Studio serves an OpenAI-compatible API on a local port.
+  unsloth: {
     supportsChatTemplateKwargs: false,
     supportsTopK: true,
     supportsNumCtx: false,
@@ -158,6 +175,8 @@ export function getBackendDisplayName(backend: Backend): string {
       return 'llama.cpp'
     case 'lmstudio':
       return 'LM Studio'
+    case 'unsloth':
+      return 'Unsloth Studio'
     case 'opencode-go':
       return 'OpenCode Go'
     case 'openai':

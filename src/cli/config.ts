@@ -26,6 +26,7 @@ const backendSchema = z.enum([
   'ollama',
   'llamacpp',
   'lmstudio',
+  'unsloth',
   'openai',
   'anthropic',
   'opencode-go',
