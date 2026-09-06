@@ -414,6 +414,10 @@ function runMigrations(db: Database.Database): void {
   `)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_task_links_session ON task_links(session_id)`)
 
+  // task_links.session_id has no FK cascade (SQLite cannot add one via ALTER);
+  // deleteSession prunes new deletions, this sweeps orphans left by older builds.
+  db.exec(`DELETE FROM task_links WHERE session_id NOT IN (SELECT id FROM sessions)`)
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS task_gates (
       id TEXT PRIMARY KEY,

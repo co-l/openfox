@@ -317,6 +317,19 @@ export function removeTaskLinks(taskId: string, sessionId?: string): void {
   }
 }
 
+/** Projects whose board must refresh after a session deletion (before the links are pruned). */
+export function findProjectsBySession(sessionId: string): string[] {
+  const db = getDatabase()
+  const rows = db
+    .prepare(
+      `SELECT DISTINCT t.project_id AS project_id
+       FROM task_links l JOIN tasks t ON t.id = l.task_id
+       WHERE l.session_id = ?`,
+    )
+    .all(sessionId) as { project_id: string }[]
+  return rows.map((r) => r.project_id)
+}
+
 // ============================================================================
 // Gates
 // ============================================================================

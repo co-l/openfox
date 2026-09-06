@@ -42,6 +42,7 @@ interface SessionLoadData {
   pendingConfirmations?: PendingPathConfirmation[]
   pendingQuestions?: PendingQuestionPayload[]
   activeWorkflowExecution?: WorkflowExecution | null
+  lastWorkflow?: { workflowId: string; status: string } | null
 }
 
 function applyToolOutputs(
@@ -314,6 +315,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
           pendingPathConfirmations: (data.pendingConfirmations ?? []) as PendingPathConfirmation[],
           pendingQuestions: (data.pendingQuestions ?? []) as PendingQuestionPayload[],
           activeWorkflowExecution: (data.activeWorkflowExecution as WorkflowExecution | undefined) ?? null,
+          lastWorkflow: data.lastWorkflow ?? prior.lastWorkflow ?? null,
           llmRetry: null,
           autoLaunch: null,
         }
@@ -367,6 +369,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
     restoredInput: null,
     error: null,
     activeWorkflowExecution: null,
+    lastWorkflow: null,
     llmRetry: null,
     autoLaunch: null,
     liveTurnStats: null,

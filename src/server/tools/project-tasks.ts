@@ -28,6 +28,11 @@ export function setTasksService(service: TasksService): void {
   tasksService = service
 }
 
+/** Live service instance for non-tool callers (WS server); null before startup wiring. */
+export function getTasksServiceOrNull(): TasksService | null {
+  return tasksService
+}
+
 function getTasksService(): TasksService {
   if (!tasksService) {
     throw new Error('Project tasks service not initialized')

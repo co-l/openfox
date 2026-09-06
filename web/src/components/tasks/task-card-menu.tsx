@@ -33,7 +33,7 @@ export interface CardMenuDeps extends CardActionCallbacks {
   projectId: string
   workflows: WorkflowInfo[]
   onToggleAudit: () => void
-  moveTask: (projectId: string, taskId: string, to: TaskStatus) => Promise<unknown>
+  moveTask: (projectId: string, taskId: string, to: TaskStatus, options?: { park?: boolean }) => Promise<unknown>
   setWorkflowChoice: (projectId: string, taskId: string, workflowId: string | null) => Promise<unknown>
 }
 
@@ -58,11 +58,11 @@ export function buildPostPlanMenuItems(deps: CardMenuDeps): DropdownMenuItem[] {
       label: t({ en: 'Switch to In Progress', fr: 'Passer en En cours' }),
       icon: <PlayIcon className="w-3.5 h-3.5" />,
       stripeHex: columnMeta('in_progress').stripeHex,
-      // Same semantics as the post-plan bar: launch when a slot is free and
-      // the queue is not paused, otherwise park in the queue. The transitions
+      // Same semantics as the post-plan bar: park without launching — the
+      // workflow buttons/countdown start the build later. The transitions
       // section drops its own In Progress entry while this runs, so it is
       // never a duplicate.
-      onClick: () => void moveTask(projectId, task.id, 'in_progress'),
+      onClick: () => void moveTask(projectId, task.id, 'in_progress', { park: true }),
     },
     ...workflows.map<DropdownMenuItem>((w) => ({
       label: w.name,

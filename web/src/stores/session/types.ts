@@ -85,6 +85,8 @@ export interface SessionPane {
   abortInProgress: boolean
   restoredInput: string | null
   activeWorkflowExecution: WorkflowExecution | null
+  /** Latest workflow run (id+status) from the server; gates the post-plan bar on reopen. */
+  lastWorkflow: { workflowId: string; status: string } | null
   gitStatus: GitStatus
   error: { code: string; message: string } | null
   /** Live status of an LLM failure: backing off before a retry, or the window exhausted. */
@@ -118,6 +120,8 @@ export interface SessionState {
   abortInProgress: boolean
   restoredInput: string | null
   activeWorkflowExecution: WorkflowExecution | null
+  /** Latest workflow run (id+status) from the server; gates the post-plan bar on reopen. */
+  lastWorkflow?: { workflowId: string; status: string } | null
   error: { code: string; message: string } | null
   /** Live status of an LLM failure: backing off before a retry, or the window exhausted. */
   llmRetry: LLMRetryState | null

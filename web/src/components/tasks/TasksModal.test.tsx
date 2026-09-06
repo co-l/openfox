@@ -70,7 +70,13 @@ const board: { tasks: ProjectTask[]; settings: ProjectTaskSettings; counts: Proj
       position: 1,
     }),
     task({ id: 't4', prompt: 'Write docs', status: 'done' }),
-    task({ id: 't5', prompt: 'Plan twice ship once', planned: true }),
+    task({
+      id: 't5',
+      prompt: 'Plan twice ship once',
+      planned: true,
+      sessionIds: ['sess-plan'],
+      activeSessionId: 'sess-plan',
+    }),
   ],
   settings: { slotLimit: 1, queuePaused: false },
   counts: { open: 3, backlog: 0, todo: 1, inProgress: 2, running: 1, queued: 1, review: 0, done: 1 },
@@ -217,7 +223,8 @@ describe('TasksModal', () => {
     const onClose = vi.fn()
     render(<TasksModal isOpen onClose={onClose} projectId="proj-1" />)
 
-    const link = await screen.findByRole('link', { name: /open session/i })
+    const card = screen.getByText('Wire the kanban').closest('div[draggable]') as HTMLElement
+    const link = await within(card).findByRole('link', { name: /open session/i })
     expect(link.getAttribute('href')).toBe('/p/proj-1/s/sess-1')
     fireEvent.click(link)
     expect(onClose).toHaveBeenCalledTimes(1)
@@ -370,7 +377,7 @@ describe('TasksModal', () => {
       if (url.endsWith('/start-plan')) {
         return {
           ok: true,
-          json: async () => ({ task: task({ id: 't5', planned: false }), sessionId: 'sess-planner' }),
+          json: async () => ({ task: task({ id: 't1', planned: false }), sessionId: 'sess-planner' }),
         } as unknown as Response
       }
       if (url.endsWith('/tasks/gates')) {
@@ -380,15 +387,23 @@ describe('TasksModal', () => {
     })
     render(<TasksModal isOpen onClose={() => {}} projectId="proj-1" />)
 
-    const card = screen.getByText('Plan twice ship once').closest('div[draggable]') as HTMLElement
+    const card = screen.getByText('Investigate and fix the flaky test in CI').closest('div[draggable]') as HTMLElement
     fireEvent.click(within(card).getByRole('button', { name: /Start plan/ }))
     await waitFor(() => {
       expect(vi.mocked(authFetch)).toHaveBeenCalledWith(
-        '/api/projects/proj-1/tasks/t5/start-plan',
+        '/api/projects/proj-1/tasks/t1/start-plan',
         expect.objectContaining({ method: 'POST' }),
       )
       expect(navigateMock).toHaveBeenCalledWith('/p/proj-1/s/sess-planner')
     })
+  })
+
+  it('a planned To Do card shows a clickable Plan Ready opening the planner session, not Start plan', () => {
+    render(<TasksModal isOpen onClose={() => {}} projectId="proj-1" />)
+    const card = screen.getByText('Plan twice ship once').closest('div[draggable]') as HTMLElement
+    expect(within(card).queryByRole('button', { name: /Start plan/ })).toBeNull()
+    const link = within(card).getByRole('link', { name: /Plan Ready/i })
+    expect(link.getAttribute('href')).toBe('/p/proj-1/s/sess-plan')
   })
 
   it('steps the slot limit on rapid clicks without waiting for the server', async () => {

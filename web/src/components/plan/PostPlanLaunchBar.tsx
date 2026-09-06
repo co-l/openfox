@@ -56,11 +56,11 @@ export function PostPlanLaunchBar({
     setMoveFailed(false)
     clearError()
     try {
-      // The move resumes THIS session into the build (picked workflow when
-      // set): stay in it — no navigation. Without a free slot or with the
-      // queue paused, the task simply parks in the queue. Gate-blocked moves
-      // fail here; surface the reason inline instead of failing silently.
-      const result = await moveTask(projectId, task.id, 'in_progress')
+      // Park the task in In Progress WITHOUT launching a build: the workflow
+      // buttons below (or the favorite countdown) start it. Stay in this
+      // session — no navigation. Gate-blocked moves fail here; surface the
+      // reason inline instead of failing silently.
+      const result = await moveTask(projectId, task.id, 'in_progress', { park: true })
       if (!result) setMoveFailed(true)
     } finally {
       setBusy(false)

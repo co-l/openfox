@@ -219,6 +219,8 @@ export interface SessionStatePayload {
   pendingQuestions?: PendingQuestionPayload[]
   gitStatus?: GitStatusPayload // Current branch and diff, embedded on session load
   activeWorkflowExecution?: import('./types.js').WorkflowExecution | null
+  /** Latest workflow run (id + status): lets clients re-open a settled planner. */
+  lastWorkflow?: { workflowId: string; status: string } | null
 }
 
 export interface WorkflowWaitingPayload {

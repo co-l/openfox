@@ -104,14 +104,70 @@ describe('DropdownMenu', () => {
   })
 
   describe('positioning', () => {
-    it('right-aligns the menu with the trigger right edge when align="right"', () => {
+    const originalRect = HTMLElement.prototype.getBoundingClientRect
+
+    function stubRects(
+      triggerRect: Partial<DOMRect>,
+      menuRect: Partial<DOMRect>,
+      innerWidth: number,
+      innerHeight: number,
+    ) {
+      Object.defineProperty(window, 'innerWidth', { value: innerWidth, configurable: true })
+      Object.defineProperty(window, 'innerHeight', { value: innerHeight, configurable: true })
+      HTMLElement.prototype.getBoundingClientRect = function (): DOMRect {
+        const r = this.getAttribute?.('data-testid') === 'session-dropdown-menu' ? menuRect : triggerRect
+        return {
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          width: 0,
+          height: 0,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}) as object,
+          ...r,
+        } as DOMRect
+      }
+    }
+
+    it('clamps a right-aligned menu so it never overflows the viewport', () => {
       const container = render(
         <DropdownMenu items={ITEMS} trigger={<button>Open</button>} minWidth="176px" align="right" />,
       )
       clickTrigger(container)
-      // jsdom reports a zero-size trigger rect, so right alignment lands the
-      // menu's left edge at -(minWidth) — anchored to the trigger's right.
-      expect(getMenu()?.style.left).toBe('-176px')
+      // The test DOM reports a zero-size trigger rect, so raw right alignment
+      // would push the menu off-screen left; the viewport clamp keeps it at
+      // the margin instead.
+      expect(getMenu()?.style.left).toBe('8px')
+    })
+
+    it('keeps the menu inside the viewport when there is no room below', () => {
+      stubRects({ top: 900, left: 1500, right: 1680, bottom: 920 }, { width: 176, height: 300 }, 1600, 1000)
+      const container = render(
+        <DropdownMenu items={ITEMS} trigger={<button>Open</button>} minWidth="176px" align="right" />,
+      )
+      clickTrigger(container)
+      const menu = getMenu()
+      expect(menu).toBeTruthy()
+      const left = Number.parseFloat(menu!.style.left)
+      const top = Number.parseFloat(menu!.style.top)
+      // Right edge would overflow (1680 > 1600): clamped to the right margin.
+      expect(left).toBe(1600 - 176 - 8)
+      // No room below (920+4 vs 1000): flipped above the trigger, inside margins.
+      expect(top).toBeLessThan(900)
+      expect(top).toBeGreaterThanOrEqual(8)
+      HTMLElement.prototype.getBoundingClientRect = originalRect
+    })
+
+    it('renders as a centered modal below the mobile breakpoint', () => {
+      const original = window.innerWidth
+      Object.defineProperty(window, 'innerWidth', { value: 480, configurable: true })
+      const container = render(<DropdownMenu items={ITEMS} trigger={<button>Open</button>} />)
+      clickTrigger(container)
+      expect(document.querySelector('[data-testid="session-dropdown-overlay"]')).toBeTruthy()
+      expect(getMenu()).toBeTruthy()
+      Object.defineProperty(window, 'innerWidth', { value: original, configurable: true })
     })
   })
 

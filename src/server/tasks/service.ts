@@ -43,6 +43,8 @@ import {
   setTaskWorkflowChoice as dbSetTaskWorkflowChoice,
   addTaskLink as dbAddTaskLink,
   listTaskLinks as dbListTaskLinks,
+  findTaskIdBySession as dbFindTaskIdBySession,
+  findProjectsBySession as dbFindProjectsBySession,
   clearActiveTaskLink as dbClearActiveTaskLink,
   appendToBottom as dbAppendToBottom,
   getGateConfig as dbGetGateConfig,
@@ -69,6 +71,9 @@ export interface MoveOptions extends TaskActorInfo {
   reason?: string
   /** Optimistic concurrency guard: fail with CONFLICT if the task version differs. */
   expectedVersion?: number
+  /** Move to In Progress without launching a build: the task parks there, still
+   * awaiting an explicit workflow pick or the favorite-workflow countdown. */
+  park?: boolean
 }
 
 export interface TaskConflictError extends Error {
@@ -130,6 +135,18 @@ export interface TasksService {
   /** Record the workflow picked for a planned task (drives auto-launch + suppresses favorite countdown). */
   setWorkflowChoice(projectId: string, taskId: string, workflowId: string | null): ProjectTask
   counts(projectId: string): ProjectTaskCounts
+  /** Re-publish a project's board snapshot (e.g. after an out-of-band session deletion pruned its links). */
+  publishBoard(projectId: string): void
+  /** Projects whose board is touched by this session's links (call before pruning task_links). */
+  projectsForSession(sessionId: string): string[]
+  /**
+   * Favorite-workflow countdown expiry for a board-linked session: claims a
+   * slot (moving the parked/To Do task to In Progress) and reports whether the
+   * caller may launch now, must let it queue, or has nothing board-side.
+   */
+  autoStartLinkedTask(sessionId: string): Promise<'running' | 'queued' | 'already' | 'none'>
+  /** Flip a parked In Progress task to running when its session starts a manual build. */
+  markRunningFromSession(sessionId: string): void
 }
 
 export interface CreateTaskServiceInput {
@@ -377,6 +394,15 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
           dbAddAuditEntry(taskId, 'agent', 'move', `Moved to In Progress (running)`, opts.actorName)
           emitReminder(opts.sessionId, reminderForInProgress(task, opts.sessionId, from))
           sessionId = opts.sessionId
+        } else if (opts.park) {
+          // Post-plan decision from the launch bar: the human explicitly parked
+          // the task in In Progress and is still choosing a build (manual pick
+          // or favorite countdown). A null run state ("awaiting build") holds
+          // no slot and never auto-launches the default; the favorite
+          // countdown's expiry or an explicit pick claims it later.
+          dbSetTaskRunState(taskId, null)
+          if (task.activeSessionId) dbAddTaskLink(taskId, task.activeSessionId, true)
+          dbAddAuditEntry(taskId, opts.actor, 'move', `Moved to In Progress (awaiting build choice)`, opts.actorName)
         } else {
           // A session already running for this task (e.g. the user launched a
           // workflow manually from the post-plan bar) simply claims its slot —
@@ -541,6 +567,80 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
 
   function counts(projectId: string) {
     return computeCounts(dbListTasks(projectId))
+  }
+
+  function publishBoard(projectId: string) {
+    publish(projectId)
+  }
+
+  function projectsForSession(sessionId: string): string[] {
+    return dbFindProjectsBySession(sessionId)
+  }
+
+  /**
+   * Favorite-workflow countdown expiry for a board-linked session. Claims the
+   * board slot so the auto-launched build is accounted for like a manual one:
+   * - no linked task → 'none' (free session, caller launches anyway)
+   * - already running in this session → 'already'
+   * - free slot and queue not paused → claim it → 'running'
+   * - no room → park in the FIFO queue ('queued'); a freed slot later
+   *   auto-launches it through maybeAutoLaunch. Caller must NOT launch now.
+   */
+  async function autoStartLinkedTask(sessionId: string): Promise<'running' | 'queued' | 'already' | 'none'> {
+    const taskId = dbFindTaskIdBySession(sessionId)
+    if (!taskId) return 'none'
+    const task = dbGetTask(taskId)
+    if (!task) return 'none'
+    const projectId = task.projectId
+
+    return withLock(projectId, async () => {
+      const fresh = dbGetTask(taskId)
+      if (!fresh) return 'none'
+      if (fresh.status !== 'todo' && fresh.status !== 'in_progress') return 'already'
+      if (fresh.status === 'in_progress' && fresh.runState === 'running') return 'already'
+
+      const settings = dbGetTaskSettings(projectId)
+      const room = activeCount(projectId) < settings.slotLimit && !settings.queuePaused
+      if (room) {
+        if (fresh.status !== 'in_progress') dbSetTaskStatus(taskId, 'in_progress')
+        dbSetTaskRunState(taskId, 'running')
+        dbAddTaskLink(taskId, sessionId, true)
+        dbAddAuditEntry(
+          taskId,
+          'system',
+          'auto_launch',
+          `Favorite workflow auto-started in session ${sessionId}`,
+          'system',
+        )
+        const updated = dbGetTask(taskId)!
+        publish(projectId, updated.id)
+        return 'running'
+      }
+
+      // No room: queue it cleanly so a freed slot launches it later — never
+      // crash and never silently drop the intent.
+      if (fresh.status !== 'in_progress') {
+        dbSetTaskStatus(taskId, 'in_progress')
+      }
+      dbSetTaskRunState(taskId, 'queued')
+      dbAppendToBottom(taskId, 'in_progress')
+      dbAddTaskLink(taskId, sessionId, false)
+      dbAddAuditEntry(taskId, 'system', 'auto_launch', `Queued for favorite workflow (no free slot)`, 'system')
+      const updated = dbGetTask(taskId)!
+      publish(projectId, updated.id)
+      return 'queued'
+    })
+  }
+
+  function markRunningFromSession(sessionId: string): void {
+    const taskId = dbFindTaskIdBySession(sessionId)
+    if (!taskId) return
+    const task = dbGetTask(taskId)
+    if (!task || task.status !== 'in_progress' || task.runState) return
+    dbSetTaskRunState(taskId, 'running')
+    dbAddTaskLink(taskId, sessionId, true)
+    const fresh = dbGetTask(taskId)!
+    publish(fresh.projectId, fresh.id)
   }
 
   // ==========================================================================
@@ -959,6 +1059,10 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
     startPlan,
     setWorkflowChoice,
     counts,
+    publishBoard,
+    projectsForSession,
+    autoStartLinkedTask,
+    markRunningFromSession,
   }
 }
 

@@ -71,10 +71,10 @@ describe('PostPlanLaunchBar', () => {
     expect(navigate).toHaveBeenCalledWith('/p/p1')
   })
 
-  it('switch to in progress moves the task through the queue/slot pipeline', () => {
+  it('switch to in progress parks the task without launching a build', () => {
     renderBar()
     fireEvent.click(screen.getByTestId('post-plan-switch-inprogress'))
-    expect(moveTask).toHaveBeenCalledWith('p1', 't1', 'in_progress')
+    expect(moveTask).toHaveBeenCalledWith('p1', 't1', 'in_progress', { park: true })
   })
 
   it('shows the store error inline when the move is gate-blocked', async () => {

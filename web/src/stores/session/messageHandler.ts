@@ -278,6 +278,7 @@ export function handleServerMessage(
           pendingQuestions: payload.pendingQuestions ?? [],
           activeWorkflowExecution:
             (payload.activeWorkflowExecution as import('@shared/types.js').WorkflowExecution | undefined) ?? null,
+          lastWorkflow: payload.lastWorkflow ?? prior.lastWorkflow ?? null,
           queuedMessages: prior.queuedMessages,
           llmRetry: null,
           liveTurnStats: null,

@@ -22,6 +22,8 @@ export interface TaskMoveOptions {
   reason?: string
   /** Bind the task to this session (Up-next Start reuses the current one). */
   sessionId?: string
+  /** Move to In Progress without launching a build (post-plan bar: pick still pending). */
+  park?: boolean
 }
 
 interface TasksState {
@@ -165,6 +167,7 @@ export const useTasksStore = create<TasksState>((set) => ({
           to,
           ...(options?.reason ? { reason: options.reason } : {}),
           ...(options?.sessionId ? { sessionId: options.sessionId } : {}),
+          ...(options?.park ? { park: true } : {}),
         }),
       })
       const data = await res.json()

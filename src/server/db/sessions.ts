@@ -514,6 +514,10 @@ export function updateSessionBranch(id: string, branch: string): void {
 
 export function deleteSession(id: string): void {
   const db = getDatabase()
+  // Board links die with the session: task_links.session_id has no FK cascade,
+  // so prune explicitly — a deleted session must never leave a task pointing
+  // at a dead activeSessionId.
+  db.prepare('DELETE FROM task_links WHERE session_id = ?').run(id)
   db.prepare('DELETE FROM sessions WHERE id = ?').run(id)
 }
 

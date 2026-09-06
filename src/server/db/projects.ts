@@ -168,7 +168,9 @@ export function updateProject(
 
 export function deleteProject(id: string): void {
   const db = getDatabase()
-  // Sessions will be cascade deleted due to foreign key
+  // Sessions will be cascade deleted due to foreign key; task_links.session_id
+  // has no cascade (SQLite cannot add one via ALTER), so prune those links first.
+  db.prepare('DELETE FROM task_links WHERE session_id IN (SELECT id FROM sessions WHERE project_id = ?)').run(id)
   db.prepare('DELETE FROM projects WHERE id = ?').run(id)
 }
 

@@ -112,6 +112,7 @@ vi.mock('../tools/index.js', () => ({
   cancelPathConfirmationsForSession: vi.fn(),
   getPendingQuestionsForSession: vi.fn(() => []),
   initAutoAnswer: vi.fn(),
+  getTasksServiceOrNull: vi.fn(() => null),
   cancelAutoAnswersForSession: vi.fn(),
 }))
 
@@ -217,6 +218,7 @@ vi.mock('../events/index.js', () => ({
     const id = getCurrentContextWindowIdMock(sessionId)
     return id ? { contextWindowId: id } : undefined
   }),
+  combineEventsWithSnapshot: (_sessionId: string, _snapshot: unknown, events: unknown[]) => events,
 }))
 
 vi.mock('../llm/index.js', async (importOriginal) => {
@@ -226,6 +228,16 @@ vi.mock('../llm/index.js', async (importOriginal) => {
     createLLMClient: createLLMClientMock,
   }
 })
+
+vi.mock('../db/tasks.js', () => ({
+  findTaskIdBySession: vi.fn(() => null),
+  getTask: vi.fn(() => null),
+  setTaskWorkflowChoice: vi.fn(),
+}))
+
+vi.mock('../workflows/favorite.js', () => ({
+  resolveFavoriteWorkflow: vi.fn(async () => ({ id: 'fav-wf', name: 'Fav WF', scope: 'user' })),
+}))
 
 import { createWebSocketServer } from './server.js'
 
@@ -290,6 +302,10 @@ function createEventStore() {
     getLatestSnapshot: vi.fn((sessionId: string) => {
       const events = eventsBySession.get(sessionId) ?? []
       return [...events].reverse().find((event) => event.type === 'turn.snapshot')
+    }),
+    getEventsSinceSnapshot: vi.fn((sessionId: string) => {
+      const events = eventsBySession.get(sessionId) ?? []
+      return { snapshot: null, events }
     }),
     getLatestSeq: vi.fn((sessionId: string) => {
       const events = eventsBySession.get(sessionId) ?? []
@@ -713,6 +729,40 @@ describe('createWebSocketServer', () => {
       type: 'error',
       payload: { code: 'DEPRECATED_MESSAGE_TYPE' },
     })
+
+    await harness.close()
+  })
+
+  it('restarts the favorite countdown when a client opens a session parked at the post-plan point', async () => {
+    const eventStore = createEventStore() as any
+    eventStore.append('session-1', { type: 'message.start', data: { messageId: 'assistant-1', role: 'assistant' } })
+    eventStore.append('session-1', { type: 'message.done', data: { messageId: 'assistant-1' } })
+
+    const session = {
+      id: 'session-1',
+      projectId: 'project-1',
+      workdir: '/tmp/project',
+      mode: 'planner' as const,
+      phase: 'done' as const,
+      isRunning: false,
+      criteria: [],
+      metadataEntries: { criteria: [{ id: 'c1', description: 'x', status: 'pending' }] },
+    }
+    const sessionManager = createSessionManager({
+      getSession: vi.fn((id: string) => (id === 'session-1' ? session : null)),
+      requireSession: vi.fn(() => session),
+      getLatestWorkflowExecution: vi.fn(() => ({ workflowId: 'plan', status: 'completed' })),
+      getDisplayWorkflowExecution: vi.fn(() => null),
+    })
+
+    const harness = await createHarness({ sessionManager, eventStore })
+
+    harness.send({ id: 'sl-plan', type: 'session.load', payload: { sessionId: 'session-1' } })
+    expect(await harness.nextMessage((message) => message.id === 'sl-plan')).toMatchObject({ type: 'ack' })
+
+    // Debounced eligibility check + favorite resolution → countdown broadcast.
+    const autolaunch = await harness.nextMessage((message) => message.type === 'workflow.autolaunch')
+    expect(autolaunch.payload).toMatchObject({ active: true, workflowId: 'fav-wf' })
 
     await harness.close()
   })

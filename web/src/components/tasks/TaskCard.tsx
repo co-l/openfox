@@ -5,11 +5,8 @@ import type { ProjectTask } from '@shared/types.js'
 import type { AgentInfo } from '../../lib/agents-actions'
 import { getAgentColor } from '../../lib/agents-actions'
 import { useT } from '../../hooks/useT'
-import { useSetting } from '../../hooks/useSetting'
-import { useProject } from '../../hooks/useProject'
 import { useWorkflows } from '../../hooks/useWorkflows'
 import { useProjects } from '../../hooks/useProjects'
-import { SETTINGS_KEYS } from '../../lib/resources'
 import { useTasksStore } from '../../stores/tasks'
 import { DropdownMenu } from '../shared/DropdownMenu'
 import {
@@ -71,12 +68,6 @@ export function TaskCard({
   const t = useT()
   const [showAudit, setShowAudit] = useState(false)
 
-  // A configured favorite workflow auto-picks the build after planning, so
-  // the manual "Start" entry point is hidden in that case.
-  const { project } = useProject(projectId)
-  const globalFavorite = useSetting(SETTINGS_KEYS.FAVORITE_WORKFLOW).value
-  const hasFavoriteWorkflow = !!(project?.favoriteWorkflowId ?? globalFavorite)
-
   const moveTask = useTasksStore((s) => s.moveTask)
   const setWorkflowChoice = useTasksStore((s) => s.setWorkflowChoice)
   const { projects } = useProjects()
@@ -87,7 +78,6 @@ export function TaskCard({
   const agentColor = task.agentId ? getAgentColor(agents, task.agentId) : undefined
   const images = task.attachments.filter((a) => a.mimeType.startsWith('image/'))
   const sessionToOpen = task.activeSessionId ?? task.sessionIds[task.sessionIds.length - 1]
-
   const menuDeps: CardMenuDeps = {
     t,
     task,
@@ -159,7 +149,7 @@ export function TaskCard({
       </div>
 
       <div className="mt-2 flex items-center gap-2 flex-wrap">
-        {task.status === 'todo' && (
+        {task.status === 'todo' && !(task.planned && sessionToOpen) && (
           <button
             type="button"
             onClick={(e) => {
@@ -171,16 +161,17 @@ export function TaskCard({
             <PlayIcon className="w-2.5 h-2.5" /> {t({ en: 'Start plan', fr: 'Démarrer le plan' })}
           </button>
         )}
-        {task.status === 'todo' && task.planned && !hasFavoriteWorkflow && sessionToOpen && (
+        {task.status === 'todo' && task.planned && sessionToOpen && (
           <Link
             href={`/p/${projectId}/s/${sessionToOpen}`}
             onClick={(e) => {
               e.stopPropagation()
               onOpenSession?.(sessionToOpen)
             }}
-            className="text-xs px-1.5 py-1 rounded bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 flex items-center gap-1"
+            data-testid="plan-ready-link"
+            className="text-xs px-1.5 py-1 rounded bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 flex items-center gap-1"
           >
-            <PlayIcon className="w-2.5 h-2.5" /> {t({ en: 'Start', fr: 'Démarrer' })}
+            ☑️ {t({ en: 'Plan Ready', fr: 'Plan prêt' })}
           </Link>
         )}
         {task.attachments.length > 0 && (

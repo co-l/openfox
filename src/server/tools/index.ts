@@ -442,4 +442,4 @@ export {
   getConfirmationSessionId,
 } from './path-security.js'
 export { stepDoneTool } from './step-done.js'
-export { setTasksService } from './project-tasks.js'
+export { setTasksService, getTasksServiceOrNull } from './project-tasks.js'

@@ -234,6 +234,7 @@ describe('ToolCallDisplay — PathConfirmationButtons placement', () => {
           abortInProgress: false,
           restoredInput: null,
           activeWorkflowExecution: null,
+          lastWorkflow: null,
           gitStatus: null,
           error: null,
           llmRetry: null,

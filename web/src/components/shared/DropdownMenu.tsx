@@ -1,7 +1,15 @@
 import { ScrollArea } from './ScrollArea'
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'wouter'
+
+/** Below this viewport width the menu renders as a centered full-screen modal. */
+const MOBILE_BREAKPOINT_PX = 640
+/** Keep at least this many pixels between the menu and the viewport edges. */
+const VIEWPORT_MARGIN_PX = 8
+
+// Stable identity for the default props so memoized derivations don't churn.
+const NO_ITEMS: DropdownMenuItem[] = []
 
 export interface DropdownMenuItem {
   label: string | React.ReactNode
@@ -33,7 +41,7 @@ interface DropdownMenuProps {
 
 export function DropdownMenu({
   items,
-  footerItems = [],
+  footerItems = NO_ITEMS,
   trigger,
   minWidth = '120px',
   align = 'left',
@@ -53,7 +61,8 @@ export function DropdownMenu({
     }
   }
 
-  const [position, setPosition] = useState<{ top: number; left: number; alignToTop: boolean } | null>(null)
+  const [position, setPosition] = useState<{ top: number; left: number; maxHeight: number } | null>(null)
+  const [isMobile, setIsMobile] = useState(false)
   const triggerRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -61,22 +70,81 @@ export function DropdownMenu({
   const allItems = useMemo(() => [...items, ...footerItems], [items, footerItems])
   const allItemsRef = useRef(allItems)
 
+  /**
+   * Place the menu with its REAL measured size (fallback estimate only on the
+   * very first paint) and clamp it inside the viewport: flips above the
+   * trigger when there is no room below, never overflows left/right.
+   */
   const calculatePosition = useCallback(() => {
     if (!triggerRef.current) return
 
+    const mobile = window.innerWidth < MOBILE_BREAKPOINT_PX
+    setIsMobile((prev) => (prev === mobile ? prev : mobile))
+    if (mobile) {
+      setPosition((prev) => (prev === null ? prev : null))
+      return
+    }
+
     const triggerRect = triggerRef.current.getBoundingClientRect()
-    const menuHeight = 200
-    const menuWidth = Number.parseInt(minWidth, 10) || 120
+    const measured = menuRef.current?.getBoundingClientRect()
+    const menuHeight = measured?.height || 200
+    const menuWidth = measured?.width || Number.parseInt(minWidth, 10) || 120
 
-    const spaceBelow = window.innerHeight - triggerRect.bottom
-    const alignToTop = spaceBelow < menuHeight
+    const spaceBelow = window.innerHeight - triggerRect.bottom - VIEWPORT_MARGIN_PX
+    const openBelow = spaceBelow >= Math.min(menuHeight, 240) || spaceBelow >= window.innerHeight * 0.35
 
-    setPosition({
-      top: alignToTop ? triggerRect.top - menuHeight - 4 : triggerRect.bottom + 4,
-      left: align === 'right' ? triggerRect.right - menuWidth : triggerRect.left,
-      alignToTop,
-    })
+    let top: number
+    let maxHeight: number
+    if (openBelow) {
+      top = triggerRect.bottom + 4
+      maxHeight = window.innerHeight - top - VIEWPORT_MARGIN_PX
+    } else {
+      const availableAbove = Math.max(triggerRect.top - VIEWPORT_MARGIN_PX - 4, 120)
+      top = Math.max(triggerRect.top - 4 - Math.min(menuHeight, availableAbove), VIEWPORT_MARGIN_PX)
+      maxHeight = Math.min(availableAbove, window.innerHeight - top - VIEWPORT_MARGIN_PX)
+    }
+
+    let left = align === 'right' ? triggerRect.right - menuWidth : triggerRect.left
+    const maxLeft = Math.max(window.innerWidth - menuWidth - VIEWPORT_MARGIN_PX, VIEWPORT_MARGIN_PX)
+    // Clamp against the right edge only when the viewport is actually wider
+    // than the menu; a too-narrow (or zero-size, e.g. test) viewport wins
+    // horizontally, never the negative left.
+    const minLeft = window.innerWidth > menuWidth + 2 * VIEWPORT_MARGIN_PX ? VIEWPORT_MARGIN_PX : maxLeft
+    left = Math.min(Math.max(left, minLeft), maxLeft)
+
+    setPosition((prev) =>
+      prev && prev.top === top && prev.left === left && prev.maxHeight === maxHeight ? prev : { top, left, maxHeight },
+    )
   }, [align, minWidth])
+
+  // Re-measure while open: the first pass only has an estimate; the clamp
+  // must follow the real painted box (ResizeObserver fires once right after
+  // mount, then on any size change).
+  useLayoutEffect(() => {
+    if (!isOpen) {
+      setPosition(null)
+      return
+    }
+    calculatePosition()
+  }, [isOpen, allItems, calculatePosition])
+
+  useEffect(() => {
+    if (!isOpen || !menuRef.current) return
+    const observer = new ResizeObserver(() => calculatePosition())
+    observer.observe(menuRef.current)
+    return () => observer.disconnect()
+  }, [isOpen, calculatePosition, position !== null])
+
+  useEffect(() => {
+    if (!isOpen) return
+    const reposition = () => calculatePosition()
+    window.addEventListener('resize', reposition)
+    window.addEventListener('scroll', reposition, true)
+    return () => {
+      window.removeEventListener('resize', reposition)
+      window.removeEventListener('scroll', reposition, true)
+    }
+  }, [isOpen, calculatePosition])
 
   useEffect(() => {
     allItemsRef.current = allItems
@@ -100,12 +168,6 @@ export function DropdownMenu({
       document.removeEventListener('mousedown', handleClickOutside)
     }
   }, [isOpen])
-
-  useEffect(() => {
-    if (isOpen) {
-      calculatePosition()
-    }
-  }, [isOpen, calculatePosition])
 
   useEffect(() => {
     if (!isOpen) return
@@ -295,21 +357,9 @@ export function DropdownMenu({
     )
   }
 
-  const menuContent = position && (
-    <div
-      ref={menuRef}
-      data-testid="session-dropdown-menu"
-      className={`fixed bg-bg-secondary border border-border rounded shadow-lg z-50 ${
-        position.alignToTop ? 'mb-1' : 'mt-1'
-      }`}
-      style={{
-        top: position.top,
-        left: position.left,
-        minWidth,
-      }}
-      tabIndex={-1}
-    >
-      <ScrollArea className="max-h-[60vh]">
+  const menuInner = (
+    <>
+      <ScrollArea className="max-h-[min(60vh,calc(100vh-16px))]">
         {items.map((item, index) => renderItem(item, index, items.length, index))}
       </ScrollArea>
       {footerItems.length > 0 && (
@@ -317,7 +367,44 @@ export function DropdownMenu({
           {footerItems.map((item, index) => renderItem(item, index, footerItems.length, items.length + index))}
         </div>
       )}
+    </>
+  )
+
+  const menuContent = isMobile ? (
+    // Mobile: a centered full-screen modal instead of a positioned popover.
+    <div
+      data-testid="session-dropdown-overlay"
+      className="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-4"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) setIsOpen(false)
+      }}
+    >
+      <div
+        ref={menuRef}
+        data-testid="session-dropdown-menu"
+        className="bg-bg-secondary border border-border rounded-lg shadow-lg max-w-[min(420px,90vw)] w-full max-h-[85vh] overflow-hidden flex flex-col"
+        tabIndex={-1}
+      >
+        {menuInner}
+      </div>
     </div>
+  ) : (
+    position && (
+      <div
+        ref={menuRef}
+        data-testid="session-dropdown-menu"
+        className="fixed bg-bg-secondary border border-border rounded shadow-lg z-50 overflow-hidden flex flex-col"
+        style={{
+          top: position.top,
+          left: position.left,
+          minWidth,
+          maxHeight: Math.max(position.maxHeight, 120),
+        }}
+        tabIndex={-1}
+      >
+        {menuInner}
+      </div>
+    )
   )
 
   return (

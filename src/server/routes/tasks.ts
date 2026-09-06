@@ -208,7 +208,7 @@ export function registerTaskRoutes(router: Router, tasksService: TasksService): 
   router.post('/projects/:projectId/tasks/:taskId/move', (req: Request, res: Response) => {
     const projectId = requireProject(req, res)
     if (!projectId) return
-    const { to, reason, expectedVersion, sessionId } = req.body
+    const { to, reason, expectedVersion, sessionId, park } = req.body
     if (!TASK_DESTINATIONS.includes(to)) {
       return res.status(400).json({
         error: serverT({
@@ -223,6 +223,7 @@ export function registerTaskRoutes(router: Router, tasksService: TasksService): 
         ...(typeof reason === 'string' ? { reason } : {}),
         ...(typeof sessionId === 'string' ? { sessionId } : {}),
         ...(typeof expectedVersion === 'number' ? { expectedVersion } : {}),
+        ...(park === true ? { park: true } : {}),
       })
       .then((result) => res.json(result))
       .catch((error) => handleError(res, error))

@@ -194,6 +194,111 @@ describe('project tasks service', () => {
     expect(task.id.length).toBeLessThan(36)
   })
 
+  describe('session deletion cleanup', () => {
+    it('publishBoard after a session delete drops dead links and re-publishes', async () => {
+      const task = create('Delete my planner')
+      await service.move(projectId, task.id, 'todo', { actor: 'human' })
+      const first = await service.startPlan(projectId, task.id)
+      const planner = sm.sessions.get(first.sessionId)!
+      ;(planner as { metadataEntries?: Record<string, unknown> }).metadataEntries = {
+        criteria: [{ id: 'c1', description: 'x', status: { type: 'pending' } }],
+      }
+      sm.executions.set(planner.id, { workflowId: 'plan', status: 'completed' })
+      expect(service.snapshot(projectId).tasks.find((t) => t.id === task.id)?.planned).toBe(true)
+
+      // Simulate a session deletion (DB + fake manager lose the session).
+      const { deleteSession: dbDelete } = await import('../db/sessions.js')
+      dbDelete(planner.id)
+      sm.sessions.delete(planner.id)
+      broadcasts.length = 0
+
+      service.publishBoard(projectId)
+
+      const published = broadcasts.at(-1)!
+      const pushed = published.tasks.find((t) => t.id === task.id)!
+      expect(pushed.activeSessionId).toBeUndefined()
+      expect(pushed.sessionIds).not.toContain(planner.id)
+      expect(pushed.planned).toBe(false)
+    })
+
+    it('resolves the projects touched by a session deletion', async () => {
+      const task = create('Touched by delete')
+      await service.move(projectId, task.id, 'todo', { actor: 'human' })
+      const first = await service.startPlan(projectId, task.id)
+
+      expect(service.projectsForSession(first.sessionId)).toEqual([projectId])
+      expect(service.projectsForSession('never-linked')).toEqual([])
+    })
+  })
+
+  describe('parked post-plan moves & favorite auto-start', () => {
+    const planTask = async (prompt: string) => {
+      const task = create(prompt)
+      await service.move(projectId, task.id, 'todo', { actor: 'human' })
+      const first = await service.startPlan(projectId, task.id)
+      const planner = sm.sessions.get(first.sessionId)!
+      ;(planner as { metadataEntries?: Record<string, unknown> }).metadataEntries = {
+        criteria: [{ id: 'c1', description: 'x', status: { type: 'pending' } }],
+      }
+      sm.executions.set(planner.id, { workflowId: 'plan', status: 'completed' })
+      return { task, planner }
+    }
+
+    it('parks a task in In Progress without launching any build', async () => {
+      const { task, planner } = await planTask('Park me')
+      launchSpy.mockClear()
+
+      const moved = await service.move(projectId, task.id, 'in_progress', {
+        actor: 'human',
+        park: true,
+      })
+
+      expect(moved.task.status).toBe('in_progress')
+      expect(moved.task.runState).toBeUndefined()
+      expect(moved.task.activeSessionId).toBe(planner.id)
+      // No build launched from the parked move — neither default nor favorite.
+      expect(launchSpy).not.toHaveBeenCalled()
+    })
+
+    it('autoStartLinkedTask claims a free slot and moves the To Do task', async () => {
+      const { task, planner } = await planTask('Auto start me')
+
+      const result = await service.autoStartLinkedTask(planner.id)
+
+      expect(result).toBe('running')
+      const fresh = service.get(projectId, task.id)!
+      expect(fresh.status).toBe('in_progress')
+      expect(fresh.runState).toBe('running')
+      expect(fresh.activeSessionId).toBe(planner.id)
+    })
+
+    it('autoStartLinkedTask queues without crashing when no slot is free', async () => {
+      const blocker = create('Blocker occupying the only slot')
+      await service.move(projectId, blocker.id, 'in_progress', { actor: 'human' })
+      const { task, planner } = await planTask('Auto start blocked')
+
+      const result = await service.autoStartLinkedTask(planner.id)
+
+      expect(result).toBe('queued')
+      const fresh = service.get(projectId, task.id)!
+      expect(fresh.status).toBe('in_progress')
+      expect(fresh.runState).toBe('queued')
+    })
+
+    it('autoStartLinkedTask is a no-op for unlinked sessions', async () => {
+      expect(await service.autoStartLinkedTask('ghost')).toBe('none')
+    })
+
+    it('markRunningFromSession flips an awaiting-build task to running', async () => {
+      const { task, planner } = await planTask('Manual pick')
+      await service.move(projectId, task.id, 'in_progress', { actor: 'human', park: true })
+
+      service.markRunningFromSession(planner.id)
+
+      expect(service.get(projectId, task.id)!.runState).toBe('running')
+    })
+  })
+
   it('rejects a task with neither text nor attachments', () => {
     expect(() => service.create(projectId, { prompt: '   ' }, { actor: 'human' })).toThrow(/prompt or an attachment/)
   })

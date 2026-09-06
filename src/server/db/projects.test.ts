@@ -3,7 +3,9 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { loadConfig } from '../config.js'
-import { closeDatabase, initDatabase } from './index.js'
+import { closeDatabase, getDatabase, initDatabase } from './index.js'
+import { createSession } from './sessions.js'
+import { addTaskLink, createTask } from './tasks.js'
 import {
   createProject,
   deleteProject,
@@ -69,6 +71,24 @@ describe('db projects', () => {
     deleteProject(projectA.id)
     expect(getProject(projectA.id)).toBeNull()
     expect(listProjects()).toHaveLength(1)
+  })
+
+  it('drops task_links of the project sessions when deleting a project', () => {
+    const project = createProject('Linked', workdirA)
+    const other = createProject('Other', workdirB)
+    const session = createSession(project.id, workdirA, 'Planner')
+    const ownTask = createTask(project.id, { prompt: 'linked task' })
+    const foreignTask = createTask(other.id, { prompt: 'foreign task' })
+    addTaskLink(ownTask.id, session.id, true)
+    // A session's planner link can outlive its project on a task of another
+    // project (shared history): deleting the session's project must prune it.
+    addTaskLink(foreignTask.id, session.id, false)
+
+    deleteProject(project.id)
+
+    expect(
+      getDatabase().prepare('SELECT COUNT(*) AS n FROM task_links WHERE session_id = ?').get(session.id),
+    ).toMatchObject({ n: 0 })
   })
 
   it('sets and clears the project default agent', () => {

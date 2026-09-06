@@ -35,7 +35,7 @@ import {
 } from '../db/tasks.js'
 import { appendCompactionPrompt } from '../context/compactor.js'
 import { computeSessionHash, applyDynamicContext, computeUnifiedDiff } from '../chat/dynamic-context.js'
-import { provideAnswer } from '../tools/index.js'
+import { provideAnswer, getTasksServiceOrNull } from '../tools/index.js'
 import { resolveAutoActionTimeoutSeconds } from '../utils/auto-action-timeout.js'
 import { initAutoAnswer, cancelAutoAnswersForSession } from '../tools/index.js'
 import { logger } from '../utils/logger.js'
@@ -674,6 +674,36 @@ export function createWebSocketServer(
       logger.warn('Auto-launch aborting existing agent before starting favorite workflow', { sessionId })
       existing.abort()
     }
+    void launchFavoriteWhenRoom(sessionId, favorite)
+  }
+
+  /**
+   * Claim the board slot before firing (when the session is board-linked): a
+   * free slot starts the favorite build now; no room parks the task in the
+   * FIFO queue instead of overrunning the limit — freed slots auto-launch it
+   * later through maybeAutoLaunch. Free (unlinked) sessions launch directly.
+   */
+  async function launchFavoriteWhenRoom(sessionId: string, favorite: AutoLaunchFavorite): Promise<void> {
+    const tasksService = getTasksServiceOrNull()
+    let outcome: 'running' | 'queued' | 'already' | 'none' = 'none'
+    if (tasksService) {
+      try {
+        outcome = await tasksService.autoStartLinkedTask(sessionId)
+      } catch (err) {
+        logger.error('Auto-launch board claim failed', {
+          sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
+    }
+    if (outcome === 'already') {
+      logger.debug('Auto-launch skipped: task already running', { sessionId })
+      return
+    }
+    if (outcome === 'queued') {
+      logger.info('Favorite workflow queued (no free slot)', { sessionId, workflowId: favorite.id })
+      return
+    }
     const controller = new AbortController()
     activeAgents.set(sessionId, controller)
     launchWorkflowRun(
@@ -828,6 +858,8 @@ export function createWebSocketServer(
       const pendingConfirmations = foldPendingConfirmations(events)
       const pendingQuestions = getPendingQuestionsForSession(updatedSession.id)
       const activeWorkflowExecution = sessionManager.getDisplayWorkflowExecution(updatedSession.id)
+      const latestExec = sessionManager.getLatestWorkflowExecution(updatedSession.id)
+      const lastWorkflow = latestExec ? { workflowId: latestExec.workflowId, status: latestExec.status } : null
 
       // Update activeWorkdir when workspace changed so git polling picks up the right dir
       const effectiveWorkdir = updatedSession.workspace ?? updatedSession.workdir
@@ -858,6 +890,7 @@ export function createWebSocketServer(
           undefined,
           hiddenCount,
           activeWorkflowExecution ?? undefined,
+          lastWorkflow,
         ),
       )
 
@@ -960,6 +993,13 @@ export function createWebSocketServer(
       }
 
       const client = clients.get(ws)!
+
+      // Opening a session parked at the post-plan choice point restarts the
+      // favorite-workflow countdown immediately (no live event will come).
+      if (message.type === 'session.load') {
+        const loadSessionId = (message.payload as { sessionId?: string } | undefined)?.sessionId
+        if (loadSessionId) scheduleAutoLaunchIfEligible(loadSessionId)
+      }
 
       try {
         await handleClientMessage(
@@ -1600,6 +1640,14 @@ async function handleClientMessage(
 
       // Acknowledge immediately
       send({ type: 'ack', payload: {}, id: message.id })
+
+      // An explicit manual pick claims the board slot: a task parked in In
+      // Progress (awaiting build choice) flips to running now.
+      try {
+        getTasksServiceOrNull()?.markRunningFromSession(sessionId)
+      } catch {
+        // Board bookkeeping must never block a launch.
+      }
 
       // Ensure client is subscribed to EventStore (tab model - additive)
       ensureEventStoreSubscription(sessionId)

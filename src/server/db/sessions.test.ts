@@ -33,6 +33,7 @@ import {
   getSessionCachedPrompt,
 } from './sessions.js'
 import { getDatabase } from './index.js'
+import { addTaskLink, createTask, listTaskLinks } from './tasks.js'
 
 describe('db sessions', () => {
   let rootA: string
@@ -246,6 +247,19 @@ describe('db sessions', () => {
     deleteSession(session.id)
 
     expect(getSession(session.id)).toBeNull()
+  })
+
+  it('drops the deleted session from task_links so board tasks stay clean', () => {
+    const session = createSession(projectAId, rootA)
+    const other = createSession(projectAId, rootA)
+    const task = createTask(projectAId, { prompt: 'Linked task', attachments: [] })
+    addTaskLink(task.id, session.id, true)
+    addTaskLink(task.id, other.id, false)
+
+    deleteSession(session.id)
+
+    expect(listTaskLinks(task.id)).toHaveLength(1)
+    expect(listTaskLinks(task.id)[0]?.session_id).toBe(other.id)
   })
 
   it('handles sessions without title', () => {

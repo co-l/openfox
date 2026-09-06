@@ -150,6 +150,12 @@ export const MessageList = memo(function MessageList({
     (state) => state.activeWorkflowExecution,
     null,
   )
+  const lastWorkflow = useScopedPaneState(
+    scopeId,
+    (pane) => pane.lastWorkflow ?? null,
+    (state) => state.lastWorkflow ?? null,
+    null,
+  )
   const continueWorkflow = useSessionStore((state) => state.continueWorkflow)
   const autoLaunch = useScopedPaneState(
     scopeId,
@@ -182,7 +188,12 @@ export const MessageList = memo(function MessageList({
   const hasAssistantResponse = displayItems.some((item) => item.type === 'message' && item.message.role === 'assistant')
   const hasActiveWorkflow =
     activeWorkflowExecution?.status === 'running' || activeWorkflowExecution?.status === 'waiting'
-  const showStartBuilding = hasNewCriteria && !isRunning && hasAssistantResponse && !isDone && !hasActiveWorkflow
+  // A settled `plan` run leaves the phase done — that's exactly the post-plan
+  // choice point (mirrors the server isStartBuildingState). Any other done
+  // session is not a choice point.
+  const planSettled = lastWorkflow?.workflowId === 'plan' && lastWorkflow.status === 'completed'
+  const showStartBuilding =
+    hasNewCriteria && !isRunning && hasAssistantResponse && (!isDone || planSettled) && !hasActiveWorkflow
   const showContinueWorkflow = activeWorkflowExecution?.status === 'waiting' && !isRunning
   // The blocked-step affordance only makes sense when the session is idle: while
   // a turn is running (e.g. a chat turn on a session with a stale blocked

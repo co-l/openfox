@@ -971,6 +971,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const pendingQuestions = getPendingQuestionsForSession(req.params.id)
     const pendingConfirmations = foldPendingConfirmations(events)
     const activeWorkflowExecution = sessionManager.getDisplayWorkflowExecution(req.params.id)
+    const latestExec = sessionManager.getLatestWorkflowExecution(req.params.id)
 
     res.json({
       session: toClientSession(session!),
@@ -981,6 +982,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       pendingQuestions,
       pendingConfirmations,
       activeWorkflowExecution,
+      lastWorkflow: latestExec ? { workflowId: latestExec.workflowId, status: latestExec.status } : null,
     })
   })
 
@@ -1039,12 +1041,18 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     cancelQuestionsForSession(sessionId, 'Session deleted')
     cancelPathConfirmationsForSession(sessionId, 'Session deleted')
 
+    const boardProjects = tasksService.projectsForSession(sessionId)
     sessionManager.deleteSession(sessionId)
     wssExports.broadcastAll({
       type: 'session.deleted',
       sessionId,
       payload: { sessionId },
     })
+    // Board tasks must forget the dead session immediately (links were pruned
+    // with the session) — re-publish every touched project's board.
+    for (const boardProjectId of boardProjects) {
+      tasksService.publishBoard(boardProjectId)
+    }
     res.json({ success: true })
   })
 
@@ -1060,6 +1068,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       sessionId: projectId,
       payload: {},
     })
+    tasksService.publishBoard(projectId)
     res.json({ success: true })
   })
 
