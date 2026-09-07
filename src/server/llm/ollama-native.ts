@@ -28,6 +28,8 @@ import './proxy.js'
 export interface OllamaClientOptions {
   /** Base URL WITHOUT the /v1 prefix (e.g. http://localhost:11434). */
   baseURL: string
+  /** Optional API key for authentication (e.g., for OpenWebUI proxy). */
+  apiKey?: string
 }
 
 interface OllamaToolCall {
@@ -317,20 +319,27 @@ export function parseOllamaChatChunk(data: OllamaChatResponse): ChatCompletionCh
  */
 export class OllamaHttpClient extends ChatHttpClient {
   private baseURL: string
+  private apiKey?: string
 
   constructor(options: OllamaClientOptions) {
     super()
     this.baseURL = options.baseURL
+    this.apiKey = options.apiKey
   }
 
   protected buildRequest(
     params: ChatCompletionCreateParamsNonStreaming | ChatCompletionCreateParamsStreaming,
   ): ChatRequest {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    }
+    if (this.apiKey) {
+      headers['Authorization'] = `Bearer ${this.apiKey}`
+    }
+
     return {
       url: `${this.baseURL}/api/chat`,
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(buildOllamaChatRequest(params)),
     }
   }

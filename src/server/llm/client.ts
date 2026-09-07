@@ -73,6 +73,7 @@ export function createLLMClient(
   // options.num_ctx). Dispatched per request based on the current backend.
   const ollamaHttpClient = new OllamaHttpClient({
     baseURL: stripVersionPrefix(baseURL),
+    apiKey: config.llm.apiKey,
   })
   // Some models (OpenCode Go: gpt-5.6-luna, grok-4.6, muse-spark-1.2-…; OpenAI
   // gpt-5 family) are served through OpenAI's Responses API rather than
