@@ -103,6 +103,54 @@ Restart OpenFox after installing or updating a plugin.
 - To use free OpenRouter models, you can install the [`openfox-openrouter-free`](https://github.com/JamesDAdams/openfox-openrouter-free) plugin.
 - To use free OpenCode models, you can install the [`openfox-opencode-free`](https://github.com/JamesDAdams/openfox-opencode-free) plugin.
 
+### Plugin Settings
+
+Plugins can expose custom configuration settings in the OpenFox UI by calling `registry.registerSettings` during plugin initialization or specifying `"hasSettings": true` under the `openfox` key in `package.json`:
+
+```typescript
+import type { ProviderPluginRegistry } from 'openfox'
+
+export function register(registry: ProviderPluginRegistry) {
+  registry.registerSettings({
+    title: 'My Plugin Settings',
+    description: 'Configure API options',
+    fields: [
+      {
+        key: 'apiKey',
+        label: 'API Key',
+        type: 'password', // 'text' | 'password' | 'number' | 'boolean' | 'select' | 'textarea'
+        required: true,
+      },
+    ],
+  })
+}
+```
+
+In `package.json`:
+
+```json
+{
+  "name": "my-openfox-plugin",
+  "version": "1.0.0",
+  "openfox": {
+    "apiVersion": 1,
+    "plugin": "dist/index.js",
+    "hasSettings": true
+  }
+}
+```
+
+Or for plugins rendering a custom UI:
+
+```typescript
+export function register(registry: ProviderPluginRegistry) {
+  registry.registerSettings({
+    title: 'Custom Plugin Settings',
+    customUiUrl: 'http://localhost:3000/plugin-settings-ui',
+  })
+}
+```
+
 ## Screenshots
 
 _Homepage — Project overview and session history_

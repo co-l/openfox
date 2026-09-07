@@ -1,5 +1,6 @@
 import type { Provider } from '../../../shared/types.js'
 import type {
+  PluginSettingsSpec,
   ProviderAuthAdapter,
   ProviderPluginRegistry,
   ProviderPluginRuntime,
@@ -11,6 +12,7 @@ export class ProviderRegistry implements ProviderPluginRegistry {
   private readonly authAdapters = new Map<string, ProviderAuthAdapter>()
   private readonly transportAdapters = new Map<string, ProviderTransportAdapter>()
   private readonly presets = new Map<string, ProviderPreset>()
+  private readonly pluginSettingsSpecs = new Map<string, PluginSettingsSpec>()
 
   constructor(readonly runtime: ProviderPluginRuntime) {}
 
@@ -24,6 +26,19 @@ export class ProviderRegistry implements ProviderPluginRegistry {
 
   registerPreset(preset: ProviderPreset): void {
     this.register(this.presets, preset.id, preset, 'preset')
+  }
+
+  registerSettings(spec: PluginSettingsSpec): void {
+    // Note: registerSettings can be bound to a specific plugin when registered via trackingRegistry
+    this.registerSettingsForPlugin('_global', spec)
+  }
+
+  registerSettingsForPlugin(packageName: string, spec: PluginSettingsSpec): void {
+    this.pluginSettingsSpecs.set(packageName, spec)
+  }
+
+  getPluginSettingsSpec(packageName: string): PluginSettingsSpec | undefined {
+    return this.pluginSettingsSpecs.get(packageName)
   }
 
   getAuth(id?: string): ProviderAuthAdapter | undefined {

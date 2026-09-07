@@ -14,6 +14,7 @@ export interface ProviderPluginDiagnostic {
   version?: string
   source: string
   loaded: boolean
+  hasSettings?: boolean
   authAdapters: string[]
   transportAdapters: string[]
   presets: string[]
@@ -105,6 +106,13 @@ export async function loadProviderPlugins(options: {
         registerPreset(preset) {
           options.registry.registerPreset(preset)
           diagnostic.presets.push(preset.id)
+        },
+        registerSettings(spec) {
+          diagnostic.hasSettings = true
+          options.registry.registerSettingsForPlugin(packageName, spec)
+        },
+        registerSettingsForPlugin(packageName, spec) {
+          options.registry.registerSettingsForPlugin(packageName, spec)
         },
       }
       try {

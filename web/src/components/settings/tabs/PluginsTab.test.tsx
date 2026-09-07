@@ -29,7 +29,7 @@ const REGISTRY_RESPONSE = {
 }
 
 const INSTALLED_RESPONSE = {
-  installed: [{ name: 'openfox-chatgpt', version: 'v1.0.0' }],
+  installed: [{ name: 'openfox-chatgpt', version: 'v1.0.0', hasSettings: true }],
 }
 
 function createJsonResponse(data: unknown, status = 200): Response {
@@ -130,10 +130,10 @@ describe('PluginsTab', () => {
     })
   })
 
-  it('can install a plugin via the install button', async () => {
+  it('can install a plugin and updates hasSettings immediately', async () => {
     mockFetch
       .mockResolvedValueOnce(createJsonResponse(REGISTRY_RESPONSE))
-      .mockResolvedValueOnce(createJsonResponse(INSTALLED_RESPONSE))
+      .mockResolvedValueOnce(createJsonResponse({ installed: [] }))
 
     render(<PluginsTab />)
 
@@ -141,7 +141,7 @@ describe('PluginsTab', () => {
       expect(screen.getByText('GitHub Copilot')).toBeDefined()
     })
 
-    mockFetch.mockResolvedValueOnce(createJsonResponse({ success: true, loaded: true }))
+    mockFetch.mockResolvedValueOnce(createJsonResponse({ success: true, loaded: true, hasSettings: true }))
 
     const installButtons = screen.getAllByRole('button', { name: 'Install' })
     await userEvent.setup().click(installButtons[0]!)
@@ -153,6 +153,37 @@ describe('PluginsTab', () => {
           method: 'POST',
         }),
       )
+    })
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Settings/i })).toBeDefined()
+    })
+  })
+
+  it('shows Settings button for installed plugins and opens settings modal', async () => {
+    mockFetch
+      .mockResolvedValueOnce(createJsonResponse(REGISTRY_RESPONSE))
+      .mockResolvedValueOnce(createJsonResponse(INSTALLED_RESPONSE))
+
+    render(<PluginsTab />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Settings/i })).toBeDefined()
+    })
+
+    mockFetch.mockResolvedValueOnce(
+      createJsonResponse({
+        hasSpec: true,
+        spec: { title: 'ChatGPT Settings' },
+        values: {},
+      }),
+    )
+
+    const settingsButton = screen.getByRole('button', { name: /Settings/i })
+    await userEvent.setup().click(settingsButton)
+
+    await waitFor(() => {
+      expect(screen.getByText('ChatGPT Settings')).toBeDefined()
     })
   })
 
