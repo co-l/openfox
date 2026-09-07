@@ -102,6 +102,7 @@ Restart OpenFox after installing or updating a plugin.
 - To authenticate with an X (xAI) SuperGrok subscription, you can install the [`openfox-xai-supergrok`](https://github.com/Olgean-Group/openfox-xai-supergrok) plugin.
 - To use free OpenRouter models, you can install the [`openfox-openrouter-free`](https://github.com/JamesDAdams/openfox-openrouter-free) plugin.
 - To use free OpenCode models, you can install the [`openfox-opencode-free`](https://github.com/JamesDAdams/openfox-opencode-free) plugin.
+- To use OmniRoute with quota management, you can install the [`openfox-omniroute-quota`](https://github.com/JamesDAdams/openfox-omniroute-quota) plugin.
 
 ## Screenshots
 

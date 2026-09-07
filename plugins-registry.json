@@ -34,5 +34,11 @@
     "displayName": "OpenCode (Free Models)",
     "description": "OpenCode provider filtered to free models only (-free suffix), with automatic hourly model updates (1x/hour) and API key auth.",
     "githubUrl": "https://github.com/JamesDAdams/openfox-opencode-free"
+  },
+  {
+    "name": "openfox-omniroute-quota",
+    "displayName": "OmniRoute Quota",
+    "description": "OmniRoute quota provider plugin for OpenFox.",
+    "githubUrl": "https://github.com/JamesDAdams/openfox-omniroute-quota"
   }
 ]
