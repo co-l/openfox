@@ -58,11 +58,33 @@ export interface LLMClientWithModel extends LLMClient {
   getReasoningEffort?(): string | undefined
 }
 
+/**
+ * opencode.ai endpoints (Zen / Go) require a stable per-conversation
+ * x-opencode-session header; see https://opencode.ai/docs/go/.
+ */
+function isOpenCodeEndpoint(baseUrl: string): boolean {
+  try {
+    const url = new URL(baseUrl)
+    return url.protocol === 'https:' && url.hostname.replace(/\.$/, '') === 'opencode.ai'
+  } catch {
+    return false
+  }
+}
+
+function openCodeSessionHeaders(sessionId: string): Record<string, string> {
+  return {
+    'x-opencode-session': sessionId,
+    'x-opencode-client': 'openfox',
+    'User-Agent': 'openfox',
+  }
+}
+
 export function createLLMClient(
   config: Config,
   initialBackend: Backend = config.llm.backend ?? 'unknown',
 ): LLMClientWithModel {
   const baseURL = ensureVersionPrefix(config.llm.baseUrl)
+  const isOpencode = isOpenCodeEndpoint(baseURL)
 
   const httpClient = new OpenAIHttpClient({
     baseURL,
@@ -174,6 +196,7 @@ export function createLLMClient(
           createParams,
           {
             signal: request.signal,
+            ...(request.sessionId && isOpencode && { headers: openCodeSessionHeaders(request.sessionId) }),
           },
           request.returnRaw,
         )
@@ -281,6 +304,7 @@ export function createLLMClient(
 
         const stream = httpFor(backend).createChatCompletionStream(streamingParams, {
           signal: streamSignal,
+          ...(request.sessionId && isOpencode && { headers: openCodeSessionHeaders(request.sessionId) }),
         })
 
         let fullContent = ''

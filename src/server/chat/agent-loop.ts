@@ -252,6 +252,7 @@ export async function runTopLevelAgentLoop(
       const modelSettings = sessionManager.getCurrentModelSettings(sessionId, config.mode)
 
       await resolveClient().complete({
+        sessionId,
         messages: [{ role: 'system', content: assembledRequest.systemPrompt }],
         tools: assembledRequest.tools,
         maxTokens: 1,
@@ -392,6 +393,7 @@ export async function runTopLevelAgentLoop(
         messageId: assistantMsgId,
         systemPrompt: assembledRequest.systemPrompt,
         llmClient: attemptClient,
+        sessionId,
         messages: assembledRequest.messages,
         tools: assembledRequest.tools,
         toolChoice: 'auto',

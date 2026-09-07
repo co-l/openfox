@@ -353,6 +353,7 @@ export async function generateSessionNameForSession(
     const composedSignal = signal ? AbortSignal.any([timeoutSignal, signal]) : timeoutSignal
 
     const response = await client.complete({
+      sessionId,
       messages: [{ role: 'user', content: prompt }],
       tools: [],
       ...(modelSettings ? { modelSettings } : {}),

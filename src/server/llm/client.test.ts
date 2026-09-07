@@ -1,9 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { httpClientCreateMock, httpClientCreateStreamMock, httpClientCtorArgs } = vi.hoisted(() => ({
+const {
+  httpClientCreateMock,
+  httpClientCreateStreamMock,
+  httpClientCtorArgs,
+  responsesCreateMock,
+  responsesStreamMock,
+} = vi.hoisted(() => ({
   httpClientCreateMock: vi.fn(),
   httpClientCreateStreamMock: vi.fn(),
   httpClientCtorArgs: [] as Array<Record<string, unknown>>,
+  responsesCreateMock: vi.fn(),
+  responsesStreamMock: vi.fn(),
 }))
 
 vi.mock('./http-client.js', () => ({
@@ -14,6 +22,13 @@ vi.mock('./http-client.js', () => ({
     constructor(args: Record<string, unknown>) {
       httpClientCtorArgs.push(args)
     }
+  },
+}))
+
+vi.mock('./responses-native.js', () => ({
+  OpenAIResponsesHttpClient: class MockOpenAIResponsesHttpClient {
+    createChatCompletion = responsesCreateMock
+    createChatCompletionStream = responsesStreamMock
   },
 }))
 
@@ -44,6 +59,8 @@ describe('llm client', () => {
     httpClientCtorArgs.length = 0
     httpClientCreateMock.mockReset()
     httpClientCreateStreamMock.mockReset()
+    responsesCreateMock.mockReset()
+    responsesStreamMock.mockReset()
   })
 
   it('defaults the backend from config.llm.backend when no initial backend is given', () => {
@@ -970,5 +987,96 @@ describe('llm client', () => {
         },
       },
     ])
+  })
+})
+
+describe('opencode session headers', () => {
+  beforeEach(() => {
+    httpClientCreateMock.mockReset()
+    httpClientCreateStreamMock.mockReset()
+    responsesCreateMock.mockReset()
+    responsesStreamMock.mockReset()
+  })
+
+  const openCodeConfig = () => createConfig({ baseUrl: 'https://opencode.ai/zen/go/v1', backend: 'opencode-go' })
+
+  it('sends session headers on complete for opencode targets when a sessionId is given', async () => {
+    httpClientCreateMock.mockResolvedValueOnce({
+      id: 'resp-1',
+      choices: [{ finish_reason: 'stop', message: { content: 'ok' } }],
+      usage: {},
+    })
+
+    const client = createLLMClient(openCodeConfig(), 'opencode-go')
+    await client.complete({ messages: [{ role: 'user', content: 'hello' }], sessionId: 'sess-1' })
+
+    expect(httpClientCreateMock.mock.calls[0]?.[1]?.headers).toEqual({
+      'x-opencode-session': 'sess-1',
+      'x-opencode-client': 'openfox',
+      'User-Agent': 'openfox',
+    })
+  })
+
+  it('sends session headers on stream for opencode targets', async () => {
+    httpClientCreateStreamMock.mockReturnValueOnce(
+      (async function* () {
+        yield createChunk({ choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }], usage: {} })
+      })(),
+    )
+
+    const client = createLLMClient(openCodeConfig(), 'opencode-go')
+    for await (const _event of client.stream({ messages: [{ role: 'user', content: 'hi' }], sessionId: 'sess-2' })) {
+      // consume
+    }
+
+    expect(httpClientCreateStreamMock.mock.calls[0]?.[1]?.headers).toEqual({
+      'x-opencode-session': 'sess-2',
+      'x-opencode-client': 'openfox',
+      'User-Agent': 'openfox',
+    })
+  })
+
+  it('sends session headers on the responses path for opencode targets', async () => {
+    responsesCreateMock.mockResolvedValueOnce({
+      id: 'resp-1',
+      choices: [{ finish_reason: 'stop', message: { content: 'ok' } }],
+      usage: {},
+    })
+
+    const client = createLLMClient(openCodeConfig(), 'opencode-go')
+    client.setModel('gpt-5.6-luna')
+    await client.complete({ messages: [{ role: 'user', content: 'hello' }], sessionId: 'sess-3' })
+
+    expect(responsesCreateMock.mock.calls[0]?.[1]?.headers).toEqual({
+      'x-opencode-session': 'sess-3',
+      'x-opencode-client': 'openfox',
+      'User-Agent': 'openfox',
+    })
+  })
+
+  it('sends no session headers without a sessionId', async () => {
+    httpClientCreateMock.mockResolvedValueOnce({
+      id: 'resp-1',
+      choices: [{ finish_reason: 'stop', message: { content: 'ok' } }],
+      usage: {},
+    })
+
+    const client = createLLMClient(openCodeConfig(), 'opencode-go')
+    await client.complete({ messages: [{ role: 'user', content: 'hello' }] })
+
+    expect(httpClientCreateMock.mock.calls[0]?.[1]?.headers).toBeUndefined()
+  })
+
+  it('sends no session headers for non-opencode targets', async () => {
+    httpClientCreateMock.mockResolvedValueOnce({
+      id: 'resp-1',
+      choices: [{ finish_reason: 'stop', message: { content: 'ok' } }],
+      usage: {},
+    })
+
+    const client = createLLMClient(createConfig(), 'vllm')
+    await client.complete({ messages: [{ role: 'user', content: 'hello' }], sessionId: 'sess-4' })
+
+    expect(httpClientCreateMock.mock.calls[0]?.[1]?.headers).toBeUndefined()
   })
 })
