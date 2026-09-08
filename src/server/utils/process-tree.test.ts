@@ -73,12 +73,15 @@ async function getDescendants(rootPid: number): Promise<number[]> {
     }
   }
   const descendants: number[] = []
+  const seen = new Set<number>([rootPid])
   const queue = [rootPid]
   while (queue.length > 0) {
     const current = queue.shift()!
     const kids = children.get(current)
     if (kids) {
       for (const kid of kids) {
+        if (seen.has(kid)) continue
+        seen.add(kid)
         descendants.push(kid)
         queue.push(kid)
       }
