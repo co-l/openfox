@@ -123,12 +123,19 @@ export function detectBackendFromUrl(url: string): Backend | undefined {
 export interface UrlProviderDefaults {
   /** Field the provider reads chain-of-thought from in assistant history. */
   thinkingField?: string
+  /** Whether to echo chain-of-thought back on assistant history messages. */
+  sendReasoningInMessages?: boolean
 }
 
 const HOST_PROVIDER_DEFAULTS: Record<string, UrlProviderDefaults> = {
   // DeepSeek's official API requires reasoning echoed under `reasoning_content`
   // (its own output field) — anything else is ignored or 400s on tool calls.
   'api.deepseek.com': { thinkingField: 'reasoning_content' },
+  // OpenCode Go's gateway forwards requests raw to upstreams whose strict
+  // schemas reject reasoning echoes on assistant history (e.g. GLM 400s with
+  // "Extra inputs are not permitted, field: messages[N].reasoning"). This
+  // overrides a persisted true so existing configs are rescued too.
+  'opencode.ai': { sendReasoningInMessages: false },
 }
 
 /**

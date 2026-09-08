@@ -283,6 +283,81 @@ describe('ProviderManager - Model Selection', () => {
     })
   })
 
+  describe('sendReasoningInMessages resolution', () => {
+    it('disables reasoning echo for opencode.ai providers even when the config persists true', async () => {
+      const opencodeProvider: Provider = {
+        id: 'provider-opencode',
+        name: 'OpenCode Go',
+        url: 'https://opencode.ai/zen/go/v1',
+        backend: 'opencode-go',
+        apiKey: 'sk-x',
+        sendReasoningInMessages: true,
+        models: [{ id: 'glm-5.3', contextWindow: 200000, source: 'default' }],
+        isActive: true,
+        createdAt: new Date().toISOString(),
+      }
+
+      const manager = createProviderManager({
+        ...config,
+        providers: [opencodeProvider],
+        defaultModelSelection: 'provider-opencode/glm-5.3',
+      })
+      manager.createClient('provider-opencode', 'glm-5.3')
+
+      const calls = (createLLMClient as ReturnType<typeof vi.fn>).mock.calls
+      const lastCallConfig = calls[calls.length - 1]![0] as { llm: { sendReasoningInMessages?: boolean } }
+      expect(lastCallConfig.llm.sendReasoningInMessages).toBe(false)
+    })
+
+    it('disables reasoning echo for opencode.ai providers without an explicit value', async () => {
+      const opencodeProvider: Provider = {
+        id: 'provider-opencode',
+        name: 'OpenCode Go',
+        url: 'https://opencode.ai/zen/go/v1',
+        backend: 'opencode-go',
+        apiKey: 'sk-x',
+        models: [{ id: 'glm-5.3', contextWindow: 200000, source: 'default' }],
+        isActive: true,
+        createdAt: new Date().toISOString(),
+      }
+
+      const manager = createProviderManager({
+        ...config,
+        providers: [opencodeProvider],
+        defaultModelSelection: 'provider-opencode/glm-5.3',
+      })
+      manager.createClient('provider-opencode', 'glm-5.3')
+
+      const calls = (createLLMClient as ReturnType<typeof vi.fn>).mock.calls
+      const lastCallConfig = calls[calls.length - 1]![0] as { llm: { sendReasoningInMessages?: boolean } }
+      expect(lastCallConfig.llm.sendReasoningInMessages).toBe(false)
+    })
+
+    it('keeps the explicit provider value for hosts without a URL default', async () => {
+      const localProvider: Provider = {
+        id: 'provider-local',
+        name: 'Local',
+        url: 'http://192.168.1.223:8000',
+        backend: 'vllm',
+        sendReasoningInMessages: true,
+        models: [{ id: 'glm-5.3', contextWindow: 200000, source: 'default' }],
+        isActive: true,
+        createdAt: new Date().toISOString(),
+      }
+
+      const manager = createProviderManager({
+        ...config,
+        providers: [localProvider],
+        defaultModelSelection: 'provider-local/glm-5.3',
+      })
+      manager.createClient('provider-local', 'glm-5.3')
+
+      const calls = (createLLMClient as ReturnType<typeof vi.fn>).mock.calls
+      const lastCallConfig = calls[calls.length - 1]![0] as { llm: { sendReasoningInMessages?: boolean } }
+      expect(lastCallConfig.llm.sendReasoningInMessages).toBe(true)
+    })
+  })
+
   describe('setDefaultModelSelection', () => {
     it('returns error for non-existent provider', async () => {
       const result = await providerManager.setDefaultModelSelection('non-existent', 'new-model')

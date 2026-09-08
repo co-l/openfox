@@ -37,6 +37,11 @@ describe('backend', () => {
       })
     })
 
+    it('disables reasoning echo for the opencode.ai host', () => {
+      expect(detectProviderDefaultsFromUrl('https://opencode.ai/zen/go/v1')).toEqual({ sendReasoningInMessages: false })
+      expect(detectProviderDefaultsFromUrl('https://opencode.ai/zen/v1')).toEqual({ sendReasoningInMessages: false })
+    })
+
     it('returns undefined for local or unknown hosts', () => {
       expect(detectProviderDefaultsFromUrl('http://localhost:8000')).toBeUndefined()
       expect(detectProviderDefaultsFromUrl('http://192.168.1.223:8000/v1')).toBeUndefined()

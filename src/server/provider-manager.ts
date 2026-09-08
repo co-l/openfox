@@ -462,6 +462,14 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
     return detectProviderDefaultsFromUrl(provider.url)?.thinkingField
   }
 
+  function resolveSendReasoningInMessages(provider: Provider): boolean | undefined {
+    // Unlike thinkingField, the URL default OVERRIDES the persisted value: the
+    // provider edit modal stamps sendReasoningInMessages=true on new providers,
+    // and hosts like opencode.ai reject the echo outright — the persisted flag
+    // is exactly the foot-gun being rescued here.
+    return detectProviderDefaultsFromUrl(provider.url)?.sendReasoningInMessages ?? provider.sendReasoningInMessages
+  }
+
   function createConfigForProvider(provider: Provider, model: string, reasoningEffort?: string): Config {
     // An explicit effort (session pick, pin, or agent override) wins over the
     // model's configured default, clamped to the model's advertised preset
@@ -478,6 +486,7 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
       model,
     )
     const thinkingField = resolveThinkingField(provider)
+    const sendReasoningInMessages = resolveSendReasoningInMessages(provider)
     return {
       ...config,
       llm: {
@@ -487,9 +496,7 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
         backend: resolveBackend(provider),
         ...(provider.apiKey && { apiKey: provider.apiKey }),
         ...(thinkingField ? { thinkingField } : {}),
-        ...(provider.sendReasoningInMessages !== undefined
-          ? { sendReasoningInMessages: provider.sendReasoningInMessages }
-          : {}),
+        ...(sendReasoningInMessages !== undefined ? { sendReasoningInMessages } : {}),
         ...(modelThinking.reasoningEffort &&
           !send.suppressEffort && { reasoningEffort: modelThinking.reasoningEffort }),
       },
