@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { buildOllamaChatRequest, parseOllamaChatResponse, parseOllamaChatChunk } from './ollama-native.js'
-import type { ChatCompletionCreateParamsStreaming, ChatCompletionMessageParam } from './openai-types.js'
+import {
+  OllamaHttpClient,
+  buildOllamaChatRequest,
+  parseOllamaChatResponse,
+  parseOllamaChatChunk,
+} from './ollama-native.js'
+import type {
+  ChatCompletionCreateParamsNonStreaming,
+  ChatCompletionCreateParamsStreaming,
+  ChatCompletionMessageParam,
+} from './openai-types.js'
 
 function streamParams(
   overrides: Partial<ChatCompletionCreateParamsStreaming> = {},
@@ -12,6 +21,36 @@ function streamParams(
     ...overrides,
   }
 }
+
+function requestHeaders(client: OllamaHttpClient, params: ChatCompletionCreateParamsNonStreaming) {
+  const request = (
+    client as unknown as {
+      buildRequest(p: ChatCompletionCreateParamsNonStreaming): { headers: Record<string, string> }
+    }
+  ).buildRequest(params)
+  return request.headers
+}
+
+describe('OllamaHttpClient auth headers', () => {
+  const params: ChatCompletionCreateParamsNonStreaming = {
+    model: 'qwen3.5:0.8b',
+    messages: [{ role: 'user', content: 'hi' }],
+  }
+
+  it('sends Authorization: Bearer when an apiKey is provided', () => {
+    const client = new OllamaHttpClient({ baseURL: 'http://localhost:11434', apiKey: 'secret-token' })
+    const headers = requestHeaders(client, params)
+    expect(headers['Authorization']).toBe('Bearer secret-token')
+    expect(headers['Content-Type']).toBe('application/json')
+  })
+
+  it('does not send Authorization when no apiKey is provided', () => {
+    const client = new OllamaHttpClient({ baseURL: 'http://localhost:11434' })
+    const headers = requestHeaders(client, params)
+    expect(headers['Authorization']).toBeUndefined()
+    expect(headers['Content-Type']).toBe('application/json')
+  })
+})
 
 describe('buildOllamaChatRequest', () => {
   it('maps sampling params and num_ctx into options', () => {

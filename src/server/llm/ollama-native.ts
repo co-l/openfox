@@ -319,7 +319,7 @@ export function parseOllamaChatChunk(data: OllamaChatResponse): ChatCompletionCh
  */
 export class OllamaHttpClient extends ChatHttpClient {
   private baseURL: string
-  private apiKey?: string
+  private apiKey: string | undefined
 
   constructor(options: OllamaClientOptions) {
     super()
