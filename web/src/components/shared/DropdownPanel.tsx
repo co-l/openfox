@@ -34,7 +34,7 @@ export function DropdownPanel({
         className={`bg-bg-secondary border border-border shadow-lg z-50 flex flex-col overflow-hidden ${
           isModal
             ? `${MODAL_CENTER} ${modalSizing}`
-            : `absolute bottom-full right-0 mb-1 min-w-72 max-w-[90vw] rounded-lg ${anchoredClassName}`
+            : `absolute bottom-full mb-1 min-w-72 max-w-[90vw] rounded-lg ${anchoredClassName}`
         }`}
       >
         {children}

@@ -760,7 +760,7 @@ export function ProviderSelector() {
           isModal={isModalPanel}
           testId="provider-dropdown"
           fillViewport
-          anchoredClassName={isAllScreenHigh ? 'h-[calc(100vh-6.5rem)] max-h-[calc(100vh-6.5rem)]' : 'max-h-[80vh]'}
+          anchoredClassName={`right-0 ${isAllScreenHigh ? 'h-[calc(100vh-6.5rem)] max-h-[calc(100vh-6.5rem)]' : 'max-h-[80vh]'}`}
           onClose={() => setIsOpen(false)}
         >
           <div className="flex items-center gap-1 px-3 py-2 border-b border-border flex-shrink-0">

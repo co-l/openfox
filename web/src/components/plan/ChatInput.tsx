@@ -601,6 +601,49 @@ export function ChatInput({
     cursorPosRef.current = e.currentTarget.selectionStart
   }, [])
 
+  const moreMenu = (
+    <MoreMenu
+      onSendCommand={onSendCommand}
+      onSelectWorkflow={onSelectWorkflow}
+      onSelectWorkflowWithSubGroup={onSelectWorkflowWithSubGroup}
+      onOpenCommandsManager={onOpenCommandsModal}
+      onOpenWorkflowsManager={onOpenWorkflowsModal}
+      onAttach={handleAttachClick}
+      textareaContent={input}
+      attachments={attachments.length > 0 ? attachments : undefined}
+    />
+  )
+
+  const sendButton = ({ mobile = false }: { mobile?: boolean } = {}) => (
+    <button
+      type="button"
+      onClick={handleSend}
+      disabled={!input.trim() && attachments.length === 0}
+      data-testid={mobile ? 'chat-send-button-touch' : 'chat-send-button'}
+      {...(mobile ? { 'aria-label': t({ en: 'Send', fr: 'Envoyer' }) } : {})}
+      className={`rounded-l bg-accent-primary/20 text-sm text-accent-primary font-medium hover:bg-accent-primary/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors ${
+        mobile ? 'flex items-center justify-center px-4 py-2' : 'px-4 py-1.5'
+      }`}
+    >
+      {mobile ? <SendIcon className="w-4 h-4" /> : t({ en: 'Send', fr: 'Envoyer' })}
+    </button>
+  )
+
+  const stopButton = ({ mobile = false }: { mobile?: boolean } = {}) => (
+    <button
+      type="button"
+      onClick={() => sessionId && stopGeneration(sessionId)}
+      data-testid={mobile ? 'chat-stop-button-touch' : 'chat-stop-button'}
+      title={t({ en: 'Stop', fr: 'Stopper' })}
+      aria-label={t({ en: 'Stop', fr: 'Stopper' })}
+      className={`flex items-center justify-center bg-accent-error/20 text-accent-error hover:bg-accent-error/30 transition-colors ${
+        mobile ? 'px-3 py-2 rounded-l' : 'px-3 py-2 rounded-r border-l border-black/10 dark:border-white/10'
+      }`}
+    >
+      <StopIcon />
+    </button>
+  )
+
   return (
     <div className="relative">
       <div className="absolute -top-8 left-2 @md:left-4 z-10">
@@ -758,92 +801,36 @@ export function ChatInput({
                     <PauseIcon className="w-4 h-4" />
                   )}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => sessionId && stopGeneration(sessionId)}
-                  data-testid="chat-stop-button"
-                  title={t({ en: 'Stop', fr: 'Stopper' })}
-                  aria-label={t({ en: 'Stop', fr: 'Stopper' })}
-                  className="flex items-center justify-center px-3 py-2 rounded-r bg-accent-error/20 text-accent-error hover:bg-accent-error/30 transition-colors border-l border-black/10 dark:border-white/10"
-                >
-                  <StopIcon />
-                </button>
+                {stopButton()}
               </div>
             )}
             <div className="flex items-center">
-              <button
-                type="button"
-                onClick={handleSend}
-                disabled={!input.trim() && attachments.length === 0}
-                data-testid="chat-send-button"
-                className="px-4 py-1.5 rounded-l bg-accent-primary/20 text-sm text-accent-primary font-medium hover:bg-accent-primary/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                {t({ en: 'Send', fr: 'Envoyer' })}
-              </button>
-              <MoreMenu
-                onSendCommand={onSendCommand}
-                onSelectWorkflow={onSelectWorkflow}
-                onSelectWorkflowWithSubGroup={onSelectWorkflowWithSubGroup}
-                onOpenCommandsManager={onOpenCommandsModal}
-                onOpenWorkflowsManager={onOpenWorkflowsModal}
-                onAttach={handleAttachClick}
-                textareaContent={input}
-                attachments={attachments.length > 0 ? attachments : undefined}
-              />
+              {sendButton()}
+              {moreMenu}
             </div>
           </div>
           <div className="flex @md:hidden items-center self-center gap-1.5">
-            <div className="relative flex h-11 w-11 items-center justify-center">
-              {isRunning ? (
-                <button
-                  type="button"
-                  onClick={() => sessionId && stopGeneration(sessionId)}
-                  data-testid="chat-stop-button-touch"
-                  aria-label={t({ en: 'Abort', fr: 'Stopper' })}
-                  className="absolute inset-0 flex items-center justify-center rounded-full bg-accent-error/25 text-accent-error hover:bg-accent-error/35 transition-colors"
-                >
-                  <StopIcon className="w-4 h-4" />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleSend}
-                  disabled={!input.trim() && attachments.length === 0}
-                  data-testid="chat-send-button-touch"
-                  aria-label={t({ en: 'Send', fr: 'Envoyer' })}
-                  className="absolute inset-0 flex items-center justify-center rounded-full bg-accent-primary/20 text-accent-primary hover:bg-accent-primary/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                >
-                  <SendIcon className="w-4 h-4" />
-                </button>
-              )}
+            {isRunning && stopButton({ mobile: true })}
+            <div className="flex items-center">
+              {!isRunning && sendButton({ mobile: true })}
+              {moreMenu}
             </div>
-            <MoreMenu
-              onSendCommand={onSendCommand}
-              onSelectWorkflow={onSelectWorkflow}
-              onSelectWorkflowWithSubGroup={onSelectWorkflowWithSubGroup}
-              onOpenCommandsManager={onOpenCommandsModal}
-              onOpenWorkflowsManager={onOpenWorkflowsModal}
-              onAttach={handleAttachClick}
-              textareaContent={input}
-              attachments={attachments.length > 0 ? attachments : undefined}
-            />
           </div>
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 @md:flex-nowrap">
-          <div className="flex items-center gap-2">
+        <div className="mt-3 flex flex-col gap-y-1 @md:flex-row @md:flex-nowrap @md:items-center @md:gap-x-2">
+          <div className="flex items-center justify-between gap-2 @md:justify-start">
             <AgentSelector />
             <DangerLevelSelector />
           </div>
-          {perSessionMcpEnabled && (
-            <div className="ms-auto" data-testid="mcp-selector-slot">
-              <McpSelector />
+          <div className="flex items-center @md:ms-auto" data-testid="model-selector-group">
+            {perSessionMcpEnabled && (
+              <div data-testid="mcp-selector-slot">
+                <McpSelector />
+              </div>
+            )}
+            <div className="ms-auto @md:ms-0 min-w-0" data-testid="provider-selector-slot">
+              <ProviderSelector />
             </div>
-          )}
-          <div
-            className={`flex min-w-0 justify-center basis-full @md:basis-auto ${perSessionMcpEnabled ? '' : '@md:ms-auto'}`}
-            data-testid="provider-selector-slot"
-          >
-            <ProviderSelector />
           </div>
         </div>
       </form>

@@ -128,7 +128,7 @@ export function McpSelector() {
         <DropdownPanel
           isModal={isTouch}
           testId="mcp-dropdown"
-          anchoredClassName="max-h-[80vh]"
+          anchoredClassName="left-0 @md:left-auto @md:right-0 max-h-[80vh]"
           onClose={() => setIsOpen(false)}
         >
           <ScrollArea className="flex-1 min-h-0">

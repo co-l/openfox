@@ -6,7 +6,8 @@ import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import { clearCache } from '../../lib/resourceCache'
 import { mcpServersResource } from '../../lib/resources'
 
-vi.mock('../../hooks/useIsTouchDevice', () => ({ useIsTouchDevice: () => true }))
+let isTouch = true
+vi.mock('../../hooks/useIsTouchDevice', () => ({ useIsTouchDevice: () => isTouch }))
 
 vi.mock('../../lib/api', () => ({
   authFetch: vi.fn(async () => ({ ok: true, json: async () => ({ disabledServers: [] }) })),
@@ -19,8 +20,9 @@ vi.mock('../../stores/session', () => ({
 
 import { McpSelector } from './McpSelector'
 
-describe('McpSelector touch modal panel', () => {
+describe('McpSelector panel', () => {
   beforeEach(() => {
+    isTouch = true
     clearCache()
     mcpServersResource.write([
       {
@@ -38,5 +40,15 @@ describe('McpSelector touch modal panel', () => {
     render(<McpSelector />)
     fireEvent.click(screen.getByText(/MCP/))
     expect(screen.getByTestId('mcp-dropdown').getAttribute('data-panel')).toBe('modal')
+  })
+
+  it('left-aligns the anchored panel on narrow containers so it stays in view', () => {
+    isTouch = false
+    render(<McpSelector />)
+    fireEvent.click(screen.getByText(/MCP/))
+    const panel = screen.getByTestId('mcp-dropdown')
+    expect(panel.getAttribute('data-panel')).toBe('anchored')
+    expect(panel.className).toContain('left-0')
+    expect(panel.className).toContain('@md:right-0')
   })
 })

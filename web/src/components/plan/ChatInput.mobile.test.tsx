@@ -133,16 +133,25 @@ function renderChat(input = 'some text') {
 }
 
 describe('ChatInput mobile composer', () => {
-  it('shows the touch send icon button and no stop until running', () => {
+  it('shows the touch send button (same pill size as desktop, icon instead of label) and no stop until running', () => {
     renderChat()
-    expect(screen.getByTestId('chat-send-button-touch')).toBeInTheDocument()
+    const send = screen.getByTestId('chat-send-button-touch')
+    expect(send).toBeInTheDocument()
+    expect(send.className).toContain('rounded-l')
+    expect(send.className).toContain('px-4')
+    expect(send.className).toContain('py-2')
+    expect(send.className).not.toContain('rounded-full')
     expect(screen.queryByTestId('chat-stop-button-touch')).not.toBeInTheDocument()
   })
 
-  it('replaces the touch send icon with the stop icon while running', () => {
+  it('replaces the touch send button with the stop button while running', () => {
     runningRef.value = true
     renderChat()
-    expect(screen.getByTestId('chat-stop-button-touch')).toBeInTheDocument()
+    const stop = screen.getByTestId('chat-stop-button-touch')
+    expect(stop).toBeInTheDocument()
+    expect(stop.className).toContain('px-3')
+    expect(stop.className).toContain('py-2')
+    expect(stop.className).not.toContain('rounded-full')
     expect(screen.queryByTestId('chat-send-button-touch')).not.toBeInTheDocument()
   })
 
@@ -170,27 +179,31 @@ describe('ChatInput mobile composer', () => {
     expect(textarea.style.maxHeight).toBe('200px')
   })
 
-  it('places the MCP selector before the provider selector, on the first footer row', () => {
+  it('stacks the footer into two balanced rows on mobile: agent/danger on top, MCP/model below', () => {
     settingOverrides['features.perSessionMcp'] = 'true'
     renderChat()
 
+    const group = screen.getByTestId('model-selector-group')
+    const footer = group.parentElement as HTMLElement
+    expect(footer.className).toContain('flex-col')
+    expect(footer.className).toContain('gap-y-1')
+
+    const topRow = footer.children[0] as HTMLElement
+    expect(topRow.className).toContain('justify-between')
+
     const mcpSlot = screen.getByTestId('mcp-selector-slot')
     const providerSlot = screen.getByTestId('provider-selector-slot')
-    const footer = mcpSlot.parentElement as HTMLElement
-    expect(footer).toBe(providerSlot.parentElement)
-
-    const children = Array.from(footer.children)
+    expect(mcpSlot.parentElement).toBe(group)
+    const children = Array.from(group.children)
     expect(children.indexOf(mcpSlot)).toBeLessThan(children.indexOf(providerSlot))
-    expect(footer.className).toContain('flex-wrap')
-    expect(footer.className).not.toContain('flex-col')
-    expect(mcpSlot.className).toContain('ms-auto')
-    expect(providerSlot.className).toContain('basis-full')
+    expect(providerSlot.className).toContain('ms-auto')
   })
 
-  it('right-aligns the provider selector on desktop when the MCP feature is disabled', () => {
+  it('right-aligns the provider selector when the MCP feature is disabled', () => {
     renderChat()
     expect(screen.queryByTestId('mcp-selector-slot')).toBeNull()
-    expect(screen.getByTestId('provider-selector-slot').className).toContain('@md:ms-auto')
+    const providerSlot = screen.getByTestId('provider-selector-slot')
+    expect(providerSlot.parentElement?.className).toContain('ms-auto')
   })
 
   it('does not clip the provider dropdown behind a clipping ancestor', () => {
