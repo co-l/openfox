@@ -17,7 +17,14 @@ import { ChevronDownIcon, ReloadIcon, CheckIcon, SearchIcon, PinIcon, EditSmallI
 import { useKeybindings, useBinding } from '../../hooks/useKeybindings'
 import { focusChatTextarea } from '../../lib/focusChatTextarea'
 import { shouldAutofocus } from '../../lib/device'
-import { useModelSearch, ModelEntryRow, type ModelWithConfig } from './model-list'
+import {
+  useModelSearch,
+  ModelEntryRow,
+  type ModelWithConfig,
+  getGranularPriceParts,
+  getPriceTierColor,
+} from './model-list'
+import { useDisplaySettings } from '../../hooks/useDisplaySettings'
 import { parseModelValue } from '../../lib/model-value'
 import { shouldGateEffortChange, resolveDisplayEffort } from '../../lib/effort-gate'
 import { useEffortChangeGate } from '../plan/EffortChangeGate'
@@ -35,6 +42,7 @@ type ProviderLabelProps = {
   agentName?: string
   /** The displayed effort comes from a session pin ("Keep current reasoning effort"). */
   pinned?: boolean
+  modelPricing?: ModelWithConfig['pricing']
 }
 
 function ProviderLabel({
@@ -45,55 +53,89 @@ function ProviderLabel({
   agentColor,
   agentName,
   pinned,
+  modelPricing,
 }: ProviderLabelProps) {
   const t = useT()
+  const displaySettings = useDisplaySettings()
+  const barModelCurrency = modelPricing?.currency ?? displaySettings.modelPriceCurrency
+  const barThresholds =
+    displaySettings.multiCurrencyPriceThresholds?.[barModelCurrency] ?? displaySettings.modelPriceThresholds
+  const priceParts =
+    displaySettings.showModelPriceInBar && modelPricing
+      ? getGranularPriceParts(
+          modelPricing,
+          {
+            showInput: displaySettings.showModelPriceInBarInput,
+            showOutput: displaySettings.showModelPriceInBarOutput,
+            showCacheRead: displaySettings.showModelPriceInBarCacheRead,
+            showCacheWrite: displaySettings.showModelPriceInBarCacheWrite,
+          },
+          barThresholds,
+          barModelCurrency,
+        )
+      : []
+
   return (
-    <>
-      <span className="text-sm text-accent-primary flex items-center gap-1">
-        {agentOverrideActive && (
-          <span
-            className="w-2.5 h-2.5 rounded-full flex-shrink-0 ring-1 ring-border"
-            style={{ backgroundColor: agentColor ?? '#6b7280' }}
-            title={t({
-              en: `Model set by agent "${agentName ?? 'unknown'}". Change it in Settings > Agents.`,
-              fr: `Modèle défini par l’agent « ${agentName ?? 'inconnu'} ». Modifiez-le dans Paramètres > Agents.`,
-            })}
-          />
-        )}
-        {activeProvider ? (
-          <>
-            <span className="hidden @sm:inline">{`${activeProvider.name} • `}</span>
-            <span className="truncate min-w-0">{shortModelName}</span>
-            {effort && <span className="text-text-muted flex-shrink-0">:{effort}</span>}
-          </>
-        ) : (
-          <>
-            <span className="truncate min-w-0">{shortModelName}</span>
-            {effort && <span className="text-text-muted flex-shrink-0">:{effort}</span>}
-          </>
-        )}
-        {pinned && (
-          <span
-            className="flex-shrink-0 text-text-muted"
-            title={t({
-              en: 'Reasoning effort pinned for this session (chosen via "Keep current reasoning effort").',
-              fr: 'Niveau de raisonnement épinglé pour cette session (choisi via « Conserver le niveau de raisonnement actuel »).',
-            })}
-          >
-            <PinIcon className="w-3 h-3" />
-          </span>
-        )}
-      </span>
-      <span
-        className={`text-xs px-1.5 py-0.5 rounded-full ${
-          activeProvider?.isLocal
-            ? 'text-accent-success bg-accent-success/10'
-            : 'text-accent-warning bg-accent-warning/10'
-        }`}
-      >
-        {activeProvider?.isLocal ? t({ en: 'local', fr: 'local' }) : t({ en: 'api', fr: 'api' })}
-      </span>
-    </>
+    <div className="flex flex-col text-right items-end">
+      <div className="flex items-center gap-1 justify-end">
+        <span className="text-sm text-accent-primary flex items-center gap-1">
+          {agentOverrideActive && (
+            <span
+              className="w-2.5 h-2.5 rounded-full flex-shrink-0 ring-1 ring-border"
+              style={{ backgroundColor: agentColor ?? '#6b7280' }}
+              title={t({
+                en: `Model set by agent "${agentName ?? 'unknown'}". Change it in Settings > Agents.`,
+                fr: `Modèle défini par l’agent « ${agentName ?? 'inconnu'} ». Modifiez-le dans Paramètres > Agents.`,
+              })}
+            />
+          )}
+          {activeProvider ? (
+            <>
+              <span className="hidden @sm:inline">{`${activeProvider.name} • `}</span>
+              <span className="truncate min-w-0">{shortModelName}</span>
+              {effort && <span className="text-text-muted flex-shrink-0">:{effort}</span>}
+            </>
+          ) : (
+            <>
+              <span className="truncate min-w-0">{shortModelName}</span>
+              {effort && <span className="text-text-muted flex-shrink-0">:{effort}</span>}
+            </>
+          )}
+          {pinned && (
+            <span
+              className="flex-shrink-0 text-text-muted"
+              title={t({
+                en: 'Reasoning effort pinned for this session (chosen via "Keep current reasoning effort").',
+                fr: 'Niveau de raisonnement épinglé pour cette session (choisi via « Conserver le niveau de raisonnement actuel »).',
+              })}
+            >
+              <PinIcon className="w-3 h-3" />
+            </span>
+          )}
+        </span>
+        <span
+          className={`text-xs px-1.5 py-0.5 rounded-full ${
+            activeProvider?.isLocal
+              ? 'text-accent-success bg-accent-success/10'
+              : 'text-accent-warning bg-accent-warning/10'
+          }`}
+        >
+          {activeProvider?.isLocal ? t({ en: 'local', fr: 'local' }) : t({ en: 'api', fr: 'api' })}
+        </span>
+      </div>
+      {priceParts.length > 0 && (
+        <div className="text-[10px] font-mono flex items-center justify-end gap-1 whitespace-nowrap overflow-hidden text-ellipsis -mt-0.5 leading-tight">
+          {priceParts.map((part, index) => (
+            <span key={part.label} className="inline-flex items-center shrink-0">
+              <span className={getPriceTierColor(part.tier, displaySettings.enableModelPriceColors)}>
+                {part.formatted}
+              </span>
+              {index < priceParts.length - 1 && <span className="text-text-muted ml-1">·</span>}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -724,6 +766,7 @@ export function ProviderSelector() {
             agentColor={agentColor}
             agentName={currentAgent?.name}
             pinned={isEffortPinned}
+            modelPricing={effectiveModelConfig?.pricing}
           />
         )}
         <span className="text-text-muted opacity-0 group-hover:opacity-100 transition-opacity">↻</span>
@@ -750,6 +793,7 @@ export function ProviderSelector() {
             agentColor={agentColor}
             agentName={currentAgent?.name}
             pinned={isEffortPinned}
+            modelPricing={effectiveModelConfig?.pricing}
           />
         )}
         <ChevronDownIcon className={`w-3 h-3 text-text-muted transition-transform`} rotate={isOpen ? 180 : 0} />

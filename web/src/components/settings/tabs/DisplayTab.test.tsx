@@ -119,3 +119,45 @@ describe('DisplayTab Model Selector', () => {
     expect(mockSetSetting).toHaveBeenCalledWith(SETTINGS_KEYS.DISPLAY_COLLAPSE_FAVORITES_BY_DEFAULT, 'true')
   })
 })
+
+describe('DisplayTab - Model Pricing section', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    Object.keys(mockSettings).forEach((k) => delete mockSettings[k])
+    setLocale('en')
+  })
+
+  it('renders the Model Pricing section with top-level toggles', () => {
+    mockSettings[SETTINGS_KEYS.DISPLAY_ENABLE_MODEL_PRICE_COLORS] = 'false'
+    mockSettings[SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICES] = 'false'
+    mockSettings[SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_IN_BAR] = 'false'
+
+    render(<DisplayTab />)
+
+    expect(screen.getByText('Model Pricing')).toBeTruthy()
+    expect(screen.getByText('Show pricing hover popover')).toBeTruthy()
+    expect(screen.getByText('Show prices under model names')).toBeTruthy()
+    expect(screen.getByText('Price color tiers (Low / Medium / High)')).toBeTruthy()
+    expect(screen.queryByText('Color model name by output price')).toBeNull()
+    expect(screen.queryByText('Input price')).toBeNull()
+  })
+
+  it('reveals children toggles when parent toggles are active', () => {
+    mockSettings[SETTINGS_KEYS.DISPLAY_ENABLE_MODEL_PRICE_COLORS] = 'true'
+    mockSettings[SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICES] = 'true'
+    mockSettings[SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_INPUT] = 'true'
+    mockSettings[SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_OUTPUT] = 'true'
+    mockSettings[SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_CACHE_READ] = 'true'
+    mockSettings[SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_CACHE_WRITE] = 'true'
+
+    render(<DisplayTab />)
+
+    expect(screen.getByText('Color model name by output price')).toBeTruthy()
+    expect(screen.getByText('Input price')).toBeTruthy()
+    expect(screen.getByText('Output price')).toBeTruthy()
+    expect(screen.getByText('Cache read price')).toBeTruthy()
+    expect(screen.getByText('Cache write price')).toBeTruthy()
+    expect(screen.getByText('Price Color Thresholds — Standard Currencies ($ / €)')).toBeTruthy()
+    expect(screen.getByText('Price Color Thresholds — Tokens / Credits (tk)')).toBeTruthy()
+  })
+})

@@ -129,7 +129,15 @@ function mergeModelsWithUserOverrides(
   const updatedModels = filteredBackendModels.map((backendModel) => {
     const existingUserModel = normalizedUserIdMap.get(normalizeModelId(backendModel.id))
     if (existingUserModel) {
-      return enrichWithProfileDefaults({ ...backendModel, ...existingUserModel, id: backendModel.id })
+      const mergedPricing = existingUserModel.pricing ?? backendModel.pricing
+      const mergedSupportsVision = existingUserModel.supportsVision ?? backendModel.supportsVision
+      return enrichWithProfileDefaults({
+        ...backendModel,
+        ...existingUserModel,
+        ...(mergedPricing !== undefined ? { pricing: mergedPricing } : {}),
+        ...(mergedSupportsVision !== undefined ? { supportsVision: mergedSupportsVision } : {}),
+        id: backendModel.id,
+      })
     }
     return enrichWithProfileDefaults(backendModel)
   })
@@ -548,15 +556,30 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
 
   async function fetchProviderModels(provider: Provider): Promise<ModelConfig[]> {
     const transport = options.adapters?.getTransport(resolveTransportAdapter(provider))
+    let models: ModelConfig[]
     if (transport) {
-      return transport.listModels({
+      models = await transport.listModels({
         providerId: provider.id,
         ...(provider.credentialRef && { credentialRef: provider.credentialRef }),
       })
+    } else {
+      const backend = resolveBackend(provider)
+      models = await fetchModelsWithContext(provider.url, provider.apiKey, backend)
     }
 
-    const backend = resolveBackend(provider)
-    return fetchModelsWithContext(provider.url, provider.apiKey, backend)
+    const now = new Date().toISOString()
+    return models.map((m) => {
+      if (m.pricing) {
+        return {
+          ...m,
+          pricing: {
+            ...m.pricing,
+            lastUpdatedAt: m.pricing.lastUpdatedAt ?? now,
+          },
+        }
+      }
+      return m
+    })
   }
 
   // Initialize the LLM client with the active provider's config (URL, model, apiKey, etc.)
@@ -786,6 +809,18 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
       const provider = providers.find((p) => p.id === providerId)
       if (!provider) {
         return []
+      }
+
+      // If transport adapter is available, fetch fresh models to merge dynamic pricing & capabilities
+      if (resolveTransportAdapter(provider)) {
+        try {
+          const freshModels = await fetchProviderModels(provider)
+          if (freshModels.length > 0) {
+            return mergeModelsWithUserOverrides(freshModels, provider.models ?? [], false)
+          }
+        } catch {
+          // Fallback to stored models on fetch failure
+        }
       }
 
       // Return stored models with context info

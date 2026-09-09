@@ -6,6 +6,7 @@ import {
   formatTimeSince,
   formatDateTime,
   formatRelativeDate,
+  formatRelativePricingDate,
   extractDateKey,
   groupSessionsByDate,
 } from './format-date.js'
@@ -125,6 +126,28 @@ describe('formatRelativeDate', () => {
     expect(formatRelativeDate(at(0), NOW)).toBe("aujourd'hui 10:00")
     expect(formatRelativeDate(at(-1), NOW)).toBe('hier 10:00')
     expect(formatRelativeDate(at(-3), NOW)).toBe('il y a 3 jours à 10:00')
+  })
+})
+
+describe('formatRelativePricingDate', () => {
+  const NOW = new Date('2024-01-15T12:00:00.000Z').getTime()
+
+  it('renders "Just now" for dates within 60s', () => {
+    expect(formatRelativePricingDate('2024-01-15T11:59:30.000Z', NOW)).toBe('Just now')
+    expect(formatRelativePricingDate('2024-01-15T12:00:00.000Z', NOW)).toBe('Just now')
+  })
+
+  it('renders "À l\'instant" in fr for dates within 60s', () => {
+    setLocale('fr')
+    expect(formatRelativePricingDate('2024-01-15T11:59:30.000Z', NOW)).toBe("À l'instant")
+  })
+
+  it('renders relative format for older dates', () => {
+    expect(formatRelativePricingDate('2024-01-14T10:00:00.000Z', NOW)).toContain('yesterday')
+  })
+
+  it('returns original string if date is invalid', () => {
+    expect(formatRelativePricingDate('invalid-date', NOW)).toBe('invalid-date')
   })
 })
 

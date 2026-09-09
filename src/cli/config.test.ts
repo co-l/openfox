@@ -290,6 +290,64 @@ describe('config', () => {
       const defaultModel = getDefaultModel(loaded)
       expect(defaultModel).toBe('Intel/Qwen3.5-397B')
     })
+
+    it('persists model pricing when saving and loading global config', async () => {
+      const configWithPricing = {
+        providers: [
+          {
+            id: 'test-provider',
+            name: 'Test Provider',
+            url: 'http://localhost:8000/v1',
+            backend: 'openai' as const,
+            models: [
+              {
+                id: 'gpt-4o',
+                contextWindow: 128000,
+                source: 'user' as const,
+                pricing: {
+                  input: 2.5,
+                  output: 10,
+                  cacheRead: 1.25,
+                  cacheWrite: 3.75,
+                  discount: 60,
+                  lastUpdatedAt: '2026-09-08T12:00:00.000Z',
+                },
+              },
+            ],
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+        defaultModelSelection: 'test-provider/gpt-4o',
+        server: { port: 10369, host: '127.0.0.1', openBrowser: true },
+        logging: { level: 'info' as const },
+        database: { path: '' },
+        workspace: { workdir: process.cwd() },
+      }
+
+      await writeFile(join(TEST_DIR, 'production', 'config.json'), JSON.stringify(configWithPricing))
+      const loaded = await loadGlobalConfig('production')
+
+      expect(loaded.providers[0]?.models[0]?.pricing).toEqual({
+        input: 2.5,
+        output: 10,
+        cacheRead: 1.25,
+        cacheWrite: 3.75,
+        discount: 60,
+        lastUpdatedAt: '2026-09-08T12:00:00.000Z',
+      })
+
+      await saveGlobalConfig('production', loaded)
+      const reloaded = await loadGlobalConfig('production')
+      expect(reloaded.providers[0]?.models[0]?.pricing).toEqual({
+        input: 2.5,
+        output: 10,
+        cacheRead: 1.25,
+        cacheWrite: 3.75,
+        discount: 60,
+        lastUpdatedAt: '2026-09-08T12:00:00.000Z',
+      })
+    })
   })
 
   describe('mcpServers config', () => {

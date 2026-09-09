@@ -2,6 +2,11 @@ import { ScrollArea } from '../../shared/ScrollArea'
 import { useState, useEffect, useMemo } from 'react'
 import { SETTINGS_KEYS, setSetting } from '../../../lib/resources'
 import { useSetting } from '../../../hooks/useSetting'
+import {
+  type ModelPriceThresholds,
+  type MultiCurrencyPriceThresholds,
+  parseMultiCurrencyPriceThresholds,
+} from '../../../hooks/useDisplaySettings'
 import { ThemeEditor } from '../ThemeEditor'
 import { useT } from '../../../hooks/useT'
 import { useLocaleStore } from '../../../stores/locale'
@@ -134,6 +139,134 @@ const PERF_TOGGLES: ToggleDefinition[] = [
   },
 ]
 
+const PRICING_MAIN_TOGGLE: ToggleDefinition = {
+  key: SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICES,
+  label: { en: 'Show prices under model names', fr: 'Afficher les prix sous les noms de modèles' },
+  description: {
+    en: 'Display configured rates and discounts below model names in the selector and lists',
+    fr: 'Affiche les tarifs et remises configurés sous les noms de modèles dans le sélecteur et les listes',
+  },
+  defaultValue: 'false',
+}
+
+const PRICING_SUB_TOGGLES: ToggleDefinition[] = [
+  {
+    key: SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_INPUT,
+    label: { en: 'Input price', fr: 'Prix d’entrée (Input)' },
+    description: {
+      en: 'Show input token rate (/ 1M tokens)',
+      fr: 'Afficher le tarif des jetons d’entrée (/ 1M jetons)',
+    },
+    defaultValue: 'true',
+  },
+  {
+    key: SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_OUTPUT,
+    label: { en: 'Output price', fr: 'Prix de sortie (Output)' },
+    description: {
+      en: 'Show output token rate (/ 1M tokens)',
+      fr: 'Afficher le tarif des jetons de sortie (/ 1M jetons)',
+    },
+    defaultValue: 'true',
+  },
+  {
+    key: SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_CACHE_READ,
+    label: { en: 'Cache read price', fr: 'Prix de lecture cache' },
+    description: {
+      en: 'Show cache read token rate (/ 1M tokens)',
+      fr: 'Afficher le tarif de lecture du cache (/ 1M jetons)',
+    },
+    defaultValue: 'true',
+  },
+  {
+    key: SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_CACHE_WRITE,
+    label: { en: 'Cache write price', fr: 'Prix d’écriture cache' },
+    description: {
+      en: 'Show cache write token rate (/ 1M tokens)',
+      fr: 'Afficher le tarif d’écriture du cache (/ 1M jetons)',
+    },
+    defaultValue: 'true',
+  },
+]
+
+const PRICING_POPOVER_TOGGLE: ToggleDefinition = {
+  key: SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_POPOVER,
+  label: { en: 'Show pricing hover popover', fr: 'Afficher l’infobulle de tarification au survol' },
+  description: {
+    en: 'Display detailed pricing card tooltip when hovering over a model row',
+    fr: 'Affiche une carte détaillée des tarifs lors du survol d’une ligne de modèle',
+  },
+  defaultValue: 'true',
+}
+
+const PRICING_COLORS_TOGGLE: ToggleDefinition = {
+  key: SETTINGS_KEYS.DISPLAY_ENABLE_MODEL_PRICE_COLORS,
+  label: { en: 'Price color tiers (Low / Medium / High)', fr: 'Paliers de couleur des prix (Bas / Moyen / Élevé)' },
+  description: {
+    en: 'Color-code price rates based on configured thresholds (green/yellow/red)',
+    fr: 'Colore les tarifs selon les seuils configurés (vert/jaune/rouge)',
+  },
+  defaultValue: 'true',
+}
+
+const PRICING_COLOR_NAME_BY_OUTPUT_TOGGLE: ToggleDefinition = {
+  key: SETTINGS_KEYS.DISPLAY_COLOR_MODEL_NAME_BY_OUTPUT_PRICE,
+  label: { en: 'Color model name by output price', fr: 'Colorer le nom du modèle selon le prix de sortie' },
+  description: {
+    en: 'Display model names in the color tier of their output price',
+    fr: 'Affiche les noms des modèles avec la couleur correspondant au palier de prix de sortie',
+  },
+  defaultValue: 'false',
+}
+
+const PRICING_IN_BAR_TOGGLE: ToggleDefinition = {
+  key: SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_IN_BAR,
+  label: { en: 'Show model price in bottom bar', fr: 'Afficher le prix du modèle dans la barre inférieure' },
+  description: {
+    en: 'Display rates of the active model in the bottom provider/model indicator',
+    fr: 'Affiche les tarifs du modèle actif dans l’indicateur en bas d’écran',
+  },
+  defaultValue: 'false',
+}
+
+const PRICING_IN_BAR_SUB_TOGGLES: ToggleDefinition[] = [
+  {
+    key: SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_IN_BAR_INPUT,
+    label: { en: 'Input price in bar', fr: 'Prix d’entrée dans la barre' },
+    description: {
+      en: 'Show active model input token rate in the bottom bar',
+      fr: 'Affiche le tarif des jetons d’entrée dans la barre inférieure',
+    },
+    defaultValue: 'true',
+  },
+  {
+    key: SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_IN_BAR_OUTPUT,
+    label: { en: 'Output price in bar', fr: 'Prix de sortie dans la barre' },
+    description: {
+      en: 'Show active model output token rate in the bottom bar',
+      fr: 'Affiche le tarif des jetons de sortie dans la barre inférieure',
+    },
+    defaultValue: 'true',
+  },
+  {
+    key: SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_IN_BAR_CACHE_READ,
+    label: { en: 'Cache read price in bar', fr: 'Prix de lecture cache dans la barre' },
+    description: {
+      en: 'Show active model cache read rate in the bottom bar',
+      fr: 'Affiche le tarif de lecture cache dans la barre inférieure',
+    },
+    defaultValue: 'true',
+  },
+  {
+    key: SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_IN_BAR_CACHE_WRITE,
+    label: { en: 'Cache write price in bar', fr: 'Prix d’écriture cache dans la barre' },
+    description: {
+      en: 'Show active model cache write rate in the bottom bar',
+      fr: 'Affiche le tarif d’écriture cache dans la barre inférieure',
+    },
+    defaultValue: 'true',
+  },
+]
+
 export function DisplayTab() {
   const t = useT()
   const applyLocale = useLocaleStore((state) => state.applyLocale)
@@ -155,6 +288,20 @@ export function DisplayTab() {
   const storedLocale = useSetting(SETTINGS_KEYS.DISPLAY_LOCALE, 'automatic')
   const isLoading = showThinking.loading
 
+  const showModelPrices = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICES, 'false')
+  const showModelPriceInput = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_INPUT, 'true')
+  const showModelPriceOutput = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_OUTPUT, 'true')
+  const showModelPriceCacheRead = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_CACHE_READ, 'true')
+  const showModelPriceCacheWrite = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_CACHE_WRITE, 'true')
+  const showModelPricePopover = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_POPOVER, 'true')
+  const enableModelPriceColors = useSetting(SETTINGS_KEYS.DISPLAY_ENABLE_MODEL_PRICE_COLORS, 'true')
+  const colorModelNameByOutputPrice = useSetting(SETTINGS_KEYS.DISPLAY_COLOR_MODEL_NAME_BY_OUTPUT_PRICE, 'false')
+  const showModelPriceInBar = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_IN_BAR, 'false')
+  const showModelPriceInBarInput = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_IN_BAR_INPUT, 'true')
+  const showModelPriceInBarOutput = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_IN_BAR_OUTPUT, 'true')
+  const showModelPriceInBarCacheRead = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_IN_BAR_CACHE_READ, 'true')
+  const showModelPriceInBarCacheWrite = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_IN_BAR_CACHE_WRITE, 'true')
+
   const [maxItemsLocal, setMaxItemsLocal] = useState(maxVisibleItems.value)
 
   useEffect(() => {
@@ -168,7 +315,17 @@ export function DisplayTab() {
     void setSetting(SETTINGS_KEYS.DISPLAY_MAX_VISIBLE_ITEMS, String(clamped))
   }
 
-  const allToggles = [...FEED_TOGGLES, ...PERF_TOGGLES]
+  const allToggles = [
+    ...FEED_TOGGLES,
+    ...PERF_TOGGLES,
+    PRICING_MAIN_TOGGLE,
+    ...PRICING_SUB_TOGGLES,
+    PRICING_POPOVER_TOGGLE,
+    PRICING_COLORS_TOGGLE,
+    PRICING_COLOR_NAME_BY_OUTPUT_TOGGLE,
+    PRICING_IN_BAR_TOGGLE,
+    ...PRICING_IN_BAR_SUB_TOGGLES,
+  ]
 
   const localValues: Record<string, string> = {
     [SETTINGS_KEYS.DISPLAY_SHOW_THINKING]: showThinking.value,
@@ -182,13 +339,33 @@ export function DisplayTab() {
     [SETTINGS_KEYS.DISPLAY_DEFER_CODE_HIGHLIGHT_WHILE_STREAMING]: deferCodeHighlightWhileStreaming.value,
     [SETTINGS_KEYS.DISPLAY_FEED_VIRTUALIZATION]: feedVirtualization.value,
     [SETTINGS_KEYS.DISPLAY_SHOW_SYNTAX_HIGHLIGHTING]: syntaxHighlighting.value,
+    [SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICES]: showModelPrices.value,
+    [SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_INPUT]: showModelPriceInput.value,
+    [SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_OUTPUT]: showModelPriceOutput.value,
+    [SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_CACHE_READ]: showModelPriceCacheRead.value,
+    [SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_CACHE_WRITE]: showModelPriceCacheWrite.value,
+    [SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_POPOVER]: showModelPricePopover.value,
+    [SETTINGS_KEYS.DISPLAY_ENABLE_MODEL_PRICE_COLORS]: enableModelPriceColors.value,
+    [SETTINGS_KEYS.DISPLAY_COLOR_MODEL_NAME_BY_OUTPUT_PRICE]: colorModelNameByOutputPrice.value,
+    [SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_IN_BAR]: showModelPriceInBar.value,
+    [SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_IN_BAR_INPUT]: showModelPriceInBarInput.value,
+    [SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_IN_BAR_OUTPUT]: showModelPriceInBarOutput.value,
+    [SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_IN_BAR_CACHE_READ]: showModelPriceInBarCacheRead.value,
+    [SETTINGS_KEYS.DISPLAY_SHOW_MODEL_PRICE_IN_BAR_CACHE_WRITE]: showModelPriceInBarCacheWrite.value,
   }
+
   const [local, setLocal] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(allToggles.map((toggle) => [toggle.key, localValues[toggle.key] === 'true'])),
+    Object.fromEntries(
+      allToggles.map((toggle) => [toggle.key, (localValues[toggle.key] ?? toggle.defaultValue) === 'true']),
+    ),
   )
 
   useEffect(() => {
-    setLocal(Object.fromEntries(allToggles.map((toggle) => [toggle.key, localValues[toggle.key] === 'true'])))
+    setLocal(
+      Object.fromEntries(
+        allToggles.map((toggle) => [toggle.key, (localValues[toggle.key] ?? toggle.defaultValue) === 'true']),
+      ),
+    )
   }, [JSON.stringify(localValues)])
 
   const handleToggle = (key: string) => {
@@ -232,6 +409,49 @@ export function DisplayTab() {
           {t({ en: 'Model Selector', fr: 'Sélecteur de modèles' })}
         </h3>
         <ModelSelectorEditor />
+      </div>
+
+      <div className="border-t border-border pt-4">
+        <h3 className="text-sm font-medium text-text-primary mb-4">
+          {t({ en: 'Model Pricing', fr: 'Tarification des modèles' })}
+        </h3>
+        <div className="space-y-4">
+          <ToggleList toggles={[PRICING_POPOVER_TOGGLE]} local={local} onToggle={handleToggle} />
+          <ToggleList toggles={[PRICING_MAIN_TOGGLE]} local={local} onToggle={handleToggle} />
+          {local[PRICING_MAIN_TOGGLE.key] && (
+            <div className="pl-4 space-y-3 border-l-2 border-border/50 ml-2">
+              <ToggleList toggles={PRICING_SUB_TOGGLES} local={local} onToggle={handleToggle} />
+            </div>
+          )}
+          <ToggleList toggles={[PRICING_IN_BAR_TOGGLE]} local={local} onToggle={handleToggle} />
+          {local[PRICING_IN_BAR_TOGGLE.key] && (
+            <div className="pl-4 space-y-3 border-l-2 border-border/50 ml-2">
+              <ToggleList toggles={PRICING_IN_BAR_SUB_TOGGLES} local={local} onToggle={handleToggle} />
+            </div>
+          )}
+          <ToggleList toggles={[PRICING_COLORS_TOGGLE]} local={local} onToggle={handleToggle} />
+          {local[PRICING_COLORS_TOGGLE.key] && (
+            <div className="pl-4 space-y-4 border-l-2 border-border/50 ml-2">
+              <ToggleList toggles={[PRICING_COLOR_NAME_BY_OUTPUT_TOGGLE]} local={local} onToggle={handleToggle} />
+              <PriceThresholdsEditor
+                mode="fiat"
+                title={t({
+                  en: 'Price Color Thresholds — Standard Currencies ($ / €)',
+                  fr: 'Seuils de couleur de prix — Devises standard ($ / €)',
+                })}
+                unitLabel={t({ en: '$/€ / 1M', fr: '$/€ / 1M' })}
+              />
+              <PriceThresholdsEditor
+                mode="tokens"
+                title={t({
+                  en: 'Price Color Thresholds — Tokens / Credits (tk)',
+                  fr: 'Seuils de couleur de prix — Jetons / Crédits (tk)',
+                })}
+                unitLabel={t({ en: 'tk / 1M', fr: 'tk / 1M' })}
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="border-t border-border pt-4">
@@ -398,6 +618,97 @@ function ToggleList({
           </button>
         </label>
       ))}
+    </div>
+  )
+}
+
+function PriceThresholdsEditor({
+  mode,
+  title,
+  unitLabel,
+}: {
+  mode: 'fiat' | 'tokens'
+  title: string
+  unitLabel: string
+}) {
+  const t = useT()
+  const thresholdsSetting = useSetting(SETTINGS_KEYS.DISPLAY_MODEL_PRICE_THRESHOLDS)
+  const raw = thresholdsSetting.value
+  const multiThresholds = useMemo(() => parseMultiCurrencyPriceThresholds(raw), [raw])
+  const currentThresholds = mode === 'fiat' ? multiThresholds.usd : multiThresholds.tokens
+  const [localThresholds, setLocalThresholds] = useState<ModelPriceThresholds>(currentThresholds)
+
+  useEffect(() => {
+    setLocalThresholds(mode === 'fiat' ? multiThresholds.usd : multiThresholds.tokens)
+  }, [multiThresholds, mode])
+
+  const handleUpdate = (category: keyof ModelPriceThresholds, level: 'low' | 'medium', value: number) => {
+    const updatedCategory = {
+      ...localThresholds[category],
+      [level]: value,
+    }
+    const updatedSingle: ModelPriceThresholds = {
+      ...localThresholds,
+      [category]: updatedCategory,
+    }
+    setLocalThresholds(updatedSingle)
+
+    const updatedMulti: MultiCurrencyPriceThresholds = {
+      ...multiThresholds,
+      ...(mode === 'fiat' ? { usd: updatedSingle, eur: updatedSingle } : { tokens: updatedSingle }),
+    }
+    void setSetting(SETTINGS_KEYS.DISPLAY_MODEL_PRICE_THRESHOLDS, JSON.stringify(updatedMulti))
+  }
+
+  const categories: Array<{
+    key: keyof ModelPriceThresholds
+    label: Translation
+  }> = [
+    { key: 'input', label: { en: 'Input', fr: 'Entrée (Input)' } },
+    { key: 'output', label: { en: 'Output', fr: 'Sortie (Output)' } },
+    { key: 'cacheRead', label: { en: 'Cache Read', fr: 'Lecture cache' } },
+    { key: 'cacheWrite', label: { en: 'Cache Write', fr: 'Écriture cache' } },
+  ]
+
+  return (
+    <div className="pt-2 space-y-3">
+      <div className="text-xs font-semibold text-text-primary">{title}</div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+        {categories.map(({ key, label }) => (
+          <div key={key} className="p-2.5 bg-bg-secondary border border-border/70 rounded-md space-y-1.5">
+            <div className="font-medium text-text-primary flex justify-between">
+              <span>{t(label)}</span>
+              <span className="text-[10px] text-text-muted">{unitLabel}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <span className="text-[10px] text-accent-success font-medium">
+                  {t({ en: 'Low (≤)', fr: 'Bas (≤)' })}
+                </span>
+                <input
+                  type="number"
+                  step={mode === 'fiat' ? '0.01' : '1'}
+                  value={localThresholds[key].low}
+                  onChange={(e) => handleUpdate(key, 'low', parseFloat(e.target.value) || 0)}
+                  className="w-full mt-0.5 px-2 py-1 bg-bg-tertiary border border-border rounded text-text-primary text-xs"
+                />
+              </div>
+              <div>
+                <span className="text-[10px] text-accent-warning font-medium">
+                  {t({ en: 'Med (≤)', fr: 'Moyen (≤)' })}
+                </span>
+                <input
+                  type="number"
+                  step={mode === 'fiat' ? '0.01' : '1'}
+                  value={localThresholds[key].medium}
+                  onChange={(e) => handleUpdate(key, 'medium', parseFloat(e.target.value) || 0)}
+                  className="w-full mt-0.5 px-2 py-1 bg-bg-tertiary border border-border rounded text-text-primary text-xs"
+                />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

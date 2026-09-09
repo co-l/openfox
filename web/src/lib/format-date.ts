@@ -105,6 +105,23 @@ export function formatRelativeDate(isoString: string, now = Date.now()): string 
   }
 }
 
+/**
+ * Format pricing last update timestamp:
+ * - "Just now" / "À l'instant" if within 60 seconds
+ * - Otherwise relative date/time (e.g. "today 14:30", "yesterday 10:00")
+ */
+export function formatRelativePricingDate(isoString: string, now = Date.now()): string {
+  const date = new Date(isoString)
+  if (Number.isNaN(date.getTime())) return isoString
+
+  const diffMs = now - date.getTime()
+  if (diffMs >= -5000 && diffMs < 60 * 1000) {
+    return t({ en: 'Just now', fr: "À l'instant" })
+  }
+
+  return formatRelativeDate(isoString, now)
+}
+
 export function extractDateComponents(isoString: string) {
   const date = new Date(isoString)
   return {

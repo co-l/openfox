@@ -3,8 +3,10 @@ import { Modal } from './Modal'
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { authFetch } from '../../lib/api'
 import type { Backend } from '../../stores/config'
-import type { ModelConfig as SharedModelConfig } from '@shared/types.js'
+import type { ModelConfig as SharedModelConfig, ModelPricing } from '@shared/types.js'
 import { ChevronDownIcon, EyeIcon, ReloadIcon, SettingsIcon } from './icons'
+import { formatDiscountBadge, formatPricingSummary } from '../settings/model-list'
+import { useDisplaySettings } from '../../hooks/useDisplaySettings'
 import { QueryParamsInput } from './QueryParamsInput'
 import { formatTokens } from '../../lib/format-stats'
 import { getLocale } from '@shared/i18n/index.js'
@@ -89,6 +91,7 @@ interface ModelConfig {
   defaultTopK?: number
   defaultMaxTokens?: number
   compactionThreshold?: number
+  pricing?: ModelPricing
 }
 
 export interface ProviderFormData {
@@ -558,6 +561,181 @@ function ModelConfigPanel({
           />
         </div>
       </details>
+
+      <details className="group mt-2">
+        <summary className="text-xs text-text-muted cursor-pointer hover:text-text-secondary list-none flex items-center gap-1 select-none">
+          <ChevronDownIcon className="w-3 h-3 transition-transform group-open:rotate-180" />
+          {t({
+            en: 'API Price & Discount (/ 1M tokens)',
+            fr: 'Tarifs API et remises (/ 1M jetons)',
+          })}
+        </summary>
+        <div className="mt-3 space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs text-text-secondary block mb-0.5">
+                {t({ en: 'Input price', fr: 'Prix d’entrée (Input)' })}
+              </label>
+              <input
+                type="number"
+                step="any"
+                min="0"
+                data-testid="pricing-input"
+                value={modelConfigs[model.id]?.pricing?.input ?? ''}
+                onChange={(e) => {
+                  const val = e.target.value ? parseFloat(e.target.value) : undefined
+                  const currentPricing = modelConfigs[model.id]?.pricing ?? {}
+                  const nextPricing = { ...currentPricing, input: val, lastUpdatedAt: new Date().toISOString() }
+                  if (val === undefined) delete nextPricing.input
+                  const { lastUpdatedAt: _, ...rest } = nextPricing
+                  onUpdateConfig(model.id, {
+                    pricing: Object.values(rest).some((v) => v !== undefined) ? nextPricing : undefined,
+                  })
+                }}
+                placeholder={t({ en: 'e.g. 0.15', fr: 'ex. 0.15' })}
+                className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-primary"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-text-secondary block mb-0.5">
+                {t({ en: 'Output price', fr: 'Prix de sortie (Output)' })}
+              </label>
+              <input
+                type="number"
+                step="any"
+                min="0"
+                data-testid="pricing-output"
+                value={modelConfigs[model.id]?.pricing?.output ?? ''}
+                onChange={(e) => {
+                  const val = e.target.value ? parseFloat(e.target.value) : undefined
+                  const currentPricing = modelConfigs[model.id]?.pricing ?? {}
+                  const nextPricing = { ...currentPricing, output: val, lastUpdatedAt: new Date().toISOString() }
+                  if (val === undefined) delete nextPricing.output
+                  const { lastUpdatedAt: _, ...rest } = nextPricing
+                  onUpdateConfig(model.id, {
+                    pricing: Object.values(rest).some((v) => v !== undefined) ? nextPricing : undefined,
+                  })
+                }}
+                placeholder={t({ en: 'e.g. 0.60', fr: 'ex. 0.60' })}
+                className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-primary"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 mt-2">
+            <div>
+              <label className="text-xs text-text-secondary block mb-0.5">
+                {t({ en: 'Cache read price', fr: 'Prix de lecture cache' })}
+              </label>
+              <input
+                type="number"
+                step="any"
+                min="0"
+                data-testid="pricing-cache-read"
+                value={modelConfigs[model.id]?.pricing?.cacheRead ?? ''}
+                onChange={(e) => {
+                  const val = e.target.value ? parseFloat(e.target.value) : undefined
+                  const currentPricing = modelConfigs[model.id]?.pricing ?? {}
+                  const nextPricing = { ...currentPricing, cacheRead: val, lastUpdatedAt: new Date().toISOString() }
+                  if (val === undefined) delete nextPricing.cacheRead
+                  const { lastUpdatedAt: _, ...rest } = nextPricing
+                  onUpdateConfig(model.id, {
+                    pricing: Object.values(rest).some((v) => v !== undefined) ? nextPricing : undefined,
+                  })
+                }}
+                placeholder={t({ en: 'e.g. 0.075', fr: 'ex. 0.075' })}
+                className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-primary"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-text-secondary block mb-0.5">
+                {t({ en: 'Cache write price', fr: 'Prix d’écriture cache' })}
+              </label>
+              <input
+                type="number"
+                step="any"
+                min="0"
+                data-testid="pricing-cache-write"
+                value={modelConfigs[model.id]?.pricing?.cacheWrite ?? ''}
+                onChange={(e) => {
+                  const val = e.target.value ? parseFloat(e.target.value) : undefined
+                  const currentPricing = modelConfigs[model.id]?.pricing ?? {}
+                  const nextPricing = { ...currentPricing, cacheWrite: val, lastUpdatedAt: new Date().toISOString() }
+                  if (val === undefined) delete nextPricing.cacheWrite
+                  const { lastUpdatedAt: _, ...rest } = nextPricing
+                  onUpdateConfig(model.id, {
+                    pricing: Object.values(rest).some((v) => v !== undefined) ? nextPricing : undefined,
+                  })
+                }}
+                placeholder={t({ en: 'e.g. 0.30', fr: 'ex. 0.30' })}
+                className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-primary"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 mt-2">
+            <div>
+              <label className="text-xs text-text-secondary block mb-0.5">
+                {t({ en: 'Discount (%)', fr: 'Remise (%)' })}
+              </label>
+              <input
+                type="text"
+                data-testid="pricing-discount"
+                value={modelConfigs[model.id]?.pricing?.discount ?? ''}
+                onChange={(e) => {
+                  const raw = e.target.value
+                  const trimmed = raw.trim()
+                  const num = Number(trimmed)
+                  const val = raw === '' ? undefined : !isNaN(num) && trimmed !== '' ? num : raw
+                  const currentPricing = modelConfigs[model.id]?.pricing ?? {}
+                  const nextPricing = { ...currentPricing, discount: val, lastUpdatedAt: new Date().toISOString() }
+                  if (val === undefined) delete nextPricing.discount
+                  const { lastUpdatedAt: _, ...rest } = nextPricing
+                  onUpdateConfig(model.id, {
+                    pricing: Object.values(rest).some((v) => v !== undefined) ? nextPricing : undefined,
+                  })
+                }}
+                onBlur={(e) => {
+                  const raw = e.target.value.trim()
+                  if (raw !== e.target.value) {
+                    const num = Number(raw)
+                    const val = raw === '' ? undefined : !isNaN(num) && raw !== '' ? num : raw
+                    const currentPricing = modelConfigs[model.id]?.pricing ?? {}
+                    const nextPricing = { ...currentPricing, discount: val, lastUpdatedAt: new Date().toISOString() }
+                    if (val === undefined) delete nextPricing.discount
+                    const { lastUpdatedAt: _, ...rest } = nextPricing
+                    onUpdateConfig(model.id, {
+                      pricing: Object.values(rest).some((v) => v !== undefined) ? nextPricing : undefined,
+                    })
+                  }
+                }}
+                placeholder={t({ en: 'e.g. 60 or 60% off', fr: 'ex. 60 ou 60% de remise' })}
+                className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-primary"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-text-secondary block mb-0.5">
+                {t({ en: 'Currency / Unit', fr: 'Devise / Unité' })}
+              </label>
+              <select
+                data-testid="pricing-currency"
+                value={modelConfigs[model.id]?.pricing?.currency ?? 'usd'}
+                onChange={(e) => {
+                  const val = e.target.value as 'usd' | 'eur' | 'tokens'
+                  const currentPricing = modelConfigs[model.id]?.pricing ?? {}
+                  const nextPricing = { ...currentPricing, currency: val, lastUpdatedAt: new Date().toISOString() }
+                  onUpdateConfig(model.id, {
+                    pricing: nextPricing,
+                  })
+                }}
+                className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-primary cursor-pointer"
+              >
+                <option value="usd">{t({ en: 'Dollar ($)', fr: 'Dollar ($)' })}</option>
+                <option value="eur">{t({ en: 'Euro (€)', fr: 'Euro (€)' })}</option>
+                <option value="tokens">{t({ en: 'Tokens / Credits (tk)', fr: 'Jetons / Crédits (tk)' })}</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </details>
     </div>
   )
 }
@@ -711,6 +889,7 @@ export function ProviderModal({
   editModelId,
 }: ProviderModalProps) {
   const t = useT()
+  const displaySettings = useDisplaySettings()
   const [formStep, setFormStep] = useState(initialStep)
   const [formName, setFormName] = useState('')
   const [formUrl, setFormUrl] = useState('')
@@ -804,6 +983,8 @@ export function ProviderModal({
       ...current,
       [model.id]: {
         contextWindow: model.contextWindow,
+        supportsVision: model.supportsVision,
+        pricing: model.pricing,
         ...current[model.id],
       },
     }))
@@ -974,6 +1155,7 @@ export function ProviderModal({
             topK: m.topK,
             maxTokens: m.maxTokens,
             compactionThreshold: m.compactionThreshold,
+            pricing: m.pricing ? { ...m.pricing } : undefined,
           }
           if (m.selected) selected.add(m.id)
         }
@@ -1011,7 +1193,7 @@ export function ProviderModal({
     ) {
       fetchModels(formUrl)
     }
-  }, [formStep, providerAuthState])
+  }, [formStep, providerAuthState, formTransportAdapter])
 
   useEffect(() => {
     if (!isOpen || !formAuthAdapter || !editProvider?.id) return
@@ -1175,6 +1357,7 @@ export function ProviderModal({
                 defaultTopP: (m as { defaultTopP?: number }).defaultTopP,
                 defaultTopK: (m as { defaultTopK?: number }).defaultTopK,
                 defaultMaxTokens: (m as { defaultMaxTokens?: number }).defaultMaxTokens,
+                pricing: m.pricing ? { ...m.pricing } : undefined,
               }
             }
             return next
@@ -1393,6 +1576,7 @@ export function ProviderModal({
         defaultTopP: modelConfigs[m.id]?.defaultTopP,
         defaultTopK: modelConfigs[m.id]?.defaultTopK,
         compactionThreshold: modelConfigs[m.id]?.compactionThreshold,
+        pricing: modelConfigs[m.id]?.pricing ?? m.pricing,
       })),
     })
     draftProviderSaved.current = true
@@ -1878,6 +2062,25 @@ export function ProviderModal({
                                 </span>
                               </div>
                               <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  data-testid={`model-configure-${model.id}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setExpandedModelId(expandedModelId === model.id ? null : model.id)
+                                  }}
+                                  className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
+                                  title={t({
+                                    en: 'Configure model parameters',
+                                    fr: 'Configurer les paramètres du modèle',
+                                  })}
+                                  aria-label={t({
+                                    en: `Configure ${model.name ?? model.id}`,
+                                    fr: `Configurer ${model.name ?? model.id}`,
+                                  })}
+                                >
+                                  <SettingsIcon className="w-4 h-4" />
+                                </button>
                                 {autoConfigState.progress[model.id] === 'probing' ? (
                                   <span className="w-3 h-3 border-2 border-accent-primary border-t-transparent rounded-full animate-spin" />
                                 ) : autoConfigState.progress[model.id] === 'done' ? (
@@ -2161,14 +2364,33 @@ export function ProviderModal({
                               onChange={() => {}}
                               className="w-4 h-4 rounded border-border accent-accent-primary pointer-events-none"
                             />
-                            <span className="text-sm text-text-primary flex-1 truncate">
-                              {model.name ?? model.id.split('/').pop()}
-                              {model.modes && model.modes.length > 0 && (
-                                <span className="text-text-muted font-normal ml-1">
-                                  ({model.modes.map((m) => m.level).join(', ')})
+                            <div className="flex-1 min-w-0 flex items-center gap-1.5 truncate">
+                              <span className="text-sm text-text-primary truncate">
+                                {model.name ?? model.id.split('/').pop()}
+                                {model.modes && model.modes.length > 0 && (
+                                  <span className="text-text-muted font-normal ml-1">
+                                    ({model.modes.map((m) => m.level).join(', ')})
+                                  </span>
+                                )}
+                              </span>
+                              {(modelConfigs[model.id]?.pricing?.discount ?? model.pricing?.discount) !== undefined && (
+                                <span
+                                  data-pricing-discount-badge
+                                  className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium leading-none rounded bg-accent-primary/15 text-accent-primary border border-accent-primary/30 shrink-0"
+                                >
+                                  {formatDiscountBadge(
+                                    (modelConfigs[model.id]?.pricing?.discount ?? model.pricing?.discount)!,
+                                  )}
                                 </span>
                               )}
-                            </span>
+                            </div>
+                            {(() => {
+                              const pricing = modelConfigs[model.id]?.pricing ?? model.pricing
+                              const summary = formatPricingSummary(pricing, displaySettings.modelPriceCurrency)
+                              return summary ? (
+                                <span className="text-xs font-mono text-text-secondary flex-shrink-0">{summary}</span>
+                              ) : null
+                            })()}
                             <span className="text-xs text-text-muted flex flex-shrink-0 items-center gap-1">
                               {(modelConfigs[model.id]?.supportsVision ?? model.supportsVision) && (
                                 <span

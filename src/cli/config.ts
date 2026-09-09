@@ -32,6 +32,18 @@ const backendSchema = z.enum([
   'unknown',
 ])
 
+const modelPricingSchema = z
+  .object({
+    input: z.number().optional(),
+    output: z.number().optional(),
+    cacheRead: z.number().optional(),
+    cacheWrite: z.number().optional(),
+    discount: z.union([z.number(), z.string()]).optional(),
+    currency: z.enum(['usd', 'eur', 'tokens']).optional(),
+    lastUpdatedAt: z.string().optional(),
+  })
+  .optional()
+
 const modelConfigSchema = z
   .object({
     id: z.string(),
@@ -42,6 +54,7 @@ const modelConfigSchema = z
     topK: z.number().optional(),
     maxTokens: z.number().optional(),
     compactionThreshold: z.number().min(0).max(0.95).optional(),
+    pricing: modelPricingSchema,
   })
   .passthrough() as z.ZodType<ModelConfig>
 

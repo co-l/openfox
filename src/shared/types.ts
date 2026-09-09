@@ -682,6 +682,24 @@ export type LlmBackend =
 /** Extended backend type including cloud providers */
 export type ProviderBackend = LlmBackend
 
+/** Model pricing metadata per 1M tokens or credits */
+export interface ModelPricing {
+  /** Cost in credits or USD per 1M input (prompt) tokens */
+  input?: number
+  /** Cost in credits or USD per 1M output (completion) tokens */
+  output?: number
+  /** Cost per 1M cache read tokens */
+  cacheRead?: number
+  /** Cost per 1M cache write tokens */
+  cacheWrite?: number
+  /** Discount percentage (e.g. 60 or "60% off") */
+  discount?: number | string
+  /** Currency / pricing unit for this model's rates (e.g. 'usd' | 'eur' | 'tokens') */
+  currency?: 'usd' | 'eur' | 'tokens'
+  /** ISO timestamp when pricing and discount were last checked/updated */
+  lastUpdatedAt?: string
+}
+
 /** Model configuration with context window */
 export interface ModelConfig {
   id: string // Model ID exposed in OpenFox (may be a projected mode such as "gpt-5.6-sol-fast")
@@ -727,6 +745,8 @@ export interface ModelConfig {
   defaultTopP?: number
   defaultTopK?: number
   defaultMaxTokens?: number
+  /** Pricing per 1M tokens or credits */
+  pricing?: ModelPricing
 }
 
 /** LLM provider configuration */

@@ -169,4 +169,4 @@ export type {
   LLMStreamEvent,
   LLMToolDefinition,
 } from '../server/llm/types.js'
-export type { ModelConfig, ToolCall } from '../shared/types.js'
+export type { ModelConfig, ModelPricing, ToolCall } from '../shared/types.js'

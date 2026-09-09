@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo, type RefObject } from 'react'
+import { createPortal } from 'react-dom'
 import {
   CheckIcon,
   EditSmallIcon,
@@ -9,14 +10,260 @@ import {
   StarFilledIcon,
   WarningIcon,
 } from '../shared/icons'
+import type { ModelPriceThresholds } from '../../hooks/useDisplaySettings'
+import { useDisplaySettings } from '../../hooks/useDisplaySettings'
 import type { Provider } from '../../stores/config'
+import type { ModelPricing } from '@shared/types.js'
+import { formatPriceValue, type PriceCurrency } from '@shared/stats-view.js'
 import { isSmallContext } from '../../lib/context-warning'
+import { formatRelativePricingDate } from '../../lib/format-date'
 import { useT } from '../../hooks/useT'
 
 export function formatContextWindow(context: number): string {
   if (context >= 1000000) return `${(context / 1000000).toFixed(1)}M`
   if (context >= 1000) return `${(context / 1000).toFixed(0)}K`
   return `${context}`
+}
+
+export function formatDiscountBadge(discount: number | string): string {
+  if (typeof discount === 'number') {
+    return `${discount}% off`
+  }
+  const trimmed = discount.trim()
+  if (trimmed.toLowerCase().includes('off')) {
+    return trimmed
+  }
+  const clean = trimmed.endsWith('%') ? trimmed.slice(0, -1).trim() : trimmed
+  return `${clean}% off`
+}
+
+export function parseDiscountPercentage(discount?: number | string): number | null {
+  if (discount === undefined || discount === null) return null
+  if (typeof discount === 'number') {
+    return discount > 0 && discount < 100 ? discount : null
+  }
+  const match = String(discount).match(/(\d+(?:\.\d+)?)/)
+  if (!match || !match[1]) return null
+  const num = parseFloat(match[1])
+  return !isNaN(num) && num > 0 && num < 100 ? num : null
+}
+
+export function calculateDiscountedPrice(price: number, discountPercent: number): number {
+  const discounted = price * (1 - discountPercent / 100)
+  return Number(discounted.toPrecision(4))
+}
+
+export interface PricePart {
+  label: string
+  price: number
+  tier: 'low' | 'medium' | 'high'
+  formatted: string
+}
+
+export function getPriceTier(price: number, thresholds?: { low: number; medium: number }): 'low' | 'medium' | 'high' {
+  if (!thresholds) return 'low'
+  if (price <= thresholds.low) return 'low'
+  if (price <= thresholds.medium) return 'medium'
+  return 'high'
+}
+
+export function getPriceTierColor(tier: 'low' | 'medium' | 'high', enabled = true): string {
+  if (!enabled) return 'text-text-muted'
+  switch (tier) {
+    case 'low':
+      return 'text-accent-success'
+    case 'medium':
+      return 'text-accent-warning'
+    case 'high':
+      return 'text-accent-error'
+  }
+}
+
+export function formatSublinePriceValue(value: number, currency: PriceCurrency = 'usd'): string {
+  const suffix = currency === 'tokens' ? ' tk/M' : '/M'
+  switch (currency) {
+    case 'usd':
+      return `$${value}${suffix}`
+    case 'eur':
+      return `${value} €${suffix}`
+    case 'tokens':
+      return `${value}${suffix}`
+  }
+}
+
+export function getEffectiveModelCurrency(
+  pricing?: ModelPricing,
+  globalCurrency: PriceCurrency = 'usd',
+): PriceCurrency {
+  return (pricing?.currency as PriceCurrency | undefined) ?? globalCurrency
+}
+
+export function getGranularPriceParts(
+  pricing: ModelPricing | undefined,
+  options: {
+    showInput?: boolean
+    showOutput?: boolean
+    showCacheRead?: boolean
+    showCacheWrite?: boolean
+  },
+  thresholds?: ModelPriceThresholds,
+  fallbackCurrency: PriceCurrency = 'usd',
+): PricePart[] {
+  if (!pricing) return []
+  const currency = getEffectiveModelCurrency(pricing, fallbackCurrency)
+  const discountPercent = parseDiscountPercentage(pricing.discount)
+  const parts: PricePart[] = []
+
+  if (options.showInput && pricing.input !== undefined) {
+    const discounted =
+      discountPercent !== null ? calculateDiscountedPrice(pricing.input, discountPercent) : pricing.input
+    const tier = getPriceTier(discounted, thresholds?.input)
+    parts.push({
+      label: 'In',
+      price: discounted,
+      tier,
+      formatted: `In: ${formatSublinePriceValue(discounted, currency)}`,
+    })
+  }
+
+  if (options.showOutput && pricing.output !== undefined) {
+    const discounted =
+      discountPercent !== null ? calculateDiscountedPrice(pricing.output, discountPercent) : pricing.output
+    const tier = getPriceTier(discounted, thresholds?.output)
+    parts.push({
+      label: 'Out',
+      price: discounted,
+      tier,
+      formatted: `Out: ${formatSublinePriceValue(discounted, currency)}`,
+    })
+  }
+
+  if (options.showCacheRead && pricing.cacheRead !== undefined) {
+    const discounted =
+      discountPercent !== null ? calculateDiscountedPrice(pricing.cacheRead, discountPercent) : pricing.cacheRead
+    const tier = getPriceTier(discounted, thresholds?.cacheRead)
+    parts.push({
+      label: 'Cache R',
+      price: discounted,
+      tier,
+      formatted: `Cache R: ${formatSublinePriceValue(discounted, currency)}`,
+    })
+  }
+
+  if (options.showCacheWrite && pricing.cacheWrite !== undefined) {
+    const discounted =
+      discountPercent !== null ? calculateDiscountedPrice(pricing.cacheWrite, discountPercent) : pricing.cacheWrite
+    const tier = getPriceTier(discounted, thresholds?.cacheWrite)
+    parts.push({
+      label: 'Cache W',
+      price: discounted,
+      tier,
+      formatted: `Cache W: ${formatSublinePriceValue(discounted, currency)}`,
+    })
+  }
+
+  return parts
+}
+
+export function formatGranularPriceSubline(
+  pricing: ModelPricing | undefined,
+  options: {
+    showInput?: boolean
+    showOutput?: boolean
+    showCacheRead?: boolean
+    showCacheWrite?: boolean
+  },
+  thresholds?: ModelPriceThresholds,
+  currency: PriceCurrency = 'usd',
+): string | null {
+  const parts = getGranularPriceParts(pricing, options, thresholds, currency)
+  return parts.length > 0 ? parts.map((p) => p.formatted).join(' · ') : null
+}
+
+export function formatPricingSummary(pricing?: ModelPricing, currency: PriceCurrency = 'usd'): string | null {
+  if (!pricing) return null
+  const effectiveCurrency = (pricing.currency as PriceCurrency | undefined) ?? currency
+  const discountPercent = parseDiscountPercentage(pricing.discount)
+  const hasInput = pricing.input !== undefined
+  const hasOutput = pricing.output !== undefined
+  const inputPrice = hasInput
+    ? discountPercent !== null
+      ? calculateDiscountedPrice(pricing.input!, discountPercent)
+      : pricing.input
+    : undefined
+  const outputPrice = hasOutput
+    ? discountPercent !== null
+      ? calculateDiscountedPrice(pricing.output!, discountPercent)
+      : pricing.output
+    : undefined
+
+  if (inputPrice !== undefined && outputPrice !== undefined) {
+    return `in ${formatPriceValue(inputPrice, effectiveCurrency, false)} / out ${formatPriceValue(outputPrice, effectiveCurrency, false)}`
+  }
+  if (inputPrice !== undefined) {
+    return `in ${formatPriceValue(inputPrice, effectiveCurrency, false)}`
+  }
+  if (outputPrice !== undefined) {
+    return `out ${formatPriceValue(outputPrice, effectiveCurrency, false)}`
+  }
+  if (pricing.cacheRead !== undefined) {
+    const cachePrice =
+      discountPercent !== null ? calculateDiscountedPrice(pricing.cacheRead, discountPercent) : pricing.cacheRead
+    return `cache ${formatPriceValue(cachePrice, effectiveCurrency, false)}`
+  }
+  return null
+}
+
+export function formatPricingTooltip(pricing?: ModelPricing, currency: PriceCurrency = 'usd'): string | undefined {
+  if (!pricing) return undefined
+  const discountPercent = parseDiscountPercentage(pricing.discount)
+  const lines: string[] = []
+  if (pricing.discount !== undefined) {
+    const d = typeof pricing.discount === 'number' ? `${pricing.discount}% off` : pricing.discount
+    lines.push(`Discount: ${d}`)
+  }
+  if (pricing.input !== undefined) {
+    if (discountPercent !== null) {
+      const discounted = calculateDiscountedPrice(pricing.input, discountPercent)
+      lines.push(`Input: ${formatPriceValue(discounted, currency)} (was ${formatPriceValue(pricing.input, currency)})`)
+    } else {
+      lines.push(`Input: ${formatPriceValue(pricing.input, currency)}`)
+    }
+  }
+  if (pricing.output !== undefined) {
+    if (discountPercent !== null) {
+      const discounted = calculateDiscountedPrice(pricing.output, discountPercent)
+      lines.push(
+        `Output: ${formatPriceValue(discounted, currency)} (was ${formatPriceValue(pricing.output, currency)})`,
+      )
+    } else {
+      lines.push(`Output: ${formatPriceValue(pricing.output, currency)}`)
+    }
+  }
+  if (pricing.cacheRead !== undefined) {
+    if (discountPercent !== null) {
+      const discounted = calculateDiscountedPrice(pricing.cacheRead, discountPercent)
+      lines.push(
+        `Cache read: ${formatPriceValue(discounted, currency)} (was ${formatPriceValue(pricing.cacheRead, currency)})`,
+      )
+    } else {
+      lines.push(`Cache read: ${formatPriceValue(pricing.cacheRead, currency)}`)
+    }
+  }
+  if (pricing.cacheWrite !== undefined) {
+    if (discountPercent !== null) {
+      const discounted = calculateDiscountedPrice(pricing.cacheWrite, discountPercent)
+      lines.push(
+        `Cache write: ${formatPriceValue(discounted, currency)} (was ${formatPriceValue(pricing.cacheWrite, currency)})`,
+      )
+    } else {
+      lines.push(`Cache write: ${formatPriceValue(pricing.cacheWrite, currency)}`)
+    }
+  }
+  if (pricing.lastUpdatedAt) {
+    lines.push(`Last updated: ${formatRelativePricingDate(pricing.lastUpdatedAt)}`)
+  }
+  return lines.length > 0 ? lines.join('\n') : undefined
 }
 
 export interface ModelWithConfig {
@@ -29,6 +276,7 @@ export interface ModelWithConfig {
   reasoningEffortOverride?: string
   thinkingLevel?: string
   thinkingEnabled?: boolean
+  pricing?: ModelPricing
 }
 
 export function modelMatchesQuery(model: { name?: string; id: string }, query: string): boolean {
@@ -60,6 +308,7 @@ export function getVisibleModels(provider: Provider): ModelWithConfig[] {
       ...(m.reasoningEffortOverride ? { reasoningEffortOverride: m.reasoningEffortOverride } : {}),
       ...(m.thinkingLevel ? { thinkingLevel: m.thinkingLevel } : {}),
       ...(m.thinkingEnabled !== undefined ? { thinkingEnabled: m.thinkingEnabled } : {}),
+      ...(m.pricing ? { pricing: m.pricing } : {}),
     }
   })
 }
@@ -109,9 +358,72 @@ export function ModelEntryRow({
 }: ModelEntryRowProps) {
   const t = useT()
   const showEfforts = (reasoningEfforts?.length ?? 0) > 0 && !!onSelectEffort
+  const displaySettings = useDisplaySettings()
+  const modelCurrency = getEffectiveModelCurrency(modelConfig.pricing, displaySettings.modelPriceCurrency)
+  const currencyThresholds =
+    displaySettings.multiCurrencyPriceThresholds?.[modelCurrency] ?? displaySettings.modelPriceThresholds
+  const priceParts = displaySettings.showModelPrices
+    ? getGranularPriceParts(
+        modelConfig.pricing,
+        {
+          showInput: displaySettings.showModelPriceInput,
+          showOutput: displaySettings.showModelPriceOutput,
+          showCacheRead: displaySettings.showModelPriceCacheRead,
+          showCacheWrite: displaySettings.showModelPriceCacheWrite,
+        },
+        currencyThresholds,
+        modelCurrency,
+      )
+    : []
+  const [showPopover, setShowPopover] = useState(false)
+  const [popoverCoords, setPopoverCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
+  const rowRef = useRef<HTMLDivElement>(null)
+
+  const handleMouseEnter = (e: React.MouseEvent) => {
+    if (modelConfig.pricing && displaySettings.showModelPricePopover) {
+      // Find the dropdown container to place the popover to its right,
+      // or fall back to the row rect.
+      const dropdown = (e.currentTarget as HTMLElement).closest('[data-dropdown-container]') as HTMLElement | null
+      const targetRect = dropdown ? dropdown.getBoundingClientRect() : (rowRef.current?.getBoundingClientRect() ?? null)
+      const rowRect = rowRef.current?.getBoundingClientRect()
+      if (targetRect && rowRect) {
+        // If placing to the right overflows the viewport, place it to the left of the dropdown
+        const spaceOnRight = window.innerWidth - targetRect.right
+        const popoverWidth = 200 // estimated popover width
+        const left =
+          spaceOnRight > popoverWidth ? targetRect.right + 8 : Math.max(8, targetRect.left - popoverWidth - 8)
+        setPopoverCoords({
+          top: rowRect.top,
+          left,
+        })
+        setShowPopover(true)
+      }
+    }
+  }
+
+  const handleMouseLeave = () => {
+    setShowPopover(false)
+  }
+
+  const outputPriceDiscounted =
+    modelConfig.pricing?.output !== undefined
+      ? parseDiscountPercentage(modelConfig.pricing.discount) !== null
+        ? calculateDiscountedPrice(modelConfig.pricing.output, parseDiscountPercentage(modelConfig.pricing.discount)!)
+        : modelConfig.pricing.output
+      : undefined
+  const outputPriceTier =
+    outputPriceDiscounted !== undefined ? getPriceTier(outputPriceDiscounted, currencyThresholds?.output) : undefined
+  const modelNameColorClass =
+    displaySettings.colorModelNameByOutputPrice && outputPriceTier
+      ? getPriceTierColor(outputPriceTier, displaySettings.enableModelPriceColors)
+      : ''
+
   return (
     <div
-      className={`${highlighted ? 'bg-bg-tertiary' : 'hover:bg-bg-tertiary'} ${disabled ? 'opacity-50 cursor-wait' : ''}`}
+      ref={rowRef}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      className={`relative ${highlighted ? 'bg-bg-tertiary' : 'hover:bg-bg-tertiary'} ${disabled ? 'opacity-50 cursor-wait' : ''}`}
     >
       <div
         className={`flex items-center px-4 py-1.5 text-sm transition-colors group ${
@@ -122,9 +434,32 @@ export function ModelEntryRow({
           type="button"
           onClick={() => onModelClick(providerId, modelConfig.id)}
           disabled={disabled}
-          className="flex-1 truncate text-left"
+          className={`flex-1 min-w-0 text-left truncate ${modelNameColorClass}`}
         >
           {modelConfig.name ?? modelConfig.id.split('/').pop()?.replace(/-/g, ' ') ?? modelConfig.id}
+          {modelConfig.pricing?.discount !== undefined && (
+            <span
+              data-pricing-discount-badge
+              className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium leading-none rounded bg-accent-primary/15 text-accent-primary border border-accent-primary/30 shrink-0 ml-1.5 align-middle"
+            >
+              {formatDiscountBadge(modelConfig.pricing.discount)}
+            </span>
+          )}
+          {priceParts.length > 0 && (
+            <div
+              data-pricing-subline
+              className="text-[11px] font-mono flex items-center gap-1.5 whitespace-nowrap overflow-hidden text-ellipsis mt-0.5"
+            >
+              {priceParts.map((part, index) => (
+                <span key={part.label} className="inline-flex items-center shrink-0">
+                  <span className={getPriceTierColor(part.tier, displaySettings.enableModelPriceColors)}>
+                    {part.formatted}
+                  </span>
+                  {index < priceParts.length - 1 && <span className="text-text-muted ml-1.5">·</span>}
+                </span>
+              ))}
+            </div>
+          )}
         </button>
         <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
           {modelConfig.supportsVision && (
@@ -239,6 +574,207 @@ export function ModelEntryRow({
           })}
         </div>
       )}
+      {showPopover &&
+        displaySettings.showModelPricePopover &&
+        modelConfig.pricing &&
+        createPortal(
+          <div
+            data-pricing-popover
+            className="fixed z-[9999] px-3 py-2 bg-bg-secondary border border-border rounded-lg shadow-xl text-xs space-y-1 pointer-events-none whitespace-nowrap"
+            style={{
+              top: `${popoverCoords.top}px`,
+              left: `${popoverCoords.left}px`,
+            }}
+          >
+            <div className="font-medium text-text-primary pb-0.5 border-b border-border/50 flex items-center justify-between gap-2">
+              <span>{modelConfig.name ?? modelConfig.id}</span>
+              {modelConfig.pricing.discount !== undefined && (
+                <span className="px-1.5 py-0.5 text-[9px] font-medium leading-none rounded bg-accent-primary/15 text-accent-primary border border-accent-primary/30">
+                  {formatDiscountBadge(modelConfig.pricing.discount)}
+                </span>
+              )}
+            </div>
+            {modelConfig.pricing.input !== undefined && (
+              <div className="text-text-secondary flex justify-between gap-3">
+                <span>{t({ en: 'Input:', fr: 'Entrée :' })}</span>
+                <span className="font-mono text-text-primary">
+                  {parseDiscountPercentage(modelConfig.pricing.discount) !== null ? (
+                    <>
+                      <span className="line-through text-text-muted mr-1.5">
+                        {formatPriceValue(modelConfig.pricing.input, modelCurrency, false)}
+                      </span>
+                      <span
+                        className={getPriceTierColor(
+                          getPriceTier(
+                            calculateDiscountedPrice(
+                              modelConfig.pricing.input,
+                              parseDiscountPercentage(modelConfig.pricing.discount)!,
+                            ),
+                            currencyThresholds?.input,
+                          ),
+                          displaySettings.enableModelPriceColors,
+                        )}
+                      >
+                        {formatPriceValue(
+                          calculateDiscountedPrice(
+                            modelConfig.pricing.input,
+                            parseDiscountPercentage(modelConfig.pricing.discount)!,
+                          ),
+                          modelCurrency,
+                        )}
+                      </span>
+                    </>
+                  ) : (
+                    <span
+                      className={getPriceTierColor(
+                        getPriceTier(modelConfig.pricing.input, currencyThresholds?.input),
+                        displaySettings.enableModelPriceColors,
+                      )}
+                    >
+                      {formatPriceValue(modelConfig.pricing.input, modelCurrency)}
+                    </span>
+                  )}
+                </span>
+              </div>
+            )}
+            {modelConfig.pricing.output !== undefined && (
+              <div className="text-text-secondary flex justify-between gap-3">
+                <span>{t({ en: 'Output:', fr: 'Sortie :' })}</span>
+                <span className="font-mono text-text-primary">
+                  {parseDiscountPercentage(modelConfig.pricing.discount) !== null ? (
+                    <>
+                      <span className="line-through text-text-muted mr-1.5">
+                        {formatPriceValue(modelConfig.pricing.output, modelCurrency, false)}
+                      </span>
+                      <span
+                        className={getPriceTierColor(
+                          getPriceTier(
+                            calculateDiscountedPrice(
+                              modelConfig.pricing.output,
+                              parseDiscountPercentage(modelConfig.pricing.discount)!,
+                            ),
+                            currencyThresholds?.output,
+                          ),
+                          displaySettings.enableModelPriceColors,
+                        )}
+                      >
+                        {formatPriceValue(
+                          calculateDiscountedPrice(
+                            modelConfig.pricing.output,
+                            parseDiscountPercentage(modelConfig.pricing.discount)!,
+                          ),
+                          modelCurrency,
+                        )}
+                      </span>
+                    </>
+                  ) : (
+                    <span
+                      className={getPriceTierColor(
+                        getPriceTier(modelConfig.pricing.output, currencyThresholds?.output),
+                        displaySettings.enableModelPriceColors,
+                      )}
+                    >
+                      {formatPriceValue(modelConfig.pricing.output, modelCurrency)}
+                    </span>
+                  )}
+                </span>
+              </div>
+            )}
+            {modelConfig.pricing.cacheRead !== undefined && (
+              <div className="text-text-secondary flex justify-between gap-3">
+                <span>{t({ en: 'Cache read:', fr: 'Lecture cache :' })}</span>
+                <span className="font-mono text-text-primary">
+                  {parseDiscountPercentage(modelConfig.pricing.discount) !== null ? (
+                    <>
+                      <span className="line-through text-text-muted mr-1.5">
+                        {formatPriceValue(modelConfig.pricing.cacheRead, modelCurrency, false)}
+                      </span>
+                      <span
+                        className={getPriceTierColor(
+                          getPriceTier(
+                            calculateDiscountedPrice(
+                              modelConfig.pricing.cacheRead,
+                              parseDiscountPercentage(modelConfig.pricing.discount)!,
+                            ),
+                            currencyThresholds?.cacheRead,
+                          ),
+                          displaySettings.enableModelPriceColors,
+                        )}
+                      >
+                        {formatPriceValue(
+                          calculateDiscountedPrice(
+                            modelConfig.pricing.cacheRead,
+                            parseDiscountPercentage(modelConfig.pricing.discount)!,
+                          ),
+                          modelCurrency,
+                        )}
+                      </span>
+                    </>
+                  ) : (
+                    <span
+                      className={getPriceTierColor(
+                        getPriceTier(modelConfig.pricing.cacheRead, currencyThresholds?.cacheRead),
+                        displaySettings.enableModelPriceColors,
+                      )}
+                    >
+                      {formatPriceValue(modelConfig.pricing.cacheRead, modelCurrency)}
+                    </span>
+                  )}
+                </span>
+              </div>
+            )}
+            {modelConfig.pricing.cacheWrite !== undefined && (
+              <div className="text-text-secondary flex justify-between gap-3">
+                <span>{t({ en: 'Cache write:', fr: 'Écriture cache :' })}</span>
+                <span className="font-mono text-text-primary">
+                  {parseDiscountPercentage(modelConfig.pricing.discount) !== null ? (
+                    <>
+                      <span className="line-through text-text-muted mr-1.5">
+                        {formatPriceValue(modelConfig.pricing.cacheWrite, modelCurrency, false)}
+                      </span>
+                      <span
+                        className={getPriceTierColor(
+                          getPriceTier(
+                            calculateDiscountedPrice(
+                              modelConfig.pricing.cacheWrite,
+                              parseDiscountPercentage(modelConfig.pricing.discount)!,
+                            ),
+                            currencyThresholds?.cacheWrite,
+                          ),
+                          displaySettings.enableModelPriceColors,
+                        )}
+                      >
+                        {formatPriceValue(
+                          calculateDiscountedPrice(
+                            modelConfig.pricing.cacheWrite,
+                            parseDiscountPercentage(modelConfig.pricing.discount)!,
+                          ),
+                          modelCurrency,
+                        )}
+                      </span>
+                    </>
+                  ) : (
+                    <span
+                      className={getPriceTierColor(
+                        getPriceTier(modelConfig.pricing.cacheWrite, currencyThresholds?.cacheWrite),
+                        displaySettings.enableModelPriceColors,
+                      )}
+                    >
+                      {formatPriceValue(modelConfig.pricing.cacheWrite, modelCurrency)}
+                    </span>
+                  )}
+                </span>
+              </div>
+            )}
+            {modelConfig.pricing.lastUpdatedAt && (
+              <div className="text-text-muted text-[10px] pt-1 border-t border-border/40 flex justify-between gap-3">
+                <span>{t({ en: 'Updated:', fr: 'Mis à jour :' })}</span>
+                <span>{formatRelativePricingDate(modelConfig.pricing.lastUpdatedAt)}</span>
+              </div>
+            )}
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }

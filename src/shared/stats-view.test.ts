@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { buildPerformanceChartData, buildResponseLogRows } from './stats-view.js'
+import {
+  buildPerformanceChartData,
+  buildResponseLogRows,
+  calculateTotalSessionCost,
+  formatCost,
+  formatPriceValue,
+} from './stats-view.js'
 import type { SessionStats } from './types.js'
 
 const baseStats: SessionStats = {
@@ -233,5 +239,45 @@ describe('stats view helpers', () => {
     expect(chart.mode).toBe('responses')
     expect(chart.xLabel).toBe('response')
     expect(chart.points).toHaveLength(4)
+  })
+
+  it('calculates total session cost with discount applied', () => {
+    const dummyProviders = [
+      {
+        id: 'provider-1',
+        name: 'Provider 1',
+        url: 'https://api.example.com/v1',
+        backend: 'openai' as const,
+        models: [
+          {
+            id: 'qwen-1',
+            contextWindow: 128000,
+            source: 'backend' as const,
+            pricing: {
+              input: 1.0, // $1 / 1M tokens
+              output: 2.0, // $2 / 1M tokens
+              discount: 50, // 50% off -> in: $0.5/M, out: $1.0/M
+            },
+          },
+        ],
+        isActive: true,
+        createdAt: '',
+      },
+    ]
+
+    // Total prompt tokens in baseStats.callDataPoints = 800 + 1200 + 1700 + 2500 + 2100 = 8300
+    // Total completion tokens = 120 + 250 + 180 + 310 + 71 = 931
+    // Prompt cost = (8300 / 1,000,000) * 0.5 = 0.00415
+    // Completion cost = (931 / 1,000,000) * 1.0 = 0.000931
+    // Total cost = 0.005081 -> formatCost = "$0.0051"
+    const totalCost = calculateTotalSessionCost(baseStats, dummyProviders)
+    expect(totalCost).toBeCloseTo(0.005081, 6)
+    expect(formatCost(totalCost)).toBe('$0.0051')
+    expect(formatCost(totalCost, 'eur')).toBe('0.0051 €')
+    expect(formatCost(totalCost, 'tokens')).toBe('0.0051 tk')
+
+    expect(formatPriceValue(0.15, 'usd')).toBe('$0.15 / 1M')
+    expect(formatPriceValue(0.15, 'eur')).toBe('0.15 € / 1M')
+    expect(formatPriceValue(150, 'tokens')).toBe('150 tk / 1M')
   })
 })

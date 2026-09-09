@@ -163,7 +163,7 @@ export function ModelPicker({ providers, value, onChange, defaultLabel }: ModelP
       {isOpen &&
         typeof document !== 'undefined' &&
         createPortal(
-          <div data-model-picker-dropdown className="z-50" style={dropdownStyle}>
+          <div data-model-picker-dropdown data-dropdown-container className="z-50" style={dropdownStyle}>
             <div className="bg-bg-secondary border border-border rounded-lg shadow-lg flex flex-col max-h-80">
               <div className="flex items-center gap-1 px-3 py-2 border-b border-border flex-shrink-0">
                 <SearchIcon className="w-3.5 h-3.5 text-text-muted flex-shrink-0" />

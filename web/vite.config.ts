@@ -12,6 +12,9 @@ const baseConfig = defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['assets/openfox-192.png', 'assets/openfox-512.png'],
+      workbox: {
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+      },
       manifest: {
         name: 'OpenFox',
         short_name: 'OpenFox',

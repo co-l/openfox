@@ -573,6 +573,50 @@ describe('ProviderManager - Model Selection', () => {
       expect(models[0]!.contextWindow).toBe(900000)
     })
 
+    it('stamps lastUpdatedAt when transport adapter returns models with pricing', async () => {
+      const transport = {
+        id: 'pricing-transport',
+        listModels: vi.fn(async () => [
+          {
+            id: 'dynamic-model',
+            contextWindow: 128000,
+            source: 'backend' as const,
+            pricing: {
+              input: 1.5,
+              output: 4.5,
+              discount: 30,
+            },
+          },
+        ]),
+        complete: vi.fn(),
+        stream: vi.fn(),
+      }
+      const adapters = { getTransport: vi.fn((id?: string) => (id === 'pricing-transport' ? transport : undefined)) }
+      const chatConfig: Config = {
+        ...config,
+        providers: [
+          {
+            id: 'dynamic-provider',
+            name: 'Dynamic Provider',
+            url: 'https://dynamic.example/v1',
+            backend: 'openai',
+            transportAdapter: 'pricing-transport',
+            models: [],
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+        defaultModelSelection: 'dynamic-provider/dynamic-model',
+      }
+      const manager = createProviderManager(chatConfig, { adapters: adapters as never })
+
+      const models = await manager.getProviderModels('dynamic-provider')
+      expect(models[0]?.pricing?.input).toBe(1.5)
+      expect(models[0]?.pricing?.discount).toBe(30)
+      expect(typeof models[0]?.pricing?.lastUpdatedAt).toBe('string')
+      expect(models[0]?.pricing?.lastUpdatedAt?.length).toBeGreaterThan(0)
+    })
+
     it('preserves user overrides during refresh', async () => {
       await providerManager.updateModelContext('provider-1', 'model-a', 150000)
 
@@ -1394,6 +1438,30 @@ describe('ProviderManager - Model Selection', () => {
       const stored = manager.getProviders()[0]!.models.find((m) => m.id === 'model-a')!
       expect(stored.reasoningEfforts).toEqual(['low', 'medium'])
       expect(stored.reasoningEffortOverride).toBe('deep')
+    })
+
+    it('preserves existing model pricing without auto-injecting lastUpdatedAt when missing', () => {
+      const manager = buildManager([
+        providerWith([
+          {
+            id: 'gpt-4o-no-date',
+            contextWindow: 128000,
+            source: 'user' as const,
+            pricing: {
+              input: 2.5,
+              output: 10,
+              discount: 50,
+            },
+          },
+        ]),
+      ])
+      const model = manager.getProviders()[0]!.models[0]!
+      expect(model.pricing).toEqual({
+        input: 2.5,
+        output: 10,
+        discount: 50,
+      })
+      expect(model.pricing?.lastUpdatedAt).toBeUndefined()
     })
 
     it('catalog enrichment never overrides a stored preset list or override', () => {
