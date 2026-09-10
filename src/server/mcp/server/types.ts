@@ -15,7 +15,7 @@ export interface WorkflowListItem {
 export interface OpenFoxMcpToolDeps {
   sessionManager: SessionManager
   listProjects(): Project[]
-  /** Create a project at the given directory (creates the dir + git init, then registers it). */
+  /** Create a project at the given directory (creates the dir, initializes git if enabled, then registers it). */
   createProject(name: string, workdir: string): Promise<Project>
   /** Delete a project and all its sessions. Returns whether a project was found and removed. */
   deleteProject(projectId: string): boolean

@@ -106,6 +106,20 @@ describe('project-creator', () => {
       expect(await checkExists(join(fullPath, '.git'))).toBe(false)
     })
 
+    it('creates the project without git when autoGitInit is disabled', async () => {
+      const fullPath = join(testDir, 'no-auto-git-project')
+      vi.mocked(execSync).mockImplementation(() => {
+        throw new Error('git must not be called when autoGitInit is disabled')
+      })
+
+      const project = await createProjectDirectory('no-auto-git-project', fullPath, false)
+
+      expect(project.name).toBe('no-auto-git-project')
+      expect(project.workdir).toBe(fullPath)
+      expect(await checkExists(fullPath)).toBe(true)
+      expect(await checkExists(join(fullPath, '.git'))).toBe(false)
+    })
+
     it('fails and cleans up when git init fails for a non-missing reason', async () => {
       const fullPath = join(testDir, 'git-fail-project')
       vi.mocked(execSync).mockImplementation(() => {

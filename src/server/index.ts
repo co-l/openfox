@@ -405,8 +405,10 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       return res.status(400).json({ error: 'name and workdir are required' })
     }
     const { createProjectDirectory } = await import('./utils/project-creator.js')
+    const { loadGlobalConfig } = await import('../cli/config.js')
+    const globalConfig = await loadGlobalConfig(config.mode ?? 'production', config.globalConfigPath)
     try {
-      const project = await createProjectDirectory(name, workdir)
+      const project = await createProjectDirectory(name, workdir, globalConfig.workspace?.autoGitInit ?? true)
       res.status(201).json({ project })
     } catch (err) {
       const eaccError = err as Error & { code?: string; cause?: unknown }
@@ -3680,7 +3682,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     listProjects: () => listProjects(),
     createProject: async (name, workdir) => {
       const { createProjectDirectory } = await import('./utils/project-creator.js')
-      return createProjectDirectory(name, workdir)
+      const { loadGlobalConfig } = await import('../cli/config.js')
+      const globalConfig = await loadGlobalConfig(config.mode ?? 'production', config.globalConfigPath)
+      return createProjectDirectory(name, workdir, globalConfig.workspace?.autoGitInit ?? true)
     },
     deleteProject: (projectId) => {
       const project = getProject(projectId)

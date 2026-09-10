@@ -198,7 +198,7 @@ export function createOpenFoxMcpTools(deps: OpenFoxMcpToolDeps): OpenFoxMcpTool[
     {
       name: 'openfox_create_project',
       description:
-        'Create a new OpenFox project at the given directory. Creates the directory and initializes git if missing, then registers the project.',
+        'Create a new OpenFox project at the given directory. Creates the directory and registers the project, initializing git if missing (unless auto git init is disabled in config).',
       inputSchema: {
         name: z.string().describe('Project name (letters, numbers, hyphens, underscores, dots, spaces)'),
         workdir: z.string().describe('Absolute path of the project directory'),
