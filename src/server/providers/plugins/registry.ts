@@ -5,12 +5,14 @@ import type {
   ProviderPluginRuntime,
   ProviderPreset,
   ProviderTransportAdapter,
+  QuotaProvider,
 } from '../../../provider/index.js'
 
 export class ProviderRegistry implements ProviderPluginRegistry {
   private readonly authAdapters = new Map<string, ProviderAuthAdapter>()
   private readonly transportAdapters = new Map<string, ProviderTransportAdapter>()
   private readonly presets = new Map<string, ProviderPreset>()
+  private readonly quotaProviders: QuotaProvider[] = []
 
   constructor(readonly runtime: ProviderPluginRuntime) {}
 
@@ -24,6 +26,14 @@ export class ProviderRegistry implements ProviderPluginRegistry {
 
   registerPreset(preset: ProviderPreset): void {
     this.register(this.presets, preset.id, preset, 'preset')
+  }
+
+  registerQuotaProvider(provider: QuotaProvider): void {
+    this.quotaProviders.push(provider)
+  }
+
+  getQuotaProviders(): QuotaProvider[] {
+    return [...this.quotaProviders]
   }
 
   getAuth(id?: string): ProviderAuthAdapter | undefined {
