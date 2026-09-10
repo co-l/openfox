@@ -13,6 +13,7 @@ import type { Message } from '@shared/types.js'
 const mockSessionStore = vi.fn() as Mock
 const mockConfigStore = vi.fn() as Mock
 const mockUpdateStore = vi.fn() as Mock
+const mockSettings: Record<string, string> = {}
 
 vi.mock('../../stores/session', () => ({
   useSessionStore: (selector?: (s: unknown) => unknown) =>
@@ -20,11 +21,11 @@ vi.mock('../../stores/session', () => ({
 }))
 
 vi.mock('../../hooks/useSetting', () => ({
-  useSetting: (_key: string, fallback = '') => ({ value: fallback, loading: false }),
+  useSetting: (key: string, fallback = '') => ({ value: mockSettings[key] ?? fallback, loading: false }),
 }))
 
-vi.mock('../../stores/config', () => ({
-  useConfigStore: (selector?: (s: unknown) => unknown) => (selector ? selector(mockConfigStore()) : mockConfigStore()),
+vi.mock('../../hooks/useConfig', () => ({
+  useConfig: () => ({ config: mockConfigStore(), refresh: vi.fn(), loading: false }),
 }))
 
 vi.mock('../../stores/update', () => ({
@@ -70,6 +71,7 @@ vi.mock('./WorkspaceModal', () => ({ WorkspaceModal: () => null }))
 
 beforeEach(() => {
   vi.clearAllMocks()
+  Object.keys(mockSettings).forEach((k) => delete mockSettings[k])
 
   mockSessionStore.mockReturnValue({
     currentSession: { id: 's1', projectId: 'p1', metadataEntries: {}, workdir: '/tmp/project' },
@@ -219,5 +221,27 @@ describe('SessionSidebar — live turn stats', () => {
     // Weighted averages across both responses: prefill 100k/7s ≈ 14.3k, gen 1000/8s = 125
     expect(html).toContain('14.3k')
     expect(html).toContain('125.0')
+  })
+})
+
+describe('SessionSidebar — version footer visibility', () => {
+  it('renders the version footer by default when version is present', () => {
+    mockUseGitStatus.mockReturnValue({ branch: null, diff: { files: [], loading: false, error: null } })
+    mockConfigStore.mockReturnValue({ version: '1.2.3' })
+
+    const html = renderToStaticMarkup(<SessionSidebar messages={[]} />)
+
+    expect(html).toContain('v1.2.3')
+    expect(html).toContain('OpenFox')
+  })
+
+  it('hides the version footer when DISPLAY_HIDE_SIDEBAR_VERSION is true', () => {
+    mockUseGitStatus.mockReturnValue({ branch: null, diff: { files: [], loading: false, error: null } })
+    mockConfigStore.mockReturnValue({ version: '1.2.3' })
+    mockSettings['display.hideSidebarVersion'] = 'true'
+
+    const html = renderToStaticMarkup(<SessionSidebar messages={[]} />)
+    expect(html).not.toContain('v1.2.3')
+    expect(html).not.toContain('OpenFox')
   })
 })
