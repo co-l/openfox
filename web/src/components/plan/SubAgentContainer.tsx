@@ -6,6 +6,7 @@ import { useT } from '../../hooks/useT'
 import { useAgents } from '../../hooks/useAgents'
 import { getAgentColor } from '../../lib/agents-actions'
 import { useSessionStore } from '../../stores/session'
+import { useScopedContext } from '../../stores/session/session-scope'
 import { useDisplaySettings } from '../../hooks/useDisplaySettings'
 import { formatTokens } from '../../lib/format-stats'
 import { useAutoScroll } from '../../hooks/useAutoScroll'
@@ -13,6 +14,8 @@ import { useViewport } from '../../hooks/useViewport'
 import { ScrollArea } from '../shared/ScrollArea'
 import type { OverlayScrollbarsComponentRef } from 'overlayscrollbars-react'
 import { ProgressBar } from '../shared/ProgressBar'
+import { exportSubAgentConversation } from '../../lib/export-conversation'
+import { DownloadIcon } from '../shared/icons'
 
 interface SubAgentContainerProps {
   messages: Message[]
@@ -74,8 +77,24 @@ export const SubAgentContainer = memo(function SubAgentContainer({
   const scrollRef = useRef<OverlayScrollbarsComponentRef<'div'>>(null)
   const [expanded, setExpanded] = useState(false)
   const { agents } = useAgents()
+  const { currentSession } = useScopedContext()
   const contextState = useSessionStore((state) => state.subAgentContextStates[subAgentId])
   const { showThinking, showVerboseToolOutput } = useDisplaySettings()
+
+  const agentInfo = agents.find((a) => a.id === subAgentType)
+  const label = agentInfo?.name ?? (LABELS[subAgentType] ? t(LABELS[subAgentType]) : subAgentType)
+  const color = getAgentColor(agents, subAgentType)
+  const hStyle = headerStyle(color)
+
+  const handleExport = useCallback(() => {
+    exportSubAgentConversation({
+      session: currentSession,
+      subAgentType,
+      subAgentId,
+      subAgentName: typeof label === 'string' ? label : subAgentType,
+      messages,
+    })
+  }, [currentSession, subAgentType, subAgentId, label, messages])
 
   const getViewport = useViewport(scrollRef)
 
@@ -91,11 +110,6 @@ export const SubAgentContainer = memo(function SubAgentContainer({
       }, 220)
     }
   }, [expanded])
-
-  const agentInfo = agents.find((a) => a.id === subAgentType)
-  const label = agentInfo?.name ?? (LABELS[subAgentType] ? t(LABELS[subAgentType]) : subAgentType)
-  const color = getAgentColor(agents, subAgentType)
-  const hStyle = headerStyle(color)
 
   const displayMessages = messages.filter((m) => m.role !== 'tool')
 
@@ -127,6 +141,18 @@ export const SubAgentContainer = memo(function SubAgentContainer({
               className={`w-1 h-1 rounded-full ${isAutoScrollActive ? 'bg-accent-success' : 'border border-text-muted'}`}
             />
             {t({ en: 'live', fr: 'direct' })}
+          </button>
+          <button
+            type="button"
+            className="text-[10px] px-1.5 py-0.5 rounded bg-bg-tertiary flex items-center gap-1 text-text-muted hover:text-text-primary transition-colors"
+            onClick={handleExport}
+            title={t({
+              en: 'Export sub-agent conversation',
+              fr: 'Exporter la conversation du sous-agent',
+            })}
+          >
+            <DownloadIcon className="w-3 h-3" />
+            <span>{t({ en: 'Export', fr: 'Exporter' })}</span>
           </button>
           <button
             type="button"

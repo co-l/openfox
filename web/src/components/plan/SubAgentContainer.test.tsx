@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ContextState, Message } from '@shared/types.js'
 
-const { contextStateFixture } = vi.hoisted(() => ({
+const { contextStateFixture, exportSubAgentConversationMock } = vi.hoisted(() => ({
   contextStateFixture: { subAgentContextStates: {} as Record<string, ContextState | undefined> },
+  exportSubAgentConversationMock: vi.fn(),
 }))
 
 vi.mock('../../hooks/useAgents', () => ({
@@ -16,6 +17,14 @@ vi.mock('../../stores/session', () => ({
   useSessionStore: (
     selector: (state: { subAgentContextStates: Record<string, ContextState | undefined> }) => unknown,
   ) => selector(contextStateFixture),
+}))
+
+vi.mock('../../stores/session/session-scope', () => ({
+  useScopedContext: () => ({ sessionId: 'sess-123', currentSession: { id: 'sess-123' } }),
+}))
+
+vi.mock('../../lib/export-conversation', () => ({
+  exportSubAgentConversation: (...args: unknown[]) => exportSubAgentConversationMock(...args),
 }))
 
 vi.mock('../../hooks/useDisplaySettings', () => ({
@@ -114,5 +123,23 @@ describe('SubAgentContainer', () => {
     renderContainer()
 
     expect(screen.getByText('4x')).toBeInTheDocument()
+  })
+
+  it('renders the export button and triggers exportSubAgentConversation on click', () => {
+    exportSubAgentConversationMock.mockClear()
+    renderContainer()
+
+    const exportButton = screen.getByTitle('Export sub-agent conversation')
+    expect(exportButton).toBeInTheDocument()
+
+    fireEvent.click(exportButton)
+    expect(exportSubAgentConversationMock).toHaveBeenCalledTimes(1)
+    expect(exportSubAgentConversationMock).toHaveBeenCalledWith({
+      session: { id: 'sess-123' },
+      subAgentType: 'code_reviewer',
+      subAgentId: 'code-reviewer-run-1',
+      subAgentName: 'Code Reviewer',
+      messages,
+    })
   })
 })
