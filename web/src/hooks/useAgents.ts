@@ -10,5 +10,6 @@ import { agentsResource } from '../lib/resources'
 export function useAgents(workdir?: string) {
   const { data, refresh } = useResource(agentsResource, workdir)
   const agents = data ? [...data.defaults, ...data.userItems, ...data.projectItems] : []
-  return { agents, refresh }
+  const modelOverrides = data?.modelOverrides ?? {}
+  return { agents, modelOverrides, refresh }
 }
