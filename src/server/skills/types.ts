@@ -7,6 +7,8 @@ export interface SkillMetadata {
   name: string
   description: string
   version: string
+  group?: string
+  estimatedTokens?: number
   [key: string]: unknown
 }
 

@@ -66,10 +66,15 @@ async function resolveLibrary(path: string): Promise<{ configuredPath: string; r
   return { configuredPath: path, resolvedPath: await realpath(absolute) }
 }
 
+export function estimateSkillTokens(prompt: string): number {
+  return Math.ceil(prompt.length / 4)
+}
+
 function mapToResponse(skill: SkillDefinition) {
   const source = skill.source ?? 'global-openfox'
   return {
     ...skill.metadata,
+    estimatedTokens: estimateSkillTokens(skill.prompt),
     enabled: isSkillEnabled(skill.metadata.id),
     source,
     path: skill.entrypoint ?? null,

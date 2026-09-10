@@ -231,6 +231,12 @@ export function readSkills(workdir?: string): SkillsData | undefined {
   return snapshot<SkillsData>(skillsResource.keyOf(workdir)).data
 }
 
+export function selectActiveSkills(data?: SkillsData): SkillInfo[] {
+  if (!data) return []
+  const all = data.items.length > 0 ? data.items : [...data.defaults, ...data.userItems, ...data.projectItems]
+  return all.filter((sk) => sk.enabled)
+}
+
 export async function fetchSkill(skillId: string, workdir?: string): Promise<SkillFull | null> {
   const res = await authFetch(scopedUrl(`/api/skills/${skillId}`, workdir))
   if (!res.ok) return null
@@ -598,6 +604,7 @@ export const SETTINGS_KEYS = {
   DISPLAY_COLLAPSE_FAVORITES_BY_DEFAULT: 'display.collapseFavoritesByDefault',
   DISPLAY_MODEL_FAVORITES: 'display.modelFavorites',
   DISPLAY_MOBILE_FULLSCREEN_COMPOSER: 'display.mobileFullscreenComposer',
+  DISPLAY_FULLSCREEN_SLASH_COMMAND: 'display.fullscreenSlashCommand',
   LLM_DYNAMIC_SYSTEM_PROMPT: 'llm.dynamicSystemPrompt',
   LLM_CAVEMAN_THINKING: 'llm.cavemanThinking',
   CACHE_WARMING: 'cache.warming',
@@ -633,6 +640,7 @@ export const DISPLAY_SETTINGS_KEYS = [
   SETTINGS_KEYS.DISPLAY_COLLAPSE_LARGE_TOOL_CALLS,
   SETTINGS_KEYS.DISPLAY_DEFER_CODE_HIGHLIGHT_WHILE_STREAMING,
   SETTINGS_KEYS.DISPLAY_FEED_VIRTUALIZATION,
+  SETTINGS_KEYS.DISPLAY_FULLSCREEN_SLASH_COMMAND,
 ] as const
 
 export async function fetchChangelog(since?: string): Promise<string> {
