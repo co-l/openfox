@@ -196,6 +196,10 @@ describe('ToolsTab RTK shell hint (Windows)', () => {
     cleanup()
     delete mockSettings['tools.useRtk']
     delete mockSettings['tools.shell']
+    delete mockSettings['search.engine']
+    delete mockSettings['search.tavilyApiKey']
+    delete mockSettings['search.searxngUrl']
+    delete mockSettings['search.searxngApiKey']
   })
 
   it('shows the hint when RTK is enabled with cmd.exe', async () => {
@@ -240,5 +244,40 @@ describe('ToolsTab RTK shell hint (Windows)', () => {
     render(<ToolsTab />)
     await screen.findByText('Enable RTK auto-rewrite')
     expect(screen.queryByText(HINT_PATTERN)).toBeNull()
+  })
+})
+
+describe('ToolsTab Search Engine settings', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.useFakeTimers()
+    delete mockSettings['search.engine']
+    delete mockSettings['search.tavilyApiKey']
+    delete mockSettings['search.searxngUrl']
+    delete mockSettings['search.searxngApiKey']
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    cleanup()
+  })
+
+  it('loads Tavily API key from settings even if search engine is not selected', async () => {
+    mockSettings['search.tavilyApiKey'] = 'tvly-saved-key-123'
+    mockSettings['search.engine'] = 'tavily'
+    render(<ToolsTab />)
+    const input = screen.getByPlaceholderText('tvly-...') as HTMLInputElement
+    expect(input.value).toBe('tvly-saved-key-123')
+  })
+
+  it('persists typed Tavily API key via debounced save', async () => {
+    mockSettings['search.engine'] = 'tavily'
+    const { fireEvent } = await import('@testing-library/react')
+    render(<ToolsTab />)
+    const input = screen.getByPlaceholderText('tvly-...') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'tvly-new-key-456' } })
+
+    expect(mockSetSetting).not.toHaveBeenCalledWith('search.tavilyApiKey', 'tvly-new-key-456')
+    vi.advanceTimersByTime(300)
+    expect(mockSetSetting).toHaveBeenCalledWith('search.tavilyApiKey', 'tvly-new-key-456')
   })
 })
