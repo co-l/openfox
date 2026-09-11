@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.145 - 2026-09-11
+
+### Bug Fixes
+
+- **run_command no longer hangs when a detached child outlives the shell** — `setsid`, `ssh -f`, and `&`-spawned children that keep the output pipes open no longer stall the tool call forever; the tool settles after a bounded 2s grace with the shell's real exit code (noting output may be incomplete), and timeouts or interrupts on an already-exited shell settle immediately.
+
 ## 2.0.144 - 2026-09-11
 
 ### Features
