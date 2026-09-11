@@ -12,13 +12,14 @@ describe('parseSlashInvocation', () => {
   })
 
   it('parses a bare command id with no args', () => {
-    expect(parseSlashInvocation('/lint')).toEqual({ id: 'lint', args: [] })
+    expect(parseSlashInvocation('/lint')).toEqual({ id: 'lint', args: [], rest: '' })
   })
 
   it('parses args, trimming surrounding whitespace', () => {
     expect(parseSlashInvocation('  /fixme crash src/a.ts  ')).toEqual({
       id: 'fixme',
       args: ['crash', 'src/a.ts'],
+      rest: 'crash src/a.ts',
     })
   })
 
@@ -31,6 +32,7 @@ describe('parseSlashInvocation', () => {
     expect(parseSlashInvocation('/run vitest run src/x.test.ts')).toEqual({
       id: 'run',
       args: ['vitest', 'run', 'src/x.test.ts'],
+      rest: 'vitest run src/x.test.ts',
     })
   })
 })
@@ -210,6 +212,62 @@ describe('resolveSlashLaunch (filesystem-backed)', () => {
     )
     const resolved = await resolveSlashLaunch(configDir, undefined, '/fixme crash src/a.ts')
     expect(resolved).toEqual({ kind: 'command', prompt: 'Fix the crash bug in src/a.ts.', agentMode: 'builder' })
+  })
+
+  it('feeds a quoted multi-word argument into a single placeholder', async () => {
+    await writeFile(
+      join(configDir, 'commands', 'revue.command.md'),
+      '---\nid: revue\nname: Revue\n---\n\nRelis {{file}} en te concentrant sur {{angle}}.',
+    )
+    const resolved = await resolveSlashLaunch(configDir, undefined, '/revue src/a.ts "gestion des erreurs"')
+    expect(resolved).toEqual({ kind: 'command', prompt: 'Relis src/a.ts en te concentrant sur gestion des erreurs.' })
+  })
+
+  it('feeds the whole line into {{ARGUMENTS}}', async () => {
+    await writeFile(
+      join(configDir, 'commands', 'note.command.md'),
+      '---\nid: note\nname: Note\n---\n\nAdd a note: {{ARGUMENTS}}',
+    )
+    const resolved = await resolveSlashLaunch(configDir, undefined, '/note rerun the flaky proxy test')
+    expect(resolved).toEqual({ kind: 'command', prompt: 'Add a note: rerun the flaky proxy test' })
+  })
+
+  it('returns null for an {{ARGUMENTS}} command invoked with nothing after the id', async () => {
+    await writeFile(
+      join(configDir, 'commands', 'note.command.md'),
+      '---\nid: note\nname: Note\n---\n\nAdd a note: {{ARGUMENTS}}',
+    )
+    expect(await resolveSlashLaunch(configDir, undefined, '/note')).toBeNull()
+  })
+
+  it('combines a positional placeholder with {{ARGUMENTS}}', async () => {
+    await writeFile(
+      join(configDir, 'commands', 'revue.command.md'),
+      '---\nid: revue\nname: Revue\n---\n\nRelis {{file}}. Consignes : {{ARGUMENTS}}',
+    )
+    const resolved = await resolveSlashLaunch(configDir, undefined, '/revue src/a.ts sois impitoyable')
+    expect(resolved).toEqual({
+      kind: 'command',
+      prompt: 'Relis src/a.ts. Consignes : src/a.ts sois impitoyable',
+    })
+  })
+
+  it('honours quoted arguments for workflow parameters too', async () => {
+    await writeFile(
+      join(configDir, 'workflows', 'fixit.workflow.json'),
+      JSON.stringify(
+        fixtureWorkflow('fixit', [
+          { id: 'issue', position: 0 },
+          { id: 'file', position: 1 },
+        ]),
+      ),
+    )
+    const resolved = await resolveSlashLaunch(configDir, undefined, '/fixit "crash au boot" src/a.ts')
+    expect(resolved).toEqual({
+      kind: 'workflow',
+      workflowId: 'fixit',
+      params: { issue: 'crash au boot', file: 'src/a.ts' },
+    })
   })
 
   it('prefers workflows over commands when an id collides', async () => {

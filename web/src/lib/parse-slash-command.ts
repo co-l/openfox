@@ -1,4 +1,7 @@
 import type { WorkflowParameter, WorkflowScope } from '@shared/types.js'
+import { parseSlashInput } from '@shared/slash-args.js'
+
+export { ARGUMENTS_PARAM, extractTemplateParams, tokenizeArgs } from '@shared/slash-args.js'
 
 export interface WorkflowInfo {
   id: string
@@ -18,32 +21,17 @@ export interface SlashCommandResult {
   workflowId?: string
   commandId?: string
   params: Record<string, string>
-}
-
-/**
- * Extract template parameter placeholders ({{name}}) from a template string.
- * Returns them in order of first occurrence, deduplicated.
- */
-export function extractTemplateParams(template: string): string[] {
-  const seen = new Set<string>()
-  const result: string[] = []
-  const regex = /\{\{(\w+)\}\}/g
-  let match: RegExpExecArray | null
-  while ((match = regex.exec(template)) !== null) {
-    const key = match[1]!
-    if (!seen.has(key)) {
-      seen.add(key)
-      result.push(key)
-    }
-  }
-  return result
+  /** Tokenized arguments, quoted runs kept whole. */
+  args: string[]
+  /** Everything typed after the id, verbatim — feeds `{{ARGUMENTS}}`. */
+  rest: string
 }
 
 /**
  * Legacy alias — use extractTemplateParams instead.
  * @deprecated
  */
-export const extractPositionalParams = extractTemplateParams
+export { extractTemplateParams as extractPositionalParams } from '@shared/slash-args.js'
 
 /**
  * Parse a slash command from chat input.
@@ -54,14 +42,10 @@ export function parseSlashCommand(
   workflows: WorkflowInfo[],
   commands?: CommandInfo[],
 ): SlashCommandResult | null {
-  const trimmed = input.trim()
-  if (!trimmed.startsWith('/')) return null
+  const parsed = parseSlashInput(input)
+  if (!parsed) return null
 
-  const parts = trimmed.slice(1).split(/\s+/)
-  const id = parts[0]
-  if (!id) return null
-
-  const args = parts.slice(1)
+  const { id, args, rest } = parsed
   const params: Record<string, string> = {}
 
   // Try workflow first
@@ -79,7 +63,7 @@ export function parseSlashCommand(
         params[String(i)] = arg
       })
     }
-    return { workflowId: id, params }
+    return { workflowId: id, params, args, rest }
   }
 
   // Then try command
@@ -89,7 +73,7 @@ export function parseSlashCommand(
       args.forEach((arg, i) => {
         params[String(i)] = arg
       })
-      return { commandId: id, params }
+      return { commandId: id, params, args, rest }
     }
   }
 
