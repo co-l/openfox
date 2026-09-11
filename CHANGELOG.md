@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.0.144 - 2026-09-11
+
+### Features
+
+- **New criteria stream live in the feed** — criteria additions appear in the feed's criteria group as they are generated, no refresh needed.
+- **Opt-in boot auto-continuation** — sessions interrupted by a restart resume automatically on the next launch.
+
+### Bug Fixes
+
+- **Installed version detected on localized CLIs** — the version is now parsed correctly even when the CLI outputs French or another language.
+
 ## 2.0.143 - 2026-09-10
 
 ### Features
