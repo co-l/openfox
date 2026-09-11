@@ -70,6 +70,8 @@ agent-authored workflows because the file is reviewable and committable.
         "id": "feature",
         "label": "Feature name",
         "description": "What to implement",
+        "type": "input", // optional: "input" | "textarea" | "checkbox" | "select"
+        "default": "New Feature", // optional default value
         "position": 0, // optional, ordering
         "required": true, // optional, default false
       },
@@ -105,13 +107,14 @@ agent-authored workflows because the file is reviewable and committable.
 
 Every step shares these base fields:
 
-| Field         | Type           | Required | Description                                                                                        |
-| ------------- | -------------- | -------- | -------------------------------------------------------------------------------------------------- |
-| `id`          | string         | yes      | Unique within the workflow. Referenced by `entryStep`, `goto`, `{{stepOutput.id}}`.                |
-| `name`        | string         | yes      | Display name.                                                                                      |
-| `phase`       | string         | yes      | Maps to the session phase for UI: `"build"`, `"verification"`, `"waiting"`, `"blocked"`, `"done"`. |
-| `transitions` | `Transition[]` | yes      | Evaluated **in order, first match wins**. See §4.                                                  |
-| `subGroup`    | string         | no       | Groups steps for running a subset in isolation. See §7.                                            |
+| Field         | Type                       | Required | Description                                                                                        |
+| ------------- | -------------------------- | -------- | -------------------------------------------------------------------------------------------------- |
+| `id`          | string                     | yes      | Unique within the workflow. Referenced by `entryStep`, `goto`, `{{stepOutput.id}}`.                |
+| `name`        | string                     | yes      | Display name.                                                                                      |
+| `phase`       | string                     | yes      | Maps to the session phase for UI: `"build"`, `"verification"`, `"waiting"`, `"blocked"`, `"done"`. |
+| `transitions` | `Transition[]`             | yes      | Evaluated **in order, first match wins**. See §4.                                                  |
+| `subGroup`    | string                     | no       | Groups steps for running a subset in isolation. See §7.                                            |
+| `position`    | `{ x: number, y: number }` | no       | Optional custom canvas coordinates in the visual workflow diagram.                                 |
 
 ### 3.1 `agent` — full LLM turn with tools
 
@@ -122,6 +125,7 @@ Every step shares these base fields:
   "type": "agent",
   "phase": "build",
   "agentId": "builder", // optional, default: resolved default agent (usually "planner")
+  "model": "providerId/model:effort", // optional, overrides the model for this step
   "prompt": "Implement {{criteriaCount}} criteria…",
   "nudgePrompt": "Keep going. {{reason}} …", // optional, injected on re-entry
   "transitions": [/* … */],
@@ -131,6 +135,8 @@ Every step shares these base fields:
 - Runs a full agent turn (LLM + tool loop) with the agent's tool registry.
 - `agentId` defaults to the resolved default agent: DB setting → global config →
   `OPENFOX_DEFAULT_AGENT` env → `"planner"`. Common values: `"builder"`, `"planner"`.
+- `model` optional model override for this step formatted as `"providerId/model"` or
+  `"providerId/model:effort"`. Takes precedence over the agent-level override and session model.
 - `prompt` is injected as a user message **on first entry**, with
   `"\n\nOnce you're done, call step_done()"` appended. Supports template variables (§6).
 - **Advance rule:** the step only advances after the agent calls **`step_done()`**
@@ -151,6 +157,7 @@ Every step shares these base fields:
   "type": "sub_agent",
   "phase": "verification",
   "subAgentType": "verifier", // required — any configured sub-agent type
+  "model": "providerId/model:effort", // optional, overrides the model for this step
   "prompt": "## Criteria\n{{criteriaList}} …",
   "nudgePrompt": "…", // declared in the schema
   "transitions": [/* … */],
@@ -159,6 +166,8 @@ Every step shares these base fields:
 
 - Runs one isolated sub-agent turn (fresh context). The `step_done` tool is **removed**
   from sub-agents.
+- `model` optional model override for this step formatted as `"providerId/model"` or
+  `"providerId/model:effort"`. Takes precedence over the agent-level override and session model.
 - `prompt` defaults to `"Perform your task."` if omitted.
 - Unknown `subAgentType` ⇒ the step resolves with `result: "error"`.
 - **Result:** the sub-agent's `return_value` `result`, or `"success"` if none. Content

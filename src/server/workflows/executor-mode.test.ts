@@ -781,4 +781,91 @@ describe('executeWorkflow mode changes', () => {
       }),
     )
   })
+
+  it('passes stepModelOverride to runAgentTurn when an agent step has a model override', async () => {
+    const { runAgentTurn } = await import('../chat/orchestrator.js')
+
+    const workflowWithModelOverride: WorkflowDefinition = {
+      metadata: { id: 'test-model-wf', name: 'Test Model WF', description: '', version: '1' },
+      entryStep: 'step-override',
+      settings: { maxIterations: 10 },
+      steps: [
+        {
+          id: 'step-override',
+          name: 'Override Step',
+          type: 'agent',
+          phase: 'build',
+          agentId: 'builder',
+          model: 'anthropic/claude-3-7-sonnet:high',
+          transitions: [{ when: { type: 'always' }, goto: '$done' }],
+        },
+      ],
+    }
+
+    const result = await executeWorkflow(workflowWithModelOverride, {
+      ...options,
+      sessionManager: mockSessionManager as any,
+      sessionId: 'test-session',
+      llmClient: { getModel: () => 'gpt-4', complete: vi.fn() } as any,
+    })
+
+    expect(result.finalAction).toHaveProperty('type', 'DONE')
+    expect(runAgentTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stepModelOverride: 'anthropic/claude-3-7-sonnet:high',
+      }),
+      expect.anything(),
+      'builder',
+      expect.anything(),
+      expect.anything(),
+    )
+  })
+
+  it('passes stepModelOverride to executeSubAgent when a sub_agent step has a model override', async () => {
+    const { executeSubAgent } = await import('../sub-agents/manager.js')
+    const { findAgentById } = await import('../agents/registry.js')
+
+    vi.mocked(findAgentById).mockReturnValue({
+      metadata: {
+        id: 'verifier',
+        name: 'Verifier',
+        description: 'Verifier sub-agent',
+        subagent: true,
+        allowedTools: [],
+      },
+      prompt: 'Verify code',
+    })
+
+    const workflowWithSubAgentModel: WorkflowDefinition = {
+      metadata: { id: 'test-subagent-model-wf', name: 'Test Subagent Model WF', description: '', version: '1' },
+      entryStep: 'step-subagent',
+      settings: { maxIterations: 10 },
+      steps: [
+        {
+          id: 'step-subagent',
+          name: 'Verifier Step',
+          type: 'sub_agent',
+          phase: 'verification',
+          subAgentType: 'verifier',
+          model: 'openai/gpt-4o',
+          transitions: [{ when: { type: 'step_result', result: 'success' }, goto: '$done' }],
+        },
+      ],
+    }
+
+    const result = await executeWorkflow(workflowWithSubAgentModel, {
+      ...options,
+      sessionManager: mockSessionManager as any,
+      sessionId: 'test-session',
+      llmClient: { getModel: () => 'gpt-4', complete: vi.fn() } as any,
+    })
+
+    expect(result.finalAction).toHaveProperty('type', 'DONE')
+    expect(executeSubAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subAgentType: 'verifier',
+        stepModelOverride: 'openai/gpt-4o',
+      }),
+    )
+  })
 })

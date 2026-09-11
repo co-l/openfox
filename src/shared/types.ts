@@ -42,10 +42,16 @@ export type PauseState = 'none' | 'pending' | 'paused' | 'resuming'
 // Workflow Types
 // ============================================================================
 
+export type WorkflowParameterType = 'input' | 'textarea' | 'checkbox' | 'select'
+
 export interface WorkflowParameter {
   id: string
   label: string
   description?: string
+  type?: WorkflowParameterType
+  default?: string | boolean
+  defaultValue?: string | boolean
+  options?: string[]
   position?: number
   required?: boolean
 }

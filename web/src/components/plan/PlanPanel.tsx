@@ -108,7 +108,7 @@ export function PlanPanel({
 
   const { agents } = useAgents(session?.workdir)
   const topLevelAgents = agents.filter((a) => !a.subagent)
-  const { workflows } = useWorkflows(session?.workdir)
+  const { workflows, revalidate: revalidateWorkflows } = useWorkflows(session?.workdir)
 
   const { history, selectedIndex, showHistory, openHistory, closeHistory, navigateUp, navigateDown, selectCurrent } =
     usePromptHistory(messages, sessions, session?.id)
@@ -188,12 +188,17 @@ export function PlanPanel({
   } | null>(null)
 
   const launchOrShowParams = useCallback(
-    (
+    async (
       workflowId: string,
       subGroup?: string,
       extraParams?: Record<string, string>,
       scope: WorkflowLaunchScope = 'auto',
     ) => {
+      // Revalidate before deciding: a workflow edited anywhere (another surface,
+      // another tab, or the file on disk) must be launched with its current
+      // parameters instead of a stale cached snapshot. Freshness-gated, so a
+      // launch right after the picker refreshed the list costs nothing.
+      await revalidateWorkflows()
       const workflows = readAllWorkflows(sessionWorkdir)
       const wf = resolveWorkflowForLaunch(workflows, workflowId, scope)
       const params = (wf?.parameters ?? []).filter((p) => p.position !== undefined || p.required)
@@ -203,12 +208,12 @@ export function PlanPanel({
         launchWorkflow(undefined, undefined, workflowId, subGroup, extraParams, scope)
       }
     },
-    [launchWorkflow],
+    [launchWorkflow, revalidateWorkflows, sessionWorkdir],
   )
 
   const handleLaunchWorkflow = useCallback(
     (workflowId: string, subGroup?: string, params?: Record<string, string>, scope?: WorkflowLaunchScope) => {
-      launchOrShowParams(workflowId, subGroup, params, scope)
+      void launchOrShowParams(workflowId, subGroup, params, scope)
     },
     [launchOrShowParams],
   )
@@ -281,12 +286,12 @@ export function PlanPanel({
   )
 
   const handleSelectWorkflow = (workflowId: string, scope?: WorkflowLaunchScope) => {
-    launchOrShowParams(workflowId, undefined, undefined, scope)
+    void launchOrShowParams(workflowId, undefined, undefined, scope)
     clearInput()
   }
 
   const handleSelectWorkflowWithSubGroup = (workflowId: string, subGroup: string, scope?: WorkflowLaunchScope) => {
-    launchOrShowParams(workflowId, subGroup, undefined, scope)
+    void launchOrShowParams(workflowId, subGroup, undefined, scope)
     clearInput()
   }
 
@@ -412,7 +417,7 @@ export function PlanPanel({
             }
           }}
           onSelectWorkflow={(workflowId, scope) => {
-            launchOrShowParams(workflowId, undefined, undefined, scope)
+            void launchOrShowParams(workflowId, undefined, undefined, scope)
             clearInput()
           }}
         />

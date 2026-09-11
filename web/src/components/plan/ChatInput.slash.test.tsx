@@ -140,6 +140,15 @@ vi.mock('../../lib/api', () => ({
   authFetch: authFetchMock,
 }))
 
+const { mockRevalidateWorkflows } = vi.hoisted(() => ({
+  mockRevalidateWorkflows: vi.fn(async () => undefined),
+}))
+
+vi.mock('../../lib/resources', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/resources')>()
+  return { ...actual, revalidateWorkflows: mockRevalidateWorkflows }
+})
+
 authFetchMock.mockImplementation((url: string) => {
   if (url === '/api/commands' || url.startsWith('/api/commands?')) {
     return Promise.resolve({
@@ -237,7 +246,13 @@ function renderChatInput(overrides: Record<string, unknown> = {}) {
     clearInput: vi.fn(),
     ...overrides,
   }
-  return render(<ChatInput {...defaultProps} />)
+  type ChatInputProps = Parameters<typeof ChatInput>[0]
+  const view = render(<ChatInput {...(defaultProps as unknown as ChatInputProps)} />)
+  return {
+    ...view,
+    setProps: (next: Record<string, unknown>) =>
+      view.rerender(<ChatInput {...({ ...defaultProps, ...next } as unknown as ChatInputProps)} />),
+  }
 }
 
 describe('ChatInput slash command integration', () => {
@@ -252,6 +267,16 @@ describe('ChatInput slash command integration', () => {
     cleanup()
     vi.clearAllMocks()
     clearCache()
+  })
+
+  it('revalidates the workflow list when a slash command is started', async () => {
+    mockRevalidateWorkflows.mockClear()
+    const { setProps } = renderChatInput({ input: 'hello world' })
+    expect(mockRevalidateWorkflows).not.toHaveBeenCalled()
+
+    setProps({ input: '/pr-review 42' })
+
+    await waitFor(() => expect(mockRevalidateWorkflows).toHaveBeenCalled())
   })
 
   it('sends plain text via sendMessage', () => {

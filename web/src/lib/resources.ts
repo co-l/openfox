@@ -1,5 +1,5 @@
 import { authFetch } from './api'
-import { resource, snapshot } from './resourceCache'
+import { resource, snapshot, refreshMatching, loadIfStale } from './resourceCache'
 import type { AgentInfo } from './agents-actions'
 import type { AgentFull } from './agents-actions'
 import type { CommandInfo, CommandFull } from './commands-actions'
@@ -145,6 +145,37 @@ export function selectAllWorkflows(data: {
 export function readAllWorkflows(workdir?: string): WorkflowInfo[] {
   const data = readWorkflows(workdir)
   return data ? selectAllWorkflows(data) : []
+}
+
+/**
+ * Revalidate every workflow list a mounted consumer still holds, across all
+ * workdirs, plus the caller's own scope. A save is not scoped to the surface
+ * that performed it: user-scope definitions are global, and the editing modal's
+ * workdir may differ from the one the composer reads — so every live list must
+ * converge without a reload. `workdir` is deduped against the matched set.
+ */
+export function refreshWorkflowLists(workdir?: string): Promise<void> {
+  return refreshMatching('workflows:', workflowsResource.keyOf(workdir))
+}
+
+/**
+ * Interactive revalidation window. Workflow-consuming surfaces revalidate when
+ * the user acts on them (opening the picker, starting a slash command,
+ * launching), which must not turn into a request storm — while an edit made
+ * outside the UI (file on disk, another tab) is still picked up on the next
+ * interaction instead of after a page reload.
+ */
+export const WORKFLOW_REVALIDATE_MS = 2_000
+
+/**
+ * Freshness-gated revalidation of the workflow list for `workdir`: a no-op while
+ * the cached list is younger than {@link WORKFLOW_REVALIDATE_MS}, so callers can
+ * await it on user interactions without paying a round-trip each time.
+ */
+export function revalidateWorkflows(workdir?: string): Promise<void> {
+  return loadIfStale(workflowsResource.keyOf(workdir), () => fetchWorkflows(workdir), WORKFLOW_REVALIDATE_MS).then(
+    () => undefined,
+  )
 }
 
 /** Synchronous cache read for non-hook call sites (event handlers, getState-style reads). */

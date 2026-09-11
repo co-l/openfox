@@ -1,13 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { authFetch } from './api'
-import { clearCache } from './resourceCache'
+import { clearCache, retain } from './resourceCache'
 import {
   templateVariablesResource,
   workflowDefaultResource,
   workflowResource,
   workflowsResource,
   readWorkflows,
+  refreshWorkflowLists,
+  revalidateWorkflows,
   selectAllWorkflows,
+  WORKFLOW_REVALIDATE_MS,
 } from './resources'
 
 vi.mock('./api', () => ({
@@ -94,6 +97,70 @@ describe('workflowsResource', () => {
     expect(authFetch).toHaveBeenCalledWith('/api/workflows/defaults/builtin?workdir=%2Frepo%2Fa')
     expect(full?.metadata.id).toBe('builtin')
     expect(workflowDefaultResource.keyOf('builtin', '/repo/a')).toBe('workflow-default:builtin:/repo/a')
+  })
+
+  it('refreshWorkflowLists revalidates every retained workflow list across workdirs', async () => {
+    vi.mocked(authFetch).mockImplementation(async (url: string) => {
+      const workdir = url.includes('?workdir=') ? decodeURIComponent(url.split('=')[1] ?? '') : ''
+      return jsonResponse({ defaults: [{ id: `wf-${workdir}`, name: `wf-${workdir}`, scope: 'builtin' }] })
+    })
+    await workflowsResource.refresh('/repo/a')
+    await workflowsResource.refresh('/repo/b')
+    await workflowsResource.refresh('/repo/c')
+    retain(workflowsResource.keyOf('/repo/a'))
+    retain(workflowsResource.keyOf('/repo/b'))
+    vi.mocked(authFetch).mockClear()
+
+    await refreshWorkflowLists()
+
+    const urls = vi.mocked(authFetch).mock.calls.map(([url]) => url)
+    expect(urls).toEqual(
+      expect.arrayContaining(['/api/workflows?workdir=%2Frepo%2Fa', '/api/workflows?workdir=%2Frepo%2Fb']),
+    )
+    expect(urls).not.toContain('/api/workflows?workdir=%2Frepo%2Fc')
+  })
+
+  it('refreshWorkflowLists refreshes the caller workdir once, even without a mounted consumer', async () => {
+    vi.mocked(authFetch).mockImplementation(async (url: string) => {
+      const workdir = url.includes('?workdir=') ? decodeURIComponent(url.split('=')[1] ?? '') : ''
+      return jsonResponse({ defaults: [{ id: `wf-${workdir}`, name: `wf-${workdir}`, scope: 'builtin' }] })
+    })
+    await workflowsResource.refresh('/repo/a')
+    await workflowsResource.refresh('/repo/b')
+    retain(workflowsResource.keyOf('/repo/b'))
+    vi.mocked(authFetch).mockClear()
+
+    await refreshWorkflowLists('/repo/a')
+
+    const urls = vi.mocked(authFetch).mock.calls.map(([url]) => url)
+    expect(urls.filter((url) => url === '/api/workflows?workdir=%2Frepo%2Fa')).toHaveLength(1)
+    expect(urls).toContain('/api/workflows?workdir=%2Frepo%2Fb')
+  })
+
+  it('revalidateWorkflows is a no-op while the cached list is fresh', async () => {
+    vi.mocked(authFetch).mockResolvedValue(jsonResponse({ defaults: [] }))
+    await workflowsResource.refresh('/repo/a')
+    vi.mocked(authFetch).mockClear()
+
+    await revalidateWorkflows('/repo/a')
+
+    expect(authFetch).not.toHaveBeenCalled()
+  })
+
+  it('revalidateWorkflows refetches once the cached list is older than the window', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.mocked(authFetch).mockResolvedValue(jsonResponse({ defaults: [] }))
+      await workflowsResource.refresh('/repo/a')
+      vi.mocked(authFetch).mockClear()
+      vi.setSystemTime(Date.now() + WORKFLOW_REVALIDATE_MS + 1)
+
+      await revalidateWorkflows('/repo/a')
+
+      expect(authFetch).toHaveBeenCalledWith('/api/workflows?workdir=%2Frepo%2Fa')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('template variables resource uses a single global key', async () => {

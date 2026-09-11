@@ -1,9 +1,9 @@
 import { authFetch } from './api'
 import { saveEntity, duplicateEntity } from './entity-mutations'
-import { workflowsResource, workflowResource } from './resources'
-import type { WorkflowParameter, WorkflowScope } from '@shared/types.js'
+import { workflowResource, refreshWorkflowLists } from './resources'
+import type { WorkflowParameter, WorkflowParameterType, WorkflowScope } from '@shared/types.js'
 
-export type { WorkflowParameter }
+export type { WorkflowParameter, WorkflowParameterType }
 export type { WorkflowScope }
 
 export interface WorkflowCondition {
@@ -36,12 +36,16 @@ export interface WorkflowStep {
   transitions: Array<{ when: WorkflowCondition; goto: string; subGroup?: string }>
   agentId?: string
   subAgentType?: string
+  model?: string
+  providerId?: string
+  reasoningEffort?: string
   prompt?: string
   nudgePrompt?: string
   command?: string
   timeout?: number
   successExitCodes?: number[]
   subGroup?: string
+  position?: { x: number; y: number }
 }
 
 export interface WorkflowFull {
@@ -77,7 +81,7 @@ export async function createWorkflow(
     ...workflow,
     destination,
   } as unknown as Record<string, unknown>)
-  if (result.success) await workflowsResource.refresh(workdir)
+  if (result.success) await refreshWorkflowLists(workdir)
   return result
 }
 
@@ -93,7 +97,7 @@ export async function updateWorkflow(
     workflow as unknown as Record<string, unknown>,
   )
   if (result.success) {
-    await workflowsResource.refresh(workdir)
+    await refreshWorkflowLists(workdir)
     workflowResource.invalidate(id, workdir, scope)
   }
   return result
@@ -110,7 +114,7 @@ export async function deleteWorkflow(
     })
     const data = await res.json()
     if (res.ok) {
-      await workflowsResource.refresh(workdir)
+      await refreshWorkflowLists(workdir)
       workflowResource.invalidate(id, workdir, scope)
       return { success: true }
     }
@@ -128,7 +132,7 @@ export async function duplicateWorkflow(
   return duplicateEntity(
     `/api/workflows/${id}/duplicate${workdirQuery(workdir)}`,
     async () => {
-      await workflowsResource.refresh(workdir)
+      await refreshWorkflowLists(workdir)
     },
     destination,
   )

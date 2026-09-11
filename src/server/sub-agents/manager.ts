@@ -18,7 +18,11 @@ import type { AgentDefinition } from '../agents/types.js'
 import { readFile, access } from 'node:fs/promises'
 import { join, dirname, isAbsolute } from 'node:path'
 import { loadAllAgentsDefault, findAgentById } from '../agents/registry.js'
-import { resolveLLMClientForAgent } from '../agents/model-overrides.js'
+import {
+  resolveLLMClientForAgent,
+  resolveLLMClientForOverride,
+  parseStepModelOverride,
+} from '../agents/model-overrides.js'
 import { buildBasePrompt } from '../chat/prompts.js'
 import { TurnMetrics, createMessageStartEvent } from '../chat/stream-pure.js'
 import { runTopLevelAgentLoop } from '../chat/agent-loop.js'
@@ -49,6 +53,7 @@ export interface SubAgentExecutionOptions {
   sessionManager: SessionManager
   sessionId: string
   llmClient: LLMClientWithModel
+  stepModelOverride?: string
   toolRegistry: ToolRegistry
   turnMetrics: TurnMetrics
   statsIdentity: StatsIdentity
@@ -167,7 +172,16 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
     // A session-pinned effort ("Keep current reasoning effort") wins over the
     // sub-agent override's own effort, mirroring the top-level agent path.
     const pinnedEffort = session.providerPinnedEffort ?? undefined
-    const resolved = resolveLLMClientForAgent(subAgentType, parentLlmClient, effectiveProviderManager, pinnedEffort)
+    const parsedStepOverride = parseStepModelOverride(options.stepModelOverride)
+    const resolved = parsedStepOverride
+      ? resolveLLMClientForOverride(
+          parsedStepOverride,
+          parentLlmClient,
+          effectiveProviderManager,
+          pinnedEffort,
+          `Sub-agent '${subAgentType}'`,
+        )
+      : resolveLLMClientForAgent(subAgentType, parentLlmClient, effectiveProviderManager, pinnedEffort)
     if (resolved.usedOverride && resolved.override) {
       hasOverride = true
       llmClient = resolved.client

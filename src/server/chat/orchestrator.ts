@@ -105,6 +105,8 @@ export interface OrchestratorOptions {
   sessionManager: SessionManager
   sessionId: string
   llmClient: LLMClientWithModel
+  /** Explicit model override for this turn/step (e.g. from workflow step) */
+  stepModelOverride?: string
   /** Re-resolve the session's LLM client per retry attempt so a provider
    *  switch made mid-turn takes effect on the next attempt. Falls back to
    *  `llmClient` when absent. */
@@ -381,15 +383,18 @@ export async function runAgentTurn(
   const allAgents = await loadAllAgentsDefault(options.sessionManager.getProjectWorkdir(options.sessionId))
   const agentDef = findAgentById(agentId, allAgents) ?? findAgentById(resolveDefaultAgentId(), allAgents)!
 
-  // Resolve per-agent model override (dedicated LLM client if configured).
+  // Resolve per-agent model override or step-level model override (dedicated LLM client if configured).
   // Pass options.llmClient as preferred fallback so mock/test clients are preserved.
   // resolveAgentClient is re-called per retry attempt so a mid-turn provider
   // switch (e.g. during backoff) is honored by the next attempt.
+  const { parseStepModelOverride } = await import('../agents/model-overrides.js')
+  const stepOverride = parseStepModelOverride(options.stepModelOverride)
   const resolveAgentClient = (): LLMClientWithModel =>
     options.sessionManager.createClientForAgent(
       options.sessionId,
       agentId,
       options.getSessionLLMClient ? options.getSessionLLMClient() : options.llmClient,
+      stepOverride,
     )
   const agentLlmClient = resolveAgentClient()
   const statsIdentity = resolveStatsIdentity({ ...options, llmClient: agentLlmClient })

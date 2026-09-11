@@ -31,6 +31,8 @@ export interface OrchestratorOptions {
   sessionId: string
   llmClient: LLMClientWithModel
   statsIdentity?: StatsIdentity
+  /** Explicit model override for this turn/step (e.g. from workflow step) */
+  stepModelOverride?: string
   signal?: AbortSignal
   /** Override the globally active workflow for this session */
   workflowId?: string

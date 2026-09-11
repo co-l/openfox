@@ -181,7 +181,7 @@ export function ChatInput({
   const commands = commandsData
     ? dedupById(dedupById(commandsData.defaults, commandsData.userItems), commandsData.projectItems)
     : []
-  const { workflows } = useWorkflows(workdir)
+  const { workflows, revalidate: revalidateWorkflows } = useWorkflows(workdir)
 
   // Clear inline param hints when input is emptied (after send, escape, etc.)
   useEffect(() => {
@@ -189,6 +189,14 @@ export function ChatInput({
       setActiveSlashParams([])
     }
   }, [input])
+
+  // Slash suggestions, param hints and the required-param check all read the
+  // workflow list, so revalidate as soon as a slash command is started: a
+  // workflow edited elsewhere must not launch from a stale definition.
+  const isSlashInput = input.startsWith('/')
+  useEffect(() => {
+    if (isSlashInput) void revalidateWorkflows()
+  }, [isSlashInput, revalidateWorkflows])
 
   useEffect(() => {
     if (restoredInput !== null) {

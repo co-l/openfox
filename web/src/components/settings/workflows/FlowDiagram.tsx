@@ -2,6 +2,23 @@ import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import type { WorkflowStep } from '../../../lib/workflows-actions'
 import type { AgentInfo } from '../../../lib/agents-actions'
 import { computeLayout, PORT_R, type LayoutEdge, type LayoutNode, type DragState } from './layout'
+import { PlusIcon, MinusIcon, ReloadIcon } from '../../shared/icons'
+import { useT } from '../../../hooks/useT'
+
+interface NodeDragState {
+  nodeId: string
+  startPos: { cx: number; cy: number }
+  currentPos: { cx: number; cy: number }
+  startMouse: { x: number; y: number }
+  moved: boolean
+}
+
+interface PanDragState {
+  startClientX: number
+  startClientY: number
+  startPan: { x: number; y: number }
+  moved: boolean
+}
 
 interface FlowDiagramProps {
   steps: WorkflowStep[]
@@ -11,6 +28,10 @@ interface FlowDiagramProps {
   startConditionLabel: string
   agentTypes: AgentInfo[]
   isReadOnly: boolean
+  customPositions?: Record<string, { cx: number; cy: number }>
+  onCustomPositionsChange?: (positions: Record<string, { cx: number; cy: number }>) => void
+  onUpdateStepPosition?: (stepId: string, position: { x: number; y: number }) => void
+  onResetStepPositions?: () => void
   onSelectNode: (id: string | null) => void
   onSelectEdge: (key: string | null) => void
   onRemoveStep: (id: string) => void
@@ -28,6 +49,10 @@ export function FlowDiagram({
   startConditionLabel,
   agentTypes,
   isReadOnly,
+  customPositions: externalCustomPositions,
+  onCustomPositionsChange,
+  onUpdateStepPosition,
+  onResetStepPositions,
   onSelectNode,
   onSelectEdge,
   onRemoveStep,
@@ -36,27 +61,59 @@ export function FlowDiagram({
   onReconnectFrom,
   onDeleteTransition,
 }: FlowDiagramProps) {
+  const t = useT()
   const svgRef = useRef<SVGSVGElement>(null)
+  const contentGroupRef = useRef<SVGGElement>(null)
   const dragEndedRef = useRef(false)
+
+  const [localCustomPositions, setLocalCustomPositions] = useState<Record<string, { cx: number; cy: number }>>({})
+  const customPositions = externalCustomPositions ?? localCustomPositions
+
+  const updateCustomPositions = useCallback(
+    (updater: (prev: Record<string, { cx: number; cy: number }>) => Record<string, { cx: number; cy: number }>) => {
+      if (onCustomPositionsChange) {
+        onCustomPositionsChange(updater(customPositions))
+      } else {
+        setLocalCustomPositions(updater)
+      }
+    },
+    [customPositions, onCustomPositionsChange],
+  )
+
+  const [zoom, setZoom] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
   const [dragState, setDragState] = useState<DragState | null>(null)
   const [dragHoverTarget, setDragHoverTarget] = useState<string | null>(null)
+  const [_nodeDragState, setNodeDragState] = useState<NodeDragState | null>(null)
+  const [_panDragState, setPanDragState] = useState<PanDragState | null>(null)
+  const nodeDragRef = useRef<NodeDragState | null>(null)
+  const panDragRef = useRef<PanDragState | null>(null)
 
   const { nodes, edges, width, height, posMap } = useMemo(
-    () => computeLayout(steps, entryStep, startConditionLabel, agentTypes),
-    [steps, entryStep, startConditionLabel, agentTypes],
+    () => computeLayout(steps, entryStep, startConditionLabel, agentTypes, customPositions),
+    [steps, entryStep, startConditionLabel, agentTypes, customPositions],
   )
 
   const getSVGPoint = useCallback((e: React.MouseEvent | MouseEvent) => {
     const svg = svgRef.current
-    if (!svg) return { x: 0, y: 0 }
-    const pt = svg.createSVGPoint()
-    pt.x = e.clientX
-    pt.y = e.clientY
-    const ctm = svg.getScreenCTM()?.inverse()
-    if (!ctm) return { x: 0, y: 0 }
-    const svgPt = pt.matrixTransform(ctm)
-    return { x: svgPt.x, y: svgPt.y }
+    const targetGroup = contentGroupRef.current ?? svg
+    if (!svg || !targetGroup) return { x: e.clientX ?? 0, y: e.clientY ?? 0 }
+    if (typeof svg.createSVGPoint === 'function') {
+      try {
+        const pt = svg.createSVGPoint()
+        pt.x = e.clientX ?? 0
+        pt.y = e.clientY ?? 0
+        const ctm = targetGroup.getScreenCTM()?.inverse()
+        if (ctm && typeof pt.matrixTransform === 'function') {
+          const svgPt = pt.matrixTransform(ctm)
+          return { x: svgPt.x, y: svgPt.y }
+        }
+      } catch {
+        // Test environment fallback
+      }
+    }
+    return { x: e.clientX ?? 0, y: e.clientY ?? 0 }
   }, [])
 
   const isValidTarget = useCallback(
@@ -111,16 +168,109 @@ export function FlowDiagram({
     [getSVGPoint, isReadOnly],
   )
 
+  const handleNodeMouseDown = useCallback(
+    (ev: React.MouseEvent, node: LayoutNode) => {
+      if (isReadOnly) return
+      if (dragState) return
+      const pt = getSVGPoint(ev)
+      const state: NodeDragState = {
+        nodeId: node.id,
+        startPos: { cx: node.cx, cy: node.cy },
+        currentPos: { cx: node.cx, cy: node.cy },
+        startMouse: { x: pt.x, y: pt.y },
+        moved: false,
+      }
+      nodeDragRef.current = state
+      setNodeDragState(state)
+    },
+    [dragState, getSVGPoint, isReadOnly],
+  )
+
+  const handleCanvasMouseDown = useCallback(
+    (ev: React.MouseEvent) => {
+      if (dragState || nodeDragRef.current) return
+      if (ev.button !== 0 && ev.button !== 1) return
+      const state: PanDragState = {
+        startClientX: ev.clientX,
+        startClientY: ev.clientY,
+        startPan: { ...pan },
+        moved: false,
+      }
+      panDragRef.current = state
+      setPanDragState(state)
+    },
+    [dragState, pan],
+  )
+
   const handleMouseMove = useCallback(
     (ev: React.MouseEvent) => {
-      if (!dragState) return
+      const activePanDrag = panDragRef.current
+      if (activePanDrag) {
+        const dx = ev.clientX - activePanDrag.startClientX
+        const dy = ev.clientY - activePanDrag.startClientY
+        if (Math.hypot(dx, dy) > 3) {
+          activePanDrag.moved = true
+        }
+        setPan({
+          x: activePanDrag.startPan.x + dx,
+          y: activePanDrag.startPan.y + dy,
+        })
+        return
+      }
+
+      const activeNodeDrag = nodeDragRef.current
       const pt = getSVGPoint(ev)
-      setDragState((prev) => (prev ? { ...prev, mouseX: pt.x, mouseY: pt.y } : null))
+
+      if (activeNodeDrag) {
+        const dx = pt.x - activeNodeDrag.startMouse.x
+        const dy = pt.y - activeNodeDrag.startMouse.y
+        if (Math.hypot(dx, dy) > 3) {
+          activeNodeDrag.moved = true
+        }
+        const newCx = Math.round(activeNodeDrag.startPos.cx + dx)
+        const newCy = Math.round(activeNodeDrag.startPos.cy + dy)
+        activeNodeDrag.currentPos = { cx: newCx, cy: newCy }
+        updateCustomPositions((prev) => ({
+          ...prev,
+          [activeNodeDrag.nodeId]: { cx: newCx, cy: newCy },
+        }))
+        return
+      }
+
+      if (dragState) {
+        setDragState((prev) => (prev ? { ...prev, mouseX: pt.x, mouseY: pt.y } : null))
+      }
     },
-    [dragState, getSVGPoint],
+    [dragState, getSVGPoint, updateCustomPositions],
   )
 
   const handleMouseUp = useCallback(() => {
+    const activePanDrag = panDragRef.current
+    if (activePanDrag) {
+      if (!activePanDrag.moved) {
+        onSelectNode(null)
+        onSelectEdge(null)
+      }
+      panDragRef.current = null
+      setPanDragState(null)
+      return
+    }
+
+    const activeNodeDrag = nodeDragRef.current
+    if (activeNodeDrag) {
+      if (!activeNodeDrag.moved) {
+        onSelectNode(selectedNodeId === activeNodeDrag.nodeId ? null : activeNodeDrag.nodeId)
+      } else if (onUpdateStepPosition && !activeNodeDrag.nodeId.startsWith('$')) {
+        onUpdateStepPosition(activeNodeDrag.nodeId, {
+          x: activeNodeDrag.currentPos.cx,
+          y: activeNodeDrag.currentPos.cy,
+        })
+      }
+      nodeDragRef.current = null
+      setNodeDragState(null)
+      return
+    }
+
     if (!dragState) return
     dragEndedRef.current = true
     if (dragHoverTarget && isValidTarget(dragHoverTarget)) {
@@ -134,16 +284,47 @@ export function FlowDiagram({
     }
     setDragState(null)
     setDragHoverTarget(null)
-  }, [dragState, dragHoverTarget, isValidTarget, onCreateTransition, onReconnectTo, onReconnectFrom])
+  }, [
+    dragHoverTarget,
+    dragState,
+    isValidTarget,
+    onCreateTransition,
+    onReconnectFrom,
+    onReconnectTo,
+    onSelectEdge,
+    onSelectNode,
+    onUpdateStepPosition,
+    posMap,
+    selectedNodeId,
+  ])
 
-  const handleBackgroundClick = useCallback(() => {
-    if (dragEndedRef.current) {
-      dragEndedRef.current = false
-      return
+  const handleWheel = useCallback((ev: React.WheelEvent) => {
+    ev.preventDefault()
+    const zoomFactor = ev.deltaY < 0 ? 1.1 : 0.9
+    setZoom((prev) => Math.min(2.5, Math.max(0.3, parseFloat((prev * zoomFactor).toFixed(2)))))
+  }, [])
+
+  const handleZoomIn = useCallback(() => {
+    setZoom((prev) => Math.min(2.5, parseFloat((prev + 0.15).toFixed(2))))
+  }, [])
+
+  const handleZoomOut = useCallback(() => {
+    setZoom((prev) => Math.max(0.3, parseFloat((prev - 0.15).toFixed(2))))
+  }, [])
+
+  const handleResetZoom = useCallback(() => {
+    setZoom(1)
+    setPan({ x: 0, y: 0 })
+  }, [])
+
+  const handleAutoLayout = useCallback(() => {
+    updateCustomPositions(() => ({}))
+    if (onResetStepPositions) {
+      onResetStepPositions()
     }
-    onSelectNode(null)
-    onSelectEdge(null)
-  }, [onSelectNode, onSelectEdge])
+    setZoom(1)
+    setPan({ x: 0, y: 0 })
+  }, [onResetStepPositions, updateCustomPositions])
 
   useEffect(() => {
     if (isReadOnly) return
@@ -163,6 +344,27 @@ export function FlowDiagram({
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [isReadOnly, selectedEdgeKey, onDeleteTransition, onSelectEdge])
+
+  useEffect(() => {
+    const handleWindowMouseMove = (e: MouseEvent) => {
+      if (panDragRef.current || nodeDragRef.current || dragState) {
+        handleMouseMove(e as unknown as React.MouseEvent)
+      }
+    }
+
+    const handleWindowMouseUp = () => {
+      if (panDragRef.current || nodeDragRef.current || dragState) {
+        handleMouseUp()
+      }
+    }
+
+    window.addEventListener('mousemove', handleWindowMouseMove)
+    window.addEventListener('mouseup', handleWindowMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove)
+      window.removeEventListener('mouseup', handleWindowMouseUp)
+    }
+  }, [dragState, handleMouseMove, handleMouseUp])
 
   const computeEdgePath = (
     e: LayoutEdge,
@@ -409,240 +611,286 @@ export function FlowDiagram({
   }
 
   return (
-    <svg
-      ref={svgRef}
-      viewBox={`0 0 ${width} ${height}`}
-      className="block w-full"
-      preserveAspectRatio="xMidYMin meet"
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onClick={handleBackgroundClick}
-    >
-      <defs>
-        <marker id="arrow" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="7" markerHeight="5" orient="auto">
-          <polygon points="0 0, 10 3.5, 0 7" fill="#484f58" />
-        </marker>
-        <marker
-          id="arrow-selected"
-          viewBox="0 0 10 7"
-          refX="10"
-          refY="3.5"
-          markerWidth="7"
-          markerHeight="5"
-          orient="auto"
+    <div className="relative w-full h-full min-h-[360px] overflow-hidden select-none bg-bg-primary rounded-lg border border-border">
+      {/* Zoom and layout controls toolbar */}
+      <div className="absolute top-2 right-2 z-10 flex items-center gap-1 bg-bg-secondary/90 backdrop-blur border border-border rounded-md p-1 shadow-sm">
+        <button
+          type="button"
+          onClick={handleZoomIn}
+          title={t({ en: 'Zoom in', fr: 'Zoom avant' })}
+          className="p-1 rounded hover:bg-bg-tertiary text-text-secondary hover:text-text-primary transition-colors"
         >
-          <polygon points="0 0, 10 3.5, 0 7" fill="#58a6ff" />
-        </marker>
-      </defs>
+          <PlusIcon className="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={handleResetZoom}
+          title={t({ en: 'Reset zoom (100%)', fr: 'Réinitialiser le zoom (100 %)' })}
+          className="px-1.5 py-0.5 rounded hover:bg-bg-tertiary text-text-secondary hover:text-text-primary text-[10px] font-mono transition-colors"
+        >
+          {`${Math.round(zoom * 100)}%`}
+        </button>
+        <button
+          type="button"
+          onClick={handleZoomOut}
+          title={t({ en: 'Zoom out', fr: 'Zoom arrière' })}
+          className="p-1 rounded hover:bg-bg-tertiary text-text-secondary hover:text-text-primary transition-colors"
+        >
+          <MinusIcon className="w-3.5 h-3.5" />
+        </button>
+        <div className="w-[1px] h-3.5 bg-border mx-0.5" />
+        <button
+          type="button"
+          onClick={handleAutoLayout}
+          title={t({ en: 'Auto-layout', fr: 'Réorganiser automatiquement' })}
+          className="p-1 rounded hover:bg-bg-tertiary text-text-secondary hover:text-text-primary transition-colors"
+        >
+          <ReloadIcon className="w-3.5 h-3.5" />
+        </button>
+      </div>
 
-      {edges.map((e, i) => renderEdge(e, i))}
-
-      {nodes.map((node) => {
-        const isNodeSelected = selectedNodeId === node.id
-        const x = node.cx - node.w / 2
-        const y = node.cy - node.h / 2
-        const isHovered = hoveredNodeId === node.id
-        const isDragTarget = dragState && dragHoverTarget === node.id && isValidTarget(node.id)
-
-        if (node.type === 'terminal') {
-          const isStart = node.id === '$start'
-          const color = isStart ? '#58a6ff' : '#3fb950'
-          const hasOutput = isStart
-          const hasInput = !isStart
-
-          return (
-            <g
-              key={node.id}
-              onClick={(ev) => {
-                ev.stopPropagation()
-                if (isStart && !isReadOnly) {
-                  onSelectEdge('start')
-                }
-              }}
-              className={isStart && !isReadOnly ? 'cursor-pointer' : undefined}
-            >
-              {isDragTarget && (
-                <rect
-                  x={x - 3}
-                  y={y - 3}
-                  width={node.w + 6}
-                  height={node.h + 6}
-                  rx={node.h / 2 + 3}
-                  fill="none"
-                  stroke="#3fb950"
-                  strokeOpacity={0.6}
-                  strokeWidth={2}
-                />
-              )}
-              {isStart && selectedEdgeKey === 'start' && (
-                <rect
-                  x={x - 3}
-                  y={y - 3}
-                  width={node.w + 6}
-                  height={node.h + 6}
-                  rx={node.h / 2 + 3}
-                  fill="none"
-                  stroke="#58a6ff"
-                  strokeOpacity={0.5}
-                  strokeWidth={2}
-                />
-              )}
-              <rect
-                x={x}
-                y={y}
-                width={node.w}
-                height={node.h}
-                rx={node.h / 2}
-                fill={color}
-                fillOpacity={0.08}
-                stroke={color}
-                strokeOpacity={0.4}
-                strokeWidth={1.5}
-              />
-              <text
-                x={node.cx}
-                y={node.cy + 4}
-                textAnchor="middle"
-                fill={color}
-                className="text-[10px] font-medium"
-                pointerEvents="none"
-              >
-                {node.label}
-              </text>
-              {hasOutput && renderOutputPort(node)}
-              {hasInput && renderInputPort(node)}
-            </g>
-          )
-        }
-
-        const color = node.color ?? '#6b7280'
-        return (
-          <g
-            key={node.id}
-            onClick={(ev) => {
-              ev.stopPropagation()
-              if (!isReadOnly) onSelectNode(isNodeSelected ? null : node.id)
-            }}
-            onMouseEnter={() => setHoveredNodeId(node.id)}
-            onMouseLeave={() => setHoveredNodeId(null)}
-            className={isReadOnly ? undefined : 'cursor-pointer'}
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${width} ${height}`}
+        className="block w-full h-full cursor-grab active:cursor-grabbing"
+        preserveAspectRatio="xMidYMin meet"
+        onMouseDown={handleCanvasMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onWheel={handleWheel}
+      >
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="7" markerHeight="5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#484f58" />
+          </marker>
+          <marker
+            id="arrow-selected"
+            viewBox="0 0 10 7"
+            refX="10"
+            refY="3.5"
+            markerWidth="7"
+            markerHeight="5"
+            orient="auto"
           >
-            {isDragTarget && (
-              <rect
-                x={x - 3}
-                y={y - 3}
-                width={node.w + 6}
-                height={node.h + 6}
-                rx={12}
-                fill="none"
-                stroke="#3fb950"
-                strokeOpacity={0.6}
-                strokeWidth={2}
-              />
-            )}
-            {isNodeSelected && (
-              <rect
-                x={x - 3}
-                y={y - 3}
-                width={node.w + 6}
-                height={node.h + 6}
-                rx={12}
-                fill="none"
-                stroke="#58a6ff"
-                strokeOpacity={0.5}
-                strokeWidth={2}
-              />
-            )}
-            <rect
-              x={x}
-              y={y}
-              width={node.w}
-              height={node.h}
-              rx={10}
-              fill={color}
-              fillOpacity={0.08}
-              stroke={color}
-              strokeOpacity={0.6}
-              strokeWidth={isNodeSelected ? 2 : 1.5}
-            />
-            <text
-              x={node.cx}
-              y={node.cy + 4}
-              textAnchor="middle"
-              fill="#c9d1d9"
-              className="text-[11px] font-medium"
-              pointerEvents="none"
-            >
-              {node.label}
-            </text>
-            {!isReadOnly && renderOutputPort(node)}
-            {!isReadOnly && renderInputPort(node)}
-            {isHovered && !dragState && !isReadOnly && (
+            <polygon points="0 0, 10 3.5, 0 7" fill="#58a6ff" />
+          </marker>
+        </defs>
+
+        <g ref={contentGroupRef} transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
+          {edges.map((e, i) => renderEdge(e, i))}
+
+          {nodes.map((node) => {
+            const isNodeSelected = selectedNodeId === node.id
+            const x = node.cx - node.w / 2
+            const y = node.cy - node.h / 2
+            const isHovered = hoveredNodeId === node.id
+            const isDragTarget = dragState && dragHoverTarget === node.id && isValidTarget(node.id)
+
+            if (node.type === 'terminal') {
+              const isStart = node.id === '$start'
+              const color = isStart ? '#58a6ff' : '#3fb950'
+              const hasOutput = isStart
+              const hasInput = !isStart
+
+              return (
+                <g
+                  key={node.id}
+                  onMouseDown={(ev) => {
+                    ev.stopPropagation()
+                    handleNodeMouseDown(ev, node)
+                  }}
+                  onClick={(ev) => {
+                    ev.stopPropagation()
+                    if (isStart && !isReadOnly) {
+                      onSelectEdge('start')
+                    }
+                  }}
+                  className={!isReadOnly ? 'cursor-move' : undefined}
+                >
+                  {isDragTarget && (
+                    <rect
+                      x={x - 3}
+                      y={y - 3}
+                      width={node.w + 6}
+                      height={node.h + 6}
+                      rx={node.h / 2 + 3}
+                      fill="none"
+                      stroke="#3fb950"
+                      strokeOpacity={0.6}
+                      strokeWidth={2}
+                    />
+                  )}
+                  {isStart && selectedEdgeKey === 'start' && (
+                    <rect
+                      x={x - 3}
+                      y={y - 3}
+                      width={node.w + 6}
+                      height={node.h + 6}
+                      rx={node.h / 2 + 3}
+                      fill="none"
+                      stroke="#58a6ff"
+                      strokeOpacity={0.5}
+                      strokeWidth={2}
+                    />
+                  )}
+                  <rect
+                    x={x}
+                    y={y}
+                    width={node.w}
+                    height={node.h}
+                    rx={node.h / 2}
+                    fill={color}
+                    fillOpacity={0.08}
+                    stroke={color}
+                    strokeOpacity={0.4}
+                    strokeWidth={1.5}
+                  />
+                  <text
+                    x={node.cx}
+                    y={node.cy + 4}
+                    textAnchor="middle"
+                    fill={color}
+                    className="text-[10px] font-medium"
+                    pointerEvents="none"
+                  >
+                    {node.label}
+                  </text>
+                  {hasOutput && renderOutputPort(node)}
+                  {hasInput && renderInputPort(node)}
+                </g>
+              )
+            }
+
+            const color = node.color ?? '#6b7280'
+            return (
               <g
-                onClick={(ev) => {
+                key={node.id}
+                onMouseDown={(ev) => {
                   ev.stopPropagation()
-                  onRemoveStep(node.id)
+                  handleNodeMouseDown(ev, node)
                 }}
-                className="cursor-pointer"
+                onMouseEnter={() => setHoveredNodeId(node.id)}
+                onMouseLeave={() => setHoveredNodeId(null)}
+                className={isReadOnly ? undefined : 'cursor-move'}
               >
-                <circle
-                  cx={x + node.w - 2}
-                  cy={y + 2}
-                  r={8}
-                  fill="#0d1117"
-                  fillOpacity={0.9}
-                  stroke="#f85149"
-                  strokeOpacity={0.5}
-                  strokeWidth={1}
+                {isDragTarget && (
+                  <rect
+                    x={x - 3}
+                    y={y - 3}
+                    width={node.w + 6}
+                    height={node.h + 6}
+                    rx={12}
+                    fill="none"
+                    stroke="#3fb950"
+                    strokeOpacity={0.6}
+                    strokeWidth={2}
+                  />
+                )}
+                {isNodeSelected && (
+                  <rect
+                    x={x - 3}
+                    y={y - 3}
+                    width={node.w + 6}
+                    height={node.h + 6}
+                    rx={12}
+                    fill="none"
+                    stroke="#58a6ff"
+                    strokeOpacity={0.5}
+                    strokeWidth={2}
+                  />
+                )}
+                <rect
+                  x={x}
+                  y={y}
+                  width={node.w}
+                  height={node.h}
+                  rx={10}
+                  fill={color}
+                  fillOpacity={0.08}
+                  stroke={color}
+                  strokeOpacity={0.6}
+                  strokeWidth={isNodeSelected ? 2 : 1.5}
                 />
-                <line
-                  x1={x + node.w - 5}
-                  y1={y - 1}
-                  x2={x + node.w + 1}
-                  y2={y + 5}
-                  stroke="#f85149"
-                  strokeWidth={1.5}
-                  strokeLinecap="round"
-                />
-                <line
-                  x1={x + node.w + 1}
-                  y1={y - 1}
-                  x2={x + node.w - 5}
-                  y2={y + 5}
-                  stroke="#f85149"
-                  strokeWidth={1.5}
-                  strokeLinecap="round"
-                />
+                <text
+                  x={node.cx}
+                  y={node.cy + 4}
+                  textAnchor="middle"
+                  fill="#c9d1d9"
+                  className="text-[11px] font-medium"
+                  pointerEvents="none"
+                >
+                  {node.label}
+                </text>
+                {!isReadOnly && renderOutputPort(node)}
+                {!isReadOnly && renderInputPort(node)}
+                {isHovered && !dragState && !nodeDragRef.current && !isReadOnly && (
+                  <g
+                    onClick={(ev) => {
+                      ev.stopPropagation()
+                      onRemoveStep(node.id)
+                    }}
+                    className="cursor-pointer"
+                  >
+                    <circle
+                      cx={x + node.w - 2}
+                      cy={y + 2}
+                      r={8}
+                      fill="#0d1117"
+                      fillOpacity={0.9}
+                      stroke="#f85149"
+                      strokeOpacity={0.5}
+                      strokeWidth={1}
+                    />
+                    <line
+                      x1={x + node.w - 5}
+                      y1={y - 1}
+                      x2={x + node.w + 1}
+                      y2={y + 5}
+                      stroke="#f85149"
+                      strokeWidth={1.5}
+                      strokeLinecap="round"
+                    />
+                    <line
+                      x1={x + node.w + 1}
+                      y1={y - 1}
+                      x2={x + node.w - 5}
+                      y2={y + 5}
+                      stroke="#f85149"
+                      strokeWidth={1.5}
+                      strokeLinecap="round"
+                    />
+                  </g>
+                )}
               </g>
-            )}
-          </g>
-        )
-      })}
+            )
+          })}
 
-      {dragState &&
-        nodes.map((node) => {
-          if (!isValidTarget(node.id)) return null
-          return (
-            <rect
-              key={`drop-${node.id}`}
-              x={node.cx - node.w / 2 - 8}
-              y={node.cy - node.h / 2 - 8}
-              width={node.w + 16}
-              height={node.h + 16}
-              fill="transparent"
-              rx={12}
-              onMouseEnter={() => setDragHoverTarget(node.id)}
-              onMouseLeave={() => setDragHoverTarget(null)}
-              onMouseUp={(ev) => {
-                ev.stopPropagation()
-                handleMouseUp()
-              }}
-            />
-          )
-        })}
+          {dragState &&
+            nodes.map((node) => {
+              if (!isValidTarget(node.id)) return null
+              return (
+                <rect
+                  key={`drop-${node.id}`}
+                  x={node.cx - node.w / 2 - 8}
+                  y={node.cy - node.h / 2 - 8}
+                  width={node.w + 16}
+                  height={node.h + 16}
+                  fill="transparent"
+                  rx={12}
+                  onMouseEnter={() => setDragHoverTarget(node.id)}
+                  onMouseLeave={() => setDragHoverTarget(null)}
+                  onMouseUp={(ev) => {
+                    ev.stopPropagation()
+                    handleMouseUp()
+                  }}
+                />
+              )
+            })}
 
-      {renderDragLine()}
-      {renderEdgeHandles()}
-    </svg>
+          {renderDragLine()}
+          {renderEdgeHandles()}
+        </g>
+      </svg>
+    </div>
   )
 }
