@@ -1,12 +1,13 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { authFetch } from '../../../lib/api'
 import { useT } from '../../../hooks/useT'
 import { Button } from '../../shared/Button'
 import { Toggle } from '../../shared/Toggle'
 import { Input } from '../../shared/Input'
 import { mcpStatusColor, mcpStatusDot } from '../../../lib/mcp-utils'
-import { SETTINGS_KEYS, setSetting, mcpServersResource } from '../../../lib/resources'
+import { SETTINGS_KEYS, setSetting, mcpServersResource, type McpServerInfo } from '../../../lib/resources'
 import { useSetting } from '../../../hooks/useSetting'
+import { useResource } from '../../../hooks/useResource'
 import { useTestButton } from '../../../hooks/useTestButton'
 import { CRUDListView } from '../CRUDListView'
 import { useConfirmDialog, FormField, ErrorBanner } from '../CRUDModal'
@@ -272,33 +273,6 @@ function McpOAuthPanel({ serverName, onChanged }: McpOAuthPanelProps) {
   )
 }
 
-interface McpToolInfo {
-  name: string
-  description?: string
-  inputSchema: Record<string, unknown>
-  enabled: boolean
-  estimatedTokens: number
-}
-
-interface McpServerState {
-  name: string
-  config: {
-    transport: string
-    command?: string
-    args?: string[]
-    env?: Record<string, string>
-    url?: string
-    headers?: Record<string, string>
-    oauth?: boolean
-    timeout?: number
-    disabled?: boolean
-  }
-  status: 'connected' | 'disconnected' | 'error'
-  tools: McpToolInfo[]
-  estimatedTokens: number
-  error?: string
-}
-
 function useDebouncedSave(
   value: string,
   settingsKey: string,
@@ -436,8 +410,8 @@ export function ToolsTab() {
   const currentShell = shellSetting || 'cmd'
 
   // ── MCP state ──
-  const [servers, setServers] = useState<McpServerState[]>([])
-  const [loading, setLoading] = useState(true)
+  const { data: rawServers, loading, refresh: refreshServers } = useResource(mcpServersResource)
+  const servers = rawServers ?? []
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingServer, setEditingServer] = useState<string | null>(null)
   const [expandedServers, setExpandedServers] = useState<Set<string>>(new Set())
@@ -456,34 +430,6 @@ export function ToolsTab() {
   const [mcpError, setMcpError] = useState('')
   const [saving, setSaving] = useState(false)
   const { requestDelete, clearConfirm, isConfirming } = useConfirmDialog()
-
-  const loadServers = useCallback(async () => {
-    try {
-      const data = await mcpServersResource.refresh()
-      const normalized: McpServerState[] = (data ?? []).map((s) => ({
-        name: s.name,
-        status: s.status as McpServerState['status'],
-        tools: s.tools.map((tool) => ({ ...tool, inputSchema: tool.inputSchema ?? {} })),
-        estimatedTokens: s.estimatedTokens,
-        config: { ...s.config, transport: s.config.transport ?? 'stdio' },
-      }))
-      const sorted = normalized.sort((a: McpServerState, b: McpServerState) => a.name.localeCompare(b.name))
-      setServers(sorted)
-    } catch {
-      /* ignore */
-    }
-    setLoading(false)
-  }, [])
-
-  useEffect(() => {
-    loadServers()
-  }, [loadServers])
-
-  useEffect(() => {
-    const handler = () => loadServers()
-    window.addEventListener('mcp-servers-changed', handler)
-    return () => window.removeEventListener('mcp-servers-changed', handler)
-  }, [loadServers])
 
   const toggleExpand = (name: string) => {
     setExpandedServers((prev) => {
@@ -570,7 +516,7 @@ export function ToolsTab() {
       }
       setShowAddForm(false)
       setFormData(defaultFormData)
-      await loadServers()
+      await refreshServers()
     } catch (err) {
       setFormError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -578,10 +524,10 @@ export function ToolsTab() {
     }
   }
 
-  const handleEdit = (server: McpServerState) => {
+  const handleEdit = (server: McpServerInfo) => {
     setFormData({
       name: server.name,
-      transport: server.config.transport as 'stdio' | 'http',
+      transport: (server.config.transport as 'stdio' | 'http') ?? 'stdio',
       command: server.config.command ?? '',
       args: server.config.args?.join(' ') ?? '',
       env: server.config.env
@@ -623,7 +569,7 @@ export function ToolsTab() {
       }
       setEditingServer(null)
       setFormData(defaultFormData)
-      await loadServers()
+      await refreshServers()
     } catch (err) {
       setFormError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -643,13 +589,22 @@ export function ToolsTab() {
       }
       clearConfirm()
       setMcpError('')
-      await loadServers()
+      await refreshServers()
     } catch (err) {
       setMcpError(err instanceof Error ? err.message : String(err))
     }
   }
 
   const handleToggleTool = async (serverName: string, toolName: string, enabled: boolean) => {
+    const previousServers = servers
+    const optimisticServers = servers.map((s) => {
+      if (s.name !== serverName) return s
+      const tools = s.tools.map((t) => (t.name === toolName ? { ...t, enabled } : t))
+      const estimatedTokens = tools.filter((t) => t.enabled).reduce((sum, t) => sum + t.estimatedTokens, 0)
+      return { ...s, tools, estimatedTokens }
+    })
+    mcpServersResource.write(optimisticServers)
+
     try {
       const res = await authFetch(
         `/api/mcp/servers/${encodeURIComponent(serverName)}/tools/${encodeURIComponent(toolName)}`,
@@ -667,13 +622,20 @@ export function ToolsTab() {
         )
       }
       setMcpError('')
-      await loadServers()
     } catch (err) {
+      mcpServersResource.write(previousServers)
       setMcpError(err instanceof Error ? err.message : String(err))
     }
   }
 
   const handleToggleServer = async (serverName: string, newDisabled: boolean) => {
+    const previousServers = servers
+    const optimisticServers = servers.map((s) => {
+      if (s.name !== serverName) return s
+      return { ...s, config: { ...s.config, disabled: newDisabled } }
+    })
+    mcpServersResource.write(optimisticServers)
+
     try {
       const res = await authFetch(`/api/mcp/servers/${encodeURIComponent(serverName)}`, {
         method: 'PUT',
@@ -688,8 +650,8 @@ export function ToolsTab() {
         )
       }
       setMcpError('')
-      await loadServers()
     } catch (err) {
+      mcpServersResource.write(previousServers)
       setMcpError(err instanceof Error ? err.message : String(err))
     }
   }
@@ -1051,7 +1013,7 @@ export function ToolsTab() {
                 statusDot={mcpStatusDot(server.status)}
                 statusColor={mcpStatusColor(server.status)}
                 authPanel={
-                  server.config.oauth ? <McpOAuthPanel serverName={server.name} onChanged={loadServers} /> : null
+                  server.config.oauth ? <McpOAuthPanel serverName={server.name} onChanged={refreshServers} /> : null
                 }
                 actions={
                   <>
