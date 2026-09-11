@@ -101,6 +101,15 @@ describe('DropdownMenu', () => {
       expect(link).toBeTruthy()
       expect(link?.getAttribute('href')).toBe('/some/page')
     })
+    it('renders header when provided', () => {
+      const items: DropdownMenuItem[] = [{ label: 'Main', onClick: vi.fn() }]
+      const container = render(
+        <DropdownMenu items={items} header={<input placeholder="Search items..." />} trigger={<button>Open</button>} />,
+      )
+      clickTrigger(container)
+      const menu = getMenu()
+      expect(menu?.querySelector('input[placeholder="Search items..."]')).toBeTruthy()
+    })
   })
 
   describe('positioning', () => {

@@ -1,12 +1,12 @@
 import { ScrollArea } from './shared/ScrollArea'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo, useEffect } from 'react'
 import { useLocation } from 'wouter'
 import { useProjectStore } from '../stores/project'
 import { useProjects } from '../hooks/useProjects'
 import { useT } from '../hooks/useT'
 import { Modal } from './shared/Modal'
 import { Button } from './shared/Button'
-import { FolderIcon, TrashIcon } from './shared/icons'
+import { FolderIcon, TrashIcon, SearchIcon } from './shared/icons'
 import { truncateMiddle, pathBasename } from '../lib/path'
 import { DeleteProjectConfirmationModal } from './DeleteProjectConfirmationModal.js'
 import { CreateProjectModal } from './CreateProjectModal.js'
@@ -25,12 +25,25 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const baseWorkdir = useWorkdir()
   const [showBrowser, setShowBrowser] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
 
   const { projects } = useProjects()
   const createProject = useProjectStore((state) => state.createProject)
   const deleteProject = useProjectStore((state) => state.deleteProject)
   const [projectToDelete, setProjectToDelete] = useState<{ id: string; name: string } | null>(null)
   const [permissionDeniedPath, setPermissionDeniedPath] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (isOpen) {
+      setSearchQuery('')
+    }
+  }, [isOpen])
+
+  const filteredProjects = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return projects
+    return projects.filter((p) => p.name.toLowerCase().includes(q))
+  }, [projects, searchQuery])
 
   const handleProjectClick = (projectId: string) => {
     navigate(`/p/${projectId}`)
@@ -111,9 +124,22 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
       <div className="flex flex-col sm:flex-row flex-1 -m-4">
         <div className="w-full sm:w-1/2 border-b sm:border-b-0 sm:border-r border-border flex flex-col max-h-[40vh] sm:max-h-[50vh]">
           <div className="p-3 border-b border-border bg-bg-tertiary/30 shrink-0">
-            <h3 className="font-medium text-sm text-text-secondary">
+            <h3 className="font-medium text-sm text-text-secondary mb-2">
               {t({ en: 'Recent Projects', fr: 'Projets récents' })}
             </h3>
+            {projects.length > 0 && (
+              <div className="relative">
+                <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={t({ en: 'Search projects…', fr: 'Rechercher des projets…' })}
+                  aria-label={t({ en: 'Search projects', fr: 'Rechercher des projets' })}
+                  className="w-full text-xs bg-bg-primary border border-border rounded pl-8 pr-2 py-1.5 text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-primary"
+                />
+              </div>
+            )}
           </div>
           <ScrollArea className="flex-1">
             {projects.length === 0 ? (
@@ -126,9 +152,13 @@ export function OpenProjectModal({ isOpen, onClose }: OpenProjectModalProps) {
                   })}
                 </p>
               </div>
+            ) : filteredProjects.length === 0 ? (
+              <p className="p-6 text-center text-text-muted text-xs">
+                {t({ en: 'No projects match', fr: 'Aucun projet ne correspond' })}
+              </p>
             ) : (
               <div className="divide-y divide-border">
-                {projects.map((project) => (
+                {filteredProjects.map((project) => (
                   <div
                     key={project.id}
                     className="group flex items-center gap-3 p-3 hover:bg-bg-tertiary/50 transition-colors"

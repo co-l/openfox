@@ -16,6 +16,7 @@ export interface DropdownMenuItem {
 interface DropdownMenuProps {
   items: DropdownMenuItem[]
   footerItems?: DropdownMenuItem[]
+  header?: React.ReactNode
   trigger: React.ReactNode
   minWidth?: string
   /** Which edge of the trigger the menu's corresponding edge aligns to. */
@@ -28,6 +29,7 @@ interface DropdownMenuProps {
 export function DropdownMenu({
   items,
   footerItems = [],
+  header,
   trigger,
   minWidth = '120px',
   align = 'left',
@@ -105,7 +107,9 @@ export function DropdownMenu({
     if (!isOpen) return
 
     setTimeout(() => {
-      menuRef.current?.focus()
+      if (!menuRef.current?.contains(document.activeElement)) {
+        menuRef.current?.focus()
+      }
     }, 0)
 
     function handleKeyDown(e: KeyboardEvent) {
@@ -281,6 +285,7 @@ export function DropdownMenu({
       }}
       tabIndex={-1}
     >
+      {header && <div className="p-2 border-b border-border">{header}</div>}
       <ScrollArea className="max-h-[60vh]">
         {items.map((item, index) => renderItem(item, index, items.length, index))}
       </ScrollArea>
