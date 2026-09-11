@@ -1911,6 +1911,13 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
   })
 
+  // Headroom availability check
+  app.get('/api/tools/headroom-check', async (_req, res) => {
+    const { checkHeadroomAvailability } = await import('./headroom/index.js')
+    const status = await checkHeadroomAvailability()
+    res.json(status)
+  })
+
   // Shells available for the tools.shell setting (Windows only; empty elsewhere)
   app.get('/api/tools/shells', async (_req, res) => {
     const { listAvailableShells } = await import('./utils/platform.js')

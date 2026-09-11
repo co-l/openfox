@@ -242,3 +242,81 @@ describe('ToolsTab RTK shell hint (Windows)', () => {
     expect(screen.queryByText(HINT_PATTERN)).toBeNull()
   })
 })
+
+describe('ToolsTab Headroom settings', () => {
+  const mockFetchWithHeadroom = async (headroomData: {
+    available: boolean
+    installed: boolean
+    running: boolean
+    version: string | null
+    proxyUrl: string
+  }) => {
+    const { authFetch } = await import('../../../lib/api')
+    const mockFn = authFetch as ReturnType<typeof vi.fn>
+    mockFn.mockImplementation(async (url: string) => ({
+      ok: true,
+      json: async () => {
+        if (url === '/api/tools/headroom-check') return headroomData
+        if (url === '/api/tools/rtk-check') return { available: false }
+        return { servers: [] }
+      },
+    }))
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+  afterEach(() => {
+    cleanup()
+    delete mockSettings['tools.useHeadroom']
+    delete mockSettings['tools.headroomProxyUrl']
+  })
+
+  it('renders Headroom compression toggle and running status', async () => {
+    await mockFetchWithHeadroom({
+      available: true,
+      installed: true,
+      running: true,
+      version: '0.37.0',
+      proxyUrl: 'http://127.0.0.1:8787',
+    })
+    mockSettings['tools.useHeadroom'] = 'false'
+    render(<ToolsTab />)
+    expect(await screen.findByText('Enable Headroom native compression')).toBeDefined()
+    expect(await screen.findByText('● proxy running')).toBeDefined()
+  })
+
+  it('shows stopped warning when Headroom is enabled but proxy is not running', async () => {
+    await mockFetchWithHeadroom({
+      available: true,
+      installed: true,
+      running: false,
+      version: '0.37.0',
+      proxyUrl: 'http://127.0.0.1:8787',
+    })
+    mockSettings['tools.useHeadroom'] = 'true'
+    render(<ToolsTab />)
+    expect(await screen.findByText('○ CLI installed (proxy stopped)')).toBeDefined()
+    expect(screen.getByText(/Headroom proxy is not detected/)).toBeDefined()
+  })
+
+  it('calls setSetting when toggle is clicked', async () => {
+    const user = userEvent.setup()
+    await mockFetchWithHeadroom({
+      available: true,
+      installed: true,
+      running: true,
+      version: '0.37.0',
+      proxyUrl: 'http://127.0.0.1:8787',
+    })
+    mockSettings['tools.useHeadroom'] = 'false'
+    render(<ToolsTab />)
+    const toggles = screen.getAllByRole('switch')
+    // Headroom toggle is one of the switches
+    const headroomToggle = toggles[toggles.length - 3] // Search, RTK, Headroom, Confirm, Per-session
+    if (headroomToggle) {
+      await user.click(headroomToggle)
+      expect(mockSetSetting).toHaveBeenCalled()
+    }
+  })
+})

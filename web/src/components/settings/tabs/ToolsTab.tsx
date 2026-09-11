@@ -12,6 +12,7 @@ import { CRUDListView } from '../CRUDListView'
 import { useConfirmDialog, FormField, ErrorBanner } from '../CRUDModal'
 import { Modal } from '../../shared/SelfContainedModal'
 import { McpServerCard } from '../McpServerCard'
+import { OpenExternalIcon } from '../../shared/icons'
 
 function parseKeyValueLines(text: string): Record<string, string> {
   const result: Record<string, string> = {}
@@ -354,6 +355,7 @@ export function ToolsTab() {
   const searxngUrlSetting = useSetting(SETTINGS_KEYS.SEARCH_SEARXNG_URL).value
   const searxngKeySetting = useSetting(SETTINGS_KEYS.SEARCH_SEARXNG_API_KEY).value
   const useRtkSetting = useSetting(SETTINGS_KEYS.TOOLS_USE_RTK).value
+  const useHeadroomSetting = useSetting(SETTINGS_KEYS.TOOLS_USE_HEADROOM).value
   const confirmWorkspaceSetting = useSetting(SETTINGS_KEYS.CONFIRM_ON_WORKSPACE_ACTIONS).value
   const shellSetting = useSetting(SETTINGS_KEYS.TOOLS_SHELL).value
   const perSessionMcpSetting = useSetting(SETTINGS_KEYS.FEATURES_PER_SESSION_MCP).value
@@ -379,6 +381,28 @@ export function ToolsTab() {
       setSearxngKey(searxngKeySetting)
     }
   }, [searchEngineSetting, tavilyKeySetting, searxngUrlSetting, searxngKeySetting])
+
+  // ── Headroom availability ──
+  const [headroomStatus, setHeadroomStatus] = useState<'checking' | 'ready'>('checking')
+  const [headroomInfo, setHeadroomInfo] = useState<{
+    installed: boolean
+    running: boolean
+    version: string | null
+    proxyUrl: string
+  } | null>(null)
+
+  useEffect(() => {
+    authFetch('/api/tools/headroom-check')
+      .then((r) => r.json())
+      .then((data) => {
+        setHeadroomInfo(data)
+        setHeadroomStatus('ready')
+      })
+      .catch(() => {
+        setHeadroomInfo({ installed: false, running: false, version: null, proxyUrl: 'http://127.0.0.1:8787' })
+        setHeadroomStatus('ready')
+      })
+  }, [])
 
   function handleEngineChange(engine: string) {
     setSearchEngine(engine)
@@ -904,6 +928,81 @@ export function ToolsTab() {
             })}
           </p>
         )}
+
+        {/* Headroom */}
+        <div className="mt-4 pt-4 border-t border-border/50">
+          <p className="text-sm text-text-muted mb-3">
+            {t({
+              en: 'Compress tool outputs, logs, and prompt context with Headroom. See the',
+              fr: 'Compressez les sorties d’outils, journaux et contextes d’invite avec Headroom. Voir le',
+            })}{' '}
+            <a
+              href="https://github.com/headroomlabs-ai/headroom"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-accent-primary hover:underline"
+            >
+              README
+            </a>{' '}
+            {t({ en: 'for quickstart & proxy setup.', fr: 'pour le démarrage rapide et la configuration du proxy.' })}
+          </p>
+          <div className="flex items-center justify-between py-2">
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-text-primary">
+                  {t({ en: 'Enable Headroom native compression', fr: 'Activer la compression native Headroom' })}
+                </span>
+                {headroomStatus === 'checking' && (
+                  <span className="text-xs text-text-muted animate-pulse">
+                    {t({ en: 'checking…', fr: 'vérification…' })}
+                  </span>
+                )}
+                {headroomStatus === 'ready' && headroomInfo?.running && (
+                  <span className="text-xs text-accent-success">
+                    {t({ en: '● proxy running', fr: '● proxy actif' })}
+                  </span>
+                )}
+                {headroomStatus === 'ready' && !headroomInfo?.running && headroomInfo?.installed && (
+                  <span className="text-xs text-accent-warning">
+                    {t({ en: '○ CLI installed (proxy stopped)', fr: '○ CLI installée (proxy arrêté)' })}
+                  </span>
+                )}
+                {headroomStatus === 'ready' && !headroomInfo?.running && !headroomInfo?.installed && (
+                  <span className="text-xs text-accent-error">{t({ en: '○ not found', fr: '○ introuvable' })}</span>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <a
+                href={`${headroomInfo?.proxyUrl || 'http://127.0.0.1:8787'}/dashboard`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded border border-border text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors"
+                title={t({ en: 'Open Headroom Dashboard', fr: 'Ouvrir le tableau de bord Headroom' })}
+              >
+                <OpenExternalIcon className="w-3.5 h-3.5" />
+                {t({ en: 'Dashboard', fr: 'Tableau de bord' })}
+              </a>
+              <Toggle
+                enabled={useHeadroomSetting === 'true'}
+                onClick={() =>
+                  void setSetting(SETTINGS_KEYS.TOOLS_USE_HEADROOM, useHeadroomSetting === 'true' ? 'false' : 'true')
+                }
+              />
+            </div>
+          </div>
+          {useHeadroomSetting === 'true' && headroomStatus === 'ready' && !headroomInfo?.running && (
+            <p className="text-xs text-accent-warning mt-1">
+              {t(
+                {
+                  en: 'Headroom proxy is not detected on {{url}}. Start it with `headroom proxy` to enable active compression.',
+                  fr: 'Le proxy Headroom n’est pas détecté sur {{url}}. Démarrez-le avec « headroom proxy » pour activer la compression.',
+                },
+                { url: headroomInfo?.proxyUrl || 'http://127.0.0.1:8787' },
+              )}
+            </p>
+          )}
+        </div>
       </div>
 
       <hr className="border-border" />

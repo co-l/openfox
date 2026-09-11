@@ -52,6 +52,7 @@ import { logger } from '../utils/logger.js'
 import type { LLMRetryPolicy } from '../runner/types.js'
 import { DEFAULT_LLM_RETRY_POLICY } from '../runner/types.js'
 import { serverT } from '../i18n.js'
+import { isHeadroomEnabled, compressMessagesWithHeadroom } from '../headroom/index.js'
 
 function emitPartialDoneEvents(
   _sessionId: string,
@@ -386,12 +387,21 @@ export async function runTopLevelAgentLoop(
       const allAgents = await loadAllAgentsDefault(sessionManager.getProjectWorkdir(sessionId))
       const subAgentAliases = new Set(getSubAgents(allAgents).map((a) => a.metadata.id))
 
+      let llmMessages = assembledRequest.messages
+      if (isHeadroomEnabled()) {
+        const compressedResult = await compressMessagesWithHeadroom({
+          messages: assembledRequest.messages,
+          model: attemptClient.getModel(),
+        })
+        llmMessages = compressedResult.messages
+      }
+
       const streamGen = streamLLMPure({
         messageId: assistantMsgId,
         systemPrompt: assembledRequest.systemPrompt,
         llmClient: attemptClient,
         sessionId,
-        messages: assembledRequest.messages,
+        messages: llmMessages,
         tools: assembledRequest.tools,
         toolChoice: 'auto',
         signal,
