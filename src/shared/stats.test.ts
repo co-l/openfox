@@ -512,3 +512,25 @@ describe('computeSessionStats', () => {
     })
   })
 })
+
+describe('computeSessionStats savings', () => {
+  it('sums per-response Headroom savings and keeps the RTK high-water mark', () => {
+    const messages = [
+      createMessageWithStats('1', { mode: 'builder', rtkTokensSaved: 1000, headroomTokensSaved: 100 }),
+      createMessageWithStats('2', { mode: 'builder', rtkTokensSaved: 2500, headroomTokensSaved: 50 }),
+      createMessageWithStats('3', { mode: 'builder', headroomTokensSaved: 25 }),
+    ]
+
+    const result = computeSessionStats(messages)
+
+    expect(result!.rtkTokensSaved).toBe(2500)
+    expect(result!.headroomTokensSaved).toBe(175)
+  })
+
+  it('defaults savings to zero when no response carries them', () => {
+    const result = computeSessionStats([createMessageWithStats('1', { mode: 'builder' })])
+
+    expect(result!.rtkTokensSaved).toBe(0)
+    expect(result!.headroomTokensSaved).toBe(0)
+  })
+})

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { computeMessageStats, computeAggregatedStats } from './stats.js'
+import { TurnMetrics } from './stream-pure.js'
 
 describe('stats computation', () => {
   const identity = {
@@ -143,5 +144,75 @@ describe('stats computation', () => {
       expect(correctStats.generationSpeed).toBeLessThan(200)
       expect(correctStats.generationSpeed).toBeGreaterThan(100)
     })
+  })
+
+  describe('savings fields', () => {
+    it('passes RTK and Headroom savings through aggregated stats', () => {
+      const stats = computeAggregatedStats({
+        identity,
+        mode: 'builder',
+        totalPrefillTokens: 100,
+        totalGenTokens: 10,
+        totalPrefillTime: 1,
+        totalGenTime: 1,
+        totalToolTime: 0,
+        totalTime: 2,
+        rtkTokensSaved: 1234,
+        headroomTokensSaved: 567,
+      })
+
+      expect(stats.rtkTokensSaved).toBe(1234)
+      expect(stats.headroomTokensSaved).toBe(567)
+    })
+
+    it('omits savings fields when nothing was saved', () => {
+      const stats = computeAggregatedStats({
+        identity,
+        mode: 'builder',
+        totalPrefillTokens: 100,
+        totalGenTokens: 10,
+        totalPrefillTime: 1,
+        totalGenTime: 1,
+        totalToolTime: 0,
+        totalTime: 2,
+      })
+
+      expect(stats.rtkTokensSaved).toBeUndefined()
+      expect(stats.headroomTokensSaved).toBeUndefined()
+    })
+  })
+})
+
+describe('TurnMetrics savings', () => {
+  const identity = {
+    providerId: 'provider-1',
+    providerName: 'Local vLLM',
+    backend: 'vllm' as const,
+    model: 'test-model',
+  }
+
+  it('sums Headroom savings and keeps the RTK high-water mark', () => {
+    const metrics = new TurnMetrics()
+    metrics.addHeadroomSaved(100)
+    metrics.addHeadroomSaved(50)
+    metrics.setRtkTokensSaved(1000)
+    metrics.setRtkTokensSaved(1200)
+
+    const stats = metrics.buildStats(identity, 'builder')
+
+    expect(stats.headroomTokensSaved).toBe(150)
+    expect(stats.rtkTokensSaved).toBe(1200)
+  })
+
+  it('ignores zero and invalid savings', () => {
+    const metrics = new TurnMetrics()
+    metrics.addHeadroomSaved(0)
+    metrics.addHeadroomSaved(Number.NaN)
+    metrics.setRtkTokensSaved(0)
+
+    const stats = metrics.buildStats(identity, 'builder')
+
+    expect(stats.headroomTokensSaved).toBeUndefined()
+    expect(stats.rtkTokensSaved).toBeUndefined()
   })
 })

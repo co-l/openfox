@@ -46,6 +46,8 @@ function buildSessionStats(messagesWithStats: MessageWithStats[]): Omit<SessionS
   let totalPrefillSource = 0
   let totalPrefillTime = 0
   let totalGenTime = 0
+  let rtkTokensSaved = 0
+  let headroomTokensSaved = 0
 
   const dataPoints: StatsDataPoint[] = []
   const callDataPoints: CallStatsDataPoint[] = []
@@ -59,6 +61,11 @@ function buildSessionStats(messagesWithStats: MessageWithStats[]): Omit<SessionS
     toolTime += stats.toolTime
     prefillTokens += stats.prefillTokens
     generationTokens += stats.generationTokens
+
+    // RTK savings are session-cumulative on every response, so the session total
+    // is the high-water mark rather than a sum. Headroom savings are per-response.
+    rtkTokensSaved = Math.max(rtkTokensSaved, stats.rtkTokensSaved ?? 0)
+    headroomTokensSaved += stats.headroomTokensSaved ?? 0
 
     // prefillSpeed is computed from the non-cached token source
     // (prefTokenIncrement when known, else the full prompt), so aggregate on
@@ -128,6 +135,8 @@ function buildSessionStats(messagesWithStats: MessageWithStats[]): Omit<SessionS
     avgGenerationSpeed,
     responseCount: messagesWithStats.length,
     llmCallCount: callDataPoints.length,
+    rtkTokensSaved,
+    headroomTokensSaved,
     dataPoints,
     callDataPoints,
   }
@@ -160,7 +169,9 @@ export function computeSessionStats(messages: Message[]): SessionStats | null {
 
   const modelGroups: ModelSessionStats[] = Array.from(modelBuckets.entries()).map(([key, groupMessages]) => {
     const identity = getStatsIdentity(groupMessages[0]!.stats)
-    const groupStats = buildSessionStats(groupMessages)
+    // RTK savings are session-cumulative (they carry no per-model meaning), so
+    // they stay on the session aggregate. Headroom savings are per-response.
+    const { rtkTokensSaved: _rtkTokensSaved, ...groupStats } = buildSessionStats(groupMessages)
     return {
       ...identity,
       key,

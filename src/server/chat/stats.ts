@@ -123,6 +123,8 @@ export function computeAggregatedStats(input: {
   totalToolTime: number // seconds
   totalTime: number // wall clock seconds
   llmCalls?: LLMCallStats[]
+  rtkTokensSaved?: number
+  headroomTokensSaved?: number
 }): MessageStats {
   const {
     identity,
@@ -135,6 +137,8 @@ export function computeAggregatedStats(input: {
     totalToolTime,
     totalTime,
     llmCalls,
+    rtkTokensSaved,
+    headroomTokensSaved,
   } = input
 
   const prefillSource = totalPrefillIncrement ?? totalPrefillTokens
@@ -150,5 +154,7 @@ export function computeAggregatedStats(input: {
     generationTokens: totalGenTokens,
     generationSpeed: totalGenTime > 0 ? roundTo1(totalGenTokens / totalGenTime) : 0,
     ...(llmCalls ? { llmCalls } : {}),
+    ...(rtkTokensSaved !== undefined && { rtkTokensSaved }),
+    ...(headroomTokensSaved !== undefined && { headroomTokensSaved }),
   }
 }

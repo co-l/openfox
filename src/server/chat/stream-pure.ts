@@ -570,6 +570,8 @@ export class TurnMetrics {
   private totalGenTokens = 0
   private totalGenTime = 0 // seconds
   private totalToolTime = 0 // seconds
+  private rtkTokensSaved: number | undefined
+  private headroomTokensSaved = 0
   private llmCalls: Array<
     Omit<NonNullable<MessageStats['llmCalls']>[number], 'providerId' | 'providerName' | 'backend' | 'model'>
   > = []
@@ -643,6 +645,18 @@ export class TurnMetrics {
     this.totalToolTime += durationMs / 1000
   }
 
+  /** Record the session-cumulative tokens saved by RTK command rewrites so far. */
+  setRtkTokensSaved(tokens: number): void {
+    this.rtkTokensSaved = Number.isFinite(tokens) && tokens > 0 ? Math.round(tokens) : undefined
+  }
+
+  /** Add tokens saved by a Headroom compression call during this turn. */
+  addHeadroomSaved(tokens: number): void {
+    if (Number.isFinite(tokens) && tokens > 0) {
+      this.headroomTokensSaved += Math.round(tokens)
+    }
+  }
+
   /** Build final stats object */
   buildStats(identity: StatsIdentity, mode: string): MessageStats {
     return computeAggregatedStats({
@@ -655,6 +669,8 @@ export class TurnMetrics {
       totalGenTime: this.totalGenTime,
       totalToolTime: this.totalToolTime,
       totalTime: (performance.now() - this.startTime) / 1000,
+      ...(this.rtkTokensSaved !== undefined && { rtkTokensSaved: this.rtkTokensSaved }),
+      ...(this.headroomTokensSaved > 0 && { headroomTokensSaved: this.headroomTokensSaved }),
       llmCalls: this.llmCalls.map((call) => ({
         ...identity,
         ...call,

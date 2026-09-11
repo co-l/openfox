@@ -19,8 +19,10 @@ vi.mock('../../stores/session', () => ({
     selector ? selector(mockSessionStore()) : mockSessionStore(),
 }))
 
+const mockSettings: Record<string, string> = {}
+
 vi.mock('../../hooks/useSetting', () => ({
-  useSetting: (_key: string, fallback = '') => ({ value: fallback, loading: false }),
+  useSetting: (key: string, fallback = '') => ({ value: mockSettings[key] ?? fallback, loading: false }),
 }))
 
 vi.mock('../../stores/config', () => ({
@@ -70,6 +72,7 @@ vi.mock('./WorkspaceModal', () => ({ WorkspaceModal: () => null }))
 
 beforeEach(() => {
   vi.clearAllMocks()
+  Object.keys(mockSettings).forEach((k) => delete mockSettings[k])
 
   mockSessionStore.mockReturnValue({
     currentSession: { id: 's1', projectId: 'p1', metadataEntries: {}, workdir: '/tmp/project' },
@@ -219,5 +222,120 @@ describe('SessionSidebar — live turn stats', () => {
     // Weighted averages across both responses: prefill 100k/7s ≈ 14.3k, gen 1000/8s = 125
     expect(html).toContain('14.3k')
     expect(html).toContain('125.0')
+  })
+})
+
+describe('SessionSidebar — savings segments', () => {
+  it('shows session RTK and Headroom savings next to the pp/tg stats', () => {
+    mockUseGitStatus.mockReturnValue({ branch: null, diff: { files: [], loading: false, error: null } })
+    mockSessionStore.mockReturnValue({
+      currentSession: { id: 's1', projectId: 'p1', metadataEntries: {}, workdir: '/tmp/project' },
+      panes: {
+        s1: {
+          session: { id: 's1', projectId: 'p1', metadataEntries: {}, workdir: '/tmp/project' },
+          liveTurnStats: {
+            providerId: 'p',
+            providerName: 'P',
+            backend: 'ollama',
+            model: 'm',
+            mode: 'builder',
+            totalTime: 10,
+            toolTime: 0,
+            prefillTokens: 1000,
+            prefillSpeed: 100,
+            generationTokens: 100,
+            generationSpeed: 10,
+            rtkTokensSaved: 12345,
+            headroomTokensSaved: 678,
+          },
+        },
+      },
+    })
+
+    mockSettings['tools.useRtk'] = 'true'
+    mockSettings['tools.useHeadroom'] = 'true'
+
+    const html = renderToStaticMarkup(
+      <SessionScopeProvider value="s1">
+        <SessionSidebar messages={[]} />
+      </SessionScopeProvider>,
+    )
+
+    expect(html).toContain('>rtk</span>')
+    expect(html).toContain('>hr</span>')
+    expect(html).toContain('>gt</span>')
+    expect(html).toContain('−12 345')
+    expect(html).toContain('−678')
+  })
+
+  it('hides the savings segments when nothing was saved', () => {
+    mockUseGitStatus.mockReturnValue({ branch: null, diff: { files: [], loading: false, error: null } })
+    mockSessionStore.mockReturnValue({
+      currentSession: { id: 's1', projectId: 'p1', metadataEntries: {}, workdir: '/tmp/project' },
+      panes: {
+        s1: {
+          session: { id: 's1', projectId: 'p1', metadataEntries: {}, workdir: '/tmp/project' },
+          liveTurnStats: {
+            providerId: 'p',
+            providerName: 'P',
+            backend: 'ollama',
+            model: 'm',
+            mode: 'builder',
+            totalTime: 10,
+            toolTime: 0,
+            prefillTokens: 1000,
+            prefillSpeed: 100,
+            generationTokens: 100,
+            generationSpeed: 10,
+          },
+        },
+      },
+    })
+
+    const html = renderToStaticMarkup(
+      <SessionScopeProvider value="s1">
+        <SessionSidebar messages={[]} />
+      </SessionScopeProvider>,
+    )
+
+    expect(html).not.toContain('>rtk</span>')
+    expect(html).not.toContain('>hr</span>')
+  })
+
+  it('hides savings when the tools are disabled in settings', () => {
+    mockUseGitStatus.mockReturnValue({ branch: null, diff: { files: [], loading: false, error: null } })
+    mockSessionStore.mockReturnValue({
+      currentSession: { id: 's1', projectId: 'p1', metadataEntries: {}, workdir: '/tmp/project' },
+      panes: {
+        s1: {
+          session: { id: 's1', projectId: 'p1', metadataEntries: {}, workdir: '/tmp/project' },
+          liveTurnStats: {
+            providerId: 'p',
+            providerName: 'P',
+            backend: 'ollama',
+            model: 'm',
+            mode: 'builder',
+            totalTime: 10,
+            toolTime: 0,
+            prefillTokens: 1000,
+            prefillSpeed: 100,
+            generationTokens: 100,
+            generationSpeed: 10,
+            rtkTokensSaved: 12345,
+            headroomTokensSaved: 678,
+          },
+        },
+      },
+    })
+
+    const html = renderToStaticMarkup(
+      <SessionScopeProvider value="s1">
+        <SessionSidebar messages={[]} />
+      </SessionScopeProvider>,
+    )
+
+    expect(html).not.toContain('>rtk</span>')
+    expect(html).not.toContain('>hr</span>')
+    expect(html).toContain('>gt</span>')
   })
 })

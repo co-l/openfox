@@ -12,6 +12,8 @@ const baseStats: SessionStats = {
   avgGenerationSpeed: 30.8,
   responseCount: 4,
   llmCallCount: 5,
+  rtkTokensSaved: 0,
+  headroomTokensSaved: 0,
   dataPoints: [
     {
       messageId: 'r1',
@@ -196,6 +198,7 @@ const baseStats: SessionStats = {
       avgGenerationSpeed: 30.8,
       responseCount: 4,
       llmCallCount: 5,
+      headroomTokensSaved: 0,
       dataPoints: [],
       callDataPoints: [],
     },

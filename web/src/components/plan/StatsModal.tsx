@@ -1,6 +1,8 @@
 import { ScrollArea } from '../shared/ScrollArea'
 import { getLocale } from '@shared/i18n/index.js'
 import { useT } from '../../hooks/useT'
+import { useSetting } from '../../hooks/useSetting'
+import { SETTINGS_KEYS } from '../../lib/resources'
 import { Fragment, useRef, useCallback, useEffect, useMemo, useState } from 'react'
 import { Modal } from '../shared/SelfContainedModal'
 import { DualSparkline } from '../shared/Sparkline'
@@ -63,7 +65,7 @@ function formatTimestamp(ts: string): string {
 /**
  * Create JSON export data
  */
-function createExportData(stats: ModelSessionStats) {
+function createExportData(stats: ModelSessionStats, sessionStats: SessionStats) {
   return {
     exportedAt: new Date().toISOString(),
     providerId: stats.providerId,
@@ -81,6 +83,11 @@ function createExportData(stats: ModelSessionStats) {
       avgGenerationSpeed: stats.avgGenerationSpeed,
       responseCount: stats.responseCount,
       llmCallCount: stats.llmCallCount,
+    },
+    // Session-scoped, not per-model: RTK savings are cumulative for the session.
+    sessionSavings: {
+      rtkTokensSaved: sessionStats.rtkTokensSaved,
+      headroomTokensSaved: sessionStats.headroomTokensSaved,
     },
     responses: stats.dataPoints.map((dp) => ({
       responseIndex: dp.responseIndex,
@@ -113,6 +120,9 @@ function createExportData(stats: ModelSessionStats) {
 
 export function StatsModal({ isOpen, onClose, stats }: StatsModalProps) {
   const t = useT()
+  // Savings are only surfaced while the matching tool is enabled in settings.
+  const rtkEnabled = useSetting(SETTINGS_KEYS.TOOLS_USE_RTK, 'false').value === 'true'
+  const headroomEnabled = useSetting(SETTINGS_KEYS.TOOLS_USE_HEADROOM, 'false').value === 'true'
   const contentRef = useRef<HTMLDivElement>(null)
   const [expandedResponses, setExpandedResponses] = useState<Record<string, boolean>>({})
   const [selectedModelKey, setSelectedModelKey] = useState(() => stats.modelGroups[0]?.key ?? '')
@@ -148,9 +158,9 @@ export function StatsModal({ isOpen, onClose, stats }: StatsModalProps) {
   const handleCopyJson = useCallback(() => {
     if (!currentStats) return
 
-    const data = createExportData(currentStats)
+    const data = createExportData(currentStats, stats)
     navigator.clipboard.writeText(JSON.stringify(data, null, 2)).catch((err) => console.error('Failed to copy:', err))
-  }, [currentStats])
+  }, [currentStats, stats])
 
   // Export PNG (requires html2canvas)
   const handleExportPng = useCallback(async () => {
@@ -238,6 +248,22 @@ export function StatsModal({ isOpen, onClose, stats }: StatsModalProps) {
                 subValue="tok/s"
               />
             </div>
+            {((rtkEnabled && stats.rtkTokensSaved > 0) || (headroomEnabled && stats.headroomTokensSaved > 0)) && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-3">
+                {rtkEnabled && stats.rtkTokensSaved > 0 && (
+                  <StatCard
+                    label={t({ en: 'RTK Tokens Saved', fr: 'Jetons économisés par RTK' })}
+                    value={formatTokens(stats.rtkTokensSaved)}
+                  />
+                )}
+                {headroomEnabled && stats.headroomTokensSaved > 0 && (
+                  <StatCard
+                    label={t({ en: 'Headroom Tokens Saved', fr: 'Jetons économisés par Headroom' })}
+                    value={formatTokens(stats.headroomTokensSaved)}
+                  />
+                )}
+              </div>
+            )}
           </section>
         )}
 

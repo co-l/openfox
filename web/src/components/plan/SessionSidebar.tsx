@@ -11,7 +11,7 @@ import { useSetting } from '../../hooks/useSetting'
 import { useUpdateStore } from '../../stores/update'
 import { authFetch } from '../../lib/api'
 import { pathBasename } from '../../lib/path'
-import { formatTime, formatSpeed } from '../../lib/format-stats'
+import { formatTime, formatSpeed, formatTokens } from '../../lib/format-stats'
 import { formatMetadataKeyLabel } from '../../lib/metadata-keys'
 import { StatsModal } from './StatsModal'
 import { MetadataEntries, MetadataSectionHeader } from '../shared/MetadataEntries'
@@ -62,6 +62,9 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
   const workspaceName = pathBasename(session?.workspace ?? '') || null
 
   const showEditorLink = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_OPEN_IN_EDITOR).value === 'true'
+  // Savings only make sense while the corresponding tool is enabled in settings.
+  const rtkEnabled = useSetting(SETTINGS_KEYS.TOOLS_USE_RTK, 'false').value === 'true'
+  const headroomEnabled = useSetting(SETTINGS_KEYS.TOOLS_USE_HEADROOM, 'false').value === 'true'
 
   const updateStatus = useUpdateStore((state) => state.status)
   const checkForUpdate = useUpdateStore((state) => state.check)
@@ -85,7 +88,7 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
               fr: 'Voir les statistiques détaillées des réponses et des appels',
             })}
           >
-            <div className="flex items-center gap-2 text-sm text-text-muted">
+            <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-sm text-text-muted">
               <span className="text-text-secondary">{formatTime(stats.aiTime)}</span>
               <span className="w-px h-3 bg-border" />
               <span className="text-text-secondary">{formatSpeed(stats.avgPrefillSpeed)}</span>
@@ -93,6 +96,44 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
               <span className="w-px h-3 bg-border" />
               <span className="text-text-secondary">{formatSpeed(stats.avgGenerationSpeed)}</span>
               <span>tg</span>
+              <span className="w-px h-3 bg-border" />
+              <span
+                className="text-text-secondary"
+                title={t({ en: 'Generated tokens in this session', fr: 'Jetons générés dans cette session' })}
+              >
+                {formatTokens(stats.generationTokens)}
+              </span>
+              <span>gt</span>
+              {rtkEnabled && stats.rtkTokensSaved > 0 && (
+                <>
+                  <span className="w-px h-3 bg-border" />
+                  <span
+                    className="text-text-secondary"
+                    title={t({
+                      en: 'Tokens saved by RTK in this session',
+                      fr: 'Jetons économisés par RTK dans cette session',
+                    })}
+                  >
+                    −{formatTokens(stats.rtkTokensSaved)}
+                  </span>
+                  <span>rtk</span>
+                </>
+              )}
+              {headroomEnabled && stats.headroomTokensSaved > 0 && (
+                <>
+                  <span className="w-px h-3 bg-border" />
+                  <span
+                    className="text-text-secondary"
+                    title={t({
+                      en: 'Tokens saved by Headroom in this session',
+                      fr: 'Jetons économisés par Headroom dans cette session',
+                    })}
+                  >
+                    −{formatTokens(stats.headroomTokensSaved)}
+                  </span>
+                  <span>hr</span>
+                </>
+              )}
             </div>
           </button>
 

@@ -197,6 +197,10 @@ export interface MessageStats {
   generationTokens: number // total completion tokens
   generationSpeed: number // aggregate tokens/second
   llmCalls?: LLMCallStats[] // optional per-call breakdown for this response
+  /** Session-scoped RTK tokens saved, cumulative at the time this response finished. */
+  rtkTokensSaved?: number
+  /** Tokens saved by Headroom compression during this response's LLM calls. */
+  headroomTokensSaved?: number
 }
 
 export interface LLMCallStats {
@@ -279,6 +283,10 @@ export interface SessionStats {
   avgGenerationSpeed: number // Weighted average tok/s
   responseCount: number // Number of assistant responses with stats
   llmCallCount: number // Number of persisted internal LLM calls across responses
+  /** Session-scoped RTK tokens saved (cumulative high-water mark across responses). */
+  rtkTokensSaved: number
+  /** Session-scoped Headroom tokens saved (sum across responses). */
+  headroomTokensSaved: number
   // Progression data for charts
   dataPoints: StatsDataPoint[]
   callDataPoints: CallStatsDataPoint[]
@@ -306,6 +314,7 @@ export interface ModelSessionStats extends StatsIdentity {
   avgGenerationSpeed: number
   responseCount: number
   llmCallCount: number
+  headroomTokensSaved: number
   dataPoints: StatsDataPoint[]
   callDataPoints: CallStatsDataPoint[]
 }
