@@ -267,6 +267,22 @@ export interface CallStatsDataPoint {
   maxTokens?: number
 }
 
+export interface AgentSessionStats {
+  agentId: string
+  isSubAgent: boolean
+  totalTime: number
+  aiTime: number
+  toolTime: number
+  prefillTokens: number
+  generationTokens: number
+  avgPrefillSpeed: number
+  avgGenerationSpeed: number
+  responseCount: number
+  llmCallCount: number
+  dataPoints: StatsDataPoint[]
+  callDataPoints: CallStatsDataPoint[]
+}
+
 // Aggregated session-level stats for benchmarking
 export interface SessionStats {
   // Aggregates
@@ -283,6 +299,7 @@ export interface SessionStats {
   dataPoints: StatsDataPoint[]
   callDataPoints: CallStatsDataPoint[]
   modelGroups: ModelSessionStats[]
+  agentGroups: AgentSessionStats[]
 }
 
 export interface StatsIdentity {
@@ -308,6 +325,7 @@ export interface ModelSessionStats extends StatsIdentity {
   llmCallCount: number
   dataPoints: StatsDataPoint[]
   callDataPoints: CallStatsDataPoint[]
+  agentGroups?: AgentSessionStats[]
 }
 
 export interface InjectedFile {

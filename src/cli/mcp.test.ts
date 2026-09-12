@@ -9,7 +9,7 @@ const { publicKey, privateKey } = generateKeyPairSync('rsa', {
 })
 
 function encryptPassword(password: string): string {
-  return publicEncrypt({ key: publicKey, padding: 1 }, Buffer.from(password)).toString('base64')
+  return publicEncrypt({ key: publicKey, padding: 4 }, Buffer.from(password)).toString('base64')
 }
 
 describe('cli/mcp', () => {

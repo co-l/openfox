@@ -53,10 +53,15 @@ export async function findLivePort(host: string, candidates: number[]): Promise<
  */
 export function verifyPassword(encryptedPassword: string, privateKey: string, entered: string): boolean {
   try {
-    const decrypted = privateDecrypt({ key: privateKey, padding: 1 }, Buffer.from(encryptedPassword, 'base64'))
+    const decrypted = privateDecrypt({ key: privateKey, padding: 4 }, Buffer.from(encryptedPassword, 'base64'))
     return decrypted.toString() === entered
   } catch {
-    return false
+    try {
+      const decrypted = privateDecrypt({ key: privateKey, padding: 1 }, Buffer.from(encryptedPassword, 'base64'))
+      return decrypted.toString() === entered
+    } catch {
+      return false
+    }
   }
 }
 

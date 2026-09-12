@@ -1,4 +1,4 @@
-import { memo, useState, type ComponentType } from 'react'
+import { memo, useEffect, useRef, useState, type ComponentType } from 'react'
 import { OptionalScrollArea } from './OptionalScrollArea'
 import { useDisplaySettings } from '../../hooks/useDisplaySettings'
 import type { Diagnostic, EditContextRegion } from '@shared/types.js'
@@ -124,20 +124,51 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
   callId,
 }: ToolCallDisplayProps) {
   const t = useT()
+
+  // Check if there's a pending path confirmation matching this tool call.
+  // Confirmations use composite callIds: `${toolCallId}-${seq}` so we match by prefix.
+  // In split view confirmations live on the owning pane, not the flat focused
+  // state — read them from the scoped pane so they appear instantly.
+  const scopeId = useSessionScope()
+  const pendingPathConfirmations = useScopedPaneState(
+    scopeId,
+    (pane) => pane.pendingPathConfirmations,
+    (state) => state.pendingPathConfirmations,
+    EMPTY_CONFIRMATIONS,
+  )
+  const pendingConfirmation: PendingPathConfirmation | null = callId
+    ? (pendingPathConfirmations.find((pc) => pc.callId === callId || pc.callId.startsWith(callId + '-')) ?? null)
+    : null
+
   // Expand by default for parity — a call seen streaming stays visible once it
   // finishes and a reload shows the same content. When the collapseLargeToolCalls
   // performance setting is on, large finished calls start collapsed (pending
-  // calls still expand, so a live stream never collapses mid-run). `expanded`
-  // is initialized once at mount; the component remounts when the tool call
-  // identity changes, and forceCompact comes from a display setting stable
-  // during the message's lifetime.
+  // calls still expand, so a live stream never collapses mid-run).
+  // A tool call waiting for user authorization (pendingConfirmation) is always
+  // expanded so the user sees and can interact with the action buttons.
   const { collapseLargeToolCalls } = useDisplaySettings()
   const shouldAutoExpand =
-    !forceCompact &&
-    (!collapseLargeToolCalls ||
-      status === 'pending' ||
-      getContentSize(result, streamingOutput, args) < COLLAPSE_THRESHOLD)
+    Boolean(pendingConfirmation) ||
+    (!forceCompact &&
+      (!collapseLargeToolCalls ||
+        status === 'pending' ||
+        getContentSize(result, streamingOutput, args) < COLLAPSE_THRESHOLD))
   const [expanded, setExpanded] = useState(shouldAutoExpand)
+
+  // React to async arrival of forceCompact setting or pending confirmation.
+  const prevForceCompact = useRef(forceCompact)
+  useEffect(() => {
+    if (prevForceCompact.current !== forceCompact) {
+      prevForceCompact.current = forceCompact
+      setExpanded(shouldAutoExpand)
+    }
+  }, [forceCompact, shouldAutoExpand])
+
+  useEffect(() => {
+    if (pendingConfirmation) {
+      setExpanded(true)
+    }
+  }, [pendingConfirmation])
   const config = statusConfig[status]
   const remoteProtocol = detectRemoteExecution(tool, args)
   const showEditorLink = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_OPEN_IN_EDITOR).value === 'true'
@@ -154,20 +185,6 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
           })()
         : undefined
 
-  // Check if there's a pending path confirmation matching this tool call.
-  // Confirmations use composite callIds: `${toolCallId}-${seq}` so we match by prefix.
-  // In split view confirmations live on the owning pane, not the flat focused
-  // state — read them from the scoped pane so they appear instantly.
-  const scopeId = useSessionScope()
-  const pendingPathConfirmations = useScopedPaneState(
-    scopeId,
-    (pane) => pane.pendingPathConfirmations,
-    (state) => state.pendingPathConfirmations,
-    EMPTY_CONFIRMATIONS,
-  )
-  const pendingConfirmation: PendingPathConfirmation | null = callId
-    ? (pendingPathConfirmations.find((pc) => pc.callId === callId || pc.callId.startsWith(callId + '-')) ?? null)
-    : null
   // step_done is a simple completion signal — minimal inline pill, no collapsible, no args
   if (tool === 'step_done') {
     return (

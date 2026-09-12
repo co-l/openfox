@@ -306,14 +306,21 @@ function useDebouncedSave(
   delay = 250,
 ): void {
   const isInitialMount = useRef(true)
+  const lastSavedValue = useRef(value)
 
   useEffect(() => {
     if (isInitialMount.current) {
       isInitialMount.current = false
+      lastSavedValue.current = value
+      return
+    }
+
+    if (value === lastSavedValue.current) {
       return
     }
 
     const timer = setTimeout(() => {
+      lastSavedValue.current = value
       setSetting(settingsKey, value)
     }, delay)
 
@@ -359,10 +366,10 @@ export function ToolsTab() {
   const perSessionMcpSetting = useSetting(SETTINGS_KEYS.FEATURES_PER_SESSION_MCP).value
 
   // ── Search Engine state ──
-  const [searchEngine, setSearchEngine] = useState('')
-  const [tavilyKey, setTavilyKey] = useState('')
-  const [searxngUrl, setSearxngUrl] = useState('')
-  const [searxngKey, setSearxngKey] = useState('')
+  const [searchEngine, setSearchEngine] = useState(searchEngineSetting)
+  const [tavilyKey, setTavilyKey] = useState(tavilyKeySetting)
+  const [searxngUrl, setSearxngUrl] = useState(searxngUrlSetting)
+  const [searxngKey, setSearxngKey] = useState(searxngKeySetting)
 
   useDebouncedSave(tavilyKey, SETTINGS_KEYS.SEARCH_TAVILY_API_KEY, setSetting)
   useDebouncedSave(searxngUrl, SETTINGS_KEYS.SEARCH_SEARXNG_URL, setSetting)
@@ -372,13 +379,20 @@ export function ToolsTab() {
   const [searxngTestText, searxngTestError, searxngTestSuccess, testSearxng] = useTestButton()
 
   useEffect(() => {
-    if (searchEngineSetting !== '') {
-      setSearchEngine(searchEngineSetting)
-      setTavilyKey(tavilyKeySetting)
-      setSearxngUrl(searxngUrlSetting)
-      setSearxngKey(searxngKeySetting)
-    }
-  }, [searchEngineSetting, tavilyKeySetting, searxngUrlSetting, searxngKeySetting])
+    setSearchEngine(searchEngineSetting)
+  }, [searchEngineSetting])
+
+  useEffect(() => {
+    setTavilyKey(tavilyKeySetting)
+  }, [tavilyKeySetting])
+
+  useEffect(() => {
+    setSearxngUrl(searxngUrlSetting)
+  }, [searxngUrlSetting])
+
+  useEffect(() => {
+    setSearxngKey(searxngKeySetting)
+  }, [searxngKeySetting])
 
   function handleEngineChange(engine: string) {
     setSearchEngine(engine)

@@ -5,8 +5,12 @@ import { Fragment, useRef, useCallback, useEffect, useMemo, useState } from 'rea
 import { Modal } from '../shared/SelfContainedModal'
 import { DualSparkline } from '../shared/Sparkline'
 import { buildPerformanceChartData, buildResponseLogRows, type ResponseLogRow } from '@shared/stats-view.js'
-import type { CallStatsDataPoint, ModelSessionStats, SessionStats } from '@shared/types.js'
+import type { AgentSessionStats, CallStatsDataPoint, ModelSessionStats, SessionStats } from '@shared/types.js'
 import { formatTime } from '../../lib/format-stats'
+import { useAgents } from '../../hooks/useAgents'
+import { getAgentColor, type AgentInfo } from '../../lib/agents-actions'
+
+const ALL_MODELS_KEY = '__all__'
 
 interface StatsModalProps {
   isOpen: boolean
@@ -33,14 +37,11 @@ function formatSpeed(n: number): string {
 
 function formatContextRange(tokens: number[]): string {
   if (tokens.length === 0) return '0 ctx'
-
   const minTokens = Math.min(...tokens)
   const maxTokens = Math.max(...tokens)
-
   if (minTokens === maxTokens) {
     return `${formatTokens(minTokens)} ctx`
   }
-
   return `${formatTokens(minTokens)}-${formatTokens(maxTokens)} ctx`
 }
 
@@ -63,14 +64,21 @@ function formatTimestamp(ts: string): string {
 /**
  * Create JSON export data
  */
-function createExportData(stats: ModelSessionStats) {
+function createExportData(stats: ModelSessionStats | SessionStats) {
+  const isModelGroup = 'key' in stats
   return {
     exportedAt: new Date().toISOString(),
-    providerId: stats.providerId,
-    providerName: stats.providerName,
-    backend: stats.backend,
-    model: stats.model,
-    label: stats.label,
+    provider: isModelGroup
+      ? {
+          providerId: stats.providerId,
+          providerName: stats.providerName,
+          backend: stats.backend,
+          model: stats.model,
+          label: stats.label,
+        }
+      : {
+          label: 'All Models',
+        },
     summary: {
       totalTime: stats.totalTime,
       aiTime: stats.aiTime,
@@ -82,6 +90,19 @@ function createExportData(stats: ModelSessionStats) {
       responseCount: stats.responseCount,
       llmCallCount: stats.llmCallCount,
     },
+    agents: stats.agentGroups?.map((ag) => ({
+      agentId: ag.agentId,
+      isSubAgent: ag.isSubAgent,
+      totalTime: ag.totalTime,
+      aiTime: ag.aiTime,
+      toolTime: ag.toolTime,
+      prefillTokens: ag.prefillTokens,
+      generationTokens: ag.generationTokens,
+      avgPrefillSpeed: ag.avgPrefillSpeed,
+      avgGenerationSpeed: ag.avgGenerationSpeed,
+      responseCount: ag.responseCount,
+      llmCallCount: ag.llmCallCount,
+    })),
     responses: stats.dataPoints.map((dp) => ({
       responseIndex: dp.responseIndex,
       timestamp: dp.timestamp,
@@ -107,26 +128,32 @@ function createExportData(stats: ModelSessionStats) {
       prefillSpeed: dp.prefillSpeed,
       generationSpeed: dp.generationSpeed,
       totalTime: dp.totalTime,
+      temperature: dp.temperature,
+      topP: dp.topP,
+      topK: dp.topK,
+      maxTokens: dp.maxTokens,
     })),
   }
 }
 
 export function StatsModal({ isOpen, onClose, stats }: StatsModalProps) {
   const t = useT()
+  const { agents } = useAgents()
   const contentRef = useRef<HTMLDivElement>(null)
   const [expandedResponses, setExpandedResponses] = useState<Record<string, boolean>>({})
-  const [selectedModelKey, setSelectedModelKey] = useState(() => stats.modelGroups[0]?.key ?? '')
+  const [selectedModelKey, setSelectedModelKey] = useState<string>(ALL_MODELS_KEY)
 
   useEffect(() => {
+    if (selectedModelKey === ALL_MODELS_KEY) return
     if (!stats.modelGroups.some((group) => group.key === selectedModelKey)) {
-      setSelectedModelKey(stats.modelGroups[0]?.key ?? '')
+      setSelectedModelKey(ALL_MODELS_KEY)
     }
   }, [selectedModelKey, stats.modelGroups])
 
-  const currentStats = useMemo(
-    () => stats.modelGroups.find((group) => group.key === selectedModelKey) ?? stats.modelGroups[0],
-    [selectedModelKey, stats.modelGroups],
-  )
+  const currentStats: ModelSessionStats | SessionStats = useMemo(() => {
+    if (selectedModelKey === ALL_MODELS_KEY) return stats
+    return stats.modelGroups.find((group) => group.key === selectedModelKey) ?? stats
+  }, [selectedModelKey, stats])
 
   const responseRows = useMemo(() => (currentStats ? buildResponseLogRows(currentStats) : []), [currentStats])
   const chartData = useMemo(
@@ -176,6 +203,8 @@ export function StatsModal({ isOpen, onClose, stats }: StatsModalProps) {
     }
   }, [handleCopyJson])
 
+  const agentGroupsToDisplay = currentStats.agentGroups ?? stats.agentGroups
+
   return (
     <Modal
       isOpen={isOpen}
@@ -184,24 +213,37 @@ export function StatsModal({ isOpen, onClose, stats }: StatsModalProps) {
       size="lg"
     >
       <div ref={contentRef} className="space-y-6">
-        <section>
-          <div className="flex flex-wrap gap-2">
-            {stats.modelGroups.map((group) => (
+        {stats.modelGroups.length > 0 && (
+          <section>
+            <div className="flex flex-wrap gap-2">
               <button
-                key={group.key}
-                onClick={() => setSelectedModelKey(group.key)}
+                onClick={() => setSelectedModelKey(ALL_MODELS_KEY)}
                 className={`px-3 py-1.5 rounded border text-xs transition-colors ${
-                  group.key === currentStats?.key
-                    ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
+                  selectedModelKey === ALL_MODELS_KEY
+                    ? 'border-accent-primary bg-accent-primary/10 text-accent-primary font-medium'
                     : 'border-border text-text-muted hover:text-text-primary hover:bg-bg-tertiary/40'
                 }`}
-                title={group.label}
+                title={t({ en: 'All Models (Merged)', fr: 'Tous les modèles (fusionné)' })}
               >
-                {group.label}
+                {t({ en: 'All Models', fr: 'Tous les modèles' })}
               </button>
-            ))}
-          </div>
-        </section>
+              {stats.modelGroups.map((group) => (
+                <button
+                  key={group.key}
+                  onClick={() => setSelectedModelKey(group.key)}
+                  className={`px-3 py-1.5 rounded border text-xs transition-colors ${
+                    group.key === selectedModelKey
+                      ? 'border-accent-primary bg-accent-primary/10 text-accent-primary font-medium'
+                      : 'border-border text-text-muted hover:text-text-primary hover:bg-bg-tertiary/40'
+                  }`}
+                  title={group.label}
+                >
+                  {group.label}
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Summary Section */}
         {currentStats && (
@@ -237,6 +279,24 @@ export function StatsModal({ isOpen, onClose, stats }: StatsModalProps) {
                 value={`${formatSpeed(currentStats.avgGenerationSpeed)}`}
                 subValue="tok/s"
               />
+            </div>
+          </section>
+        )}
+
+        {/* Agents & Sub-agents Section */}
+        {agentGroupsToDisplay && agentGroupsToDisplay.length > 0 && (
+          <section>
+            <h3 className="text-sm font-semibold text-text-secondary mb-3 uppercase tracking-wide">
+              {t({ en: 'Agents & Sub-agents', fr: 'Agents et sous-agents' })}
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {agentGroupsToDisplay.map((agentGroup) => (
+                <AgentStatCard
+                  key={`${agentGroup.agentId}-${agentGroup.isSubAgent ? 'sub' : 'main'}`}
+                  agentGroup={agentGroup}
+                  agents={agents}
+                />
+              ))}
             </div>
           </section>
         )}
@@ -337,12 +397,101 @@ export function StatsModal({ isOpen, onClose, stats }: StatsModalProps) {
   )
 }
 
+function getLocalizedAgentName(
+  agentId: string,
+  agents: AgentInfo[],
+  t: (labels: { en: string; fr: string }) => string,
+): string {
+  const agentInfo = agents.find((a) => a.id === agentId)
+  if (agentInfo?.name) return agentInfo.name
+
+  switch (agentId) {
+    case 'planner':
+      return t({ en: 'Planner', fr: 'Planificateur' })
+    case 'builder':
+      return t({ en: 'Builder', fr: 'Bâtisseur' })
+    case 'verifier':
+      return t({ en: 'Verifier', fr: 'Vérificateur' })
+    case 'code_reviewer':
+      return t({ en: 'Code Reviewer', fr: 'Revue de code' })
+    case 'explorer':
+      return t({ en: 'Explorer', fr: 'Explorateur' })
+    default:
+      return agentId
+  }
+}
+
+function AgentStatCard({ agentGroup, agents }: { agentGroup: AgentSessionStats; agents: AgentInfo[] }) {
+  const t = useT()
+  const agentName = getLocalizedAgentName(agentGroup.agentId, agents, t)
+  const agentColor = getAgentColor(agents, agentGroup.agentId)
+
+  return (
+    <div className="bg-bg-tertiary/40 border border-border/70 rounded-lg p-3.5 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: agentColor }} />
+          <span className="font-semibold text-xs text-text-primary truncate">{agentName}</span>
+        </div>
+        <span
+          className={`text-[10px] px-2 py-0.5 rounded font-medium shrink-0 ${
+            agentGroup.isSubAgent
+              ? 'bg-accent-primary/15 text-accent-primary border border-accent-primary/30'
+              : 'bg-bg-tertiary text-text-muted border border-border'
+          }`}
+        >
+          {agentGroup.isSubAgent
+            ? t({ en: 'Sub-agent', fr: 'Sous-agent' })
+            : t({ en: 'Primary Agent', fr: 'Agent principal' })}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div className="bg-bg-tertiary/60 rounded p-2">
+          <div className="text-[10px] text-text-muted">{t({ en: 'Context (PP)', fr: 'Contexte (PP)' })}</div>
+          <div className="font-mono text-text-primary text-xs mt-0.5">{formatTokens(agentGroup.prefillTokens)}</div>
+          <div className="text-[10px] text-text-muted mt-0.5 font-mono">
+            {`@ ${formatSpeed(agentGroup.avgPrefillSpeed)} t/s`}
+          </div>
+        </div>
+        <div className="bg-bg-tertiary/60 rounded p-2">
+          <div className="text-[10px] text-text-muted">{t({ en: 'Generated (TG)', fr: 'Généré (TG)' })}</div>
+          <div className="font-mono text-text-primary text-xs mt-0.5">{formatTokens(agentGroup.generationTokens)}</div>
+          <div className="text-[10px] text-text-muted mt-0.5 font-mono">
+            {`@ ${formatSpeed(agentGroup.avgGenerationSpeed)} t/s`}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between text-[11px] text-text-muted pt-1 border-t border-border/40">
+        <div className="flex items-center gap-1.5">
+          <span>{t({ en: 'AI:', fr: 'IA :' })}</span>
+          <span className="text-text-primary font-mono">{formatTime(agentGroup.aiTime)}</span>
+          {agentGroup.toolTime > 0 && (
+            <>
+              <span className="text-text-muted/60">·</span>
+              <span>{t({ en: 'Tools:', fr: 'Outils :' })}</span>
+              <span className="text-text-primary font-mono">{formatTime(agentGroup.toolTime)}</span>
+            </>
+          )}
+        </div>
+        <div>
+          {t(
+            { en: '{{resp}} resp · {{calls}} calls', fr: '{{resp}} rép · {{calls}} appels' },
+            { resp: agentGroup.responseCount, calls: agentGroup.llmCallCount },
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /**
  * Summary stat card component
  */
 function StatCard({ label, value, subValue }: { label: string; value: string; subValue?: string }) {
   return (
-    <div className="bg-bg-tertiary/50 rounded p-3">
+    <div className="bg-bg-tertiary/50 p-3 rounded">
       <div className="text-text-muted text-xs mb-1">{label}</div>
       <div className="text-text-primary text-lg font-semibold">{value}</div>
       {subValue && <div className="text-text-muted text-xs">{subValue}</div>}
@@ -350,9 +499,6 @@ function StatCard({ label, value, subValue }: { label: string; value: string; su
   )
 }
 
-/**
- * Single row in the response log
- */
 function ResponseRow({
   row,
   index,
@@ -372,7 +518,9 @@ function ResponseRow({
   return (
     <tr
       onClick={onToggle}
-      className={`${index % 2 === 0 ? 'bg-bg-tertiary/20' : ''} ${onToggle ? 'cursor-pointer hover:bg-bg-tertiary/35 transition-colors' : ''}`}
+      className={`${index % 2 === 0 ? 'bg-bg-tertiary/20' : ''} ${
+        row.isExpandable ? 'cursor-pointer hover:bg-bg-tertiary/35 transition-colors' : ''
+      }`}
     >
       <td className="px-3 py-2 text-center text-text-muted align-middle">{row.responseIndex}</td>
       <td className="px-2 py-2 text-center text-text-muted font-mono align-middle whitespace-nowrap">
@@ -436,7 +584,7 @@ function CallDataPointRow({ dataPoint, index }: { dataPoint: CallStatsDataPoint;
       {hasParams && (
         <tr className={`${index % 2 === 0 ? 'bg-bg-tertiary/5' : 'bg-bg-tertiary/[2.5%]'}`}>
           <td colSpan={8} className="px-6 py-1.5 border-l border-border/60">
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-text-muted">
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-muted">
               {dataPoint.temperature !== undefined && <span>{`temp: ${dataPoint.temperature.toFixed(2)}`}</span>}
               {dataPoint.topP !== undefined && <span>{`topP: ${dataPoint.topP.toFixed(2)}`}</span>}
               {dataPoint.topK !== undefined && <span>{`topK: ${dataPoint.topK}`}</span>}

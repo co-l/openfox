@@ -4,6 +4,7 @@
  */
 
 import type {
+  AgentSessionStats,
   CallStatsDataPoint,
   Message,
   MessageStats,
@@ -27,18 +28,54 @@ function getStatsIdentity(stats: MessageStats): StatsIdentity {
     providerName: stats.providerName,
     backend: stats.backend,
     model: stats.model,
+    ...(stats.reasoningEffort ? { reasoningEffort: stats.reasoningEffort } : {}),
   }
 }
 
 function getModelGroupKey(identity: StatsIdentity): string {
-  return `${identity.providerId}::${identity.model}`
+  const effortSuffix = identity.reasoningEffort ? `::${identity.reasoningEffort}` : ''
+  return `${identity.providerId}::${identity.model}${effortSuffix}`
 }
 
 function getModelGroupLabel(identity: StatsIdentity): string {
-  return `${identity.providerName} > ${identity.model}`
+  const effortSuffix = identity.reasoningEffort ? `:${identity.reasoningEffort}` : ''
+  return `${identity.providerName} > ${identity.model}${effortSuffix}`
 }
 
-function buildSessionStats(messagesWithStats: MessageWithStats[]): Omit<SessionStats, 'modelGroups'> {
+function getAgentId(msg: MessageWithStats): { agentId: string; isSubAgent: boolean } {
+  if (msg.subAgentType) {
+    return { agentId: msg.subAgentType, isSubAgent: true }
+  }
+  if (msg.subAgentId) {
+    return { agentId: msg.stats.mode, isSubAgent: true }
+  }
+  return { agentId: msg.stats.mode, isSubAgent: false }
+}
+
+function buildAgentSessionStats(messagesWithStats: MessageWithStats[]): AgentSessionStats[] {
+  const agentBuckets = new Map<string, { isSubAgent: boolean; messages: MessageWithStats[] }>()
+  for (const msg of messagesWithStats) {
+    const { agentId, isSubAgent } = getAgentId(msg)
+    const existing = agentBuckets.get(agentId)
+    if (existing) {
+      existing.messages.push(msg)
+      if (isSubAgent) existing.isSubAgent = true
+    } else {
+      agentBuckets.set(agentId, { isSubAgent, messages: [msg] })
+    }
+  }
+
+  return Array.from(agentBuckets.entries()).map(([agentId, bucket]) => {
+    const groupStats = buildSessionStats(bucket.messages)
+    return {
+      agentId,
+      isSubAgent: bucket.isSubAgent,
+      ...groupStats,
+    }
+  })
+}
+
+function buildSessionStats(messagesWithStats: MessageWithStats[]): Omit<SessionStats, 'modelGroups' | 'agentGroups'> {
   let totalTime = 0
   let toolTime = 0
   let prefillTokens = 0
@@ -62,7 +99,7 @@ function buildSessionStats(messagesWithStats: MessageWithStats[]): Omit<SessionS
 
     // prefillSpeed is computed from the non-cached token source
     // (prefTokenIncrement when known, else the full prompt), so aggregate on
-    // that same source: source / speed reconstructs the real prefill time (ttft).
+    // the same source: source / speed reconstructs real prefill time (ttft).
     const prefillSource = stats.prefTokenIncrement ?? stats.prefillTokens
     const prefillTime = stats.prefillSpeed > 0 ? prefillSource / stats.prefillSpeed : 0
     const genTime = stats.generationSpeed > 0 ? stats.generationTokens / stats.generationSpeed : 0
@@ -161,16 +198,21 @@ export function computeSessionStats(messages: Message[]): SessionStats | null {
   const modelGroups: ModelSessionStats[] = Array.from(modelBuckets.entries()).map(([key, groupMessages]) => {
     const identity = getStatsIdentity(groupMessages[0]!.stats)
     const groupStats = buildSessionStats(groupMessages)
+    const agentGroups = buildAgentSessionStats(groupMessages)
     return {
       ...identity,
       key,
       label: getModelGroupLabel(identity),
       ...groupStats,
+      agentGroups,
     }
   })
+
+  const agentGroups = buildAgentSessionStats(messagesWithStats)
 
   return {
     ...buildSessionStats(messagesWithStats),
     modelGroups,
+    agentGroups,
   }
 }

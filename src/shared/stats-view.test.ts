@@ -200,6 +200,23 @@ const baseStats: SessionStats = {
       callDataPoints: [],
     },
   ],
+  agentGroups: [
+    {
+      agentId: 'planner',
+      isSubAgent: false,
+      totalTime: 34.6,
+      aiTime: 34.6,
+      toolTime: 0,
+      prefillTokens: 8300,
+      generationTokens: 931,
+      avgPrefillSpeed: 1900,
+      avgGenerationSpeed: 30.8,
+      responseCount: 4,
+      llmCallCount: 5,
+      dataPoints: [],
+      callDataPoints: [],
+    },
+  ],
 }
 
 describe('stats view helpers', () => {

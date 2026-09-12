@@ -511,4 +511,81 @@ describe('computeSessionStats', () => {
       responseCount: 1,
     })
   })
+
+  it('groups session stats by agent and sub-agent', () => {
+    const messages: Message[] = [
+      createMessageWithStats('1', {
+        mode: 'builder',
+        totalTime: 10,
+        toolTime: 2,
+        prefillTokens: 2000,
+        generationTokens: 200,
+        prefillSpeed: 1000,
+        generationSpeed: 100,
+      }),
+      {
+        ...createMessageWithStats('2', {
+          mode: 'code_reviewer',
+          totalTime: 5,
+          toolTime: 1,
+          prefillTokens: 4000,
+          generationTokens: 150,
+          prefillSpeed: 2000,
+          generationSpeed: 150,
+        }),
+        subAgentId: 'reviewer-run-1',
+        subAgentType: 'code_reviewer',
+      },
+      {
+        ...createMessageWithStats('3', {
+          mode: 'verifier',
+          totalTime: 4,
+          toolTime: 0.5,
+          prefillTokens: 3000,
+          generationTokens: 100,
+          prefillSpeed: 1500,
+          generationSpeed: 100,
+        }),
+        subAgentId: 'verifier-run-1',
+        subAgentType: 'verifier',
+      },
+    ]
+
+    const result = computeSessionStats(messages)
+    expect(result).not.toBeNull()
+    expect(result!.agentGroups).toHaveLength(3)
+
+    expect(result!.agentGroups[0]).toMatchObject({
+      agentId: 'builder',
+      isSubAgent: false,
+      responseCount: 1,
+      totalTime: 10,
+      aiTime: 8,
+      toolTime: 2,
+      prefillTokens: 2000,
+      generationTokens: 200,
+    })
+
+    expect(result!.agentGroups[1]).toMatchObject({
+      agentId: 'code_reviewer',
+      isSubAgent: true,
+      responseCount: 1,
+      totalTime: 5,
+      aiTime: 4,
+      toolTime: 1,
+      prefillTokens: 4000,
+      generationTokens: 150,
+    })
+
+    expect(result!.agentGroups[2]).toMatchObject({
+      agentId: 'verifier',
+      isSubAgent: true,
+      responseCount: 1,
+      totalTime: 4,
+      aiTime: 3.5,
+      toolTime: 0.5,
+      prefillTokens: 3000,
+      generationTokens: 100,
+    })
+  })
 })

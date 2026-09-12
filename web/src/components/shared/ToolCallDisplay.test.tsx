@@ -363,6 +363,125 @@ describe('ToolCallDisplay — default expansion', () => {
   })
 })
 
+describe('ToolCallDisplay — forceCompact (Show expanded tool output)', () => {
+  beforeEach(() => {
+    useSessionStore.setState({ pendingPathConfirmations: [], focusedSessionId: null, panes: {} })
+    clearCache()
+  })
+
+  afterEach(cleanup)
+
+  it('collapses when forceCompact flips on after mount (async setting arrival)', () => {
+    const { container, rerender } = render(
+      <ToolCallDisplay
+        tool="custom_tool"
+        args={{}}
+        status="success"
+        result="output"
+        variant="expandable"
+        forceCompact={false}
+      />,
+    )
+
+    expect(container.querySelector('pre')?.textContent).toContain('output')
+
+    rerender(
+      <ToolCallDisplay
+        tool="custom_tool"
+        args={{}}
+        status="success"
+        result="output"
+        variant="expandable"
+        forceCompact
+      />,
+    )
+
+    expect(container.querySelector('pre')).toBeNull()
+  })
+
+  it('starts collapsed when forceCompact is set from the first render', () => {
+    const { container } = render(
+      <ToolCallDisplay
+        tool="custom_tool"
+        args={{}}
+        status="success"
+        result="output"
+        variant="expandable"
+        forceCompact
+      />,
+    )
+
+    expect(container.querySelector('pre')).toBeNull()
+  })
+
+  it('does not clobber a manual expand once the setting has settled', () => {
+    const { container, rerender } = render(
+      <ToolCallDisplay
+        tool="custom_tool"
+        args={{}}
+        status="success"
+        result="output"
+        variant="expandable"
+        forceCompact
+      />,
+    )
+
+    fireEvent.click(container.querySelector('button') as HTMLElement)
+    expect(container.querySelector('pre')?.textContent).toContain('output')
+
+    rerender(
+      <ToolCallDisplay
+        tool="custom_tool"
+        args={{}}
+        status="success"
+        result="output"
+        variant="expandable"
+        forceCompact
+      />,
+    )
+
+    expect(container.querySelector('pre')?.textContent).toContain('output')
+  })
+
+  it('forces expansion when a pending confirmation matches even with forceCompact', () => {
+    useSessionStore.setState({ pendingPathConfirmations: [pendingConfirmation] })
+
+    const { container } = render(
+      <ToolCallDisplay
+        tool="run_command"
+        args={{ command: 'echo hello' }}
+        status="pending"
+        variant="expandable"
+        forceCompact
+        callId="call-run-1"
+      />,
+    )
+
+    expect(container.textContent).toContain('Allow')
+    expect(container.textContent).toContain('Deny')
+  })
+
+  it('expands when a confirmation arrives mid-turn on a collapsed card', async () => {
+    const { container } = render(
+      <ToolCallDisplay
+        tool="run_command"
+        args={{ command: 'echo hello' }}
+        status="pending"
+        variant="expandable"
+        forceCompact
+        callId="call-run-1"
+      />,
+    )
+
+    expect(container.textContent).not.toContain('Allow')
+
+    useSessionStore.setState({ pendingPathConfirmations: [pendingConfirmation] })
+
+    await waitFor(() => expect(container.textContent).toContain('Allow'))
+    expect(container.textContent).toContain('Deny')
+  })
+})
+
 describe('ToolCallDisplay — truncated path tooltip', () => {
   const LONG_PATH = '/home/user/very/long/project/path/to/a/source/file.ts'
 
