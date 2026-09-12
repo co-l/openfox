@@ -24,7 +24,7 @@ import { useUpdateStore } from '../../stores/update'
 import { useKeybindings, useBinding } from '../../hooks/useKeybindings'
 import { formatKeybinding } from '../../lib/keybindings'
 import { authFetch, hasStoredToken } from '../../lib/api'
-import { GlobalSettingsModal } from '../settings/GlobalSettingsModal'
+import { GlobalSettingsModal, OPEN_SETTINGS_EVENT, type SettingsTab } from '../settings/GlobalSettingsModal'
 import { TerminalDrawer } from '../terminal/TerminalDrawer'
 import { ProjectDropdown } from './ProjectDropdown'
 import { SessionDropdown } from './SessionDropdown'
@@ -42,6 +42,7 @@ interface HeaderProps {
 export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
   const t = useT()
   const [showSettings, setShowSettings] = useState(false)
+  const [initialSettingsTab, setInitialSettingsTab] = useState<SettingsTab | undefined>(undefined)
   const [sessionDropdownOpen, setSessionDropdownOpen] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement)
   const [location, setLocation] = useLocation()
@@ -81,6 +82,16 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
     const handler = () => setSessionDropdownOpen(true)
     window.addEventListener('open-session-dropdown', handler)
     return () => window.removeEventListener('open-session-dropdown', handler)
+  }, [])
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const customEvent = e as CustomEvent<{ tab?: SettingsTab }>
+      setInitialSettingsTab(customEvent.detail?.tab)
+      setShowSettings(true)
+    }
+    window.addEventListener(OPEN_SETTINGS_EVENT, handler)
+    return () => window.removeEventListener(OPEN_SETTINGS_EVENT, handler)
   }, [])
 
   const connectionStatus = useSessionStore((state) => state.connectionStatus)
@@ -353,7 +364,14 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
         )}
       </div>
 
-      <GlobalSettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
+      <GlobalSettingsModal
+        isOpen={showSettings}
+        initialTab={initialSettingsTab}
+        onClose={() => {
+          setShowSettings(false)
+          setInitialSettingsTab(undefined)
+        }}
+      />
       <TerminalDrawer isOpen={terminalIsOpen} onClose={() => setTerminalOpen(false)} />
       {project && (
         <TasksModal isOpen={tasksModalOpen} onClose={() => setTasksModalOpen(false)} projectId={project.id} />
