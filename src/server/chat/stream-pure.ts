@@ -633,11 +633,6 @@ export class TurnMetrics {
     ]
   }
 
-  /** Check if any LLM calls were recorded */
-  hasCalls(): boolean {
-    return this.llmCalls.length > 0
-  }
-
   /** Set model parameters for tracking */
   setModelParams(params: ModelParams): void {
     this.modelParams = params

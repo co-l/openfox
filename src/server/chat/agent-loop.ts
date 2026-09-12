@@ -60,7 +60,6 @@ function emitPartialDoneEvents(
   mode: import('../../shared/types.js').ToolMode,
   turnMetrics: TurnMetrics,
   append: (event: import('../events/types.js').TurnEvent) => void,
-  onMessage?: ((msg: ServerMessage) => void) | undefined,
   agentType?: 'sub-agent',
 ): void {
   const stats = turnMetrics.buildStats(statsIdentity, mode)
@@ -71,16 +70,6 @@ function emitPartialDoneEvents(
     }),
   )
   append(createChatDoneEvent(assistantMsgId, 'stopped', stats, agentType))
-  if (onMessage) {
-    onMessage(
-      createChatMessageUpdatedMessage(assistantMsgId, {
-        isStreaming: false,
-        partial: true,
-        stats,
-      }),
-    )
-    onMessage(createChatDoneMessage(assistantMsgId, 'stopped', stats, agentType))
-  }
 }
 
 function emitDoneAndBreak(
@@ -234,482 +223,483 @@ export async function runTopLevelAgentLoop(
   let compacting = config.initialCompacting ?? false
   let returnValueNudgeCount = 0
 
-  let lastAssistantMsgId: string | undefined
-  let isDoneEmitted = false
+  for (;;) {
+    if (signal?.aborted) throw new Error('Aborted')
 
-  try {
-    for (;;) {
-      if (signal?.aborted) throw new Error('Aborted')
-
-      // Warmup mode: just assemble the request to populate the cache, then fire a
-      // minimal LLM call to prefill the KV cache. No events, no messages, no tools.
-      if (config.warmup) {
-        const session = sessionManager.requireSession(sessionId)
-        const runtimeConfig = getRuntimeConfig()
-        const configDir = getGlobalConfigDir(runtimeConfig.mode ?? 'production')
-        const skills = await getEnabledSkillMetadata(configDir, sessionManager.getProjectWorkdir(sessionId))
-        const { content: instructionContent } = await getAllInstructions(session.workdir, session.projectId)
-        const toolRegistry = config.getToolRegistry()
-
-        const assembledRequest = await config.assembleRequest({
-          workdir: session.workdir,
-          messages: [],
-          injectedFiles: [],
-          promptTools: toolRegistry.definitions,
-          toolChoice: 'none',
-          ...(instructionContent ? { customInstructions: instructionContent } : {}),
-          ...(skills.length > 0 ? { skills } : {}),
-        })
-
-        const modelSettings = sessionManager.getCurrentModelSettings(sessionId, config.mode)
-
-        await resolveClient().complete({
-          sessionId,
-          messages: [{ role: 'system', content: assembledRequest.systemPrompt }],
-          tools: assembledRequest.tools,
-          maxTokens: 1,
-          temperature: 0,
-          ...(modelSettings ? { modelSettings } : {}),
-        })
-
-        return {}
-      }
-
-      // Pause gate: block before the next LLM request if the user requested a
-      // pause. The current (in-flight) request is never aborted — the pause only
-      // takes effect here, at the request boundary.
-      const pauseOutcome = await sessionManager.enterPauseGate(sessionId, signal)
-      if (pauseOutcome === 'aborted') {
-        throw new Error('Aborted')
-      }
-
+    // Warmup mode: just assemble the request to populate the cache, then fire a
+    // minimal LLM call to prefill the KV cache. No events, no messages, no tools.
+    if (config.warmup) {
       const session = sessionManager.requireSession(sessionId)
-
-      // Inject kickoff prompt (e.g., builder kickoff) on first iteration
-      if (retryLimiter.count() === 0) {
-        await config.injectKickoff?.()
-      }
-
-      const { content: instructionContent, files } = await getAllInstructions(session.workdir, session.projectId)
-      if (signal?.aborted) throw new Error('Aborted')
-
-      const injectedFiles: InjectedFile[] = files.map((f) => ({
-        path: f.path,
-        content: f.content ?? '',
-        source: f.source,
-      }))
-
-      const toolRegistry = config.getToolRegistry()
-      const currentWindowMessageOptions = getCurrentWindowMessageOptions(sessionId)
-
-      // ---- LLM round with automatic failure retry ----
-      // Case 1: a request fails before any content → retry the same request with
-      // exponential backoff; nothing is written (message.start deferred).
-      // Case 2: the stream fails mid-flight → keep the partial content, finalize
-      // its bubble, append ONE visible continuation prompt, then retry against
-      // the enriched context. History only ever grows — no tombstones.
-      const retryPolicy: LLMRetryPolicy = { ...DEFAULT_LLM_RETRY_POLICY, ...config.llmRetryPolicy }
       const runtimeConfig = getRuntimeConfig()
-      let requestFailures = 0
-      let requestFirstFailureAt = 0
-      let continuationAppended = false
-      let previousContextTokens: number
-      let result!: import('./stream-pure.js').PureStreamResult
-      let assistantMsgId: string
-      let assistantMessageStarted = false
+      const configDir = getGlobalConfigDir(runtimeConfig.mode ?? 'production')
+      const skills = await getEnabledSkillMetadata(configDir, sessionManager.getProjectWorkdir(sessionId))
+      const { content: instructionContent } = await getAllInstructions(session.workdir, session.projectId)
+      const toolRegistry = config.getToolRegistry()
 
-      for (;;) {
-        // Resolve fresh per attempt: resolveClient() supports provider switches
-        // mid-turn (retries/truncation use a re-resolved client). The same client
-        // backs the profile default (used by the maxTokens fallback sites below)
-        // and the actual LLM call.
-        const attemptClient = resolveClient()
-        const profileDefaultMaxTokens = getModelProfile(attemptClient.getModel()).defaultMaxTokens
+      const assembledRequest = await config.assembleRequest({
+        workdir: session.workdir,
+        messages: [],
+        injectedFiles: [],
+        promptTools: toolRegistry.definitions,
+        toolChoice: 'none',
+        ...(instructionContent ? { customInstructions: instructionContent } : {}),
+        ...(skills.length > 0 ? { skills } : {}),
+      })
 
-        const requestMessages = await config.getConversationMessages()
+      const modelSettings = sessionManager.getCurrentModelSettings(sessionId, config.mode)
 
-        // The format-retry continuation is appended once per round (not on
-        // LLM-error retries) — its persisted copy feeds later context rebuilds.
-        if (requestFailures === 0 && retryLimiter.count() > 0) {
-          const continueMsgId = crypto.randomUUID()
-          const continueContent = lastPatternMatch
-            ? `Your previous response was interrupted because it matched pattern "${lastPatternMatch.pattern}" in ${lastPatternMatch.field}.\nMatched content:\n${lastPatternMatch.matchedContent}\n\n${CONTINUE_PROMPT}`
-            : CONTINUE_PROMPT
-          append(
-            createMessageStartEvent(continueMsgId, 'user', continueContent, {
-              ...(currentWindowMessageOptions ?? {}),
-              isSystemGenerated: true,
-              messageKind: 'correction',
-            }),
-          )
-          append({ type: 'message.done', data: { messageId: continueMsgId } })
-          requestMessages.push({ role: 'user', content: continueContent, source: 'history' })
-        }
+      await resolveClient().complete({
+        sessionId,
+        messages: [{ role: 'system', content: assembledRequest.systemPrompt }],
+        tools: assembledRequest.tools,
+        maxTokens: 1,
+        temperature: 0,
+        ...(modelSettings ? { modelSettings } : {}),
+      })
 
-        const configDir = getGlobalConfigDir(runtimeConfig.mode ?? 'production')
-        const skills = await getEnabledSkillMetadata(configDir, sessionManager.getProjectWorkdir(sessionId))
-        if (signal?.aborted) throw new Error('Aborted')
+      return {}
+    }
 
-        const assembledRequest = await config.assembleRequest({
-          workdir: session.workdir,
-          messages: requestMessages,
-          injectedFiles,
-          promptTools: toolRegistry.definitions,
-          toolChoice: 'auto',
-          ...(instructionContent ? { customInstructions: instructionContent } : {}),
-          ...(skills.length > 0 ? { skills } : {}),
-        })
+    // Pause gate: block before the next LLM request if the user requested a
+    // pause. The current (in-flight) request is never aborted — the pause only
+    // takes effect here, at the request boundary.
+    const pauseOutcome = await sessionManager.enterPauseGate(sessionId, signal)
+    if (pauseOutcome === 'aborted') {
+      throw new Error('Aborted')
+    }
 
-        assistantMsgId = crypto.randomUUID()
-        // The assistant message.start is DEFERRED until the first streamed event:
-        // a request that fails before any content (case 1) leaves nothing behind.
-        assistantMessageStarted = false
-        const ensureAssistantMessage = () => {
-          if (assistantMessageStarted) return
-          assistantMessageStarted = true
-          lastAssistantMsgId = assistantMsgId
-          append(
-            createMessageStartEvent(assistantMsgId, 'assistant', undefined, {
-              ...(currentWindowMessageOptions ?? {}),
-              ...(config.subAgentMetadata
-                ? { subAgentId: config.subAgentMetadata.subAgentId, subAgentType: config.subAgentMetadata.subAgentType }
-                : {}),
-            }),
-          )
-        }
+    const session = sessionManager.requireSession(sessionId)
 
-        const contextState = sessionManager.getContextState(sessionId)
-        previousContextTokens = contextState.currentTokens
+    // Inject kickoff prompt (e.g., builder kickoff) on first iteration
+    if (retryLimiter.count() === 0) {
+      await config.injectKickoff?.()
+    }
 
-        const contextWindow = sessionManager.getCurrentModelContext(sessionId, config.mode)
-        const availableForOutput = Math.max(
-          256,
-          contextWindow - contextState.currentTokens - pendingToolResultTokens - OUTPUT_RESERVE_TOKENS,
-        )
+    const { content: instructionContent, files } = await getAllInstructions(session.workdir, session.projectId)
+    if (signal?.aborted) throw new Error('Aborted')
 
-        let modelSettings = config.modelSettings ?? sessionManager.getCurrentModelSettings(sessionId, config.mode)
-        if (modelSettings && currentMaxTokensOverride !== undefined) {
-          modelSettings = { ...modelSettings, maxTokens: currentMaxTokensOverride }
-        }
+    const injectedFiles: InjectedFile[] = files.map((f) => ({
+      path: f.path,
+      content: f.content ?? '',
+      source: f.source,
+    }))
 
-        if (modelSettings) {
-          const requestedMaxTokens = modelSettings.maxTokens ?? profileDefaultMaxTokens
-          modelSettings = { ...modelSettings, maxTokens: Math.min(requestedMaxTokens, availableForOutput) }
-        }
+    const toolRegistry = config.getToolRegistry()
+    const currentWindowMessageOptions = getCurrentWindowMessageOptions(sessionId)
 
-        // Build set of sub-agent IDs so streamLLMPure can show the correct
-        // tool name in preparing events instead of hallucinated aliases.
-        const allAgents = await loadAllAgentsDefault(sessionManager.getProjectWorkdir(sessionId))
-        const subAgentAliases = new Set(getSubAgents(allAgents).map((a) => a.metadata.id))
+    // ---- LLM round with automatic failure retry ----
+    // Case 1: a request fails before any content → retry the same request with
+    // exponential backoff; nothing is written (message.start deferred).
+    // Case 2: the stream fails mid-flight → keep the partial content, finalize
+    // its bubble, append ONE visible continuation prompt, then retry against
+    // the enriched context. History only ever grows — no tombstones.
+    const retryPolicy: LLMRetryPolicy = { ...DEFAULT_LLM_RETRY_POLICY, ...config.llmRetryPolicy }
+    const runtimeConfig = getRuntimeConfig()
+    let requestFailures = 0
+    let requestFirstFailureAt = 0
+    let continuationAppended = false
+    let previousContextTokens: number
+    let result!: import('./stream-pure.js').PureStreamResult
+    let assistantMsgId: string
+    let assistantMessageStarted = false
 
-        const streamGen = streamLLMPure({
-          messageId: assistantMsgId,
-          systemPrompt: assembledRequest.systemPrompt,
-          llmClient: attemptClient,
-          sessionId,
-          messages: assembledRequest.messages,
-          tools: assembledRequest.tools,
-          toolChoice: 'auto',
-          signal,
-          subAgentAliases,
-          ...(config.retryPatterns ? { retryPatterns: config.retryPatterns } : {}),
-          ...(modelSettings && { modelSettings }),
-        })
+    for (;;) {
+      // Resolve fresh per attempt: resolveClient() supports provider switches
+      // mid-turn (retries/truncation use a re-resolved client). The same client
+      // backs the profile default (used by the maxTokens fallback sites below)
+      // and the actual LLM call.
+      const attemptClient = resolveClient()
+      const profileDefaultMaxTokens = getModelProfile(attemptClient.getModel()).defaultMaxTokens
 
-        const attemptResult = await consumeStreamGenerator(streamGen, (event) => {
-          ensureAssistantMessage()
-          append(event)
-        })
+      const requestMessages = await config.getConversationMessages()
 
-        if (!attemptResult.error) {
-          result = attemptResult
-          break
-        }
-
-        // ---- LLM failure ----
-        // Case 2: content was streamed → finalize the partial bubble and append
-        // ONE visible continuation prompt; the retry rebuilds context from the
-        // store (which already includes the partial + continuation).
-        if (assistantMessageStarted && !continuationAppended) {
-          append(createMessageDoneEvent(assistantMsgId, { partial: true }))
-          onMessage?.(createChatMessageUpdatedMessage(assistantMsgId, { isStreaming: false, partial: true }))
-          const continueMsgId = crypto.randomUUID()
-          append(
-            createMessageStartEvent(continueMsgId, 'user', CONTINUE_AFTER_STREAM_ERROR_PROMPT, {
-              ...(currentWindowMessageOptions ?? {}),
-              isSystemGenerated: true,
-              messageKind: 'correction',
-            }),
-          )
-          append({ type: 'message.done', data: { messageId: continueMsgId } })
-          continuationAppended = true
-        }
-
-        if (signal?.aborted) throw new Error('Aborted')
-
-        // Context overflow: the prompt (including tool results) plus the requested
-        // maxTokens exceeds the model's window. The error is deterministic, so
-        // retry immediately with a reduced maxTokens instead of waiting out backoff.
-        if (isContextLengthError(attemptResult.error) && contextRetryCount < MAX_CONTEXT_LENGTH_RETRIES) {
-          contextRetryCount += 1
-          const currentMax = modelSettings?.maxTokens ?? currentMaxTokensOverride ?? profileDefaultMaxTokens
-          currentMaxTokensOverride = Math.max(256, Math.floor(currentMax / 2))
-          continue
-        }
-
-        // Backoff decision — the shared LLMRetryPolicy (same defaults as workflows).
-        requestFailures += 1
-        if (requestFirstFailureAt === 0) {
-          requestFirstFailureAt = Date.now()
-        }
-        const decision = evaluateLLMRetry(requestFailures, requestFirstFailureAt, Date.now(), retryPolicy)
-        if (!decision.retry) {
-          if (!config.subAgentMetadata) {
-            recordLLMFailure(sessionId)
-            config.onMessage?.(createChatLLMRetryFailedMessage(attemptResult.error, requestFailures))
-          }
-          return { failed: { error: attemptResult.error } }
-        }
-        if (!config.subAgentMetadata) {
-          config.onMessage?.(createChatLLMRetryMessage(decision.attempt, decision.delayMs, attemptResult.error))
-        }
-        const waitResult = await sleepThroughRetryBackoff(decision.delayMs, sessionId, signal)
-        if (waitResult === 'aborted') throw new Error('Aborted')
-        // Loop: rebuild the request — case 1 uses the same context, case 2 picks
-        // up the persisted partial + continuation.
-      }
-
-      // Success — clear any recorded failure so a later chat.retry is rejected.
-      if (!config.subAgentMetadata) {
-        clearLLMFailure(sessionId)
-      }
-
-      // Check if a retry pattern matched mid-stream
-      if (result.patternMatch) {
-        if (!retryLimiter.canRetry()) {
-          append({
-            type: 'chat.error',
-            data: {
-              error: serverT(
-                {
-                  en: 'Auto-retry limit exceeded after {{count}} retries',
-                  fr: 'Limite de relance automatique dépassée après {{count}} tentatives',
-                },
-                { count: retryLimiter.maxRetries() },
-              ),
-              recoverable: false,
-            },
-          })
-          append(createChatDoneEvent(assistantMsgId, 'error', undefined, agentType))
-          throw new Error('Auto-retry limit exceeded')
-        }
-        retryLimiter.increment()
-        lastPatternMatch = {
-          pattern: result.patternMatch.pattern,
-          field: result.patternMatch.field,
-          matchedContent: result.patternMatch.matchedContent,
-        }
-
-        // Emit pattern.retry event
-        append({
-          type: 'pattern.retry',
-          data: {
-            messageId: assistantMsgId,
-            pattern: result.patternMatch.pattern,
-            field: result.patternMatch.field,
-            attempt: retryLimiter.count(),
-            maxAttempts: retryLimiter.maxRetries(),
-            matchedContent: result.patternMatch.matchedContent,
-          },
-        })
-
-        // Emit system message showing what matched
-        const matchMsgId = crypto.randomUUID()
-        const matchMessage = `Pattern "${result.patternMatch.pattern}" matched — auto-retry #${retryLimiter.count()}`
+      // The format-retry continuation is appended once per round (not on
+      // LLM-error retries) — its persisted copy feeds later context rebuilds.
+      if (requestFailures === 0 && retryLimiter.count() > 0) {
+        const continueMsgId = crypto.randomUUID()
+        const continueContent = lastPatternMatch
+          ? `Your previous response was interrupted because it matched pattern "${lastPatternMatch.pattern}" in ${lastPatternMatch.field}.\nMatched content:\n${lastPatternMatch.matchedContent}\n\n${CONTINUE_PROMPT}`
+          : CONTINUE_PROMPT
         append(
-          createMessageStartEvent(matchMsgId, 'user', matchMessage, {
+          createMessageStartEvent(continueMsgId, 'user', continueContent, {
             ...(currentWindowMessageOptions ?? {}),
             isSystemGenerated: true,
             messageKind: 'correction',
           }),
         )
-        append({ type: 'message.done', data: { messageId: matchMsgId } })
+        append({ type: 'message.done', data: { messageId: continueMsgId } })
+        requestMessages.push({ role: 'user', content: continueContent, source: 'history' })
+      }
 
+      const configDir = getGlobalConfigDir(runtimeConfig.mode ?? 'production')
+      const skills = await getEnabledSkillMetadata(configDir, sessionManager.getProjectWorkdir(sessionId))
+      if (signal?.aborted) throw new Error('Aborted')
+
+      const assembledRequest = await config.assembleRequest({
+        workdir: session.workdir,
+        messages: requestMessages,
+        injectedFiles,
+        promptTools: toolRegistry.definitions,
+        toolChoice: 'auto',
+        ...(instructionContent ? { customInstructions: instructionContent } : {}),
+        ...(skills.length > 0 ? { skills } : {}),
+      })
+
+      assistantMsgId = crypto.randomUUID()
+      // The assistant message.start is DEFERRED until the first streamed event:
+      // a request that fails before any content (case 1) leaves nothing behind.
+      assistantMessageStarted = false
+      const ensureAssistantMessage = () => {
+        if (assistantMessageStarted) return
+        assistantMessageStarted = true
+        append(
+          createMessageStartEvent(assistantMsgId, 'assistant', undefined, {
+            ...(currentWindowMessageOptions ?? {}),
+            ...(config.subAgentMetadata
+              ? { subAgentId: config.subAgentMetadata.subAgentId, subAgentType: config.subAgentMetadata.subAgentType }
+              : {}),
+          }),
+        )
+      }
+
+      const contextState = sessionManager.getContextState(sessionId)
+      previousContextTokens = contextState.currentTokens
+
+      const contextWindow = sessionManager.getCurrentModelContext(sessionId, config.mode)
+      const availableForOutput = Math.max(
+        256,
+        contextWindow - contextState.currentTokens - pendingToolResultTokens - OUTPUT_RESERVE_TOKENS,
+      )
+
+      let modelSettings = config.modelSettings ?? sessionManager.getCurrentModelSettings(sessionId, config.mode)
+      if (modelSettings && currentMaxTokensOverride !== undefined) {
+        modelSettings = { ...modelSettings, maxTokens: currentMaxTokensOverride }
+      }
+
+      if (modelSettings) {
+        const requestedMaxTokens = modelSettings.maxTokens ?? profileDefaultMaxTokens
+        modelSettings = { ...modelSettings, maxTokens: Math.min(requestedMaxTokens, availableForOutput) }
+      }
+
+      // Build set of sub-agent IDs so streamLLMPure can show the correct
+      // tool name in preparing events instead of hallucinated aliases.
+      const allAgents = await loadAllAgentsDefault(sessionManager.getProjectWorkdir(sessionId))
+      const subAgentAliases = new Set(getSubAgents(allAgents).map((a) => a.metadata.id))
+
+      const streamGen = streamLLMPure({
+        messageId: assistantMsgId,
+        systemPrompt: assembledRequest.systemPrompt,
+        llmClient: attemptClient,
+        sessionId,
+        messages: assembledRequest.messages,
+        tools: assembledRequest.tools,
+        toolChoice: 'auto',
+        signal,
+        subAgentAliases,
+        ...(config.retryPatterns ? { retryPatterns: config.retryPatterns } : {}),
+        ...(modelSettings && { modelSettings }),
+      })
+
+      const attemptResult = await consumeStreamGenerator(streamGen, (event) => {
+        ensureAssistantMessage()
+        append(event)
+      })
+
+      if (!attemptResult.error) {
+        result = attemptResult
+        break
+      }
+
+      // ---- LLM failure ----
+      // Case 2: content was streamed → finalize the partial bubble and append
+      // ONE visible continuation prompt; the retry rebuilds context from the
+      // store (which already includes the partial + continuation).
+      if (assistantMessageStarted && !continuationAppended) {
+        append(createMessageDoneEvent(assistantMsgId, { partial: true }))
+        onMessage?.(createChatMessageUpdatedMessage(assistantMsgId, { isStreaming: false, partial: true }))
+        const continueMsgId = crypto.randomUUID()
+        append(
+          createMessageStartEvent(continueMsgId, 'user', CONTINUE_AFTER_STREAM_ERROR_PROMPT, {
+            ...(currentWindowMessageOptions ?? {}),
+            isSystemGenerated: true,
+            messageKind: 'correction',
+          }),
+        )
+        append({ type: 'message.done', data: { messageId: continueMsgId } })
+        continuationAppended = true
+      }
+
+      if (signal?.aborted) throw new Error('Aborted')
+
+      // Context overflow: the prompt (including tool results) plus the requested
+      // maxTokens exceeds the model's window. The error is deterministic, so
+      // retry immediately with a reduced maxTokens instead of waiting out backoff.
+      if (isContextLengthError(attemptResult.error) && contextRetryCount < MAX_CONTEXT_LENGTH_RETRIES) {
+        contextRetryCount += 1
+        const currentMax = modelSettings?.maxTokens ?? currentMaxTokensOverride ?? profileDefaultMaxTokens
+        currentMaxTokensOverride = Math.max(256, Math.floor(currentMax / 2))
         continue
       }
 
-      if (result.aborted) {
-        // Only finalize if the assistant message was actually started (a turn
-        // aborted during the backoff wait never created one).
-        if (assistantMessageStarted) {
-          isDoneEmitted = true
-          emitPartialDoneEvents(
-            sessionId,
+      // Backoff decision — the shared LLMRetryPolicy (same defaults as workflows).
+      requestFailures += 1
+      if (requestFirstFailureAt === 0) {
+        requestFirstFailureAt = Date.now()
+      }
+      const decision = evaluateLLMRetry(requestFailures, requestFirstFailureAt, Date.now(), retryPolicy)
+      if (!decision.retry) {
+        if (!config.subAgentMetadata) {
+          recordLLMFailure(sessionId)
+          config.onMessage?.(createChatLLMRetryFailedMessage(attemptResult.error, requestFailures))
+        }
+        return { failed: { error: attemptResult.error } }
+      }
+      if (!config.subAgentMetadata) {
+        config.onMessage?.(createChatLLMRetryMessage(decision.attempt, decision.delayMs, attemptResult.error))
+      }
+      const waitResult = await sleepThroughRetryBackoff(decision.delayMs, sessionId, signal)
+      if (waitResult === 'aborted') throw new Error('Aborted')
+      // Loop: rebuild the request — case 1 uses the same context, case 2 picks
+      // up the persisted partial + continuation.
+    }
+
+    // Success — clear any recorded failure so a later chat.retry is rejected.
+    if (!config.subAgentMetadata) {
+      clearLLMFailure(sessionId)
+    }
+
+    // Check if a retry pattern matched mid-stream
+    if (result.patternMatch) {
+      if (!retryLimiter.canRetry()) {
+        append({
+          type: 'chat.error',
+          data: {
+            error: serverT(
+              {
+                en: 'Auto-retry limit exceeded after {{count}} retries',
+                fr: 'Limite de relance automatique dépassée après {{count}} tentatives',
+              },
+              { count: retryLimiter.maxRetries() },
+            ),
+            recoverable: false,
+          },
+        })
+        append(createChatDoneEvent(assistantMsgId, 'error', undefined, agentType))
+        throw new Error('Auto-retry limit exceeded')
+      }
+      retryLimiter.increment()
+      lastPatternMatch = {
+        pattern: result.patternMatch.pattern,
+        field: result.patternMatch.field,
+        matchedContent: result.patternMatch.matchedContent,
+      }
+
+      // Emit pattern.retry event
+      append({
+        type: 'pattern.retry',
+        data: {
+          messageId: assistantMsgId,
+          pattern: result.patternMatch.pattern,
+          field: result.patternMatch.field,
+          attempt: retryLimiter.count(),
+          maxAttempts: retryLimiter.maxRetries(),
+          matchedContent: result.patternMatch.matchedContent,
+        },
+      })
+
+      // Emit system message showing what matched
+      const matchMsgId = crypto.randomUUID()
+      const matchMessage = `Pattern "${result.patternMatch.pattern}" matched — auto-retry #${retryLimiter.count()}`
+      append(
+        createMessageStartEvent(matchMsgId, 'user', matchMessage, {
+          ...(currentWindowMessageOptions ?? {}),
+          isSystemGenerated: true,
+          messageKind: 'correction',
+        }),
+      )
+      append({ type: 'message.done', data: { messageId: matchMsgId } })
+
+      continue
+    }
+
+    if (result.aborted) {
+      // Only finalize if the assistant message was actually started (a turn
+      // aborted during the backoff wait never created one).
+      if (assistantMessageStarted) {
+        emitPartialDoneEvents(sessionId, assistantMsgId, statsIdentity, mode, turnMetrics, append, agentType)
+      }
+      throw new Error('Aborted')
+    }
+
+    // The retry loop above guarantees `result` has no error — record usage and
+    // update the context size.
+    turnMetrics.addLLMCall(
+      result.timing,
+      result.usage.promptTokens,
+      result.usage.completionTokens,
+      previousContextTokens,
+      result.modelParams,
+    )
+    // Stream the running turn totals to the client so the sidebar can build
+    // dynamically as each LLM call completes. Sub-agent turns run inside the
+    // parent turn — their stats would clobber the parent's live numbers, so
+    // only top-level turns broadcast.
+    if (!config.subAgentMetadata) {
+      emitLiveTurnStats(turnMetrics, statsIdentity, mode, config.onMessage)
+    }
+    sessionManager.setCurrentContextSize(
+      sessionId,
+      result.usage.promptTokens,
+      result.usage.completionTokens,
+      config.subAgentMetadata?.subAgentId,
+    )
+    pendingToolResultTokens = 0
+    currentMaxTokensOverride = undefined
+
+    // Check compaction threshold with fresh promptTokens from LLM.
+    // When exceeded, append compaction prompt and let the next iteration
+    // handle summarization — same agent, same loop, no nested call.
+    if (!compacting) {
+      const contextState = sessionManager.getContextState(sessionId)
+      const { shouldCompact, appendCompactionPrompt } = await import('../context/compactor.js')
+      if (
+        shouldCompact(
+          contextState.currentTokens,
+          contextState.maxTokens,
+          sessionManager.getModelCompactionThreshold(sessionId, config.mode) ??
+            runtimeConfig.context.compactionThreshold,
+        )
+      ) {
+        appendCompactionPrompt(sessionId, append)
+        compacting = true
+        continue
+      }
+    }
+
+    if (!compacting && result.finishReason === 'length' && result.toolCalls.length === 0) {
+      if (truncationRetryCount < MAX_TRUNCATION_RETRIES) {
+        truncationRetryCount += 1
+        const currentMaxTokens =
+          result.modelParams?.maxTokens ?? getModelProfile(resolveClient().getModel()).defaultMaxTokens
+        const promptTokens = result.usage.promptTokens
+        const contextWindow = sessionManager.getCurrentModelContext(sessionId, config.mode)
+        const newMaxTokens = Math.min(
+          Math.floor(currentMaxTokens * 1.5),
+          Math.max(256, contextWindow - promptTokens - OUTPUT_RESERVE_TOKENS),
+        )
+        currentMaxTokensOverride = newMaxTokens
+        // Finalize the truncated assistant message so the frontend properly closes it
+        const interimStats = turnMetrics.buildStats(statsIdentity, mode)
+        append(
+          createMessageDoneEvent(assistantMsgId, {
+            segments: result.segments,
+            stats: interimStats,
+          }),
+        )
+        // Tell the frontend to fold the streaming message back into messages
+        onMessage?.(createChatMessageUpdatedMessage(assistantMsgId, { isStreaming: false }))
+        // Emit continue message to event store so getConversationMessages picks it up next iteration
+        // We don't broadcast it via WebSocket, so the frontend won't see it
+        const continueMsgId = crypto.randomUUID()
+        append(
+          createMessageStartEvent(
+            continueMsgId,
+            'user',
+            'Continue your previous response exactly where you left off.',
+            {
+              ...(currentWindowMessageOptions ?? {}),
+              isSystemGenerated: true,
+            },
+          ),
+        )
+        append({ type: 'message.done', data: { messageId: continueMsgId } })
+        continue
+      } else {
+        // Exhausted retries, emit truncated
+        const stats = turnMetrics.buildStats(statsIdentity, mode)
+        append(
+          createMessageDoneEvent(assistantMsgId, {
+            segments: result.segments,
+            stats,
+            partial: true,
+          }),
+        )
+        append(createChatDoneEvent(assistantMsgId, 'truncated', stats, agentType))
+        break
+      }
+    }
+
+    if (result.toolCalls.length > 0) {
+      if (compacting) {
+        const rejectionMsgId = crypto.randomUUID()
+        append(
+          createMessageStartEvent(
+            rejectionMsgId,
+            'user',
+            `Tool calls are not possible at this stage. STOP and produce a summary for compaction purposes NOW:
+
+${COMPACTION_PROMPT}`,
+            {
+              ...(currentWindowMessageOptions ?? {}),
+              isSystemGenerated: true,
+              messageKind: 'correction',
+            },
+          ),
+        )
+        append({ type: 'message.done', data: { messageId: rejectionMsgId } })
+        retryLimiter.reset()
+        continue
+      }
+
+      append(
+        createMessageDoneEvent(assistantMsgId, {
+          segments: result.segments,
+        }),
+      )
+
+      try {
+        const batchContext: ToolBatchContext = {
+          toolRegistry,
+          sessionManager,
+          sessionId,
+          workdir: sessionManager.getEffectiveWorkdir(sessionId),
+          turnMetrics,
+          signal,
+          onMessage,
+          llmClient: resolveClient(),
+          statsIdentity,
+          onToolExecuted: config.onToolExecuted,
+        }
+        if (session.dangerLevel) {
+          batchContext.dangerLevel = session.dangerLevel
+        }
+        if (config.subAgentMetadata) {
+          batchContext.isSubAgent = true
+        }
+        if (config.providerManager) {
+          batchContext.providerManager = config.providerManager
+        }
+        batchContext.agentTimeout = getRuntimeConfig().agent.toolTimeout
+        const batchResult = await executeTools(assistantMsgId, result.toolCalls, batchContext, append)
+        pendingToolResultTokens = estimateToolResultTokens(batchResult.toolMessages)
+        if (batchResult.stepDoneCalled) {
+          emitDoneAndBreak(
             assistantMsgId,
+            result.segments,
             statsIdentity,
             mode,
             turnMetrics,
             append,
-            config.onMessage,
+            onMessage,
+            'step_done',
             agentType,
           )
-        }
-        throw new Error('Aborted')
-      }
-
-      // The retry loop above guarantees `result` has no error — record usage and
-      // update the context size.
-      turnMetrics.addLLMCall(
-        result.timing,
-        result.usage.promptTokens,
-        result.usage.completionTokens,
-        previousContextTokens,
-        result.modelParams,
-      )
-      // Stream the running turn totals to the client so the sidebar can build
-      // dynamically as each LLM call completes. Sub-agent turns run inside the
-      // parent turn — their stats would clobber the parent's live numbers, so
-      // only top-level turns broadcast.
-      if (!config.subAgentMetadata) {
-        emitLiveTurnStats(turnMetrics, statsIdentity, mode, config.onMessage)
-      }
-      sessionManager.setCurrentContextSize(
-        sessionId,
-        result.usage.promptTokens,
-        result.usage.completionTokens,
-        config.subAgentMetadata?.subAgentId,
-      )
-      pendingToolResultTokens = 0
-      currentMaxTokensOverride = undefined
-
-      // Check compaction threshold with fresh promptTokens from LLM.
-      // When exceeded, append compaction prompt and let the next iteration
-      // handle summarization — same agent, same loop, no nested call.
-      if (!compacting) {
-        const contextState = sessionManager.getContextState(sessionId)
-        const { shouldCompact, appendCompactionPrompt } = await import('../context/compactor.js')
-        if (
-          shouldCompact(
-            contextState.currentTokens,
-            contextState.maxTokens,
-            sessionManager.getModelCompactionThreshold(sessionId, config.mode) ??
-              runtimeConfig.context.compactionThreshold,
-          )
-        ) {
-          appendCompactionPrompt(sessionId, append)
-          compacting = true
-          continue
-        }
-      }
-
-      if (!compacting && result.finishReason === 'length' && result.toolCalls.length === 0) {
-        if (truncationRetryCount < MAX_TRUNCATION_RETRIES) {
-          truncationRetryCount += 1
-          const currentMaxTokens =
-            result.modelParams?.maxTokens ?? getModelProfile(resolveClient().getModel()).defaultMaxTokens
-          const promptTokens = result.usage.promptTokens
-          const contextWindow = sessionManager.getCurrentModelContext(sessionId, config.mode)
-          const newMaxTokens = Math.min(
-            Math.floor(currentMaxTokens * 1.5),
-            Math.max(256, contextWindow - promptTokens - OUTPUT_RESERVE_TOKENS),
-          )
-          currentMaxTokensOverride = newMaxTokens
-          // Finalize the truncated assistant message so the frontend properly closes it
-          const interimStats = turnMetrics.buildStats(statsIdentity, mode)
-          append(
-            createMessageDoneEvent(assistantMsgId, {
-              segments: result.segments,
-              stats: interimStats,
-            }),
-          )
-          // Tell the frontend to fold the streaming message back into messages
-          onMessage?.(createChatMessageUpdatedMessage(assistantMsgId, { isStreaming: false }))
-          // Emit continue message to event store so getConversationMessages picks it up next iteration
-          // We don't broadcast it via WebSocket, so the frontend won't see it
-          const continueMsgId = crypto.randomUUID()
-          append(
-            createMessageStartEvent(
-              continueMsgId,
-              'user',
-              'Continue your previous response exactly where you left off.',
-              {
-                ...(currentWindowMessageOptions ?? {}),
-                isSystemGenerated: true,
-              },
-            ),
-          )
-          append({ type: 'message.done', data: { messageId: continueMsgId } })
-          continue
-        } else {
-          // Exhausted retries, emit truncated
-          const stats = turnMetrics.buildStats(statsIdentity, mode)
-          append(
-            createMessageDoneEvent(assistantMsgId, {
-              segments: result.segments,
-              stats,
-              partial: true,
-            }),
-          )
-          append(createChatDoneEvent(assistantMsgId, 'truncated', stats, agentType))
           break
         }
-      }
-
-      if (result.toolCalls.length > 0) {
-        if (compacting) {
-          const rejectionMsgId = crypto.randomUUID()
-          append(
-            createMessageStartEvent(
-              rejectionMsgId,
-              'user',
-              `Tool calls are not possible at this stage. STOP and produce a summary for compaction purposes NOW:
-
-${COMPACTION_PROMPT}`,
-              {
-                ...(currentWindowMessageOptions ?? {}),
-                isSystemGenerated: true,
-                messageKind: 'correction',
-              },
-            ),
-          )
-          append({ type: 'message.done', data: { messageId: rejectionMsgId } })
-          retryLimiter.reset()
-          continue
-        }
-
-        append(
-          createMessageDoneEvent(assistantMsgId, {
-            segments: result.segments,
-          }),
-        )
-
-        try {
-          const batchContext: ToolBatchContext = {
-            toolRegistry,
-            sessionManager,
-            sessionId,
-            workdir: sessionManager.getEffectiveWorkdir(sessionId),
-            turnMetrics,
-            signal,
-            onMessage,
-            llmClient: resolveClient(),
-            statsIdentity,
-            onToolExecuted: config.onToolExecuted,
-          }
-          if (session.dangerLevel) {
-            batchContext.dangerLevel = session.dangerLevel
-          }
-          if (config.subAgentMetadata) {
-            batchContext.isSubAgent = true
-          }
-          if (config.providerManager) {
-            batchContext.providerManager = config.providerManager
-          }
-          batchContext.agentTimeout = getRuntimeConfig().agent.toolTimeout
-          const batchResult = await executeTools(assistantMsgId, result.toolCalls, batchContext, append)
-          pendingToolResultTokens = estimateToolResultTokens(batchResult.toolMessages)
-          if (batchResult.stepDoneCalled) {
-            isDoneEmitted = true
+        if (batchResult.returnValueContent) {
+          returnValueContent = batchResult.returnValueContent
+          returnValueResult = batchResult.returnValueResult
+          if (config.breakOnReturnValue) {
             emitDoneAndBreak(
               assistantMsgId,
               result.segments,
@@ -718,211 +708,140 @@ ${COMPACTION_PROMPT}`,
               turnMetrics,
               append,
               onMessage,
-              'step_done',
+              'complete',
               agentType,
             )
             break
           }
-          if (batchResult.returnValueContent) {
-            returnValueContent = batchResult.returnValueContent
-            returnValueResult = batchResult.returnValueResult
-            if (config.breakOnReturnValue) {
-              isDoneEmitted = true
-              emitDoneAndBreak(
-                assistantMsgId,
-                result.segments,
-                statsIdentity,
-                mode,
-                turnMetrics,
-                append,
-                onMessage,
-                'complete',
-                agentType,
-              )
-              break
-            }
-          }
-          if (batchResult.returnValueResult) {
-            returnValueResult = batchResult.returnValueResult
-          }
-        } catch (error) {
-          if (error instanceof Error && error.message === 'Aborted') {
-            isDoneEmitted = true
-            emitPartialDoneEvents(
-              sessionId,
-              assistantMsgId,
-              statsIdentity,
-              mode,
-              turnMetrics,
-              append,
-              config.onMessage,
-              agentType,
-            )
-            throw error
-          }
+        }
+        if (batchResult.returnValueResult) {
+          returnValueResult = batchResult.returnValueResult
+        }
+      } catch (error) {
+        if (error instanceof Error && error.message === 'Aborted') {
+          emitPartialDoneEvents(sessionId, assistantMsgId, statsIdentity, mode, turnMetrics, append, agentType)
           throw error
         }
-
-        if (signal?.aborted) {
-          isDoneEmitted = true
-          emitPartialDoneEvents(
-            sessionId,
-            assistantMsgId,
-            statsIdentity,
-            mode,
-            turnMetrics,
-            append,
-            config.onMessage,
-            agentType,
-          )
-          throw new Error('Aborted')
-        }
-
-        if (!config.subAgentMetadata) {
-          void drainQueue(sessionManager, sessionId, append, onMessage)
-        }
-
-        retryLimiter.reset()
-        continue
+        throw error
       }
 
-      if (compacting) {
-        const summary = result.content?.trim() || result.thinkingContent?.trim() || ''
-        if (!summary) {
-          append({
-            type: 'chat.error',
-            data: {
-              error: serverT({
-                en: 'Compaction produced empty summary, continuing with full context',
-                fr: 'La compaction a produit un résumé vide, poursuite avec le contexte complet',
-              }),
-              recoverable: true,
-            },
-          })
-          logger.warn('Compaction produced empty summary, continuing', { sessionId })
-          compacting = false
-          if (config.initialCompacting) break
-          continue
-        }
+      if (signal?.aborted) {
+        emitPartialDoneEvents(sessionId, assistantMsgId, statsIdentity, mode, turnMetrics, append, agentType)
+        throw new Error('Aborted')
+      }
 
-        // The new context window starts fresh — apply the current system prompt
-        // + tools so they are canonical and never stale there. Best-effort: a
-        // rebuild failure must not break the compaction itself.
-        try {
-          await config.rebuildCachedContext?.()
-        } catch (error) {
-          logger.error('Failed to rebuild cached context after compaction', {
-            sessionId,
-            error: error instanceof Error ? error.message : String(error),
-          })
-        }
+      if (!config.subAgentMetadata) {
+        void drainQueue(sessionManager, sessionId, append, onMessage)
+      }
 
-        const closedWindowId = getCurrentContextWindowId(sessionId) ?? ''
-        const newWindowId = crypto.randomUUID()
-        const tokenCountAtClose = result.usage.promptTokens
+      retryLimiter.reset()
+      continue
+    }
 
+    if (compacting) {
+      const summary = result.content?.trim() || result.thinkingContent?.trim() || ''
+      if (!summary) {
         append({
-          type: 'context.compacted',
-          data: { closedWindowId, newWindowId, beforeTokens: tokenCountAtClose, afterTokens: 0, summary },
-        })
-
-        append({
-          type: 'message.start',
+          type: 'chat.error',
           data: {
-            messageId: assistantMsgId,
-            role: 'assistant',
-            content: summary,
-            contextWindowId: newWindowId,
-            isCompactionSummary: true,
+            error: serverT({
+              en: 'Compaction produced empty summary, continuing with full context',
+              fr: 'La compaction a produit un résumé vide, poursuite avec le contexte complet',
+            }),
+            recoverable: true,
           },
         })
-        append(createMessageDoneEvent(assistantMsgId, { stats: turnMetrics.buildStats(statsIdentity, mode) }))
-        append(createChatDoneEvent(assistantMsgId, 'complete', undefined, agentType))
-        if (onMessage) {
-          onMessage(createChatDoneMessage(assistantMsgId, 'complete', undefined, agentType))
-        }
-
-        // Reinject the agent reminder into the new window
-        config.injectAgentReminder?.()
+        logger.warn('Compaction produced empty summary, continuing', { sessionId })
         compacting = false
-
-        // Manual compaction (initialCompacting) is a one-shot operation — break after done.
-        // Auto-compaction continues the loop for subsequent user messages.
-        if (config.initialCompacting) {
-          isDoneEmitted = true
-          break
-        }
+        if (config.initialCompacting) break
         continue
       }
 
-      // If sub-agent finished without calling return_value, nudge and retry
-      if (config.requireReturnValue && !returnValueContent) {
-        const maxNudges = config.maxReturnValueNudges ?? 10
-        if (returnValueNudgeCount < maxNudges) {
-          returnValueNudgeCount++
-          const nudgeMsgId = crypto.randomUUID()
-          append(
-            createMessageStartEvent(
-              nudgeMsgId,
-              'user',
-              'You must call return_value with a summary of your findings before finishing. Call return_value now.',
-              {
-                ...(currentWindowMessageOptions ?? {}),
-                isSystemGenerated: true,
-                messageKind: 'correction',
-                ...(config.subAgentMetadata
-                  ? {
-                      subAgentId: config.subAgentMetadata.subAgentId,
-                      subAgentType: config.subAgentMetadata.subAgentType,
-                    }
-                  : {}),
-              },
-            ),
-          )
-          append({ type: 'message.done', data: { messageId: nudgeMsgId } })
-          continue
-        }
+      // The new context window starts fresh — apply the current system prompt
+      // + tools so they are canonical and never stale there. Best-effort: a
+      // rebuild failure must not break the compaction itself.
+      try {
+        await config.rebuildCachedContext?.()
+      } catch (error) {
+        logger.error('Failed to rebuild cached context after compaction', {
+          sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        })
       }
 
-      const stats = turnMetrics.buildStats(statsIdentity, mode)
-      isDoneEmitted = true
-      append(
-        createMessageDoneEvent(assistantMsgId, {
-          segments: result.segments,
-          stats,
-        }),
-      )
-      append(createChatDoneEvent(assistantMsgId, 'complete', stats, agentType))
-      if (onMessage) {
-        onMessage(
-          createChatMessageUpdatedMessage(assistantMsgId, {
-            isStreaming: false,
-            stats,
-          }),
+      const closedWindowId = getCurrentContextWindowId(sessionId) ?? ''
+      const newWindowId = crypto.randomUUID()
+      const tokenCountAtClose = result.usage.promptTokens
+
+      append({
+        type: 'context.compacted',
+        data: { closedWindowId, newWindowId, beforeTokens: tokenCountAtClose, afterTokens: 0, summary },
+      })
+
+      append({
+        type: 'message.start',
+        data: {
+          messageId: assistantMsgId,
+          role: 'assistant',
+          content: summary,
+          contextWindowId: newWindowId,
+          isCompactionSummary: true,
+        },
+      })
+      append(createMessageDoneEvent(assistantMsgId, { stats: turnMetrics.buildStats(statsIdentity, mode) }))
+      append(createChatDoneEvent(assistantMsgId, 'complete', undefined, agentType))
+
+      // Reinject the agent reminder into the new window
+      config.injectAgentReminder?.()
+      compacting = false
+
+      // Manual compaction (initialCompacting) is a one-shot operation — break after done.
+      // Auto-compaction continues the loop for subsequent user messages.
+      if (config.initialCompacting) break
+      continue
+    }
+
+    // If sub-agent finished without calling return_value, nudge and retry
+    if (config.requireReturnValue && !returnValueContent) {
+      const maxNudges = config.maxReturnValueNudges ?? 10
+      if (returnValueNudgeCount < maxNudges) {
+        returnValueNudgeCount++
+        const nudgeMsgId = crypto.randomUUID()
+        append(
+          createMessageStartEvent(
+            nudgeMsgId,
+            'user',
+            'You must call return_value with a summary of your findings before finishing. Call return_value now.',
+            {
+              ...(currentWindowMessageOptions ?? {}),
+              isSystemGenerated: true,
+              messageKind: 'correction',
+              ...(config.subAgentMetadata
+                ? { subAgentId: config.subAgentMetadata.subAgentId, subAgentType: config.subAgentMetadata.subAgentType }
+                : {}),
+            },
+          ),
         )
-        onMessage(createChatDoneMessage(assistantMsgId, 'complete', stats, agentType))
+        append({ type: 'message.done', data: { messageId: nudgeMsgId } })
+        continue
       }
-
-      break
     }
 
-    return {
-      ...(returnValueContent ? { returnValueContent } : {}),
-      ...(returnValueResult ? { returnValueResult } : {}),
-    }
-  } finally {
-    if (!isDoneEmitted && lastAssistantMsgId && turnMetrics.hasCalls()) {
-      emitPartialDoneEvents(
-        sessionId,
-        lastAssistantMsgId,
-        statsIdentity,
-        mode,
-        turnMetrics,
-        append,
-        config.onMessage,
-        agentType,
-      )
-    }
+    const stats = turnMetrics.buildStats(statsIdentity, mode)
+    append(
+      createMessageDoneEvent(assistantMsgId, {
+        segments: result.segments,
+        stats,
+      }),
+    )
+    append(createChatDoneEvent(assistantMsgId, 'complete', stats, agentType))
+
+    break
+  }
+
+  return {
+    ...(returnValueContent ? { returnValueContent } : {}),
+    ...(returnValueResult ? { returnValueResult } : {}),
   }
 }
 
