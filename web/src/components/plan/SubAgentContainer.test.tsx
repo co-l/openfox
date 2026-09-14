@@ -4,18 +4,44 @@ import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ContextState, Message } from '@shared/types.js'
 
-const { contextStateFixture } = vi.hoisted(() => ({
+const { contextStateFixture, agentsFixture, configFixture, sessionFixture } = vi.hoisted(() => ({
   contextStateFixture: { subAgentContextStates: {} as Record<string, ContextState | undefined> },
+  agentsFixture: {
+    agents: [{ id: 'code_reviewer', name: 'Code Reviewer' }],
+    modelOverrides: {} as Record<string, string>,
+  },
+  configFixture: {
+    defaultModelSelection: null as string | null,
+  },
+  sessionFixture: {
+    currentSession: { id: 'sess-123' } as Record<string, unknown>,
+  },
 }))
 
 vi.mock('../../hooks/useAgents', () => ({
-  useAgents: () => ({ agents: [{ id: 'code_reviewer', name: 'Code Reviewer' }], refresh: vi.fn() }),
+  useAgents: () => ({
+    agents: agentsFixture.agents,
+    modelOverrides: agentsFixture.modelOverrides,
+    refresh: vi.fn(),
+  }),
+}))
+
+vi.mock('../../hooks/useConfig', () => ({
+  useConfig: () => ({
+    config: configFixture,
+    refresh: vi.fn(),
+    loading: false,
+  }),
 }))
 
 vi.mock('../../stores/session', () => ({
   useSessionStore: (
     selector: (state: { subAgentContextStates: Record<string, ContextState | undefined> }) => unknown,
   ) => selector(contextStateFixture),
+}))
+
+vi.mock('../../stores/session/session-scope', () => ({
+  useScopedContext: () => ({ sessionId: 'sess-123', currentSession: sessionFixture.currentSession }),
 }))
 
 vi.mock('../../hooks/useDisplaySettings', () => ({
@@ -114,5 +140,86 @@ describe('SubAgentContainer', () => {
     renderContainer()
 
     expect(screen.getByText('4x')).toBeInTheDocument()
+  })
+
+  it('renders model badge when message has stats', () => {
+    const messagesWithStats: Message[] = [
+      {
+        id: 'm1',
+        role: 'assistant',
+        content: 'Review findings',
+        timestamp: new Date().toISOString(),
+        subAgentId: 'code-reviewer-run-1',
+        subAgentType: 'code_reviewer',
+        stats: {
+          providerId: 'google',
+          providerName: 'Google',
+          backend: 'openai',
+          model: 'google/gemini-3.7-flash-medium',
+          reasoningEffort: 'medium',
+          mode: 'code_reviewer',
+          totalTime: 10,
+          toolTime: 2,
+          prefillTokens: 100,
+          prefillSpeed: 10,
+          generationTokens: 50,
+          generationSpeed: 5,
+        },
+      },
+    ]
+
+    render(
+      <SubAgentContainer
+        messages={messagesWithStats}
+        subAgentType="code_reviewer"
+        subAgentId="code-reviewer-run-1"
+        isStreaming={false}
+      />,
+    )
+
+    const badge = screen.getByTestId('subagent-model-badge')
+    expect(badge).toBeInTheDocument()
+    expect(badge).toHaveTextContent('gemini-3.7-flash-medium:medium')
+  })
+
+  it('renders model badge from agent model override when messages have no stats', () => {
+    agentsFixture.modelOverrides = {
+      code_reviewer: 'anthropic/claude-3-5-sonnet:high',
+    }
+
+    render(
+      <SubAgentContainer
+        messages={messages}
+        subAgentType="code_reviewer"
+        subAgentId="code-reviewer-run-1"
+        isStreaming={false}
+      />,
+    )
+
+    const badge = screen.getByTestId('subagent-model-badge')
+    expect(badge).toBeInTheDocument()
+    expect(badge).toHaveTextContent('claude-3-5-sonnet:high')
+  })
+
+  it('renders model badge from session provider model when no stats or agent override exist', () => {
+    agentsFixture.modelOverrides = {}
+    sessionFixture.currentSession = {
+      id: 'sess-123',
+      providerModel: 'openai/o3-mini',
+      providerReasoningEffort: 'low',
+    }
+
+    render(
+      <SubAgentContainer
+        messages={messages}
+        subAgentType="code_reviewer"
+        subAgentId="code-reviewer-run-1"
+        isStreaming={false}
+      />,
+    )
+
+    const badge = screen.getByTestId('subagent-model-badge')
+    expect(badge).toBeInTheDocument()
+    expect(badge).toHaveTextContent('o3-mini:low')
   })
 })
