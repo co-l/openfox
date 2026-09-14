@@ -1,5 +1,5 @@
 import { ScrollArea } from '../shared/ScrollArea'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Modal } from '../shared/SelfContainedModal'
 import { useT } from '../../hooks/useT'
 import { NotificationSettings } from './NotificationSettings'
@@ -13,19 +13,33 @@ import { PluginsTab } from './tabs/PluginsTab'
 import { useUpdateStore } from '../../stores/update'
 import { wsClient } from '../../lib/ws'
 
+export type SettingsTab =
+  'instructions' | 'skills' | 'plugins' | 'notifications' | 'display' | 'keybindings' | 'advanced' | 'tools'
+
+export const OPEN_SETTINGS_EVENT = 'open-global-settings'
+
+export function openSettings(tab?: SettingsTab) {
+  window.dispatchEvent(new CustomEvent(OPEN_SETTINGS_EVENT, { detail: { tab } }))
+}
+
 interface GlobalSettingsModalProps {
   isOpen: boolean
   onClose: () => void
+  initialTab?: SettingsTab
 }
 
-type Tab = 'instructions' | 'skills' | 'plugins' | 'notifications' | 'display' | 'keybindings' | 'advanced' | 'tools'
+export function GlobalSettingsModal({ isOpen, onClose, initialTab }: GlobalSettingsModalProps) {
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab ?? 'instructions')
 
-export function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsModalProps) {
-  const [activeTab, setActiveTab] = useState<Tab>('instructions')
+  useEffect(() => {
+    if (isOpen && initialTab) {
+      setActiveTab(initialTab)
+    }
+  }, [isOpen, initialTab])
   const updateAvailable = useUpdateStore((state) => state.status === 'available')
   const t = useT()
 
-  const tabs: { id: Tab; label: string; showDot?: boolean }[] = [
+  const tabs: { id: SettingsTab; label: string; showDot?: boolean }[] = [
     { id: 'instructions', label: t({ en: 'Instructions', fr: 'Instructions' }) },
     { id: 'tools', label: t({ en: 'Tools', fr: 'Outils' }) },
     { id: 'skills', label: t({ en: 'Skills', fr: 'Compétences' }) },

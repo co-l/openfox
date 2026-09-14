@@ -34,7 +34,7 @@ async function renderProviderModal(props: Partial<ComponentProps<typeof Provider
       isOpen={true}
       onClose={vi.fn()}
       onSave={onSaveMock as (provider: ProviderFormData) => void}
-      initialStep={2}
+      initialStep={props.initialStep ?? 2}
       {...props}
     />,
   )
@@ -1561,5 +1561,94 @@ describe('ProviderModal - model mode merge', () => {
     expect(savedData.models.length).toBe(1)
     expect(savedData.models[0]?.id).toBe('model-kept')
     expect(savedData.models[0]?.selected).toBe(true)
+  })
+})
+
+describe('ProviderModal - plugins and proxy informational banners (Step 1)', () => {
+  setupRoot()
+
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/api/provider-presets')) {
+          return new Response(JSON.stringify({ presets: [] }), { status: 200 })
+        }
+        return new Response(JSON.stringify({}), { status: 200 })
+      }),
+    )
+  })
+
+  it('renders plugins banner and dispatches open-settings event on click', async () => {
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent')
+    const onCloseMock = vi.fn()
+
+    await renderProviderModal({ initialStep: 1, onClose: onCloseMock }, 100)
+
+    const pluginsBanner = document.body.querySelector('[data-testid="provider-modal-plugins-banner"]')
+    expect(pluginsBanner).toBeTruthy()
+    expect(pluginsBanner?.textContent).toContain("Can't find your AI provider?")
+
+    const pluginsBtn = pluginsBanner?.querySelector('button')
+    expect(pluginsBtn).toBeTruthy()
+    pluginsBtn?.click()
+
+    expect(onCloseMock).toHaveBeenCalledTimes(1)
+    expect(dispatchSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'open-global-settings',
+        detail: { tab: 'plugins' },
+      }),
+    )
+  })
+
+  it('renders proxy banner when no providers are configured', async () => {
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent')
+    const onCloseMock = vi.fn()
+
+    await renderProviderModal({ initialStep: 1, onClose: onCloseMock }, 100)
+
+    const proxyBanner = document.body.querySelector('[data-testid="provider-modal-proxy-banner"]')
+    expect(proxyBanner).toBeTruthy()
+    expect(proxyBanner?.textContent).toContain('Behind a corporate proxy?')
+
+    const proxyBtn = proxyBanner?.querySelector('button')
+    expect(proxyBtn).toBeTruthy()
+    proxyBtn?.click()
+
+    expect(onCloseMock).toHaveBeenCalledTimes(1)
+    expect(dispatchSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'open-global-settings',
+        detail: { tab: 'advanced' },
+      }),
+    )
+  })
+
+  it('hides proxy banner when at least one provider is configured', async () => {
+    const { providersResource } = await import('../../lib/resources')
+    providersResource.write({
+      providers: [
+        {
+          id: 'existing-provider',
+          name: 'Existing Provider',
+          url: 'http://localhost:8000',
+          backend: 'vllm',
+          models: [],
+          isActive: true,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+      activeProviderId: 'existing-provider',
+    })
+
+    await renderProviderModal({ initialStep: 1 }, 100)
+
+    const proxyBanner = document.body.querySelector('[data-testid="provider-modal-proxy-banner"]')
+    expect(proxyBanner).toBeNull()
+
+    // Reset providers resource cache after test
+    providersResource.write({ providers: [], activeProviderId: null })
   })
 })

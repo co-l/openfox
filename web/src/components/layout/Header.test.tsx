@@ -761,4 +761,17 @@ describe('Header mobile menu', () => {
     const tasksItem = Array.from(menu!.querySelectorAll('button')).find((b) => b.textContent?.includes('Tasks'))
     expect(tasksItem?.textContent).toContain('3')
   })
+
+  it('opens GlobalSettingsModal on OPEN_SETTINGS_EVENT with target tab', async () => {
+    const { Header } = await import('./Header')
+    const { OPEN_SETTINGS_EVENT } = await import('../settings/GlobalSettingsModal')
+    render(<Header />)
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent(OPEN_SETTINGS_EVENT, { detail: { tab: 'plugins' } }))
+    })
+
+    const settingsModal = document.querySelector('[data-global-settings]')
+    expect(settingsModal).toBeTruthy()
+  })
 })
