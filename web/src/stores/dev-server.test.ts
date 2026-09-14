@@ -28,6 +28,7 @@ const STATUS_RUNNING: DevServerStatus = {
   config: CONFIG,
   errorMessage: undefined,
   inspectProxyPort: 9333,
+  tailscalePreview: { status: 'idle' },
 }
 
 const STATUS_STOPPED: DevServerStatus = {
@@ -37,6 +38,7 @@ const STATUS_STOPPED: DevServerStatus = {
   config: null,
   errorMessage: undefined,
   inspectProxyPort: null,
+  tailscalePreview: { status: 'idle' },
 }
 
 const logsOf = (workdir: string) => useDevServerStore.getState().logsByWorkdir[workdir] ?? []

@@ -26,6 +26,7 @@ const STATUS_OFF: DevServerStatus = {
   config: null,
   errorMessage: undefined,
   inspectProxyPort: null,
+  tailscalePreview: { status: 'idle' },
 }
 
 const STATUS_RUNNING: DevServerStatus = {
@@ -35,6 +36,7 @@ const STATUS_RUNNING: DevServerStatus = {
   config: CONFIG,
   errorMessage: undefined,
   inspectProxyPort: null,
+  tailscalePreview: { status: 'idle' },
 }
 
 const jsonResponse = (body: unknown) => ({ ok: true, json: async () => body }) as Response

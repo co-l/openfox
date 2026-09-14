@@ -18,8 +18,9 @@ export const devServerTool = createTool<DevServerArgs>(
         'Control the project dev server. Start, stop, restart, check status, or fetch logs with optional pagination. ' +
         'Each workdir (project root or workspace) gets its own independent dev server instance with auto-assigned ports. ' +
         'The dev server is configured via .openfox/dev.json — searched in the current workdir first, falling back to the project root. ' +
-        'Fields: command (string, required), url (string, required), hotReload (boolean, optional, default false), disableInspect (boolean, optional, default false). ' +
-        'You can use ${PORT} in command and url — it will be replaced with an available port at runtime (auto-assigned if the configured port is taken).',
+        'Fields: command (string, required), url (string, required), hotReload (boolean, optional, default false), disableInspect (boolean, optional, default false), tailscaleExpose (boolean, optional, default false). ' +
+        'You can use ${PORT} in command and url — it will be replaced with an available port at runtime (auto-assigned if the configured port is taken). ' +
+        'When tailscaleExpose is true, a tailnet-only Tailscale preview is auto-launched on Start and auto-torn-down on Stop / crash / stopAll. The dev server lifecycle stays unchanged; Tailscale failures never block the dev server.',
       parameters: {
         type: 'object',
         properties: {
@@ -94,33 +95,36 @@ export const devServerTool = createTool<DevServerArgs>(
 
     if (!status.config) {
       return helpers.error(
-        serverT(
+serverT(
           {
             en: 'No .openfox/dev.json config found. Create one in the project root:\n\n{{config}}\n\n(Worktrees inherit the project root config automatically.)',
             fr: 'Aucun fichier .openfox/dev.json trouvé. Créez-en un à la racine du projet :\n\n{{config}}\n\n(Les worktrees héritent automatiquement de la configuration du projet.)',
           },
           {
             config: JSON.stringify(
-              { command: 'npm run dev', url: 'http://localhost:3000', hotReload: true, disableInspect: false },
+              {
+                command: 'npm run dev',
+                url: 'http://localhost:3000',
+                hotReload: true,
+                disableInspect: false,
+                tailscaleExpose: false,
+              },
               null,
               2,
             ),
           },
-        ),
+        )
       )
     }
 
-    return helpers.success(
-      JSON.stringify(
-        {
-          state: status.state,
-          url: status.url,
-          hotReload: status.hotReload,
-          ...(status.errorMessage ? { error: status.errorMessage } : {}),
-        },
-        null,
-        2,
-      ),
-    )
+    const result: Record<string, unknown> = {
+      state: status.state,
+      url: status.url,
+      hotReload: status.hotReload,
+      tailscalePreview: status.tailscalePreview,
+      ...(status.errorMessage ? { error: status.errorMessage } : {}),
+    }
+
+    return helpers.success(JSON.stringify(result, null, 2))
   },
 )

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { DevServerConfig, DevServerStatus } from '@shared/dev-server.js'
+import { idlePreview } from '@shared/dev-server.js'
 import type { ServerMessage, DevServerOutputPayload, DevServerStatePayload } from '@shared/protocol.js'
 // Authorized exception: dev-server logs are WS-streamed and append-only, so they
 // stay here (rAF-batched, capped); status/config live in the resource cache and
@@ -146,7 +147,7 @@ export const useDevServerStore = create<DevServerStore>()((set, get) => {
         }
         case 'devServer.state': {
           const payload = message.payload as DevServerStatePayload
-          const current = snapshot<DevServerStatus>(devServerStatusResource.keyOf(payload.workdir)).data
+const current = snapshot<DevServerStatus>(devServerStatusResource.keyOf(payload.workdir)).data
           const next: DevServerStatus = current
             ? {
                 ...current,
@@ -154,6 +155,7 @@ export const useDevServerStore = create<DevServerStore>()((set, get) => {
                 errorMessage: payload.errorMessage,
                 ...(payload.url !== undefined ? { url: payload.url } : {}),
                 ...(payload.inspectProxyPort !== undefined ? { inspectProxyPort: payload.inspectProxyPort } : {}),
+                tailscalePreview: payload.tailscalePreview ?? current.tailscalePreview ?? idlePreview(),
               }
             : {
                 state: payload.state,
@@ -162,6 +164,7 @@ export const useDevServerStore = create<DevServerStore>()((set, get) => {
                 config: null,
                 errorMessage: payload.errorMessage,
                 inspectProxyPort: payload.inspectProxyPort ?? null,
+                tailscalePreview: payload.tailscalePreview ?? idlePreview(),
               }
           devServerStatusResource.write(next, payload.workdir)
           break

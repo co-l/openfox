@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 import { useDevServerStore } from '../../stores/dev-server'
 import { useDevServer } from '../../hooks/useDevServer'
 import { useT } from '../../hooks/useT'
-import { GearIcon, StopIcon, OpenExternalIcon } from '../shared/icons'
+import { GearIcon, StopIcon, OpenExternalIcon, CopyIcon, CheckIcon } from '../shared/icons'
 import { DevServerConfigModal } from './DevServerConfigModal'
 import { LogViewer } from './LogViewer'
 import { LogRenderer } from '../shared/LogRenderer'
@@ -13,6 +13,7 @@ import { AutoScrollToggle } from '../shared/AutoScrollToggle'
 import { useAutoScroll, scrollbarGestureToEnable } from '../../hooks/useAutoScroll'
 import type { ScrollbarGestureKind } from '../../hooks/useAutoScroll'
 import { ansiToReact } from '../../lib/ansiParser'
+import type { TailscalePreview } from '@shared/dev-server.js'
 
 interface DevServerFooterProps {
   workdir?: string
@@ -138,6 +139,8 @@ export const DevServerFooter = memo(function DevServerFooter({
   const stop = useDevServerStore((s) => s.stop)
   const clearLogs = useDevServerStore((s) => s.clearLogs)
   const insertMarker = useDevServerStore((s) => s.insertMarker)
+  const [previewCopied, setPreviewCopied] = useState(false)
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const handleClearLogs = () => {
     if (!workdir) return
@@ -169,6 +172,25 @@ export const DevServerFooter = memo(function DevServerFooter({
     const base = `${window.location.protocol}//${window.location.hostname}:${proxyPort}`
     window.open(base, '_blank')
   }
+
+  const handleCopyPreview = useCallback(async (url: string) => {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard) {
+        await navigator.clipboard.writeText(url)
+      }
+      setPreviewCopied(true)
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current)
+      copyTimeoutRef.current = setTimeout(() => setPreviewCopied(false), 1500)
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current)
+    }
+  }, [])
 
   const state = status?.state ?? 'off'
   const hasConfig = config !== null
@@ -244,6 +266,16 @@ export const DevServerFooter = memo(function DevServerFooter({
             >
               {t({ en: 'Start', fr: 'Démarrer' })}
             </button>
+          )}
+
+          {/* Tailscale preview — secondary information only. No controls. */}
+          {(state === 'running' || state === 'warning') && (
+            <TailscalePreviewInfo
+              preview={status?.tailscalePreview}
+              onCopy={handleCopyPreview}
+              copied={previewCopied}
+              t={t}
+            />
           )}
         </>
       ) : (
@@ -337,4 +369,57 @@ export const DevServerFooter = memo(function DevServerFooter({
       )}
     </div>
   )
+})
+
+interface TailscalePreviewInfoProps {
+  preview: TailscalePreview | undefined
+  onCopy: (url: string) => void
+  copied: boolean
+  t: (msg: { en: string; fr: string }) => string
+}
+
+/**
+ * Read-only secondary info about the Tailscale preview. No controls:
+ * - active → Tailnet <url> with a small Copy button
+ * - error → one-line "Tailnet Preview unavailable — <short reason>"
+ * - starting / idle / off → nothing
+ */
+const TailscalePreviewInfo = memo(function TailscalePreviewInfo({
+  preview,
+  onCopy,
+  copied,
+  t,
+}: TailscalePreviewInfoProps) {
+  const status = preview?.status ?? 'idle'
+
+  if (status === 'active' && preview?.url) {
+    const url = preview.url
+    return (
+      <div className="rounded border border-border bg-bg-primary p-2">
+        <div className="flex items-center justify-between gap-2 text-xs">
+          <span className="font-semibold text-text-primary">{t({ en: 'Tailnet', fr: 'Tailnet' })}</span>
+          <button
+            onClick={() => onCopy(url)}
+            className="text-text-muted hover:text-text-primary flex items-center gap-1 px-1 py-0.5 rounded hover:bg-bg-tertiary transition-colors"
+            title={t({ en: 'Copy URL', fr: 'Copier l’URL' })}
+          >
+            {copied ? <CheckIcon /> : <CopyIcon />}
+            <span>{copied ? t({ en: 'Copied', fr: 'Copié' }) : t({ en: 'Copy', fr: 'Copier' })}</span>
+          </button>
+        </div>
+        <div className="font-mono text-xs text-text-primary break-all select-all mt-1">{url}</div>
+      </div>
+    )
+  }
+
+  if (status === 'error') {
+    const shortReason = (preview?.error ?? 'unavailable').split('\n')[0] ?? 'unavailable'
+    return (
+      <div className="text-[10px] text-text-muted" title={preview?.error ?? ''}>
+        {t({ en: 'Tailnet Preview unavailable', fr: 'Aperçu Tailnet indisponible' })} — {shortReason}
+      </div>
+    )
+  }
+
+  return null
 })
