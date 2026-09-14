@@ -45,49 +45,54 @@ const allDead =
 
 /** Collect all descendant PIDs via ps (Unix) or CIM (Windows, where ps does not exist) */
 async function getDescendants(rootPid: number): Promise<number[]> {
-  const [cmd, args] =
-    process.platform === 'win32'
-      ? ([
-          'powershell.exe',
-          [
-            '-NoProfile',
-            '-Command',
-            'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }',
-          ],
-        ] as const)
-      : (['ps', ['-eo', 'pid=,ppid=']] as const)
-  const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
-    execFile(cmd, [...args], { timeout: 15000, windowsHide: true }, (err, stdout) => {
-      if (err) reject(err)
-      else resolve({ stdout })
+  try {
+    const [cmd, args] =
+      process.platform === 'win32'
+        ? ([
+            'powershell.exe',
+            [
+              '-NonInteractive',
+              '-NoProfile',
+              '-Command',
+              'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }',
+            ],
+          ] as const)
+        : (['ps', ['-eo', 'pid=,ppid=']] as const)
+    const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
+      execFile(cmd, [...args], { timeout: 15000, windowsHide: true }, (err, stdout) => {
+        if (err) reject(err)
+        else resolve({ stdout })
+      })
     })
-  })
-  const children = new Map<number, number[]>()
-  for (const line of stdout.trim().split('\n')) {
-    const parts = line.trim().split(/\s+/)
-    const pid = parseInt(parts[0]!, 10)
-    const ppid = parseInt(parts[1]!, 10)
-    if (!isNaN(pid) && !isNaN(ppid) && pid > 0 && ppid >= 0) {
-      if (!children.has(ppid)) children.set(ppid, [])
-      children.get(ppid)!.push(pid)
-    }
-  }
-  const descendants: number[] = []
-  const seen = new Set<number>([rootPid])
-  const queue = [rootPid]
-  while (queue.length > 0) {
-    const current = queue.shift()!
-    const kids = children.get(current)
-    if (kids) {
-      for (const kid of kids) {
-        if (seen.has(kid)) continue
-        seen.add(kid)
-        descendants.push(kid)
-        queue.push(kid)
+    const children = new Map<number, number[]>()
+    for (const line of stdout.trim().split('\n')) {
+      const parts = line.trim().split(/\s+/)
+      const pid = parseInt(parts[0]!, 10)
+      const ppid = parseInt(parts[1]!, 10)
+      if (!isNaN(pid) && !isNaN(ppid) && pid > 0 && ppid >= 0) {
+        if (!children.has(ppid)) children.set(ppid, [])
+        children.get(ppid)!.push(pid)
       }
     }
+    const descendants: number[] = []
+    const seen = new Set<number>([rootPid])
+    const queue = [rootPid]
+    while (queue.length > 0) {
+      const current = queue.shift()!
+      const kids = children.get(current)
+      if (kids) {
+        for (const kid of kids) {
+          if (seen.has(kid)) continue
+          seen.add(kid)
+          descendants.push(kid)
+          queue.push(kid)
+        }
+      }
+    }
+    return descendants
+  } catch {
+    return []
   }
-  return descendants
 }
 
 // Node-based process tree: a parent that spawns two long-lived children which
