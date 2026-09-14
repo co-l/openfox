@@ -19,6 +19,9 @@ import {
   templateVariablesResource,
   workflowResource,
   workflowDefaultResource,
+  providersResource,
+  readWorkflows,
+  revalidateWorkflows,
 } from '../../lib/resources'
 import { ArrowRightIcon, EyeIcon } from '../shared/icons'
 import { CollapsibleSection } from '../shared/CollapsibleSection'
@@ -99,20 +102,30 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId, projectDir }: W
   const [formSteps, setFormSteps] = useState<WorkflowStep[]>(DEFAULT_STEPS)
   const [formStartCondition, setFormStartCondition] = useState<WorkflowCondition>({ type: 'always' })
   const [formParameters, setFormParameters] = useState<WorkflowParameter[]>([])
+  const [paramOptionsText, setParamOptionsText] = useState<Record<string, string>>({})
   const [formDestination, setFormDestination] = useState<'project' | 'user'>('user')
   const [formError, setFormError] = useState('')
   const [_saving, setSaving] = useState(false)
   const { data } = useResource(agentsResource, projectDir)
   const agentTypes = useMemo(() => (data ? [...data.defaults, ...data.userItems, ...data.projectItems] : []), [data])
+  const { data: providersData } = useResource(providersResource)
+  const providers = useMemo(() => providersData?.providers ?? [], [providersData])
 
   const [_confirmDeleteId] = useState<string | null>(null)
 
   useEffect(() => {
-    if (isOpen) {
-      setSelectedNodeKey(null)
-      setSelectedEdgeKey(null)
+    if (!isOpen) return
+    setSelectedNodeKey(null)
+    setSelectedEdgeKey(null)
+    let cancelled = false
+    // The edit branch (copy-of-default vs in-place) must not be decided from a
+    // stale list, and the rows must not be stale either: revalidate first, then
+    // branch off the freshly fetched snapshot.
+    void revalidateWorkflows(projectDir).then(() => {
+      if (cancelled) return
       if (initialEditId) {
-        const isDefault = defaults.some((d) => d.id === initialEditId)
+        const freshDefaults = readWorkflows(projectDir)?.defaults ?? []
+        const isDefault = freshDefaults.some((d) => d.id === initialEditId)
         if (isDefault) {
           workflowDefaultResource.refresh(initialEditId, projectDir).then((workflow) => {
             if (!workflow) return
@@ -139,6 +152,9 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId, projectDir }: W
         setEditingId(null)
         setIsReadOnly(false)
       }
+    })
+    return () => {
+      cancelled = true
     }
   }, [isOpen, initialEditId, projectDir])
 
@@ -169,6 +185,7 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId, projectDir }: W
     setFormSteps(workflow.steps)
     setFormStartCondition(workflow.startCondition ?? { type: 'always' })
     setFormParameters(workflow.metadata.parameters ?? [])
+    setParamOptionsText({})
     setFormError('')
     if (extra?.editingId !== undefined) setEditingId(extra.editingId)
     if (extra?.isReadOnly !== undefined) setIsReadOnly(extra.isReadOnly)
@@ -575,101 +592,203 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId, projectDir }: W
               title={t({ en: 'Parameters ({{n}})', fr: 'Paramètres ({{n}})' }, { n: formParameters.length })}
             >
               {formParameters.map((p, i) => (
-                <div key={p.id} className="flex items-center gap-2 text-sm">
-                  <input
-                    value={p.id}
-                    onChange={(e) => {
-                      const next = [...formParameters]
-                      next[i] = { ...p, id: e.target.value }
-                      setFormParameters(next)
-                    }}
-                    placeholder={t({ en: 'ID', fr: 'ID' })}
-                    className="w-28 px-2 py-1 bg-bg-tertiary border border-border rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-accent-primary"
-                  />
-                  <input
-                    value={p.label}
-                    onChange={(e) => {
-                      const next = [...formParameters]
-                      next[i] = { ...p, label: e.target.value }
-                      setFormParameters(next)
-                    }}
-                    placeholder={t({ en: 'Label', fr: 'Libellé' })}
-                    className="w-36 px-2 py-1 bg-bg-tertiary border border-border rounded text-xs focus:outline-none focus:ring-1 focus:ring-accent-primary"
-                  />
-                  <input
-                    value={p.description ?? ''}
-                    onChange={(e) => {
-                      const next = [...formParameters]
-                      next[i] = { ...p, description: e.target.value || undefined }
-                      setFormParameters(next)
-                    }}
-                    placeholder={t({ en: 'Description', fr: 'Description' })}
-                    className="flex-1 px-2 py-1 bg-bg-tertiary border border-border rounded text-xs focus:outline-none focus:ring-1 focus:ring-accent-primary"
-                  />
-                  <label className="flex items-center gap-1 text-[10px] text-text-muted whitespace-nowrap">
+                <div key={p.id} className="space-y-1.5 p-2 rounded bg-bg-primary/40 border border-border/50 text-sm">
+                  <div className="flex items-center gap-2">
                     <input
-                      type="checkbox"
-                      checked={p.required ?? false}
+                      value={p.id}
                       onChange={(e) => {
                         const next = [...formParameters]
-                        next[i] = { ...p, required: e.target.checked || undefined }
+                        next[i] = { ...p, id: e.target.value }
                         setFormParameters(next)
                       }}
-                      className="rounded border-border"
+                      placeholder={t({ en: 'ID', fr: 'ID' })}
+                      className="w-28 px-2 py-1 bg-bg-tertiary border border-border rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-accent-primary"
                     />
-                    {t({ en: 'Req.', fr: 'Oblig.' })}
-                  </label>
-                  <div className="flex gap-0.5">
-                    <button
-                      onClick={() => {
-                        if (i === 0) return
-                        setFormParameters(
-                          formParameters.map((p, idx) => {
-                            if (idx === i) return { ...formParameters[i - 1]!, position: idx }
-                            if (idx === i - 1) return { ...formParameters[i]!, position: idx }
-                            return { ...p, position: idx }
-                          }),
-                        )
+                    <input
+                      value={p.label}
+                      onChange={(e) => {
+                        const next = [...formParameters]
+                        next[i] = { ...p, label: e.target.value }
+                        setFormParameters(next)
                       }}
-                      disabled={i === 0}
-                      className="p-1 text-text-muted hover:text-text-primary disabled:opacity-30 transition-colors"
-                      title={t({ en: 'Move up', fr: 'Monter' })}
-                      aria-label={t({ en: `Move ${p.label || p.id} up`, fr: `Monter ${p.label || p.id}` })}
-                    >
-                      ▲
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (i === formParameters.length - 1) return
-                        setFormParameters(
-                          formParameters.map((p, idx) => {
-                            if (idx === i) return { ...formParameters[i + 1]!, position: idx }
-                            if (idx === i + 1) return { ...formParameters[i]!, position: idx }
-                            return { ...p, position: idx }
-                          }),
-                        )
+                      placeholder={t({ en: 'Label', fr: 'Libellé' })}
+                      className="w-36 px-2 py-1 bg-bg-tertiary border border-border rounded text-xs focus:outline-none focus:ring-1 focus:ring-accent-primary"
+                    />
+                    <select
+                      value={p.type ?? 'input'}
+                      onChange={(e) => {
+                        const next = [...formParameters]
+                        const nextType = e.target.value as 'input' | 'textarea' | 'checkbox' | 'select'
+                        next[i] = {
+                          ...p,
+                          type: nextType,
+                          default: nextType === 'checkbox' ? false : undefined,
+                          options: nextType === 'select' ? (p.options ?? []) : undefined,
+                        }
+                        setFormParameters(next)
                       }}
-                      disabled={i === formParameters.length - 1}
-                      className="p-1 text-text-muted hover:text-text-primary disabled:opacity-30 transition-colors"
-                      title={t({ en: 'Move down', fr: 'Descendre' })}
-                      aria-label={t({ en: `Move ${p.label || p.id} down`, fr: `Descendre ${p.label || p.id}` })}
+                      className="w-28 px-2 py-1 bg-bg-tertiary border border-border rounded text-xs focus:outline-none focus:ring-1 focus:ring-accent-primary"
                     >
-                      ▼
+                      <option value="input">{t({ en: 'Text Input', fr: 'Texte court' })}</option>
+                      <option value="textarea">{t({ en: 'Text Area', fr: 'Zone de texte' })}</option>
+                      <option value="checkbox">{t({ en: 'Checkbox', fr: 'Case à cocher' })}</option>
+                      <option value="select">{t({ en: 'Dropdown List', fr: 'Liste déroulante' })}</option>
+                    </select>
+                    <input
+                      value={p.description ?? ''}
+                      onChange={(e) => {
+                        const next = [...formParameters]
+                        next[i] = { ...p, description: e.target.value || undefined }
+                        setFormParameters(next)
+                      }}
+                      placeholder={t({ en: 'Description', fr: 'Description' })}
+                      className="flex-1 px-2 py-1 bg-bg-tertiary border border-border rounded text-xs focus:outline-none focus:ring-1 focus:ring-accent-primary"
+                    />
+                    <label className="flex items-center gap-1 text-[10px] text-text-muted whitespace-nowrap">
+                      <input
+                        type="checkbox"
+                        checked={p.required ?? false}
+                        onChange={(e) => {
+                          const next = [...formParameters]
+                          next[i] = { ...p, required: e.target.checked || undefined }
+                          setFormParameters(next)
+                        }}
+                        className="rounded border-border"
+                      />
+                      {t({ en: 'Req.', fr: 'Oblig.' })}
+                    </label>
+                    <div className="flex gap-0.5">
+                      <button
+                        onClick={() => {
+                          if (i === 0) return
+                          setFormParameters(
+                            formParameters.map((param, idx) => {
+                              if (idx === i) return { ...formParameters[i - 1]!, position: idx }
+                              if (idx === i - 1) return { ...formParameters[i]!, position: idx }
+                              return { ...param, position: idx }
+                            }),
+                          )
+                        }}
+                        disabled={i === 0}
+                        className="p-1 text-text-muted hover:text-text-primary disabled:opacity-30 transition-colors"
+                        title={t({ en: 'Move up', fr: 'Monter' })}
+                        aria-label={t({ en: `Move ${p.label || p.id} up`, fr: `Monter ${p.label || p.id}` })}
+                      >
+                        ▲
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (i === formParameters.length - 1) return
+                          setFormParameters(
+                            formParameters.map((param, idx) => {
+                              if (idx === i) return { ...formParameters[i + 1]!, position: idx }
+                              if (idx === i + 1) return { ...formParameters[i]!, position: idx }
+                              return { ...param, position: idx }
+                            }),
+                          )
+                        }}
+                        disabled={i === formParameters.length - 1}
+                        className="p-1 text-text-muted hover:text-text-primary disabled:opacity-30 transition-colors"
+                        title={t({ en: 'Move down', fr: 'Descendre' })}
+                        aria-label={t({ en: `Move ${p.label || p.id} down`, fr: `Descendre ${p.label || p.id}` })}
+                      >
+                        ▼
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => setFormParameters(formParameters.filter((_, j) => j !== i))}
+                      className="p-1 text-text-muted hover:text-accent-error transition-colors"
+                      title={t({ en: 'Remove parameter', fr: 'Supprimer le paramètre' })}
+                    >
+                      ✕
                     </button>
                   </div>
-                  <button
-                    onClick={() => setFormParameters(formParameters.filter((_, j) => j !== i))}
-                    className="p-1 text-text-muted hover:text-accent-error transition-colors"
-                    title={t({ en: 'Remove parameter', fr: 'Supprimer le paramètre' })}
-                  >
-                    ✕
-                  </button>
+
+                  {/* Type-specific configuration (Default values, Select options) */}
+                  <div className="flex items-center gap-2 pl-2 border-l-2 border-accent-primary/40 text-xs">
+                    {p.type === 'checkbox' ? (
+                      <label className="flex items-center gap-1.5 text-text-secondary cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={p.default === true || p.defaultValue === true}
+                          onChange={(e) => {
+                            const next = [...formParameters]
+                            next[i] = { ...p, default: e.target.checked }
+                            setFormParameters(next)
+                          }}
+                          className="rounded border-border text-accent-primary focus:ring-accent-primary"
+                        />
+                        <span>{t({ en: 'Checked by default', fr: 'Coché par défaut' })}</span>
+                      </label>
+                    ) : p.type === 'select' ? (
+                      <>
+                        <div className="flex-1 flex items-center gap-1.5">
+                          <span className="text-text-muted whitespace-nowrap">
+                            {t({ en: 'Options (comma-separated):', fr: 'Options (séparées par des virgules) :' })}
+                          </span>
+                          <input
+                            type="text"
+                            value={paramOptionsText[p.id] ?? (p.options ?? []).join(', ')}
+                            onChange={(e) => {
+                              const raw = e.target.value
+                              setParamOptionsText((prev) => ({ ...prev, [p.id]: raw }))
+                              const opts = raw
+                                .split(',')
+                                .map((s) => s.trim())
+                                .filter(Boolean)
+                              const next = [...formParameters]
+                              next[i] = { ...p, options: opts }
+                              setFormParameters(next)
+                            }}
+                            placeholder={t({ en: 'Option 1, Option 2, Option 3', fr: 'Option 1, Option 2, Option 3' })}
+                            className="flex-1 px-2 py-0.5 bg-bg-tertiary border border-border rounded text-xs focus:outline-none focus:ring-1 focus:ring-accent-primary"
+                          />
+                        </div>
+                        <div className="w-48 flex items-center gap-1.5">
+                          <span className="text-text-muted whitespace-nowrap">
+                            {t({ en: 'Default:', fr: 'Défaut :' })}
+                          </span>
+                          <input
+                            type="text"
+                            value={typeof p.default === 'string' ? p.default : ''}
+                            onChange={(e) => {
+                              const next = [...formParameters]
+                              next[i] = { ...p, default: e.target.value || undefined }
+                              setFormParameters(next)
+                            }}
+                            placeholder={p.options?.[0] ?? ''}
+                            className="w-full px-2 py-0.5 bg-bg-tertiary border border-border rounded text-xs focus:outline-none focus:ring-1 focus:ring-accent-primary"
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex-1 flex items-center gap-1.5">
+                        <span className="text-text-muted whitespace-nowrap">
+                          {t({ en: 'Default value:', fr: 'Valeur par défaut :' })}
+                        </span>
+                        <input
+                          type="text"
+                          value={typeof p.default === 'string' ? p.default : ''}
+                          onChange={(e) => {
+                            const next = [...formParameters]
+                            next[i] = { ...p, default: e.target.value || undefined }
+                            setFormParameters(next)
+                          }}
+                          placeholder={t({ en: 'Optional default text...', fr: 'Texte par défaut optionnel...' })}
+                          className="flex-1 px-2 py-0.5 bg-bg-tertiary border border-border rounded text-xs focus:outline-none focus:ring-1 focus:ring-accent-primary"
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
               <button
                 onClick={() => {
                   const id = `param_${formParameters.length + 1}`
-                  setFormParameters([...formParameters, { id, label: '', description: '', required: false }])
+                  setFormParameters([
+                    ...formParameters,
+                    { id, label: '', description: '', required: false, type: 'input' },
+                  ])
                 }}
                 className="text-xs text-accent-primary hover:text-accent-primary/80 transition-colors"
               >
@@ -693,7 +812,7 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId, projectDir }: W
                 </button>
               )}
             </div>
-            <ScrollArea className="flex-1 min-h-0 p-2">
+            <div className="flex-1 min-h-0 p-2 overflow-hidden flex flex-col">
               <FlowDiagram
                 steps={formSteps}
                 entryStep={formEntryStep}
@@ -702,6 +821,18 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId, projectDir }: W
                 startConditionLabel={startConditionLabel}
                 agentTypes={agentTypes}
                 isReadOnly={isReadOnly}
+                onUpdateStepPosition={(stepId, position) => {
+                  setFormSteps((prev) => prev.map((s) => (s.id === stepId ? { ...s, position } : s)))
+                }}
+                onResetStepPositions={() => {
+                  setFormSteps((prev) =>
+                    prev.map((s) => {
+                      if (!s.position) return s
+                      const { position: _pos, ...rest } = s
+                      return rest
+                    }),
+                  )
+                }}
                 onSelectNode={(id) => {
                   if (id === null) {
                     selectNode(null)
@@ -736,7 +867,7 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId, projectDir }: W
                   </button>
                 </div>
               )}
-            </ScrollArea>
+            </div>
           </div>
 
           <div className="w-[300px] shrink-0 border border-border rounded-lg bg-bg-secondary flex flex-col overflow-hidden">
@@ -957,6 +1088,7 @@ export function WorkflowsModal({ isOpen, onClose, initialEditId, projectDir }: W
                   step={selectedStep}
                   isEntry={selectedStep.id === formEntryStep}
                   agentTypes={agentTypes}
+                  providers={providers}
                   transitionCount={selectedStep.transitions.length}
                   templateVariables={templateVariables}
                   onUpdate={updateStep}

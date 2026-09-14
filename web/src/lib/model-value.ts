@@ -11,37 +11,14 @@
  * so the UI accepts exactly the values the server validates.
  */
 
-import { REASONING_EFFORT_VALUES, isReasoningEffortValue } from '@shared/reasoning-effort.js'
+import {
+  REASONING_EFFORT_VALUES,
+  isReasoningEffortValue,
+  formatModelValue,
+  parseModelValue,
+  type ReasoningEffortValue,
+  type ModelValue,
+} from '@shared/model-value.js'
 
-export { REASONING_EFFORT_VALUES, isReasoningEffortValue }
-
-export type ReasoningEffortValue = (typeof REASONING_EFFORT_VALUES)[number]
-
-export interface ModelValue {
-  providerId: string
-  model: string
-  reasoningEffort?: string
-}
-
-export function formatModelValue(providerId: string, model: string, reasoningEffort?: string): string {
-  const suffix = reasoningEffort && isReasoningEffortValue(reasoningEffort) ? `:${reasoningEffort}` : ''
-  return `${providerId}/${model}${suffix}`
-}
-
-export function parseModelValue(value: string | undefined | null): ModelValue | undefined {
-  if (!value) return undefined
-  const slashIndex = value.indexOf('/')
-  if (slashIndex <= 0) return undefined
-  const providerId = value.substring(0, slashIndex)
-  const rest = value.substring(slashIndex + 1)
-  if (!rest) return undefined
-
-  const colonIndex = rest.lastIndexOf(':')
-  if (colonIndex > 0) {
-    const candidate = rest.substring(colonIndex + 1)
-    if (isReasoningEffortValue(candidate)) {
-      return { providerId, model: rest.substring(0, colonIndex), reasoningEffort: candidate }
-    }
-  }
-  return { providerId, model: rest }
-}
+export { REASONING_EFFORT_VALUES, isReasoningEffortValue, formatModelValue, parseModelValue }
+export type { ReasoningEffortValue, ModelValue }

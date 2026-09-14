@@ -72,7 +72,11 @@ import { logger } from '../utils/logger.js'
 import { EventEmitter, type Unsubscribe } from '../utils/async.js'
 import { getLspManager as getOrCreateLspManager, shutdownLspManager, type LspManager } from '../lsp/index.js'
 import { devServerManager } from '../dev-server/manager.js'
-import { resolveLLMClientForAgent, getAgentModelOverride } from '../agents/model-overrides.js'
+import {
+  resolveLLMClientForAgent,
+  resolveLLMClientForOverride,
+  getAgentModelOverride,
+} from '../agents/model-overrides.js'
 import { parseDefaultModelSelection } from '../provider-manager.js'
 import { getEventStore } from '../events/store.js'
 import {
@@ -185,17 +189,21 @@ export class SessionManager {
    * @param preferredFallback - When provided, used as fallback instead of
    *   providerManager.getLLMClient(). This is important in mock/test mode
    *   where the caller already has a mock client that should be preserved.
+   * @param stepOverride - Optional step-level model override. Takes precedence over agent override.
    */
   createClientForAgent(
     sessionId: string,
     agentId: string,
     preferredFallback?: import('../llm/client.js').LLMClientWithModel,
+    stepOverride?: import('../agents/model-overrides.js').AgentModelOverride,
   ): import('../llm/client.js').LLMClientWithModel {
     const fallback = preferredFallback ?? this.providerManager.getLLMClient()
     const pinnedEffort = dbGetSession(sessionId)?.providerPinnedEffort ?? undefined
-    const resolved = resolveLLMClientForAgent(agentId, fallback, this.providerManager, pinnedEffort)
+    const resolved = stepOverride
+      ? resolveLLMClientForOverride(stepOverride, fallback, this.providerManager, pinnedEffort, `Step '${agentId}'`)
+      : resolveLLMClientForAgent(agentId, fallback, this.providerManager, pinnedEffort)
     if (resolved.warning) {
-      logger.warn('Agent model override unavailable, falling back', {
+      logger.warn('Agent/step model override unavailable, falling back', {
         agentId,
         warning: resolved.warning,
       })

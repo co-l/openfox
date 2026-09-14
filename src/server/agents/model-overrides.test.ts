@@ -20,8 +20,10 @@ vi.mock('../db/settings.js', async (importOriginal) => {
 
 import {
   parseAgentModelOverrides,
+  parseStepModelOverride,
   getAgentModelOverride,
   resolveLLMClientForAgent,
+  resolveLLMClientForOverride,
   AGENT_MODEL_OVERRIDES_KEY,
 } from './model-overrides.js'
 
@@ -157,5 +159,69 @@ describe('resolveLLMClientForAgent', () => {
     expect(result.warning).toContain('gone')
     expect(result.warning).toContain('m1')
     expect(result.warning).toContain('explorer')
+  })
+})
+
+describe('parseStepModelOverride', () => {
+  it('parses string formatted model overrides', () => {
+    expect(parseStepModelOverride('openai/gpt-4o')).toEqual({ providerId: 'openai', model: 'gpt-4o' })
+    expect(parseStepModelOverride('anthropic/claude-3-7-sonnet:high')).toEqual({
+      providerId: 'anthropic',
+      model: 'claude-3-7-sonnet',
+      reasoningEffort: 'high',
+    })
+  })
+
+  it('parses object formatted step overrides', () => {
+    expect(parseStepModelOverride({ model: 'anthropic/claude-3-5-sonnet' })).toEqual({
+      providerId: 'anthropic',
+      model: 'claude-3-5-sonnet',
+    })
+    expect(
+      parseStepModelOverride({ providerId: 'anthropic', model: 'claude-3-5-sonnet', reasoningEffort: 'low' }),
+    ).toEqual({
+      providerId: 'anthropic',
+      model: 'claude-3-5-sonnet',
+      reasoningEffort: 'low',
+    })
+  })
+
+  it('returns undefined for empty/invalid inputs', () => {
+    expect(parseStepModelOverride(undefined)).toBeUndefined()
+    expect(parseStepModelOverride(null)).toBeUndefined()
+    expect(parseStepModelOverride('')).toBeUndefined()
+    expect(parseStepModelOverride({})).toBeUndefined()
+  })
+})
+
+describe('resolveLLMClientForOverride', () => {
+  const fallback = fakeClient('global-model')
+
+  it('resolves dedicated client for override', () => {
+    const dedicated = fakeClient('custom-model')
+    const pm = fakeProviderManager(dedicated)
+    const result = resolveLLMClientForOverride(
+      { providerId: 'p1', model: 'custom-model', reasoningEffort: 'high' },
+      fallback,
+      pm,
+    )
+    expect(result.client).toBe(dedicated)
+    expect(result.usedOverride).toBe(true)
+    expect(pm.createClient).toHaveBeenCalledWith('p1', 'custom-model', 'high')
+  })
+
+  it('falls back with warning when provider model cannot be created', () => {
+    const pm = fakeProviderManager(undefined)
+    const result = resolveLLMClientForOverride(
+      { providerId: 'missing', model: 'custom-model' },
+      fallback,
+      pm,
+      undefined,
+      'Workflow step',
+    )
+    expect(result.client).toBe(fallback)
+    expect(result.usedOverride).toBe(false)
+    expect(result.warning).toContain('Workflow step')
+    expect(result.warning).toContain('missing')
   })
 })

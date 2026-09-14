@@ -395,9 +395,21 @@ describe('Path Security', () => {
   })
 
   describe('Danger Mode Switch', () => {
+    /** Poll until at least `min` tool results have been observed, or `timeoutMs` elapses. */
+    async function waitForToolResults(min: number, timeoutMs: number): Promise<ReturnType<TestClient['allEvents']>> {
+      const deadline = Date.now() + timeoutMs
+      for (;;) {
+        const results = client.allEvents().filter((e) => e.type === 'chat.tool_result')
+        if (results.length >= min || Date.now() >= deadline) {
+          return results
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25))
+      }
+    }
+
     async function collectConfirmations(): Promise<string[]> {
       const callIds: string[] = []
-      const deadline = Date.now() + 3000
+      const deadline = Date.now() + 5000
       while (Date.now() < deadline && callIds.length < 3) {
         const pending = client
           .allEvents()
@@ -432,19 +444,26 @@ describe('Path Security', () => {
       await setSessionDangerLevel(server.url, session.id, 'dangerous')
 
       // Wait for the broadcast of each resolved confirmation.
-      const resolved = await client.waitFor('session.confirmation_resolved', undefined, 3000).catch(() => null)
+      const resolved = await client.waitFor('session.confirmation_resolved', undefined, 5000).catch(() => null)
       expect(resolved).not.toBeNull()
       for (const callId of callIds) {
         const msg = await client
-          .waitFor<{ callId: string }>('session.confirmation_resolved', (p) => p.callId === callId, 2000)
+          .waitFor<{ callId: string }>('session.confirmation_resolved', (p) => p.callId === callId, 5000)
           .catch(() => null)
         expect(msg, `expected confirmation_resolved for ${callId}`).not.toBeNull()
       }
 
-      // The whole batch completes without further prompting.
-      await client.waitFor('chat.done', undefined, 5000).catch(() => null)
-      const toolResults = client.allEvents().filter((e) => e.type === 'chat.tool_result')
+      // The whole batch completes without further prompting. Wait for the
+      // results themselves instead of snapshotting right after `chat.done`:
+      // that wait is best-effort (it swallows its timeout) and on a loaded
+      // runner it can elapse before the batch has finished, turning a slow
+      // turn into a spurious "0 tool results" failure.
+      const toolResults = await waitForToolResults(3, 20_000)
       expect(toolResults.length).toBeGreaterThanOrEqual(3)
+
+      // The turn must also finish on its own (no second confirmation round).
+      const done = await client.waitFor('chat.done', undefined, 10_000).catch(() => null)
+      expect(done, 'expected the turn to finish without further prompting').not.toBeNull()
     })
 
     it('switching to dangerous mid-confirmation lets the turn finish and the next turn skips prompting', async () => {

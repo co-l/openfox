@@ -4,7 +4,9 @@ import {
   GRACE_MS,
   invalidate,
   load,
+  loadIfStale,
   refresh,
+  refreshMatching,
   release,
   retain,
   resource,
@@ -110,6 +112,88 @@ describe('resourceCache', () => {
     release('k')
     vi.advanceTimersByTime(GRACE_MS + 1_000)
     expect(snapshot('k').data).toBeUndefined()
+  })
+
+  it('refreshMatching revalidates retained entries under a prefix only', async () => {
+    const fa = vi.fn(async () => 'A1')
+    const fb = vi.fn(async () => 'B1')
+    const fc = vi.fn(async () => 'C1')
+    load('workflows:/a', fa)
+    load('workflows:/b', fb)
+    load('workflow:/a:user', fc)
+    await vi.runAllTimersAsync()
+    retain('workflows:/a')
+    retain('workflows:/b')
+    retain('workflow:/a:user')
+
+    fa.mockResolvedValue('A2')
+    fb.mockResolvedValue('B2')
+    fc.mockResolvedValue('C2')
+    await refreshMatching('workflows:')
+
+    expect(snapshot('workflows:/a').data).toBe('A2')
+    expect(snapshot('workflows:/b').data).toBe('B2')
+    expect(snapshot('workflow:/a:user').data).toBe('C1')
+    expect(fc).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshMatching leaves entries with no mounted consumer alone', async () => {
+    const fetcher = vi.fn(async () => 'A1')
+    load('workflows:/a', fetcher)
+    await vi.runAllTimersAsync()
+
+    await refreshMatching('workflows:')
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshMatching shares a single in-flight refresh of the same key', async () => {
+    const fetcher = vi.fn(async () => 'A1')
+    load('workflows:/a', fetcher)
+    await vi.runAllTimersAsync()
+    retain('workflows:/a')
+    const before = fetcher.mock.calls.length
+
+    await Promise.all([refresh('workflows:/a', fetcher), refreshMatching('workflows:')])
+    expect(fetcher.mock.calls.length - before).toBe(1)
+  })
+
+  it('refreshMatching refreshes an explicitly included key even when unretained, exactly once', async () => {
+    const fa = vi.fn(async () => 'A1')
+    const fb = vi.fn(async () => 'B1')
+    load('workflows:/a', fa)
+    load('workflows:/b', fb)
+    await vi.runAllTimersAsync()
+    retain('workflows:/b')
+    const before = { a: fa.mock.calls.length, b: fb.mock.calls.length }
+
+    await refreshMatching('workflows:', 'workflows:/a')
+
+    expect(fa.mock.calls.length - before.a).toBe(1)
+    expect(fb.mock.calls.length - before.b).toBe(1)
+  })
+
+  it('loadIfStale skips the fetch while the entry is younger than the window', async () => {
+    const fetcher = vi.fn(async () => 'v1')
+    load('k', fetcher)
+    await vi.runAllTimersAsync()
+
+    await loadIfStale('k', fetcher, 2_000)
+
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(snapshot('k').data).toBe('v1')
+  })
+
+  it('loadIfStale refetches once the entry is older than the window', async () => {
+    const fetcher = vi.fn(async () => 'v1')
+    load('k', fetcher)
+    await vi.runAllTimersAsync()
+    vi.setSystemTime(Date.now() + 3_000)
+    fetcher.mockResolvedValueOnce('v2')
+
+    await loadIfStale('k', fetcher, 2_000)
+
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(snapshot('k').data).toBe('v2')
   })
 
   it('invalidate drops the entry and notifies subscribers', async () => {

@@ -47,14 +47,18 @@ vi.mock('../runtime-config.js', () => ({
   })),
 }))
 
-vi.mock('../agents/model-overrides.js', () => ({
-  getAgentModelOverride: getAgentModelOverrideMock,
-  resolveLLMClientForAgent: resolveLLMClientForAgentMock,
-  getAgentModelOverrides: vi.fn(() => ({})),
-  setAgentModelOverride: vi.fn(),
-  parseAgentModelOverrides: vi.fn(() => ({})),
-  AGENT_MODEL_OVERRIDES_KEY: 'agent.modelOverrides',
-}))
+vi.mock('../agents/model-overrides.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../agents/model-overrides.js')>()
+  return {
+    ...actual,
+    getAgentModelOverride: getAgentModelOverrideMock,
+    resolveLLMClientForAgent: resolveLLMClientForAgentMock,
+    getAgentModelOverrides: vi.fn(() => ({})),
+    setAgentModelOverride: vi.fn(),
+    parseAgentModelOverrides: vi.fn(() => ({})),
+    AGENT_MODEL_OVERRIDES_KEY: 'agent.modelOverrides',
+  }
+})
 
 function createMockSessionManager(): SessionManager {
   return {
@@ -487,6 +491,34 @@ describe('SubAgentManager', () => {
 
       const sm = sessionManager as unknown as Record<string, ReturnType<typeof vi.fn>>
       expect(sm['setSessionProvider']).toBeUndefined()
+    })
+
+    it('uses stepModelOverride when provided on executeSubAgent options', async () => {
+      const stepClient = createMockLLMClient()
+      const pm = {
+        createClient: vi.fn(() => stepClient),
+        getProviders: vi.fn(() => [
+          { id: 'custom-provider', name: 'Custom Provider', backend: 'anthropic', models: [] },
+        ]),
+        getModelSettings: vi.fn(() => undefined),
+        resolveModelEffort: vi.fn(() => 'high'),
+      } as unknown as ProviderManager
+
+      const result = await executeSubAgent({
+        subAgentType: 'explorer',
+        prompt: 'Explore.',
+        sessionManager: createMockSessionManager(),
+        sessionId: 'test-session',
+        llmClient: createMockLLMClient(),
+        stepModelOverride: 'custom-provider/claude-3-7-sonnet:high',
+        toolRegistry: createMockToolRegistry(),
+        turnMetrics: createMockTurnMetrics(),
+        statsIdentity: TEST_STATS_IDENTITY,
+        providerManager: pm,
+      })
+
+      expect(result.content).toBe('Test result content')
+      expect(pm.createClient).toHaveBeenCalledWith('custom-provider', 'claude-3-7-sonnet', 'high')
     })
   })
 

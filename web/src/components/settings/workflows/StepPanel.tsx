@@ -1,6 +1,8 @@
 import type { WorkflowStep, TemplateVariable } from '../../../lib/workflows-actions'
 import type { AgentInfo } from '../../../lib/agents-actions'
+import type { Provider } from '../../../stores/config'
 import { resolveAgent, STEP_TYPES } from './layout'
+import { ModelPicker } from '../../shared/ModelPicker'
 import { useT } from '../../../hooks/useT'
 
 const inputClass =
@@ -38,6 +40,7 @@ export function StepPanel({
   step,
   isEntry,
   agentTypes,
+  providers = [],
   transitionCount,
   templateVariables,
   onUpdate,
@@ -47,6 +50,7 @@ export function StepPanel({
   step: WorkflowStep
   isEntry: boolean
   agentTypes: AgentInfo[]
+  providers?: Provider[]
   transitionCount: number
   templateVariables: TemplateVariable[]
   onUpdate: (step: WorkflowStep) => void
@@ -181,6 +185,18 @@ export function StepPanel({
                 </option>
               ))}
           </select>
+        </div>
+      )}
+
+      {(step.type === 'agent' || step.type === 'sub_agent') && (
+        <div>
+          <label className={labelClass}>{t({ en: 'Model override', fr: 'Remplacement du modèle' })}</label>
+          <ModelPicker
+            providers={providers}
+            value={step.model}
+            onChange={(v) => onUpdate({ ...step, model: v || undefined })}
+            defaultLabel={t({ en: 'Default (global model)', fr: 'Défaut (modèle global)' })}
+          />
         </div>
       )}
 

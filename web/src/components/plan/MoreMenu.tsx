@@ -73,17 +73,22 @@ export function MoreMenu({
     : []
   // Workflows: keep every scope visible so same-id workflows in different scopes
   // are distinguishable instead of silently collapsed.
-  const { workflows } = useWorkflows(currentWorkdir)
+  const { workflows, revalidate: revalidateWorkflows } = useWorkflows(currentWorkdir)
 
   useEffect(() => {
     if (isOpen) {
       setSearch('')
       setSelectedIndex(0)
+      // Only the workflows tab reads the list; revalidate when it is shown so
+      // switching tabs or opening the menu cannot storm the endpoint, while a
+      // workflow edited elsewhere (another surface, another tab, the file on
+      // disk) still shows up here.
+      if (tab === 'workflows') void revalidateWorkflows()
       requestAnimationFrame(() => {
         if (shouldAutofocus()) searchRef.current?.focus()
       })
     }
-  }, [isOpen, tab])
+  }, [isOpen, tab, revalidateWorkflows])
 
   useEffect(() => {
     if (!isOpen) return
@@ -367,6 +372,7 @@ export function MoreMenu({
         isOpen={!!editWorkflowId}
         onClose={() => setEditWorkflowId(null)}
         initialEditId={editWorkflowId}
+        projectDir={currentWorkdir}
       />
     </div>
   )

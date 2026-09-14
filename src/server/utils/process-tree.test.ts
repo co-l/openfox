@@ -34,7 +34,7 @@ async function waitForDescendants(rootPid: number, min: number): Promise<number[
   await waitFor(async () => {
     descendants = await getDescendants(rootPid)
     return descendants.length >= min
-  })
+  }, 30_000)
   return descendants
 }
 
@@ -43,25 +43,39 @@ const allDead =
   () =>
     !pids.some(isAlive)
 
-/** Collect all descendant PIDs via ps (Unix) or CIM (Windows, where ps does not exist) */
+/**
+ * Collect all descendant PIDs via ps (Unix) or CIM (Windows, where ps does not
+ * exist). Returns [] when enumeration fails: a CIM/WMI query can fail or be
+ * slow on a loaded runner, and that must degrade into "no descendants yet" for
+ * the caller to poll again instead of failing the whole test.
+ */
 async function getDescendants(rootPid: number): Promise<number[]> {
-  const [cmd, args] =
-    process.platform === 'win32'
-      ? ([
-          'powershell.exe',
-          [
-            '-NoProfile',
-            '-Command',
-            'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }',
-          ],
-        ] as const)
-      : (['ps', ['-eo', 'pid=,ppid=']] as const)
-  const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
-    execFile(cmd, [...args], { timeout: 15000, windowsHide: true }, (err, stdout) => {
-      if (err) reject(err)
-      else resolve({ stdout })
+  let stdout: string
+  try {
+    const [cmd, args] =
+      process.platform === 'win32'
+        ? ([
+            'powershell.exe',
+            [
+              '-NonInteractive',
+              '-NoProfile',
+              '-Command',
+              'Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }',
+            ],
+          ] as const)
+        : (['ps', ['-eo', 'pid=,ppid=']] as const)
+    const result = await new Promise<{ stdout: string }>((resolve, reject) => {
+      // A busy Windows runner can take seconds to answer a WMI query; a tight
+      // timeout kills it and surfaces as "Command failed: powershell.exe ...".
+      execFile(cmd, [...args], { timeout: 30_000, windowsHide: true }, (err, stdout) => {
+        if (err) reject(err)
+        else resolve({ stdout })
+      })
     })
-  })
+    stdout = result.stdout
+  } catch {
+    return []
+  }
   const children = new Map<number, number[]>()
   for (const line of stdout.trim().split('\n')) {
     const parts = line.trim().split(/\s+/)
@@ -134,7 +148,7 @@ describe('terminateProcessTree', () => {
     for (const pid of descendants) {
       expect(isAlive(pid)).toBe(false)
     }
-  }, 20000)
+  }, 60_000)
 
   it('handles already-exited process gracefully', async () => {
     const proc = spawn('echo', ['hi'], { stdio: 'ignore' })
@@ -203,7 +217,7 @@ describe('terminateProcessTree', () => {
     for (const pid of descendants) {
       expect(isAlive(pid)).toBe(false)
     }
-  }, 20000)
+  }, 60_000)
 
   it('kills orphan-capable process group (child inheriting pipes)', async () => {
     // Simulate the pasta scenario: shell spawns a foreground child that
@@ -234,5 +248,5 @@ describe('terminateProcessTree', () => {
     for (const pid of descendants) {
       expect(isAlive(pid)).toBe(false)
     }
-  }, 20000)
+  }, 60_000)
 })

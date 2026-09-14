@@ -15,6 +15,8 @@ export interface Entry<Data> {
   error: unknown
   fetchedAt: number | null
   promise: Promise<Data | undefined> | null
+  /** Last fetcher used for this key, so a revalidation can replay it. */
+  fetcher: (() => Promise<Data>) | null
   refs: number
 }
 
@@ -59,7 +61,7 @@ function emit(): void {
 function entry<Data>(key: string): Entry<Data> {
   let e = entries.get(key) as Entry<Data> | undefined
   if (!e) {
-    e = { data: undefined, loading: false, error: undefined, fetchedAt: null, promise: null, refs: 0 }
+    e = { data: undefined, loading: false, error: undefined, fetchedAt: null, promise: null, fetcher: null, refs: 0 }
     entries.set(key, e as Entry<unknown>)
   }
   return e
@@ -84,6 +86,7 @@ function startFetch<Data>(key: string, fetcher: () => Promise<Data>): Promise<Da
   const e = entry<Data>(key)
   e.loading = true
   e.error = undefined
+  e.fetcher = fetcher
   emit()
   const p = Promise.resolve()
     .then(fetcher)
@@ -146,6 +149,44 @@ export function load<Data>(key: string, fetcher: () => Promise<Data>, maxAgeMs =
 export function refresh<Data>(key: string, fetcher: () => Promise<Data>): Promise<Data | undefined> {
   const e = entry<Data>(key)
   if (e.promise) return e.promise
+  return startFetch(key, fetcher)
+}
+
+/**
+ * Revalidate every retained entry whose key starts with `prefix`
+ * (stale-while-revalidate, single-flight per key). A mutation in one scope must
+ * converge sibling scopes too: a global (user-scope) edit is visible from every
+ * workdir, and the editing surface's key may not be the one a mounted consumer
+ * reads. Keys with no mounted consumer are left alone — nothing is showing them.
+ * `includeKey` is refreshed whether or not it is retained (the caller's own
+ * scope), and is deduped against the matched set so it is fetched once.
+ */
+export function refreshMatching(prefix: string, includeKey?: string): Promise<void> {
+  const targets: Array<[string, () => Promise<unknown>]> = []
+  for (const [key, e] of entries) {
+    if (key !== includeKey && (e.refs === 0 || !key.startsWith(prefix))) continue
+    if (!e.fetcher) continue
+    targets.push([key, e.fetcher])
+  }
+  return Promise.all(targets.map(([key, fetcher]) => refresh(key, fetcher))).then(() => undefined)
+}
+
+/**
+ * Refresh only when the entry is older than `maxAgeMs` (single-flight, resolves
+ * immediately with the cached data while fresh). Lets interactive surfaces await
+ * a revalidation without paying a round-trip on every interaction, so a burst of
+ * user actions costs at most one request per window.
+ */
+export function loadIfStale<Data>(
+  key: string,
+  fetcher: () => Promise<Data>,
+  maxAgeMs: number,
+): Promise<Data | undefined> {
+  const e = entry<Data>(key)
+  if (e.promise) return e.promise
+  if (maxAgeMs > 0 && e.data !== undefined && e.fetchedAt !== null && Date.now() - e.fetchedAt < maxAgeMs) {
+    return Promise.resolve(e.data)
+  }
   return startFetch(key, fetcher)
 }
 

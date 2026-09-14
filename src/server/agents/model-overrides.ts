@@ -10,6 +10,7 @@ import { z } from 'zod'
 import { getSetting, setSetting, SETTINGS_KEYS } from '../db/settings.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { ProviderManager } from '../provider-manager.js'
+import { parseModelValue } from '../../shared/model-value.js'
 
 export const AGENT_MODEL_OVERRIDES_KEY = SETTINGS_KEYS.AGENT_MODEL_OVERRIDES
 
@@ -21,6 +22,32 @@ const overrideSchema = z.object({
 
 export type AgentModelOverride = z.infer<typeof overrideSchema>
 export type AgentModelOverrides = Record<string, AgentModelOverride>
+
+export function parseStepModelOverride(
+  step: { model?: string; providerId?: string; reasoningEffort?: string } | string | undefined | null,
+): AgentModelOverride | undefined {
+  if (!step) return undefined
+  if (typeof step === 'string') {
+    const parsed = parseModelValue(step)
+    return parsed
+      ? {
+          providerId: parsed.providerId,
+          model: parsed.model,
+          ...(parsed.reasoningEffort ? { reasoningEffort: parsed.reasoningEffort } : {}),
+        }
+      : undefined
+  }
+  const parsed = step.model ? parseModelValue(step.model) : undefined
+  const providerId = step.providerId ?? parsed?.providerId
+  const model = parsed ? parsed.model : step.model
+  if (!providerId || !model) return undefined
+  const effort = step.reasoningEffort ?? parsed?.reasoningEffort
+  return {
+    providerId,
+    model,
+    ...(effort ? { reasoningEffort: effort } : {}),
+  }
+}
 
 export function parseAgentModelOverrides(raw: string | null | undefined): AgentModelOverrides {
   if (!raw) return {}
@@ -68,6 +95,34 @@ export interface AgentClientResolution {
 }
 
 /**
+ * Resolve an LLM client for a specific model override definition.
+ */
+export function resolveLLMClientForOverride(
+  override: AgentModelOverride,
+  fallbackClient: LLMClientWithModel,
+  providerManager: ProviderManager,
+  pinnedEffort?: string,
+  targetLabel: string = 'Model override',
+): AgentClientResolution {
+  const effectiveEffort = pinnedEffort ?? override.reasoningEffort
+  const client = providerManager.createClient(override.providerId, override.model, effectiveEffort)
+  if (!client) {
+    return {
+      client: fallbackClient,
+      usedOverride: false,
+      override,
+      warning: `${targetLabel} is configured to use model '${override.model}' from provider '${override.providerId}', but it is no longer available. Falling back to the session model.`,
+    }
+  }
+
+  return {
+    client,
+    usedOverride: true,
+    override: effectiveEffort ? { ...override, reasoningEffort: effectiveEffort } : override,
+  }
+}
+
+/**
  * Resolve the LLM client for an agent. When the agent has an override and the
  * provider/model still exists, returns a dedicated client. Otherwise returns
  * the fallback (session/global) client, with a warning when an override was
@@ -89,20 +144,5 @@ export function resolveLLMClientForAgent(
     return { client: fallbackClient, usedOverride: false }
   }
 
-  const effectiveEffort = pinnedEffort ?? override.reasoningEffort
-  const client = providerManager.createClient(override.providerId, override.model, effectiveEffort)
-  if (!client) {
-    return {
-      client: fallbackClient,
-      usedOverride: false,
-      override,
-      warning: `Agent '${agentId}' is configured to use model '${override.model}' from provider '${override.providerId}', but it is no longer available. Falling back to the session model.`,
-    }
-  }
-
-  return {
-    client,
-    usedOverride: true,
-    override: effectiveEffort ? { ...override, reasoningEffort: effectiveEffort } : override,
-  }
+  return resolveLLMClientForOverride(override, fallbackClient, providerManager, pinnedEffort, `Agent '${agentId}'`)
 }

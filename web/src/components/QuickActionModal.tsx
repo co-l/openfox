@@ -10,7 +10,7 @@ function getProjectIdFromPath(path: string): string | undefined {
 }
 import { useAgents } from '../hooks/useAgents'
 import { useResource } from '../hooks/useResource'
-import { commandsResource, workflowsResource } from '../lib/resources'
+import { commandsResource, workflowsResource, revalidateWorkflows } from '../lib/resources'
 import { useSessionStore } from '../stores/session'
 import { useSessionScope, useScopedPaneState } from '../stores/session/session-scope'
 import { dedupById, fuzzyMatch, handleModalNavigation } from '../lib/modal-utils'
@@ -97,8 +97,13 @@ export function QuickActionModal({
   useResetSearchOnOpen(isOpen, searchRef, setSearch, setSelectedIndex, [currentWorkdir])
 
   useEffect(() => {
-    if (isOpen) wasOpenRef.current = true
-  }, [isOpen])
+    if (isOpen) {
+      wasOpenRef.current = true
+      // Revalidate the workflow list on open: it may have been cached before a
+      // workflow was edited elsewhere (freshness-gated, see revalidateWorkflows).
+      void revalidateWorkflows(currentWorkdir)
+    }
+  }, [isOpen, currentWorkdir])
 
   useEffect(() => {
     if (!isOpen && wasOpenRef.current) {

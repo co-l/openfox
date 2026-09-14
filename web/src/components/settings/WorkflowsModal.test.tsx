@@ -36,6 +36,24 @@ vi.mock('../../hooks/useResource', () => ({
   useResource: () => mockResourceState,
 }))
 
+vi.mock('../../lib/resources', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/resources')>()
+  return {
+    ...actual,
+    workflowResource: {
+      ...actual.workflowResource,
+      refresh: vi.fn(async () => ({
+        metadata: { id: 'review', name: 'PR Review', description: '', version: '1.0.0' },
+        entryStep: 's1',
+        settings: { maxIterations: 10 },
+        steps: [{ id: 's1', name: 'Step 1', type: 'agent', phase: 'build', transitions: [] }],
+        startCondition: { type: 'always' },
+      })),
+      invalidate: vi.fn(),
+    },
+  }
+})
+
 const reviewUser = {
   id: 'review',
   name: 'PR Review (Global)',
@@ -109,5 +127,23 @@ describe('WorkflowsModal confirm-delete scoping', () => {
     await vi.waitFor(() => {
       expect(mockDeleteWorkflow).toHaveBeenCalledWith('review', 'project', undefined)
     })
+  })
+
+  it('allows entering comma-separated options when configuring a select parameter', async () => {
+    render(<WorkflowsModal isOpen initialEditId="review" onClose={vi.fn()} />)
+
+    const addParamBtn = await screen.findByText('+ Add parameter')
+    fireEvent.click(addParamBtn)
+
+    const typeSelects = screen.getAllByRole('combobox')
+    const lastTypeSelect = typeSelects[typeSelects.length - 1] as HTMLSelectElement
+    fireEvent.change(lastTypeSelect, { target: { value: 'select' } })
+
+    const optionsInput = screen.getByPlaceholderText('Option 1, Option 2, Option 3') as HTMLInputElement
+    fireEvent.change(optionsInput, { target: { value: 'dev,' } })
+    expect(optionsInput.value).toBe('dev,')
+
+    fireEvent.change(optionsInput, { target: { value: 'dev, staging, prod' } })
+    expect(optionsInput.value).toBe('dev, staging, prod')
   })
 })
