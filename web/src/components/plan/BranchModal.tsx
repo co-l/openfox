@@ -1,10 +1,10 @@
 import { ScrollArea } from '../shared/ScrollArea'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { authFetch } from '../../lib/api'
 import { sessionBranchesResource } from '../../lib/resources'
 import { useSessionModalState } from '../../hooks/useSessionModalState'
 import { ModalShell } from '../shared/ModalShell'
-import { BranchIcon } from '../shared/icons'
+import { BranchIcon, SearchIcon } from '../shared/icons'
 import { CreateInputSection } from '../shared/CreateInputSection'
 
 interface BranchModalProps {
@@ -37,6 +37,7 @@ export function BranchModal({ isOpen, onClose, sessionId }: BranchModalProps) {
   const [branches, setBranches] = useState<BranchInfo[]>([])
   const [sourceBranch, setSourceBranch] = useState('')
   const [defaultBranch, setDefaultBranch] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
     if (!isOpen) return
@@ -44,6 +45,7 @@ export function BranchModal({ isOpen, onClose, sessionId }: BranchModalProps) {
     setSourceBranch('')
     setBranches([])
     setDefaultBranch('')
+    setSearchQuery('')
     sessionBranchesResource
       .refresh(sessionId)
       .then((data) => {
@@ -116,6 +118,12 @@ export function BranchModal({ isOpen, onClose, sessionId }: BranchModalProps) {
     }
   }, [newName, sourceBranch, sessionId, refreshSession, onClose, setError, setBusy, t])
 
+  const filteredBranches = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return branches
+    return branches.filter((b) => b.name.toLowerCase().includes(q))
+  }, [branches, searchQuery])
+
   return (
     <ModalShell
       isOpen={isOpen}
@@ -128,31 +136,50 @@ export function BranchModal({ isOpen, onClose, sessionId }: BranchModalProps) {
         {branches.length > 0 && (
           <div className="mb-4">
             <p className="text-sm font-medium text-text-primary mb-2">{t({ en: 'Branches', fr: 'Branches' })}</p>
-            <ScrollArea className="max-h-48 space-y-0.5 bg-bg-tertiary/30 rounded p-2">
-              {branches.map((b) => (
-                <button
-                  key={b.name}
-                  onClick={() => {
-                    if (!b.current) handleSwitch(b.name)
-                  }}
-                  disabled={busy}
-                  className={`w-full text-left px-3 py-1.5 text-sm rounded transition-colors flex items-center gap-2 ${
-                    b.current
-                      ? 'bg-accent-primary/10 text-accent-primary cursor-default'
-                      : 'hover:bg-bg-tertiary text-text-secondary'
-                  }`}
-                >
-                  <BranchIcon className="w-3.5 h-3.5 shrink-0" />
-                  <span className="font-mono truncate">{b.name}</span>
-                  {b.current && (
-                    <span className="ml-auto text-xs text-text-muted">{t({ en: '(current)', fr: '(actuelle)' })}</span>
-                  )}
-                  {!b.current && (
-                    <span className="ml-auto text-xs text-accent-primary">{t({ en: 'Switch', fr: 'Changer' })}</span>
-                  )}
-                </button>
-              ))}
-            </ScrollArea>
+            <div className="relative mb-2">
+              <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={t({ en: 'Search branches…', fr: 'Rechercher des branches…' })}
+                aria-label={t({ en: 'Search branches', fr: 'Rechercher des branches' })}
+                className="w-full text-sm bg-bg-primary border border-border-default rounded pl-8 pr-2 py-1.5 text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-primary"
+              />
+            </div>
+            {filteredBranches.length > 0 ? (
+              <ScrollArea className="max-h-48 space-y-0.5 bg-bg-tertiary/30 rounded p-2">
+                {filteredBranches.map((b) => (
+                  <button
+                    key={b.name}
+                    onClick={() => {
+                      if (!b.current) handleSwitch(b.name)
+                    }}
+                    disabled={busy}
+                    className={`w-full text-left px-3 py-1.5 text-sm rounded transition-colors flex items-center gap-2 ${
+                      b.current
+                        ? 'bg-accent-primary/10 text-accent-primary cursor-default'
+                        : 'hover:bg-bg-tertiary text-text-secondary'
+                    }`}
+                  >
+                    <BranchIcon className="w-3.5 h-3.5 shrink-0" />
+                    <span className="font-mono truncate">{b.name}</span>
+                    {b.current && (
+                      <span className="ml-auto text-xs text-text-muted">
+                        {t({ en: '(current)', fr: '(actuelle)' })}
+                      </span>
+                    )}
+                    {!b.current && (
+                      <span className="ml-auto text-xs text-accent-primary">{t({ en: 'Switch', fr: 'Changer' })}</span>
+                    )}
+                  </button>
+                ))}
+              </ScrollArea>
+            ) : (
+              <p className="text-xs text-text-muted py-2 text-center bg-bg-tertiary/30 rounded">
+                {t({ en: 'No branches match', fr: 'Aucune branche ne correspond' })}
+              </p>
+            )}
           </div>
         )}
 
