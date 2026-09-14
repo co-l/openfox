@@ -275,11 +275,16 @@ export interface McpServerInfo {
   status: string
   tools: McpToolInfo[]
   estimatedTokens: number
+  error?: string
   config: {
-    transport?: string
+    transport?: 'stdio' | 'http' | string
     command?: string
     args?: string[]
+    env?: Record<string, string>
     url?: string
+    headers?: Record<string, string>
+    oauth?: boolean
+    timeout?: number
     disabled?: boolean
   }
 }
