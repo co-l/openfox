@@ -5,14 +5,23 @@ import { Fragment, useRef, useCallback, useEffect, useMemo, useState } from 'rea
 import { Modal } from '../shared/SelfContainedModal'
 import { DualSparkline } from '../shared/Sparkline'
 import { buildPerformanceChartData, buildResponseLogRows, type ResponseLogRow } from '@shared/stats-view.js'
-import type { CallStatsDataPoint, ModelSessionStats, SessionStats } from '@shared/types.js'
+import type { CallStatsDataPoint, ModelSessionStats, SessionStats, SessionStatsSummary } from '@shared/types.js'
 import { formatTime } from '../../lib/format-stats'
+import { authFetch } from '../../lib/api'
 
 interface StatsModalProps {
   isOpen: boolean
   onClose: () => void
-  stats: SessionStats
+  summary: SessionStatsSummary | null
+  sessionId: string
 }
+
+/**
+ * Sessions at or below this response count auto-load the full response log
+ * (it's cheap); larger sessions defer it behind the "Load full stats" button
+ * so the always-on payload stays lean.
+ */
+const AUTO_LOAD_THRESHOLD = 50
 
 /**
  * Format token count with k/M suffix
@@ -111,21 +120,75 @@ function createExportData(stats: ModelSessionStats) {
   }
 }
 
-export function StatsModal({ isOpen, onClose, stats }: StatsModalProps) {
+export function StatsModal({ isOpen, onClose, summary, sessionId }: StatsModalProps) {
   const t = useT()
   const contentRef = useRef<HTMLDivElement>(null)
   const [expandedResponses, setExpandedResponses] = useState<Record<string, boolean>>({})
-  const [selectedModelKey, setSelectedModelKey] = useState(() => stats.modelGroups[0]?.key ?? '')
+  const [selectedModelKey, setSelectedModelKey] = useState(() => summary?.modelGroups[0]?.key ?? '')
+  const [fullStats, setFullStats] = useState<SessionStats | null>(null)
+  const [loadingFull, setLoadingFull] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  // Guards against a stale in-flight fetch landing after a session switch.
+  const loadRequestRef = useRef(0)
+
+  const modelGroups = fullStats?.modelGroups ?? summary?.modelGroups ?? []
 
   useEffect(() => {
-    if (!stats.modelGroups.some((group) => group.key === selectedModelKey)) {
-      setSelectedModelKey(stats.modelGroups[0]?.key ?? '')
+    if (!modelGroups.some((group) => group.key === selectedModelKey)) {
+      setSelectedModelKey(modelGroups[0]?.key ?? '')
     }
-  }, [selectedModelKey, stats.modelGroups])
+  }, [selectedModelKey, modelGroups])
 
-  const currentStats = useMemo(
-    () => stats.modelGroups.find((group) => group.key === selectedModelKey) ?? stats.modelGroups[0],
-    [selectedModelKey, stats.modelGroups],
+  // The fetched detail belongs to a specific session — drop it when the pane
+  // switches, and invalidate any in-flight request so it can't land late.
+  useEffect(() => {
+    loadRequestRef.current += 1
+    setFullStats(null)
+    setLoadError(null)
+    setLoadingFull(false)
+  }, [sessionId])
+
+  const loadFull = useCallback(async () => {
+    if (!sessionId || loadingFull) return
+    const requestId = loadRequestRef.current + 1
+    loadRequestRef.current = requestId
+    setLoadingFull(true)
+    setLoadError(null)
+    try {
+      const res = await authFetch(`/api/sessions/${sessionId}/stats`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = (await res.json()) as { stats: SessionStats | null }
+      if (loadRequestRef.current === requestId) {
+        setFullStats(data.stats)
+      }
+    } catch (e) {
+      if (loadRequestRef.current === requestId) {
+        setLoadError(e instanceof Error ? e.message : String(e))
+      }
+    } finally {
+      if (loadRequestRef.current === requestId) {
+        setLoadingFull(false)
+      }
+    }
+  }, [sessionId, loadingFull])
+
+  // Small sessions auto-load the full log so a handful of rows never hides
+  // behind a button. Once loaded it stays cached across re-opens.
+  useEffect(() => {
+    if (!isOpen) return
+    if (fullStats || loadingFull || !summary) return
+    if (summary.responseCount > 0 && summary.responseCount <= AUTO_LOAD_THRESHOLD) {
+      void loadFull()
+    }
+  }, [isOpen, fullStats, loadingFull, summary, loadFull])
+
+  const currentStats = useMemo(() => {
+    if (!fullStats) return undefined
+    return fullStats.modelGroups.find((group) => group.key === selectedModelKey) ?? fullStats.modelGroups[0]
+  }, [fullStats, selectedModelKey])
+  const currentSummary = useMemo(
+    () => modelGroups.find((group) => group.key === selectedModelKey) ?? modelGroups[0],
+    [modelGroups, selectedModelKey],
   )
 
   const responseRows = useMemo(() => (currentStats ? buildResponseLogRows(currentStats) : []), [currentStats])
@@ -176,6 +239,14 @@ export function StatsModal({ isOpen, onClose, stats }: StatsModalProps) {
     }
   }, [handleCopyJson])
 
+  const detailLoaded = fullStats !== null
+  const canLoadDetail = summary !== null && summary.responseCount > 0 && !detailLoaded
+  // Small sessions auto-load seamlessly — hide the warning/button while that
+  // fetch is in flight so it never flashes for them.
+  const autoLoading =
+    loadingFull && summary !== null && summary.responseCount > 0 && summary.responseCount <= AUTO_LOAD_THRESHOLD
+  const showDeferredDetail = canLoadDetail && !autoLoading
+
   return (
     <Modal
       isOpen={isOpen}
@@ -184,60 +255,99 @@ export function StatsModal({ isOpen, onClose, stats }: StatsModalProps) {
       size="lg"
     >
       <div ref={contentRef} className="space-y-6">
-        <section>
-          <div className="flex flex-wrap gap-2">
-            {stats.modelGroups.map((group) => (
-              <button
-                key={group.key}
-                onClick={() => setSelectedModelKey(group.key)}
-                className={`px-3 py-1.5 rounded border text-xs transition-colors ${
-                  group.key === currentStats?.key
-                    ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
-                    : 'border-border text-text-muted hover:text-text-primary hover:bg-bg-tertiary/40'
-                }`}
-                title={group.label}
-              >
-                {group.label}
-              </button>
-            ))}
-          </div>
-        </section>
+        {modelGroups.length > 1 && (
+          <section>
+            <div className="flex flex-wrap gap-2">
+              {modelGroups.map((group) => (
+                <button
+                  key={group.key}
+                  onClick={() => setSelectedModelKey(group.key)}
+                  className={`px-3 py-1.5 rounded border text-xs transition-colors ${
+                    group.key === currentSummary?.key
+                      ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
+                      : 'border-border text-text-muted hover:text-text-primary hover:bg-bg-tertiary/40'
+                  }`}
+                  title={group.label}
+                >
+                  {group.label}
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
 
-        {/* Summary Section */}
-        {currentStats && (
+        {/* Summary Section — always available from the lean payload */}
+        {currentSummary && (
           <section>
             <h3 className="text-sm font-semibold text-text-secondary mb-3 uppercase tracking-wide">
               {t({ en: 'Summary', fr: 'Résumé' })}
             </h3>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              <StatCard label={t({ en: 'AI Time', fr: 'Temps IA' })} value={formatTime(currentStats.aiTime)} />
-              <StatCard label={t({ en: 'Total Time', fr: 'Temps total' })} value={formatTime(currentStats.totalTime)} />
-              <StatCard label={t({ en: 'Tool Time', fr: 'Temps outils' })} value={formatTime(currentStats.toolTime)} />
-              <StatCard label={t({ en: 'Responses', fr: 'Réponses' })} value={currentStats.responseCount.toString()} />
-              <StatCard label={t({ en: 'LLM Calls', fr: 'Appels LLM' })} value={currentStats.llmCallCount.toString()} />
+              <StatCard label={t({ en: 'AI Time', fr: 'Temps IA' })} value={formatTime(currentSummary.aiTime)} />
+              <StatCard
+                label={t({ en: 'Total Time', fr: 'Temps total' })}
+                value={formatTime(currentSummary.totalTime)}
+              />
+              <StatCard
+                label={t({ en: 'Tool Time', fr: 'Temps outils' })}
+                value={formatTime(currentSummary.toolTime)}
+              />
+              <StatCard
+                label={t({ en: 'Responses', fr: 'Réponses' })}
+                value={currentSummary.responseCount.toString()}
+              />
+              <StatCard
+                label={t({ en: 'LLM Calls', fr: 'Appels LLM' })}
+                value={currentSummary.llmCallCount.toString()}
+              />
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-3">
               <StatCard
                 label={t({ en: 'Prefill Tokens', fr: 'Jetons de préremplissage' })}
-                value={formatTokens(currentStats.prefillTokens)}
-                subValue={`@ ${formatSpeed(currentStats.avgPrefillSpeed)} tok/s`}
+                value={formatTokens(currentSummary.prefillTokens)}
+                subValue={`@ ${formatSpeed(currentSummary.avgPrefillSpeed)} tok/s`}
               />
               <StatCard
                 label={t({ en: 'Gen Tokens', fr: 'Jetons générés' })}
-                value={formatTokens(currentStats.generationTokens)}
-                subValue={`@ ${formatSpeed(currentStats.avgGenerationSpeed)} tok/s`}
+                value={formatTokens(currentSummary.generationTokens)}
+                subValue={`@ ${formatSpeed(currentSummary.avgGenerationSpeed)} tok/s`}
               />
               <StatCard
                 label={t({ en: 'Avg PP Speed', fr: 'Vitesse PP moyenne' })}
-                value={`${formatSpeed(currentStats.avgPrefillSpeed)}`}
+                value={`${formatSpeed(currentSummary.avgPrefillSpeed)}`}
                 subValue="tok/s"
               />
               <StatCard
                 label={t({ en: 'Avg TG Speed', fr: 'Vitesse TG moyenne' })}
-                value={`${formatSpeed(currentStats.avgGenerationSpeed)}`}
+                value={`${formatSpeed(currentSummary.avgGenerationSpeed)}`}
                 subValue="tok/s"
               />
             </div>
+          </section>
+        )}
+
+        {/* Deferred detail — warning + one-time load */}
+        {showDeferredDetail && (
+          <section className="rounded border border-border bg-bg-tertiary/40 p-4">
+            <p className="text-xs text-text-muted mb-3">
+              {t(
+                {
+                  en: 'The full response log is not loaded. Load it once to see per-response and per-call details ({{n}} responses, {{c}} calls).',
+                  fr: 'Le journal complet des réponses n’est pas chargé. Chargez-le une fois pour voir le détail par réponse et par appel ({{n}} réponses, {{c}} appels).',
+                },
+                { n: summary!.responseCount, c: summary!.llmCallCount },
+              )}
+            </p>
+            {loadError && <p className="text-xs text-accent-error mb-3">{loadError}</p>}
+            <button
+              onClick={() => void loadFull()}
+              disabled={loadingFull}
+              className="px-3 py-1.5 rounded bg-accent-primary/25 text-text-primary hover:bg-accent-primary/40 transition-colors text-xs font-medium disabled:opacity-50"
+            >
+              {loadingFull
+                ? t({ en: 'Loading…', fr: 'Chargement…' })
+                : t({ en: 'Load full stats', fr: 'Charger toutes les statistiques' })}
+            </button>
           </section>
         )}
 

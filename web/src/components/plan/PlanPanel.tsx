@@ -330,7 +330,6 @@ export function PlanPanel({
         criteriaSidebarOpen={criteriaSidebarOpen}
         criteriaSidebarOverlay={externalCriteriaSidebarOverlay}
         onCriteriaSidebarToggle={onCriteriaSidebarToggle}
-        messages={messages}
         sessionId={targetSessionId}
       >
         <SidebarSummaryHeader visible={!criteriaSidebarOpen} />

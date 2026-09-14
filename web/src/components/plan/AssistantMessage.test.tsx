@@ -29,8 +29,13 @@ vi.mock('../shared/TodoListDisplay', () => ({
   TodoListDisplay: () => <div>todo</div>,
 }))
 
+const { criteriaGroupMock } = vi.hoisted(() => ({ criteriaGroupMock: vi.fn() }))
+
 vi.mock('../shared/CriteriaGroupDisplay', () => ({
-  CriteriaGroupDisplay: () => <div>criteria</div>,
+  CriteriaGroupDisplay: (props: unknown) => {
+    criteriaGroupMock(props)
+    return <div>criteria</div>
+  },
   isCriterionTool: () => false,
 }))
 
@@ -201,6 +206,52 @@ describe('AssistantMessage', () => {
     expect(html).toContain('— pp')
     expect(html).toContain('— tg')
     expect(html).not.toContain('0 @ 0.0')
+  })
+
+  it('routes in-flight metadata adds into the criteria group instead of a preparing card', () => {
+    criteriaGroupMock.mockClear()
+    const message: Message = {
+      id: 'assistant-add',
+      role: 'assistant',
+      content: '',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      tokenCount: 0,
+      isStreaming: true,
+      preparingToolCalls: [
+        {
+          index: 0,
+          name: 'session_metadata',
+          arguments: JSON.stringify({ action: 'add', key: 'criteria', description: 'Do the thing' }),
+        },
+      ],
+    }
+    render(<AssistantMessage message={message} />)
+    expect(screen.queryByText('tool preparing')).toBeNull()
+    expect(criteriaGroupMock).toHaveBeenCalled()
+    const props = criteriaGroupMock.mock.calls[0]![0] as {
+      toolCalls: unknown[]
+      preparing: unknown[]
+    }
+    expect(props.toolCalls).toEqual([])
+    expect(props.preparing).toHaveLength(1)
+  })
+
+  it('keeps non-add preparing calls as regular preparing cards', () => {
+    criteriaGroupMock.mockClear()
+    const message: Message = {
+      id: 'assistant-read',
+      role: 'assistant',
+      content: '',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      tokenCount: 0,
+      isStreaming: true,
+      preparingToolCalls: [
+        { index: 0, name: 'session_metadata', arguments: JSON.stringify({ action: 'get', key: 'criteria' }) },
+      ],
+    }
+    render(<AssistantMessage message={message} />)
+    expect(screen.getByText('tool preparing')).toBeTruthy()
+    expect(criteriaGroupMock).not.toHaveBeenCalled()
   })
 
   it('opens stats details for persisted messages with null usage stats', () => {

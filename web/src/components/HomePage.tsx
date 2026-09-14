@@ -1,6 +1,6 @@
 import { ScrollArea } from './shared/ScrollArea'
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { Link } from 'wouter'
+import { Link, useLocation } from 'wouter'
 import { useSessionStore } from '../stores/session'
 import { useProjectStore } from '../stores/project'
 import { useProjects } from '../hooks/useProjects'
@@ -12,7 +12,18 @@ import { OpenProjectModal } from './CreateSessionModal'
 import { DeleteProjectConfirmationModal } from './DeleteProjectConfirmationModal'
 import { formatRelativeDate } from '../lib/format-date'
 import { sortProjectsStarredFirst } from '../lib/projects'
-import { SearchIcon, XCloseIcon, FolderIcon, TrashIcon, TasksIcon, ColumnsIcon, StarFilledIcon } from './shared/icons'
+import {
+  SearchIcon,
+  XCloseIcon,
+  FolderIcon,
+  TrashIcon,
+  TasksIcon,
+  ColumnsIcon,
+  StarFilledIcon,
+  PlusMdIcon,
+  ChevronDownIcon,
+} from './shared/icons'
+import { DropdownMenu, type DropdownMenuItem } from './shared/DropdownMenu'
 import { Spinner } from './shared/Spinner'
 import { fuzzyMatch, highlightMatches } from '../lib/modal-utils'
 import { shouldAutofocus } from '../lib/device'
@@ -61,6 +72,47 @@ function ProjectTaskChips({ projectId }: { projectId: string }) {
   return <TaskStateChips counts={data?.counts} />
 }
 
+/** Dropdown on a session row's project name: new session (real link) + tasks modal. */
+function SessionProjectMenu({
+  projectId,
+  projectName,
+  onTasks,
+}: {
+  projectId: string
+  projectName: string
+  onTasks: () => void
+}) {
+  const t = useT()
+  const items: DropdownMenuItem[] = [
+    {
+      label: t({ en: 'New Session', fr: 'Nouvelle session' }),
+      icon: <PlusMdIcon className="w-3.5 h-3.5" />,
+      href: `/p/${projectId}/new`,
+    },
+    {
+      label: t({ en: 'Tasks', fr: 'Tâches' }),
+      icon: <TasksIcon className="w-3.5 h-3.5" />,
+      onClick: onTasks,
+    },
+  ]
+  return (
+    <DropdownMenu
+      items={items}
+      minWidth="180px"
+      trigger={
+        <button
+          type="button"
+          className="flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-primary shrink-0 max-w-[90px] hover:underline"
+          title={t({ en: 'Project options', fr: 'Options du projet' })}
+        >
+          <span className="truncate">{projectName}</span>
+          <ChevronDownIcon className="w-2.5 h-2.5 flex-shrink-0" />
+        </button>
+      }
+    />
+  )
+}
+
 /** Color-coded activity dot for a session row on the homepage list. */
 function SessionStatusDot({ session, waiting }: { session: SessionSummary; waiting: boolean }) {
   const t = useT()
@@ -89,6 +141,7 @@ function SessionStatusDot({ session, waiting }: { session: SessionSummary; waiti
 
 export function HomePage() {
   const t = useT()
+  const [, navigate] = useLocation()
   const [showOpenModal, setShowOpenModal] = useState(false)
   const [projectToDelete, setProjectToDelete] = useState<{ id: string; name: string } | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -325,13 +378,9 @@ export function HomePage() {
                 const waiting = sessionsWithPendingConfirmations.includes(session.id)
                 const rowClass =
                   'flex items-center gap-3 px-3 md:px-4 py-2.5 transition-colors' +
-                  (project ? ' hover:bg-bg-tertiary/50' : ' cursor-default')
-                const rowContent = (
+                  (project ? ' hover:bg-bg-tertiary/50 cursor-pointer' : ' cursor-default')
+                const rowBody = (
                   <>
-                    <SessionStatusDot session={session} waiting={waiting} />
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-accent-primary shrink-0 max-w-[90px] truncate">
-                      {project?.name ?? session.projectId.slice(0, 10)}
-                    </span>
                     <span className="text-sm text-text-primary truncate flex-1 min-w-0">
                       {isSearching && matchType === 'title'
                         ? highlightMatches(displayTitle, debouncedQuery)
@@ -357,13 +406,34 @@ export function HomePage() {
                     </span>
                   </>
                 )
+                const statusDot = <SessionStatusDot session={session} waiting={waiting} />
                 return project ? (
-                  <Link key={session.id} href={`/p/${project.id}/s/${session.id}`} className={rowClass}>
-                    {rowContent}
-                  </Link>
+                  <div
+                    key={session.id}
+                    className={rowClass}
+                    onClick={(e) => {
+                      if (e.button !== 0 || e.defaultPrevented) return
+                      if ((e.target as HTMLElement).closest('[data-testid="session-dropdown-menu"]')) return
+                      navigate(`/p/${project.id}/s/${session.id}`)
+                    }}
+                  >
+                    {statusDot}
+                    <SessionProjectMenu
+                      projectId={project.id}
+                      projectName={project.name}
+                      onTasks={() => setTasksProjectId(project.id)}
+                    />
+                    <Link href={`/p/${project.id}/s/${session.id}`} className="flex items-center gap-3 flex-1 min-w-0">
+                      {rowBody}
+                    </Link>
+                  </div>
                 ) : (
                   <div key={session.id} className={rowClass}>
-                    {rowContent}
+                    {statusDot}
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-accent-primary shrink-0 max-w-[90px] truncate">
+                      {session.projectId.slice(0, 10)}
+                    </span>
+                    <div className="flex items-center gap-3 flex-1 min-w-0">{rowBody}</div>
                   </div>
                 )
               })}

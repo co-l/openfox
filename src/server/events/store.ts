@@ -1230,6 +1230,14 @@ export class EventStore {
 
 let eventStoreInstance: EventStore | null = null
 
+// Session IDs that were left running when the server stopped (detected at
+// startup). Consumed by the opt-in boot auto-continuation (Settings > Advanced).
+let staleRunningSessionIds: string[] = []
+
+export function getStaleRunningSessionIds(): string[] {
+  return staleRunningSessionIds
+}
+
 export function initEventStore(db: Database.Database): EventStore {
   eventStoreInstance = new EventStore(db)
 
@@ -1325,6 +1333,7 @@ function resetStaleRunningSessions(eventStore: EventStore, db: Database.Database
   const sessions = db.prepare(`SELECT id FROM sessions`).all() as { id: string }[]
 
   let resetCount = 0
+  staleRunningSessionIds = []
 
   for (const { id: sessionId } of sessions) {
     // Get the last running.changed event for this session
@@ -1347,6 +1356,7 @@ function resetStaleRunningSessions(eventStore: EventStore, db: Database.Database
           data: { isRunning: false },
         })
         resetCount++
+        staleRunningSessionIds.push(sessionId)
       }
     }
   }

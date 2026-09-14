@@ -287,16 +287,51 @@ function executeCommand(
     let stderr = ''
     let timedOut = false
     let aborted = false
+    let exitCode: number | null = null
     let exited = false
+    let settled = false
+    let graceTimer: ReturnType<typeof setTimeout> | undefined
+
+    // A detached child (setsid, ssh -f, ...) moves to its own session and
+    // process group, so a process-group kill cannot reach it. It then holds
+    // the write-ends of the stdio pipes open long after the shell has
+    // exited, and Node's 'close' event never fires. To keep the tool call
+    // from hanging, wait for 'close' this long after the shell has exited,
+    // then settle with the shell's real exit code.
+    const ZOMBIE_PIPE_GRACE_MS = 2000
+
+    const settle = (code: number, appendix?: string) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      if (graceTimer !== undefined) clearTimeout(graceTimer)
+      signal?.removeEventListener('abort', onAbort)
+      const out = (stdout + stdoutDecoder.end()).trim()
+      resolve({
+        stdout: appendix ? (out ? `${out}\n\n${appendix}` : appendix) : out,
+        stderr: (stderr + stderrDecoder.end()).trim(),
+        exitCode: code,
+      })
+    }
 
     const timer = setTimeout(() => {
       timedOut = true
+      // The shell already exited and a detached child is holding the pipes:
+      // there is nothing left to kill, so settle immediately.
+      if (exited) {
+        settle(124, `[Exit code: 124]\n[Process timed out after ${timeout}ms]`)
+        return
+      }
       void terminateProcessTree(proc, { exited: () => exited })
     }, timeout)
 
     const onAbort = () => {
       if (!timedOut && !aborted) {
         aborted = true
+        if (exited) {
+          settle(130, '[interrupted by user]')
+          return
+        }
         void terminateProcessTree(proc, { exited: () => exited, immediate: true })
       }
     }
@@ -314,41 +349,36 @@ function executeCommand(
       onProgress?.(`[stderr] ${text}`)
     })
 
-    // The 'exit' event fires when the process terminates, regardless of
-    // whether stdio streams have closed.  This is critical for commands
-    // that use '&' to background processes: the shell may exit (or be
-    // killed) while a backgrounded child still holds the pipe write-ends
-    // open, which would prevent 'close' from ever firing.
-    //
-    // When we initiated the abort/timeout ourselves, resolve immediately
-    // on 'exit' instead of waiting for 'close'.
-    const settle = (exitCode: number, appendix?: string) => {
-      const out = (stdout + stdoutDecoder.end()).trim()
-      resolve({
-        stdout: appendix ? (out ? `${out}\n\n${appendix}` : appendix) : out,
-        stderr: (stderr + stderrDecoder.end()).trim(),
-        exitCode,
-      })
-    }
-
-    proc.on('exit', () => {
+    // The 'exit' event fires when the shell terminates, regardless of
+    // whether stdio streams have closed.  'close' only follows once every
+    // pipe write-end is closed — which never happens when a detached child
+    // outlives the shell.  When we initiated the abort/timeout ourselves we
+    // resolve immediately on 'exit'; on a normal exit we wait for 'close'
+    // with a bounded grace instead of forever.
+    proc.on('exit', (code) => {
+      exitCode = code
+      exited = true
       if (aborted) {
-        clearTimeout(timer)
-        signal?.removeEventListener('abort', onAbort)
         settle(130, '[interrupted by user]')
-      } else if (timedOut) {
-        clearTimeout(timer)
-        signal?.removeEventListener('abort', onAbort)
-        settle(124, `[Exit code: 124]\n[Process timed out after ${timeout}ms]`)
+        return
       }
+      if (timedOut) {
+        settle(124, `[Exit code: 124]\n[Process timed out after ${timeout}ms]`)
+        return
+      }
+      graceTimer = setTimeout(() => {
+        settle(
+          exitCode ?? 1,
+          '[Shell exited, but a background process still held the output pipes open, so output may be incomplete]',
+        )
+      }, ZOMBIE_PIPE_GRACE_MS)
     })
 
     proc.on('close', (code) => {
       exited = true
-      clearTimeout(timer)
-      signal?.removeEventListener('abort', onAbort)
+      if (graceTimer !== undefined) clearTimeout(graceTimer)
 
-      // Promise may already be settled by 'exit' handler above — resolve is a no-op if so.
+      // Promise may already be settled by 'exit' handler above — settle is a no-op if so.
       if (timedOut) {
         settle(124, `[Exit code: 124]\n[Process timed out after ${timeout}ms]`)
         return
@@ -359,11 +389,12 @@ function executeCommand(
         return
       }
 
-      settle(code ?? 1)
+      settle(code ?? exitCode ?? 1)
     })
 
     proc.on('error', (error) => {
       clearTimeout(timer)
+      if (graceTimer !== undefined) clearTimeout(graceTimer)
       signal?.removeEventListener('abort', onAbort)
       reject(error)
     })

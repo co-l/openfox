@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeSessionStats } from './stats.js'
+import { computeSessionStats, computeSessionStatsSummary, mergeLiveStats } from './stats.js'
 import type { Message, MessageStats } from './types.js'
 
 // Helper to create a message with stats
@@ -510,5 +510,249 @@ describe('computeSessionStats', () => {
       model: 'claude-1',
       responseCount: 1,
     })
+  })
+})
+
+describe('computeSessionStatsSummary', () => {
+  it('returns null for empty or stat-less input', () => {
+    expect(computeSessionStatsSummary([])).toBeNull()
+    const messages: Message[] = [
+      { id: '1', role: 'user', content: 'hello', timestamp: '2024-01-01T10:00:00Z', tokenCount: 10 },
+    ]
+    expect(computeSessionStatsSummary(messages)).toBeNull()
+  })
+
+  it('computes the same headline aggregates as computeSessionStats', () => {
+    const messages = [
+      createMessageWithStats('1', {
+        mode: 'planner',
+        totalTime: 10,
+        toolTime: 2,
+        prefillTokens: 50000,
+        prefillSpeed: 10000,
+        generationTokens: 500,
+        generationSpeed: 150,
+      }),
+      createMessageWithStats(
+        '2',
+        {
+          mode: 'builder',
+          totalTime: 20,
+          toolTime: 5,
+          prefillTokens: 100000,
+          prefillSpeed: 8000,
+          generationTokens: 1000,
+          generationSpeed: 120,
+        },
+        '2024-01-01T10:00:30Z',
+      ),
+    ]
+
+    const summary = computeSessionStatsSummary(messages)
+    const full = computeSessionStats(messages)
+
+    expect(summary).not.toBeNull()
+    expect(summary!.totalTime).toBe(full!.totalTime)
+    expect(summary!.aiTime).toBe(full!.aiTime)
+    expect(summary!.toolTime).toBe(full!.toolTime)
+    expect(summary!.prefillTokens).toBe(full!.prefillTokens)
+    expect(summary!.generationTokens).toBe(full!.generationTokens)
+    expect(summary!.avgPrefillSpeed).toBe(full!.avgPrefillSpeed)
+    expect(summary!.avgGenerationSpeed).toBe(full!.avgGenerationSpeed)
+    expect(summary!.responseCount).toBe(2)
+    expect(summary!.llmCallCount).toBe(full!.llmCallCount)
+    // Summary never carries the discrete progression arrays
+    expect(summary).not.toHaveProperty('dataPoints')
+    expect(summary).not.toHaveProperty('callDataPoints')
+    // Accumulators match the weighted-average math: prefill (50000/10000 +
+    // 100000/8000) seconds, gen (500/150 + 1000/120) seconds
+    expect(summary!.totalPrefillSource).toBe(150000)
+    expect(summary!.totalPrefillTime).toBeCloseTo(17.5, 1)
+    expect(summary!.totalGenTime).toBeCloseTo(500 / 150 + 1000 / 120, 4)
+  })
+
+  it('uses prefTokenIncrement as the prefill source like the full stats', () => {
+    const messages = [
+      createMessageWithStats('1', {
+        mode: 'builder',
+        totalTime: 0.5,
+        toolTime: 0,
+        prefillTokens: 80000,
+        prefTokenIncrement: 2000,
+        prefillSpeed: 4000,
+        generationTokens: 500,
+        generationSpeed: 150,
+      }),
+    ]
+
+    const summary = computeSessionStatsSummary(messages)
+
+    expect(summary!.avgPrefillSpeed).toBe(4000)
+    expect(summary!.totalPrefillSource).toBe(2000)
+    expect(summary!.totalPrefillTime).toBeCloseTo(0.5, 3)
+  })
+
+  it('groups by model with per-group accumulators', () => {
+    const messages = [
+      createMessageWithStats('1', {
+        mode: 'builder',
+        totalTime: 10,
+        toolTime: 2,
+        prefillTokens: 50000,
+        prefillSpeed: 10000,
+        generationTokens: 500,
+        generationSpeed: 150,
+      }),
+    ]
+    const summary = computeSessionStatsSummary(messages)
+
+    expect(summary!.modelGroups).toHaveLength(1)
+    expect(summary!.modelGroups[0]).toMatchObject({
+      key: 'provider-1::test-model',
+      providerId: 'provider-1',
+      providerName: 'Local vLLM',
+      model: 'test-model',
+      responseCount: 1,
+      llmCallCount: 0,
+    })
+    expect(summary!.modelGroups[0]!.totalPrefillSource).toBe(50000)
+  })
+})
+
+describe('mergeLiveStats', () => {
+  const live: MessageStats = {
+    providerId: 'provider-1',
+    providerName: 'Local vLLM',
+    backend: 'vllm',
+    model: 'test-model',
+    mode: 'builder',
+    totalTime: 5,
+    toolTime: 1,
+    prefillTokens: 20000,
+    prefillSpeed: 20000,
+    generationTokens: 200,
+    generationSpeed: 100,
+  }
+
+  it('adds the live response on top of a base summary exactly', () => {
+    const base = computeSessionStatsSummary([
+      createMessageWithStats('1', {
+        mode: 'builder',
+        totalTime: 10,
+        toolTime: 2,
+        prefillTokens: 50000,
+        prefillSpeed: 10000,
+        generationTokens: 500,
+        generationSpeed: 150,
+      }),
+    ])!
+
+    const merged = mergeLiveStats(base, live)
+
+    expect(merged.responseCount).toBe(2)
+    expect(merged.totalTime).toBe(15)
+    expect(merged.toolTime).toBe(3)
+    expect(merged.aiTime).toBe(12)
+    expect(merged.prefillTokens).toBe(70000)
+    expect(merged.generationTokens).toBe(700)
+    expect(merged.llmCallCount).toBe(0)
+    // Weighted: prefill (50000 + 20000) / (5 + 1) = 11666.7 tok/s
+    expect(merged.avgPrefillSpeed).toBeCloseTo(11666.7, 0)
+    // Gen: 700 / (500/150 + 200/100) = 700 / 5.333 = 131.2 tok/s
+    expect(merged.avgGenerationSpeed).toBeCloseTo(131.2, 0)
+    // Accumulators stay mergeable for the next live delta
+    expect(merged.totalPrefillSource).toBeCloseTo(70000, 0)
+    expect(merged.totalPrefillTime).toBeCloseTo(6, 1)
+    // The matching model group is updated too
+    expect(merged.modelGroups[0]!.responseCount).toBe(2)
+    expect(merged.modelGroups[0]!.totalTime).toBe(15)
+  })
+
+  it('builds a summary from the live response alone when there is no base', () => {
+    const merged = mergeLiveStats(null, live)
+
+    expect(merged.responseCount).toBe(1)
+    expect(merged.totalTime).toBe(5)
+    expect(merged.aiTime).toBe(4)
+    expect(merged.avgPrefillSpeed).toBe(20000)
+    expect(merged.modelGroups).toHaveLength(1)
+    expect(merged.modelGroups[0]!.model).toBe('test-model')
+  })
+
+  it('adds a new model group when the live response uses an unseen model', () => {
+    const base = computeSessionStatsSummary([
+      createMessageWithStats('1', {
+        mode: 'builder',
+        totalTime: 10,
+        toolTime: 2,
+        prefillTokens: 50000,
+        prefillSpeed: 10000,
+        generationTokens: 500,
+        generationSpeed: 150,
+      }),
+    ])!
+    const otherLive: MessageStats = { ...live, model: 'other-model', providerName: 'Other' }
+
+    const merged = mergeLiveStats(base, otherLive)
+
+    expect(merged.modelGroups).toHaveLength(2)
+    const other = merged.modelGroups.find((g) => g.model === 'other-model')!
+    expect(other.responseCount).toBe(1)
+    expect(other.totalTime).toBe(5)
+    // Base group untouched
+    const baseGroup = merged.modelGroups.find((g) => g.model === 'test-model')!
+    expect(baseGroup.responseCount).toBe(1)
+  })
+
+  it('counts live llm calls in the aggregate', () => {
+    const base = computeSessionStatsSummary([
+      createMessageWithStats('1', {
+        mode: 'builder',
+        totalTime: 10,
+        toolTime: 2,
+        prefillTokens: 50000,
+        prefillSpeed: 10000,
+        generationTokens: 500,
+        generationSpeed: 150,
+      }),
+    ])!
+    const liveWithCalls: MessageStats = {
+      ...live,
+      llmCalls: [
+        {
+          providerId: 'provider-1',
+          providerName: 'Local vLLM',
+          backend: 'vllm',
+          model: 'test-model',
+          callIndex: 0,
+          promptTokens: 100,
+          completionTokens: 10,
+          ttft: 0.1,
+          completionTime: 0.5,
+          prefillSpeed: 1000,
+          generationSpeed: 50,
+          totalTime: 0.6,
+        },
+        {
+          providerId: 'provider-1',
+          providerName: 'Local vLLM',
+          backend: 'vllm',
+          model: 'test-model',
+          callIndex: 1,
+          promptTokens: 50,
+          completionTokens: 5,
+          ttft: 0.05,
+          completionTime: 0.25,
+          prefillSpeed: 1000,
+          generationSpeed: 50,
+          totalTime: 0.3,
+        },
+      ],
+    }
+
+    const merged = mergeLiveStats(base, liveWithCalls)
+
+    expect(merged.llmCallCount).toBe(2)
+    expect(merged.modelGroups[0]!.llmCallCount).toBe(2)
   })
 })

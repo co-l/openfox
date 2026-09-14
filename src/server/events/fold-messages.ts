@@ -1,4 +1,4 @@
-import type { Message, Attachment } from '../../shared/types.js'
+import type { Message, Attachment, StatsSource } from '../../shared/types.js'
 import type { StoredEvent, TurnEvent, SessionSnapshot, SnapshotMessage } from './types.js'
 import { applyEvents } from './apply-events.js'
 import stripAnsi from 'strip-ansi'
@@ -148,6 +148,63 @@ export function applyTurnEventsToSnapshotMessages(
     timestampAsNumber: true,
   }) as unknown as SnapshotMessage[]
   return messages.map((msg) => ({ ...msg, isStreaming: msg.isStreaming ?? true }))
+}
+
+/**
+ * Extract compact per-response stats (id + timestamp + MessageStats) for the
+ * WHOLE session, across every context window, without rebuilding messages.
+ *
+ * Source of truth is the latest snapshot's messages — they retain per-message
+ * stats even after compaction and after cleanupOldEvents purged the raw
+ * chat.done/message.done events (verified: a compacted session with 132
+ * stat-bearing responses had 0 raw stat events left). message.done events
+ * after the snapshot are appended (and may overwrite a snapshot entry when a
+ * message finished after the snapshot was taken). Sessions with no snapshot
+ * yet fall back to walking raw message.done events.
+ */
+export function buildSessionStatsMessages(events: StoredEvent[]): StatsSource[] {
+  const statsById = new Map<string, StatsSource>()
+  const snapshotEvent = [...events].reverse().find((event) => event.type === 'turn.snapshot')
+  const snapshotSeq = snapshotEvent?.seq ?? 0
+
+  if (snapshotEvent) {
+    const snapshot = snapshotEvent.data as SessionSnapshot
+    for (const msg of snapshot.messages) {
+      if (msg.stats) {
+        statsById.set(msg.id, {
+          id: msg.id,
+          timestamp: new Date(msg.timestamp).toISOString(),
+          stats: msg.stats,
+        })
+      }
+    }
+  }
+
+  const startTimestamps = new Map<string, number>()
+  for (const event of events) {
+    if (event.seq <= snapshotSeq) continue
+    switch (event.type) {
+      case 'message.start': {
+        const data = event.data as Extract<TurnEvent, { type: 'message.start' }>['data']
+        startTimestamps.set(data.messageId, event.timestamp)
+        break
+      }
+      case 'message.done': {
+        const data = event.data as Extract<TurnEvent, { type: 'message.done' }>['data']
+        if (data.stats) {
+          const timestamp = startTimestamps.get(data.messageId) ?? event.timestamp
+          statsById.set(data.messageId, {
+            id: data.messageId,
+            timestamp: new Date(timestamp).toISOString(),
+            stats: data.stats,
+          })
+        }
+        break
+      }
+    }
+  }
+
+  return Array.from(statsById.values())
 }
 
 export function buildMessagesFromStoredEvents(

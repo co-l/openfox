@@ -22,6 +22,7 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
   const dynamicSystemPrompt = useSetting(SETTINGS_KEYS.LLM_DYNAMIC_SYSTEM_PROMPT).value === 'true'
   const cavemanThinking = useSetting(SETTINGS_KEYS.LLM_CAVEMAN_THINKING).value === 'true'
   const cacheWarming = useSetting(SETTINGS_KEYS.CACHE_WARMING).value === 'true'
+  const autoContinueOnBoot = useSetting(SETTINGS_KEYS.AUTO_CONTINUE_ON_BOOT).value === 'true'
   const retryPatternsSetting = useSetting(SETTINGS_KEYS.RETRY_PATTERNS).value
   const proxyUrlSetting = useSetting(SETTINGS_KEYS.PROXY_URL).value
   const defaultAgentSetting = useSetting(SETTINGS_KEYS.DEFAULT_AGENT).value
@@ -32,6 +33,7 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
     dynamicPrompt: dynamicSystemPrompt,
     cacheWarming,
     cavemanThinking,
+    autoContinueOnBoot,
   })
 
   const [retryPatterns, setRetryPatterns] = useState<RetryPatternsValue>({ patterns: [], maxRetriesPerTurn: 10 })
@@ -58,8 +60,9 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
       dynamicPrompt: dynamicSystemPrompt,
       cacheWarming,
       cavemanThinking,
+      autoContinueOnBoot,
     })
-  }, [showOpenInEditor, dynamicSystemPrompt, cacheWarming, cavemanThinking])
+  }, [showOpenInEditor, dynamicSystemPrompt, cacheWarming, cavemanThinking, autoContinueOnBoot])
 
   useEffect(() => {
     if (retryPatternsSetting) {
@@ -123,6 +126,12 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
     const newValue = !localToggles.cavemanThinking
     setLocalToggles((prev) => ({ ...prev, cavemanThinking: newValue }))
     void setSetting(SETTINGS_KEYS.LLM_CAVEMAN_THINKING, String(newValue))
+  }
+
+  const handleToggleAutoContinueOnBoot = () => {
+    const newValue = !localToggles.autoContinueOnBoot
+    setLocalToggles((prev) => ({ ...prev, autoContinueOnBoot: newValue }))
+    void setSetting(SETTINGS_KEYS.AUTO_CONTINUE_ON_BOOT, String(newValue))
   }
 
   function handleLaunchOnboarding() {
@@ -340,6 +349,17 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
         })}
         enabled={localToggles.cavemanThinking}
         onToggle={handleToggleCavemanThinking}
+        boldTitle
+      />
+      <hr className="border-border" />
+      <SettingsToggle
+        title={t({ en: 'Auto-continue on boot', fr: 'Reprise automatique au démarrage' })}
+        description={t({
+          en: 'When the server starts, automatically continue sessions that were running when it stopped. Responses cut off mid-generation receive the same "stream interrupted" reminder as a dropped LLM connection. Applies on the next start. Each continued session triggers one LLM call, so several running sessions will resume in parallel.',
+          fr: 'Au démarrage du serveur, reprend automatiquement les sessions qui étaient en cours lors de son arrêt. Les réponses coupées en pleine génération reçoivent le même rappel « flux interrompu » qu’une connexion LLM perdue. S’applique au prochain démarrage. Chaque session reprise déclenche un appel LLM ; plusieurs sessions en cours reprendront donc en parallèle.',
+        })}
+        enabled={localToggles.autoContinueOnBoot}
+        onToggle={handleToggleAutoContinueOnBoot}
         boldTitle
       />
     </div>

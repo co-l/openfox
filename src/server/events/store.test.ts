@@ -10,7 +10,7 @@ import Database from 'better-sqlite3'
 import { mkdtempSync, rmSync, existsSync, statSync, writeFileSync, utimesSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { EventStore, initEventStore } from './store.js'
+import { EventStore, initEventStore, getStaleRunningSessionIds } from './store.js'
 import { SETTINGS_KEYS } from '../db/settings.js'
 import type { TurnEvent, StoredEvent, SessionSnapshot } from './types.js'
 
@@ -857,6 +857,42 @@ describe('initEventStore', () => {
 
     // Should have one more event than before
     expect(eventsAfterRestart.length).toBe(eventsBeforeRestart.length + 1)
+
+    db.close()
+  })
+
+  it('records stale running session ids for boot auto-continuation', () => {
+    const db = new Database(':memory:')
+
+    db.exec(`
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        workdir TEXT NOT NULL,
+        is_running INTEGER NOT NULL DEFAULT 0
+      )
+    `)
+
+    db.prepare(`INSERT INTO sessions (id, project_id, workdir, is_running) VALUES (?, ?, ?, 1)`).run(
+      'session-stale',
+      'project-1',
+      '/tmp/test',
+    )
+    db.prepare(`INSERT INTO sessions (id, project_id, workdir, is_running) VALUES (?, ?, ?, 0)`).run(
+      'session-idle',
+      'project-1',
+      '/tmp/test',
+    )
+
+    const firstStore = new EventStore(db)
+    firstStore.append('session-stale', { type: 'running.changed', data: { isRunning: true } })
+    firstStore.append('session-idle', { type: 'running.changed', data: { isRunning: false } })
+
+    initEventStore(db)
+
+    const staleIds = getStaleRunningSessionIds()
+    expect(staleIds).toContain('session-stale')
+    expect(staleIds).not.toContain('session-idle')
 
     db.close()
   })

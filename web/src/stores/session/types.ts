@@ -10,6 +10,7 @@ import type {
   Attachment,
   WorkflowLaunchScope,
   WorkflowExecution,
+  SessionStatsSummary,
 } from '@shared/types.js'
 import type { ServerMessage, QueuedMessage, ChoiceOption } from '@shared/protocol.js'
 import type { ConnectionStatus } from '../../lib/ws'
@@ -80,6 +81,8 @@ export interface SessionPane {
   llmRetry: LLMRetryState | null
   /** Cumulative turn stats streamed while a turn is running; null when idle. */
   liveTurnStats: MessageStats | null
+  /** Server-computed headline stats for the whole session (all context windows). Null when no response has stats yet. */
+  sessionStats: SessionStatsSummary | null
 }
 
 export interface SessionState {
@@ -110,6 +113,8 @@ export interface SessionState {
   llmRetry: LLMRetryState | null
   /** Cumulative turn stats streamed while a turn is running; null when idle. */
   liveTurnStats: MessageStats | null
+  /** Server-computed headline stats for the whole session (all context windows). Null when no response has stats yet. */
+  sessionStats: SessionStatsSummary | null
   sessionsHasMore: boolean
   sessionsPaginationLoading: boolean
   pendingSessionCreate: boolean | string

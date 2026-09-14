@@ -310,6 +310,57 @@ export interface ModelSessionStats extends StatsIdentity {
   callDataPoints: CallStatsDataPoint[]
 }
 
+/**
+ * Minimal per-response stats input for aggregation. `Message` is assignable
+ * to it — only id, timestamp and stats are read.
+ */
+export interface StatsSource {
+  id: string
+  timestamp: string
+  stats?: MessageStats | null
+}
+
+/**
+ * Lean server-computed session stats: the headline aggregates only, no
+ * discrete per-response/per-call progression arrays. Shipped on every
+ * session load and state update (a few hundred bytes) regardless of how many
+ * responses the session has. The trailing accumulators are internal — they
+ * keep the live-turn merge exact and are never displayed.
+ */
+export interface SessionStatsSummary {
+  totalTime: number
+  aiTime: number
+  toolTime: number
+  prefillTokens: number
+  generationTokens: number
+  avgPrefillSpeed: number
+  avgGenerationSpeed: number
+  responseCount: number
+  llmCallCount: number
+  modelGroups: ModelStatsSummary[]
+  // Internal accumulators (same token source as the per-message speed)
+  totalPrefillSource: number
+  totalPrefillTime: number
+  totalGenTime: number
+}
+
+export interface ModelStatsSummary extends StatsIdentity {
+  key: string
+  label: string
+  totalTime: number
+  aiTime: number
+  toolTime: number
+  prefillTokens: number
+  generationTokens: number
+  avgPrefillSpeed: number
+  avgGenerationSpeed: number
+  responseCount: number
+  llmCallCount: number
+  totalPrefillSource: number
+  totalPrefillTime: number
+  totalGenTime: number
+}
+
 export interface InjectedFile {
   path: string // File path or identifier
   content: string // File content

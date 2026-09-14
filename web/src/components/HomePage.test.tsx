@@ -16,7 +16,7 @@ vi.mock('../lib/ws', () => ({
 
 vi.mock('wouter', () => ({
   Link: ({ children, href }: { children: React.ReactNode; href: string }) => <a href={href}>{children}</a>,
-  useLocation: () => [undefined, vi.fn()],
+  useLocation: () => [undefined, navigateMock],
 }))
 
 vi.mock('../lib/api', () => ({
@@ -27,10 +27,11 @@ import { authFetch } from '../lib/api'
 import { summariesResource } from '../lib/resources'
 import { clearCache } from '../lib/resourceCache'
 
-const { listHomeSessionsMock, listSessionsMock, ensureFullSessionListMock } = vi.hoisted(() => ({
+const { listHomeSessionsMock, listSessionsMock, ensureFullSessionListMock, navigateMock } = vi.hoisted(() => ({
   listHomeSessionsMock: vi.fn(),
   listSessionsMock: vi.fn(),
   ensureFullSessionListMock: vi.fn(),
+  navigateMock: vi.fn(),
 }))
 
 const sessionStore = { sessions: [] as any[], sessionsWithPendingConfirmations: [] as string[] }
@@ -138,6 +139,7 @@ beforeEach(() => {
   sessionStore.sessions = []
   sessionStore.sessionsWithPendingConfirmations = []
   document.body.innerHTML = ''
+  navigateMock.mockClear()
   listHomeSessionsMock.mockClear()
   listSessionsMock.mockClear()
   ensureFullSessionListMock.mockClear()
@@ -431,8 +433,76 @@ describe('HomePage', () => {
     sessionStore.sessions = [makeSession('s1', { projectId: 'p1' })]
     const { HomePage } = await import('./HomePage')
     const container = render(<HomePage />)
-    const row = container.querySelector('a[href="/p/p1/s/s1"]')
+    const row = container.querySelector('a[href="/p/p1/s/s1"]')!.closest('div')
     expect(row?.textContent).toContain('Project Alpha')
+  })
+
+  it('opens a project dropdown from the session row with a New Session link and a Tasks action', async () => {
+    sessionStore.sessions = [makeSession('s1', { projectId: 'p1' })]
+    const { HomePage } = await import('./HomePage')
+    const container = render(<HomePage />)
+
+    const trigger = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Project Alpha'),
+    )
+    expect(trigger).toBeTruthy()
+    await userEvent.click(trigger!)
+
+    const menu = document.querySelector('[data-testid="session-dropdown-menu"]')
+    expect(menu).toBeTruthy()
+    const newSession = menu!.querySelector('a[href="/p/p1/new"]')
+    expect(newSession).toBeTruthy()
+    expect(newSession?.textContent).toContain('New Session')
+    expect(menu!.textContent).toContain('Tasks')
+    await userEvent.click(newSession!)
+    expect(navigateMock).not.toHaveBeenCalled()
+  })
+
+  it('opens the Tasks modal from the session-row project dropdown', async () => {
+    sessionStore.sessions = [makeSession('s1', { projectId: 'p1' })]
+    const { HomePage } = await import('./HomePage')
+    const container = render(<HomePage />)
+
+    const trigger = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Project Alpha'),
+    )!
+    await userEvent.click(trigger!)
+
+    const menu = document.querySelector('[data-testid="session-dropdown-menu"]')!
+    const tasksItem = Array.from(menu.querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Tasks')
+    expect(tasksItem).toBeTruthy()
+    await userEvent.click(tasksItem!)
+
+    await vi.waitFor(() => {
+      expect(document.querySelector('[placeholder="Search tasks…"]')).toBeTruthy()
+    })
+    expect(navigateMock).not.toHaveBeenCalled()
+  })
+
+  it('keeps the project dropdown trigger outside the session link', async () => {
+    sessionStore.sessions = [makeSession('s1', { projectId: 'p1' })]
+    const { HomePage } = await import('./HomePage')
+    const container = render(<HomePage />)
+
+    const link = container.querySelector('a[href="/p/p1/s/s1"]')!
+    const trigger = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Project Alpha'),
+    )!
+    expect(trigger).toBeTruthy()
+    expect(link.contains(trigger)).toBe(false)
+
+    await userEvent.click(trigger)
+    expect(navigateMock).not.toHaveBeenCalled()
+  })
+
+  it('navigates to the session when clicking the row outside the link (status dot)', async () => {
+    sessionStore.sessions = [makeSession('s1', { projectId: 'p1' })]
+    const { HomePage } = await import('./HomePage')
+    const container = render(<HomePage />)
+
+    const row = container.querySelector('a[href="/p/p1/s/s1"]')!.closest('div')!
+    await userEvent.click(row.children[0] as HTMLElement)
+    expect(navigateMock).toHaveBeenCalledWith('/p/p1/s/s1')
   })
 
   it('shows prompts badge when session matches by prompts only', async () => {

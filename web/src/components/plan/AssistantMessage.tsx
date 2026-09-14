@@ -8,6 +8,7 @@ import { ToolCallPreparing } from '../shared/ToolCallPreparing'
 import { TodoListDisplay } from '../shared/TodoListDisplay'
 import { AskUserCard } from '../shared/AskUserCard'
 import { CriteriaGroupDisplay, isCriterionTool } from '../shared/CriteriaGroupDisplay'
+import { isMetadataAddPreparing } from '../../lib/session-metadata'
 import { useSessionStore } from '../../stores/session'
 import { useAgents } from '../../hooks/useAgents'
 import { getAgentColor } from '../../lib/agents-actions'
@@ -34,24 +35,29 @@ type DisplayElement =
   | { type: 'text'; content: string }
   | { type: 'preparing_tool_call'; preparing: PreparingToolCall }
   | { type: 'tool_call'; toolCall: ToolCall }
-  | { type: 'criteria_group'; toolCalls: ToolCall[] }
+  | { type: 'criteria_group'; toolCalls: ToolCall[]; preparing: PreparingToolCall[] }
   | { type: 'stats'; stats: NonNullable<Message['stats']> }
 
-// Group consecutive criterion tool calls into a single criteria_group element
+// Group consecutive criterion tool calls and in-flight metadata adds into a
+// single criteria_group element so the box grows live while streaming.
 function groupConsecutiveCriteria(elements: DisplayElement[]): DisplayElement[] {
   const result: DisplayElement[] = []
   let criteriaBuffer: ToolCall[] = []
+  let preparingBuffer: PreparingToolCall[] = []
 
   const flushBuffer = () => {
-    if (criteriaBuffer.length > 0) {
-      result.push({ type: 'criteria_group', toolCalls: criteriaBuffer })
+    if (criteriaBuffer.length > 0 || preparingBuffer.length > 0) {
+      result.push({ type: 'criteria_group', toolCalls: criteriaBuffer, preparing: preparingBuffer })
       criteriaBuffer = []
+      preparingBuffer = []
     }
   }
 
   for (const element of elements) {
     if (element.type === 'tool_call' && isCriterionTool(element.toolCall.name)) {
       criteriaBuffer.push(element.toolCall)
+    } else if (element.type === 'preparing_tool_call' && isMetadataAddPreparing(element.preparing)) {
+      preparingBuffer.push(element.preparing)
     } else {
       flushBuffer()
       result.push(element)
@@ -265,7 +271,14 @@ export const AssistantMessage = memo(function AssistantMessage({
             }
 
             case 'criteria_group':
-              return <CriteriaGroupDisplay key={i} toolCalls={element.toolCalls} criteria={criteria} />
+              return (
+                <CriteriaGroupDisplay
+                  key={i}
+                  toolCalls={element.toolCalls}
+                  preparing={element.preparing}
+                  criteria={criteria}
+                />
+              )
 
             case 'stats': {
               const stats = element.stats

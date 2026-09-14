@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import type { Mock } from 'vitest'
 import { SessionSidebar } from './SessionSidebar'
 import { SessionScopeProvider } from '../../stores/session/session-scope'
+import { computeSessionStatsSummary } from '@shared/stats.js'
 import type { Message } from '@shared/types.js'
 
 /* ------------------------------------------------------------------ */
@@ -35,10 +36,6 @@ const mockUseGitStatus = vi.fn() as Mock
 
 vi.mock('../../hooks/useGitStatus', () => ({
   useGitStatus: (...args: unknown[]) => mockUseGitStatus(...args),
-}))
-
-vi.mock('../../hooks/useSessionStats', () => ({
-  useSessionStats: vi.fn(() => null),
 }))
 
 /* ------------------------------------------------------------------ */
@@ -83,7 +80,7 @@ describe('SessionSidebar — git repo guards', () => {
   it('[AUTOMATED] shows workspace and branch Edit buttons when project is a git repository', () => {
     mockUseGitStatus.mockReturnValue({ branch: 'main', diff: { files: [], loading: false, error: null } })
 
-    const html = renderToStaticMarkup(<SessionSidebar messages={[]} />)
+    const html = renderToStaticMarkup(<SessionSidebar />)
 
     expect(html).toContain('Edit')
     const editCount = (html.match(/Edit/g) ?? []).length
@@ -93,7 +90,7 @@ describe('SessionSidebar — git repo guards', () => {
   it('[AUTOMATED] hides Edit buttons when project is not a git repository', () => {
     mockUseGitStatus.mockReturnValue({ branch: null, diff: { files: [], loading: false, error: null } })
 
-    const html = renderToStaticMarkup(<SessionSidebar messages={[]} />)
+    const html = renderToStaticMarkup(<SessionSidebar />)
 
     expect(html).not.toContain('Edit')
   })
@@ -110,7 +107,7 @@ describe('SessionSidebar — git repo guards', () => {
       },
     })
 
-    const html = renderToStaticMarkup(<SessionSidebar messages={[]} />)
+    const html = renderToStaticMarkup(<SessionSidebar />)
 
     expect(html).toContain('my-app')
     expect(html).not.toContain('C:\\Users\\me\\projects\\my-app')
@@ -153,7 +150,7 @@ describe('SessionSidebar — split view pane isolation', () => {
 
     const html = renderToStaticMarkup(
       <SessionScopeProvider value="A">
-        <SessionSidebar messages={[]} />
+        <SessionSidebar />
       </SessionScopeProvider>,
     )
 
@@ -163,30 +160,8 @@ describe('SessionSidebar — split view pane isolation', () => {
 })
 
 describe('SessionSidebar — live turn stats', () => {
-  it('merges live cumulative stats into the aggregate while a turn is running', () => {
+  it('merges live cumulative stats into the server summary while a turn is running', () => {
     mockUseGitStatus.mockReturnValue({ branch: null, diff: { files: [], loading: false, error: null } })
-    mockSessionStore.mockReturnValue({
-      currentSession: { id: 's1', projectId: 'p1', metadataEntries: {}, workdir: '/tmp/project' },
-      panes: {
-        s1: {
-          session: { id: 's1', projectId: 'p1', metadataEntries: {}, workdir: '/tmp/project' },
-          liveTurnStats: {
-            providerId: 'p',
-            providerName: 'P',
-            backend: 'ollama',
-            model: 'm',
-            mode: 'builder',
-            totalTime: 12,
-            toolTime: 2,
-            prefillTokens: 60000,
-            prefillSpeed: 20000,
-            generationTokens: 600,
-            generationSpeed: 150,
-          },
-        },
-      },
-    })
-
     // One already-finished response (aiTime 7) plus the live turn (aiTime 10)
     // → merged aiTime 17s, shown live while the turn is running.
     const previousMessage: Message = {
@@ -208,10 +183,33 @@ describe('SessionSidebar — live turn stats', () => {
         generationSpeed: 100,
       },
     }
+    const summary = computeSessionStatsSummary([previousMessage])
+    mockSessionStore.mockReturnValue({
+      currentSession: { id: 's1', projectId: 'p1', metadataEntries: {}, workdir: '/tmp/project' },
+      panes: {
+        s1: {
+          session: { id: 's1', projectId: 'p1', metadataEntries: {}, workdir: '/tmp/project' },
+          sessionStats: summary,
+          liveTurnStats: {
+            providerId: 'p',
+            providerName: 'P',
+            backend: 'ollama',
+            model: 'm',
+            mode: 'builder',
+            totalTime: 12,
+            toolTime: 2,
+            prefillTokens: 60000,
+            prefillSpeed: 20000,
+            generationTokens: 600,
+            generationSpeed: 150,
+          },
+        },
+      },
+    })
 
     const html = renderToStaticMarkup(
       <SessionScopeProvider value="s1">
-        <SessionSidebar messages={[previousMessage]} />
+        <SessionSidebar />
       </SessionScopeProvider>,
     )
 

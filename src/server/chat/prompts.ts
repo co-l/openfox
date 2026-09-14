@@ -342,4 +342,9 @@ Be thorough but concise. Output as a structured summary.`
 
 export const FORMAT_CORRECTION_PROMPT = `IMPORTANT: You MUST use the JSON function calling API. Do NOT output XML tags like <tool_call>, <function=>, or <parameter=>. Your previous attempt was stopped because you used the wrong format. Use the proper tool_calls format.`
 
+export const CONTINUE_PROMPT = 'Continue your previous response. Do NOT repeat what you already wrote.'
+
+export const CONTINUE_AFTER_STREAM_ERROR_PROMPT =
+  'The LLM stream was interrupted mid-response. Continue exactly where you left off — do not repeat what was already written.'
+
 export const MAX_FORMAT_RETRIES = 10

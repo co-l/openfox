@@ -250,7 +250,7 @@ export function createAutoUpdateRoutes(options: AutoUpdateRoutesOptions = {}): R
       clearTimeout(timeout)
 
       if (exitCode === 0) {
-        const versionMatch = stdout.match(/Updated: ([\d.]+)/)
+        const versionMatch = stdout.match(/(?:Updated|Mis à jour) ?: ([\d.]+)/)
         const version = versionMatch?.[1] ?? VERSION
         res.json({ success: true, version, isService })
       } else {

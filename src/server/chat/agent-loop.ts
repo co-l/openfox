@@ -47,7 +47,7 @@ import { estimateToolResultTokens, isContextLengthError } from './token-budget.j
 import { loadAllAgentsDefault, getSubAgents } from '../agents/registry.js'
 import { createRetryLimiter, type RetryLimiter } from './retry-limiter.js'
 import { drainQueue } from './drain-queue.js'
-import { COMPACTION_PROMPT } from './prompts.js'
+import { COMPACTION_PROMPT, CONTINUE_PROMPT, CONTINUE_AFTER_STREAM_ERROR_PROMPT } from './prompts.js'
 import { logger } from '../utils/logger.js'
 import type { LLMRetryPolicy } from '../runner/types.js'
 import { DEFAULT_LLM_RETRY_POLICY } from '../runner/types.js'
@@ -201,9 +201,6 @@ export interface TopLevelLoopConfig {
 const MAX_TRUNCATION_RETRIES = 3
 const MAX_CONTEXT_LENGTH_RETRIES = 3
 const OUTPUT_RESERVE_TOKENS = 2048
-const CONTINUE_PROMPT = 'Continue your previous response. Do NOT repeat what you already wrote.'
-const CONTINUE_AFTER_STREAM_ERROR_PROMPT =
-  'The LLM stream was interrupted mid-response. Continue exactly where you left off — do not repeat what was already written.'
 
 export async function runTopLevelAgentLoop(
   config: TopLevelLoopConfig,
@@ -847,3 +844,5 @@ ${COMPACTION_PROMPT}`,
     ...(returnValueResult ? { returnValueResult } : {}),
   }
 }
+
+export { CONTINUE_PROMPT, CONTINUE_AFTER_STREAM_ERROR_PROMPT } from './prompts.js'

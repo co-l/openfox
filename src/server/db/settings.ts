@@ -35,6 +35,7 @@ export const SETTINGS_KEYS = {
   LLM_DYNAMIC_SYSTEM_PROMPT: 'llm.dynamicSystemPrompt',
   LLM_CAVEMAN_THINKING: 'llm.cavemanThinking',
   CACHE_WARMING: 'cache.warming',
+  AUTO_CONTINUE_ON_BOOT: 'agent.autoContinueOnBoot',
   KEYBINDINGS: 'keybindings',
   RETRY_PATTERNS: 'agent.retryPatterns',
   SKILLS_DIRECTORIES: 'skills.directories',
@@ -82,6 +83,7 @@ export const SETTINGS_DEFAULTS: Record<string, string> = {
   [SETTINGS_KEYS.LLM_DYNAMIC_SYSTEM_PROMPT]: 'false',
   [SETTINGS_KEYS.LLM_CAVEMAN_THINKING]: 'false',
   [SETTINGS_KEYS.CACHE_WARMING]: 'false',
+  [SETTINGS_KEYS.AUTO_CONTINUE_ON_BOOT]: 'false',
   [SETTINGS_KEYS.RETRY_PATTERNS]: JSON.stringify({ patterns: [], maxRetriesPerTurn: 10 }),
   [SETTINGS_KEYS.KEYBINDINGS]: JSON.stringify({
     terminalToggle: { type: 'double-press', key: 'Control', threshold: 300 },

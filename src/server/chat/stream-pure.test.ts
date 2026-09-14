@@ -169,6 +169,63 @@ describe('stream-pure', () => {
     expect(preparingEvents[2]!).toMatchObject({ data: { name: 'run_command', arguments: '{"command":"echo hello"}' } })
   })
 
+  it('streams partial arguments for session_metadata', async () => {
+    const client = createMockClient([
+      { type: 'tool_call_delta', index: 0, name: 'session_metadata' },
+      {
+        type: 'tool_call_delta',
+        index: 0,
+        arguments: '{"action":"add","key":"criteria","id":"criterion-1","description":"Implement',
+      },
+      { type: 'tool_call_delta', index: 0, arguments: ' the thing"}' },
+      {
+        type: 'done',
+        response: {
+          id: 'resp-1',
+          content: '',
+          toolCalls: [
+            {
+              id: 'call-1',
+              name: 'session_metadata',
+              arguments: { action: 'add', key: 'criteria', id: 'criterion-1', description: 'Implement the thing' },
+            },
+          ],
+          finishReason: 'tool_calls',
+          usage: { promptTokens: 10, completionTokens: 10, totalTokens: 20 },
+        },
+      },
+    ])
+
+    const gen = streamLLMPure({
+      messageId: 'msg-meta',
+      systemPrompt: 'system',
+      llmClient: client,
+      messages: [{ role: 'user', content: 'add criterion' }],
+      tools: [{ type: 'function', function: { name: 'session_metadata', description: 'Metadata', parameters: {} } }],
+    })
+
+    const events: Array<{ type: string; data: unknown }> = []
+    await consumeStreamGenerator(gen, (event) => {
+      events.push(event)
+    })
+
+    const preparingEvents = events.filter((e) => e.type === 'tool.preparing')
+    expect(preparingEvents).toHaveLength(3)
+    expect(preparingEvents[0]!).toMatchObject({ data: { name: 'session_metadata' } })
+    expect(preparingEvents[1]!).toMatchObject({
+      data: {
+        name: 'session_metadata',
+        arguments: '{"action":"add","key":"criteria","id":"criterion-1","description":"Implement',
+      },
+    })
+    expect(preparingEvents[2]!).toMatchObject({
+      data: {
+        name: 'session_metadata',
+        arguments: '{"action":"add","key":"criteria","id":"criterion-1","description":"Implement the thing"}',
+      },
+    })
+  })
+
   it('treats AbortError as an aborted result', async () => {
     const controller = new AbortController()
     controller.abort()

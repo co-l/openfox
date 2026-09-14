@@ -25,7 +25,12 @@ import { provideAnswer } from '../tools/index.js'
 import { logger } from '../utils/logger.js'
 import { devServerManager } from '../dev-server/manager.js'
 import { onProcessEvent } from '../tools/background-process/manager.js'
-import { buildMessagesFromStoredEvents, foldPendingConfirmations } from '../events/folding.js'
+import {
+  buildMessagesFromStoredEvents,
+  buildSessionStatsMessages,
+  foldPendingConfirmations,
+} from '../events/folding.js'
+import { computeSessionStatsSummary } from '../../shared/stats.js'
 import { getPendingQuestionsForSession } from '../tools/index.js'
 import { generateSessionNameForSession, needsNameGeneration } from '../session/name-generator.js'
 import { getSessionMessageCount } from '../utils/session-utils.js'
@@ -680,6 +685,7 @@ export function createWebSocketServer(
 
       const maxVisible = getMaxVisibleItems()
       const { messages, hiddenCount } = buildMessagesFromStoredEvents(events, maxVisible || undefined)
+      const sessionStats = computeSessionStatsSummary(buildSessionStatsMessages(events))
       const pendingConfirmations = foldPendingConfirmations(events)
       const pendingQuestions = getPendingQuestionsForSession(updatedSession.id)
       const activeWorkflowExecution = sessionManager.getDisplayWorkflowExecution(updatedSession.id)
@@ -713,6 +719,7 @@ export function createWebSocketServer(
           undefined,
           hiddenCount,
           activeWorkflowExecution ?? undefined,
+          sessionStats,
         ),
       )
 

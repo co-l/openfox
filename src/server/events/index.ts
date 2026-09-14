@@ -49,6 +49,7 @@ export { createEvent, isTurnEvent, isStoredEvent } from './types.js'
 export type { FoldedSessionState, ContextMessage } from './folding.js'
 export {
   buildMessagesFromStoredEvents,
+  buildSessionStatsMessages,
   buildContextMessagesFromStoredEvents,
   buildContextMessagesFromEventHistory,
   foldTurnEventsToSnapshotMessages,

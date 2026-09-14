@@ -48,6 +48,15 @@ describe('AdvancedTab', () => {
     expect(mockSetSetting).toHaveBeenCalledWith('llm.cavemanThinking', 'true')
   })
 
+  it('renders the auto-continue-on-boot toggle and persists it', async () => {
+    const { container } = render(<AdvancedTab onClose={vi.fn()} />)
+    const toggles = container.querySelectorAll('label')
+    const toggle = Array.from(toggles).find((t) => t.textContent?.includes('Auto-continue on boot'))
+    expect(toggle).toBeTruthy()
+    await userEvent.setup().click(toggle!)
+    expect(mockSetSetting).toHaveBeenCalledWith('agent.autoContinueOnBoot', 'true')
+  })
+
   it('renders the Speculative Cache Warming toggle', () => {
     const { container } = render(<AdvancedTab onClose={vi.fn()} />)
     expect(container.textContent).toContain('Speculative Cache Warming')

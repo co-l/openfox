@@ -301,6 +301,8 @@ export function handleServerMessage(
           session: payload.session,
           messages,
           hiddenCount: payload.hiddenCount ?? 0,
+          sessionStats:
+            (payload.sessionStats as import('@shared/types.js').SessionStatsSummary | null | undefined) ?? null,
           currentTodos: [],
           pendingPathConfirmations: confs,
           pendingQuestions: payload.pendingQuestions ?? [],

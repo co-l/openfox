@@ -8,6 +8,7 @@ import {
   buildMessagesFromStoredEvents,
   buildSnapshot,
   buildSnapshotFromSessionState,
+  buildSessionStatsMessages,
   foldContextState,
   foldSessionState,
   foldTurnEventsToSnapshotMessages,
@@ -3015,5 +3016,204 @@ describe('foldSessionState — chat.ask_user pendingUserInput option normalizati
       type: 'text',
       options: undefined,
     })
+  })
+})
+
+describe('buildSessionStatsMessages', () => {
+  const stat: MessageStats = {
+    providerId: 'p1',
+    providerName: 'P',
+    backend: 'vllm',
+    model: 'm1',
+    mode: 'builder',
+    totalTime: 10,
+    toolTime: 2,
+    prefillTokens: 50000,
+    prefillSpeed: 10000,
+    generationTokens: 500,
+    generationSpeed: 150,
+  }
+
+  function snapshotData(messages: SnapshotMessage[]): import('./types.js').SessionSnapshot {
+    return {
+      mode: 'builder',
+      phase: 'build',
+      isRunning: false,
+      messages,
+      criteria: [],
+      metadataEntries: {},
+      contextState: {
+        currentTokens: 0,
+        maxTokens: 200000,
+        compactionCount: 0,
+        dangerZone: false,
+        canCompact: false,
+        dynamicContextChanged: false,
+      },
+      currentContextWindowId: 'window-1',
+      todos: [],
+      readFiles: [],
+      snapshotSeq: 1,
+      snapshotAt: baseEvent.timestamp,
+    }
+  }
+
+  it('extracts stats from snapshot messages across all windows', () => {
+    const events: StoredEvent[] = [
+      {
+        ...baseEvent,
+        seq: 1,
+        type: 'turn.snapshot',
+        data: snapshotData([
+          {
+            id: 'old-1',
+            role: 'assistant',
+            content: 'a',
+            timestamp: baseEvent.timestamp,
+            contextWindowId: 'window-1',
+            stats: stat,
+          },
+          {
+            id: 'old-2',
+            role: 'assistant',
+            content: 'b',
+            timestamp: baseEvent.timestamp + 1000,
+            contextWindowId: 'window-2',
+            stats: stat,
+          },
+          { id: 'no-stats', role: 'user', content: 'c', timestamp: baseEvent.timestamp },
+        ]),
+      },
+    ]
+
+    const result = buildSessionStatsMessages(events)
+
+    expect(result).toHaveLength(2)
+    expect(result.map((m) => m.id).sort()).toEqual(['old-1', 'old-2'])
+    expect(result[0]!.timestamp).toBe(new Date(baseEvent.timestamp).toISOString())
+    expect(result[0]!.stats).toEqual(stat)
+  })
+
+  it('picks up stats from message.done events after the snapshot', () => {
+    const events: StoredEvent[] = [
+      {
+        ...baseEvent,
+        seq: 1,
+        type: 'turn.snapshot',
+        data: snapshotData([]),
+      },
+      {
+        ...baseEvent,
+        seq: 2,
+        timestamp: baseEvent.timestamp + 2000,
+        type: 'message.start',
+        data: { messageId: 'new-1', role: 'assistant' as const, content: '' },
+      },
+      {
+        ...baseEvent,
+        seq: 3,
+        type: 'message.done',
+        data: { messageId: 'new-1', stats: stat },
+      },
+    ]
+
+    const result = buildSessionStatsMessages(events)
+
+    expect(result).toHaveLength(1)
+    expect(result[0]!.id).toBe('new-1')
+    // timestamp taken from the message.start event
+    expect(result[0]!.timestamp).toBe(new Date(baseEvent.timestamp + 2000).toISOString())
+  })
+
+  it('ignores message.done without stats and keeps snapshot coverage when raw events are purged', () => {
+    // Simulates an old compacted session: raw message.done events were cleaned
+    // up, only the snapshot retains stats.
+    const events: StoredEvent[] = [
+      {
+        ...baseEvent,
+        seq: 1,
+        type: 'turn.snapshot',
+        data: snapshotData([
+          {
+            id: 'survivor',
+            role: 'assistant',
+            content: 'a',
+            timestamp: baseEvent.timestamp,
+            contextWindowId: 'window-1',
+            stats: stat,
+          },
+        ]),
+      },
+      {
+        ...baseEvent,
+        seq: 2,
+        type: 'message.done',
+        data: { messageId: 'no-stats-msg' },
+      },
+    ]
+
+    const result = buildSessionStatsMessages(events)
+
+    expect(result).toHaveLength(1)
+    expect(result[0]!.id).toBe('survivor')
+  })
+
+  it('handles sessions with no snapshot by walking raw message.done events', () => {
+    const events: StoredEvent[] = [
+      {
+        ...baseEvent,
+        seq: 1,
+        type: 'message.start',
+        data: { messageId: 'raw-1', role: 'assistant' as const, content: '' },
+      },
+      {
+        ...baseEvent,
+        seq: 2,
+        type: 'message.done',
+        data: { messageId: 'raw-1', stats: stat },
+      },
+    ]
+
+    const result = buildSessionStatsMessages(events)
+
+    expect(result).toHaveLength(1)
+    expect(result[0]!.id).toBe('raw-1')
+  })
+
+  it('later message.done overwrites the snapshot entry for the same message id', () => {
+    const events: StoredEvent[] = [
+      {
+        ...baseEvent,
+        seq: 1,
+        type: 'turn.snapshot',
+        data: snapshotData([
+          {
+            id: 'dup',
+            role: 'assistant',
+            content: 'a',
+            timestamp: baseEvent.timestamp,
+            stats: stat,
+          },
+        ]),
+      },
+      {
+        ...baseEvent,
+        seq: 2,
+        timestamp: baseEvent.timestamp + 5000,
+        type: 'message.start',
+        data: { messageId: 'dup', role: 'assistant' as const, content: '' },
+      },
+      {
+        ...baseEvent,
+        seq: 3,
+        type: 'message.done',
+        data: { messageId: 'dup', stats: { ...stat, totalTime: 99 } },
+      },
+    ]
+
+    const result = buildSessionStatsMessages(events)
+
+    expect(result).toHaveLength(1)
+    expect(result[0]!.stats!.totalTime).toBe(99)
   })
 })

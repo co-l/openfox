@@ -6,7 +6,6 @@ import { useScopedPaneState } from '../../stores/session/session-scope'
 import { useResizable } from '../../hooks/useResizable'
 import { useSidebarStore } from '../../stores/sidebar'
 import { SessionSidebar } from '../plan/SessionSidebar'
-import type { Message } from '@shared/types.js'
 
 interface SessionLayoutProps {
   children: ReactNode
@@ -14,7 +13,6 @@ interface SessionLayoutProps {
   /** When true, render the criteria sidebar as an overlay. When false, inline. */
   criteriaSidebarOverlay?: boolean
   onCriteriaSidebarToggle?: () => void
-  messages: Message[]
   /** When set, resolve the session/workdir from this pane instead of the focused session. */
   sessionId?: string | null
 }
@@ -24,7 +22,6 @@ export function SessionLayout({
   criteriaSidebarOpen = true,
   criteriaSidebarOverlay = false,
   onCriteriaSidebarToggle,
-  messages,
   sessionId,
 }: SessionLayoutProps) {
   const session = useScopedPaneState(
@@ -65,7 +62,7 @@ export function SessionLayout({
           >
             <div className="h-full p-4">
               <ScrollArea className="h-full">
-                <SessionSidebar messages={messages} workdir={session?.workspace ?? session?.workdir} />
+                <SessionSidebar workdir={session?.workspace ?? session?.workdir} />
               </ScrollArea>
             </div>
           </aside>
@@ -74,7 +71,7 @@ export function SessionLayout({
           <aside className="shrink-0 border-l border-border bg-secondary relative" style={{ width: rightSidebarWidth }}>
             <ResizeHandle side="left" onMouseDown={handleResizeMouseDown} />
             <ScrollArea className="h-full p-4">
-              <SessionSidebar messages={messages} workdir={session?.workspace ?? session?.workdir} />
+              <SessionSidebar workdir={session?.workspace ?? session?.workdir} />
             </ScrollArea>
           </aside>
         ) : (

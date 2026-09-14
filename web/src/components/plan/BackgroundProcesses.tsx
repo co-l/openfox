@@ -2,10 +2,13 @@ import { memo, useState } from 'react'
 import { useBackgroundProcessesStore } from '../../stores/background-processes'
 import { useT } from '../../hooks/useT'
 import { LogViewer } from './LogViewer.tsx'
+import type { LogLine } from '@shared/protocol.js'
 
 interface BackgroundProcessesProps {
   sessionId: string | undefined
 }
+
+const EMPTY_LOGS: LogLine[] = []
 
 const STATUS_LABELS: Record<string, { en: string; fr: string }> = {
   running: { en: 'running', fr: 'en cours' },
@@ -19,7 +22,8 @@ export const BackgroundProcesses = memo(function BackgroundProcesses({ sessionId
   const processes = useBackgroundProcessesStore((s) => s.processes)
   const stopProcess = useBackgroundProcessesStore((s) => s.stopProcess)
   const [expandedProcessId, setExpandedProcessId] = useState<string | null>(null)
-  const [expandedLogs, setExpandedLogs] = useState<{ content: string; stream: 'stdout' | 'stderr' }[]>([])
+  const expandedLogs =
+    useBackgroundProcessesStore((s) => (expandedProcessId ? s.logs[expandedProcessId] : undefined)) ?? EMPTY_LOGS
 
   const activeProcesses = processes.filter((p) => p.status !== 'exited')
   const runningCount = activeProcesses.filter((p) => p.status === 'running').length
@@ -44,8 +48,6 @@ export const BackgroundProcesses = memo(function BackgroundProcesses({ sessionId
   }
 
   const handleExpandLogs = (processId: string) => {
-    const logs = useBackgroundProcessesStore.getState().logs[processId] ?? []
-    setExpandedLogs(logs.map((l) => ({ content: l.content, stream: l.stream })))
     setExpandedProcessId(processId)
   }
 
@@ -111,7 +113,6 @@ export const BackgroundProcesses = memo(function BackgroundProcesses({ sessionId
               logs={expandedLogs}
               onClose={() => {
                 setExpandedProcessId(null)
-                setExpandedLogs([])
               }}
             />
           )

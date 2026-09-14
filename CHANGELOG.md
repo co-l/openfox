@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.0.146 - 2026-09-12
+
+### Bug Fixes
+
+- **Sidebar stats now cover the entire session** — AI time, speeds, and totals count every response across all context windows, including after compaction; stats load instantly from a server-computed headline, with the full response log available on demand.
+
+## 2.0.145 - 2026-09-11
+
+### Bug Fixes
+
+- **run_command no longer hangs when a detached child outlives the shell** — `setsid`, `ssh -f`, and `&`-spawned children that keep the output pipes open no longer stall the tool call forever; the tool settles after a bounded 2s grace with the shell's real exit code (noting output may be incomplete), and timeouts or interrupts on an already-exited shell settle immediately.
+
+## 2.0.144 - 2026-09-11
+
+### Features
+
+- **New criteria stream live in the feed** — criteria additions appear in the feed's criteria group as they are generated, no refresh needed.
+- **Opt-in boot auto-continuation** — sessions interrupted by a restart resume automatically on the next launch.
+
+### Bug Fixes
+
+- **Installed version detected on localized CLIs** — the version is now parsed correctly even when the CLI outputs French or another language.
+
 ## 2.0.143 - 2026-09-10
 
 ### Features

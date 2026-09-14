@@ -1,8 +1,7 @@
 import { ScrollArea } from '../shared/ScrollArea'
 import { useState } from 'react'
 import { useT } from '../../hooks/useT'
-import { useSessionStats } from '../../hooks/useSessionStats'
-import { computeSessionStats } from '@shared/stats.js'
+import { mergeLiveStats } from '@shared/stats.js'
 import { useGitStatus } from '../../hooks/useGitStatus'
 import { useScopedContext, useScopedPaneState } from '../../stores/session/session-scope'
 import { useConfig } from '../../hooks/useConfig'
@@ -23,41 +22,40 @@ import { ReloadIcon } from '../shared/icons'
 import { AutoUpdateModal } from '../AutoUpdateModal'
 import { WorkspaceBranchSection } from './WorkspaceBranchSection'
 import { ContextPopover } from './ContextPopover'
-import type { Message } from '@shared/types.js'
+import type { SessionStatsSummary } from '@shared/types.js'
 
 interface SessionSidebarProps {
-  messages: Message[]
   workdir?: string
 }
 
-export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
+export function SessionSidebar({ workdir }: SessionSidebarProps) {
   const t = useT()
   const [showStatsModal, setShowStatsModal] = useState(false)
   const [showUpdateModal, setShowUpdateModal] = useState(false)
   const [activeMetadataKey, setActiveMetadataKey] = useState<string | null>(null)
 
-  const aggregateStats = useSessionStats(messages)
   const { branch } = useGitStatus()
   const version = useConfig().config?.version ?? null
   const { currentSession: session, sessionId } = useScopedContext()
+  const sessionStats = useScopedPaneState(
+    sessionId,
+    (pane) => pane.sessionStats,
+    (state) => state.sessionStats,
+    null,
+  )
   const liveTurnStats = useScopedPaneState(
     sessionId,
     (pane) => pane.liveTurnStats,
     (state) => state.liveTurnStats,
     null,
   )
-  // While a turn is running the server streams the current turn's cumulative
-  // stats after each LLM call. Merge them into the aggregate of already-finished
-  // messages — mid-turn the in-flight messages carry no stats, and when a
-  // message gains stats (turn finalize) the live channel is cleared in the same
-  // frame, so the live value is never counted twice. The sidebar therefore
-  // grows live and lands on the exact final numbers when the turn ends.
-  const stats = liveTurnStats
-    ? computeSessionStats([
-        ...messages,
-        { id: 'live', role: 'assistant', content: '', timestamp: new Date().toISOString(), stats: liveTurnStats },
-      ])
-    : aggregateStats
+  // The server computes the headline over the whole session (every context
+  // window) and ships it lean. While a turn runs it streams the current
+  // turn's cumulative stats after each LLM call — merge them on top so the
+  // sidebar grows live and lands on the final numbers when the turn ends (the
+  // live channel is cleared in the same frame the finished response lands in
+  // the next server summary).
+  const stats: SessionStatsSummary | null = liveTurnStats ? mergeLiveStats(sessionStats, liveTurnStats) : sessionStats
 
   const workspaceName = pathBasename(session?.workspace ?? '') || null
 
@@ -96,7 +94,12 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
             </div>
           </button>
 
-          <StatsModal isOpen={showStatsModal} onClose={() => setShowStatsModal(false)} stats={stats} />
+          <StatsModal
+            isOpen={showStatsModal}
+            onClose={() => setShowStatsModal(false)}
+            summary={stats}
+            sessionId={session?.id ?? ''}
+          />
         </div>
       )}
 

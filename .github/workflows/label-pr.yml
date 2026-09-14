@@ -1,0 +1,37 @@
+name: Auto Label PR
+
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Apply labels based on branch name
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const branchName = context.payload.pull_request.head.ref.toLowerCase();
+            const labelsToAdd = [];
+
+            if (/(^|[\/_.-])(feat|feature)([\/_.-]|$)/i.test(branchName)) {
+              labelsToAdd.push('enhancement');
+            }
+            if (/(^|[\/_.-])(fix|bugfix|hotfix)([\/_.-]|$)/i.test(branchName)) {
+              labelsToAdd.push('bug');
+            }
+            if (/(^|[\/_.-])(doc|docs)([\/_.-]|$)/i.test(branchName)) {
+              labelsToAdd.push('documentation');
+            }
+
+            if (labelsToAdd.length > 0) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                labels: labelsToAdd
+              });
+            }

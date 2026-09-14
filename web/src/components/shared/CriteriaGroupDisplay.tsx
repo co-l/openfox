@@ -1,14 +1,17 @@
 import { memo } from 'react'
 import type { ReactNode } from 'react'
-import type { ToolCall, MetadataEntry } from '@shared/types.js'
+import type { ToolCall, MetadataEntry, PreparingToolCall } from '@shared/types.js'
 import { Markdown } from './Markdown'
 import { MetadataStatusIcon } from './MetadataStatusIcon'
 import { formatMetadataKeyLabel } from '../../lib/metadata-keys'
+import { parseSessionMetadataArgs, isMetadataAddPreparing } from '../../lib/session-metadata'
 import { useT } from '../../hooks/useT'
 import type { Translation } from '@shared/i18n/index.js'
 
 interface CriteriaGroupDisplayProps {
   toolCalls: ToolCall[]
+  /** In-flight session_metadata "add" calls, rendered as live rows while streaming. */
+  preparing?: PreparingToolCall[]
   criteria?: MetadataEntry[] // For looking up criterion descriptions by ID
 }
 
@@ -39,31 +42,46 @@ interface DisplayRow {
 
 export const CriteriaGroupDisplay = memo(function CriteriaGroupDisplay({
   toolCalls,
+  preparing,
   criteria,
 }: CriteriaGroupDisplayProps) {
   const t = useT()
-  if (toolCalls.length === 0) return null
+
+  // In-flight metadata adds render as live rows (pulsing status icon)
+  const preparingAdds = (preparing ?? [])
+    .filter(isMetadataAddPreparing)
+    .map((ptc) => ({ ptc, parsed: parseSessionMetadataArgs(ptc.arguments) }))
+    .filter((p): p is { ptc: PreparingToolCall; parsed: NonNullable<ReturnType<typeof parseSessionMetadataArgs>> } =>
+      Boolean(p.parsed),
+    )
+
+  if (toolCalls.length === 0 && preparingAdds.length === 0) return null
 
   // Build a map for fast criterion lookup by ID
   const criteriaMap = new Map(criteria?.map((c) => [c.id, c]) ?? [])
 
-  const isSessionMetadata = toolCalls.some((tc) => tc.name === 'session_metadata')
+  const isSessionMetadata = toolCalls.some((tc) => tc.name === 'session_metadata') || preparingAdds.length > 0
 
   // Expand each tool call into one or more display rows, preserving order
   const rows = toolCalls.flatMap((tc) =>
     READ_ACTIONS.has(String(tc.arguments['action'])) ? readRows(tc, t) : [itemRow(tc, criteriaMap, t)],
   )
+  for (const add of preparingAdds) {
+    rows.push(preparingRow(add.ptc, add.parsed))
+  }
 
   const headerTitle = (() => {
     if (!isSessionMetadata) return t({ en: 'Acceptance Criteria', fr: 'Critères d’acceptation' })
-    const keys = new Set(toolCalls.map((tc) => tc.arguments['key'] as string | undefined).filter(Boolean))
+    const keys = new Set([
+      ...toolCalls.map((tc) => tc.arguments['key'] as string | undefined).filter(Boolean),
+      ...preparingAdds.map((p) => p.parsed.key),
+    ])
     if (keys.size === 1) {
       const key = keys.values().next().value
       return key ? formatMetadataKeyLabel(key) : t({ en: 'Session Data', fr: 'Données de session' })
     }
     return t({ en: 'Session Data', fr: 'Données de session' })
   })()
-
   return (
     <div className="my-1 rounded border border-border bg-secondary overflow-hidden">
       {/* Header */}
@@ -90,6 +108,25 @@ function itemRow(tc: ToolCall, criteriaMap: Map<string, MetadataEntry>, t: TFunc
   return {
     key: tc.id,
     node: <SingleCriterionRow tc={tc} criteriaMap={criteriaMap} t={t} />,
+  }
+}
+
+// Live row for an in-flight session_metadata "add": same layout as a completed
+// add row, with a pulsing status icon to signal it is still streaming.
+function preparingRow(
+  ptc: PreparingToolCall,
+  parsed: NonNullable<ReturnType<typeof parseSessionMetadataArgs>>,
+): DisplayRow {
+  return {
+    key: `preparing-${ptc.index}`,
+    node: (
+      <>
+        <MetadataStatusIcon status="pending" className="text-sm leading-tight flex-shrink-0 animate-pulse" />
+        <div className="flex-1 min-w-0">
+          <Markdown content={parsed.description ?? ''} />
+        </div>
+      </>
+    ),
   }
 }
 

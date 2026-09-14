@@ -307,9 +307,10 @@ export async function* streamLLMPure(options: PureStreamOptions): AsyncGenerator
             }
           } else if (seenToolIndices.has(value.index) && value.arguments) {
             // Only stream partial arguments for tools that display them live
-            // (run_command shows the command text, return_value shows sub-agent output)
+            // (run_command shows the command text, return_value shows sub-agent
+            // output, session_metadata shows the item being added)
             const name = toolNames.get(value.index)
-            if (name === 'run_command' || name === 'return_value') {
+            if (name === 'run_command' || name === 'return_value' || name === 'session_metadata') {
               const accumulatedArgs = toolArgs.get(value.index)
               if (accumulatedArgs) {
                 yield {
