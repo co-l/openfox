@@ -2,6 +2,13 @@ import Database from 'better-sqlite3'
 import type { Config } from '../config.js'
 import { logger } from '../utils/logger.js'
 
+/**
+ * Schema format version, stamped into PRAGMA user_version. The v3
+ * conversation-tree shape (tree_id/event_id/parent_id events + blobs table)
+ * is version 3. It is only ever updated here — at database init/migration.
+ */
+export const SCHEMA_VERSION = 3
+
 let db: Database.Database | null = null
 
 export function initDatabase(config: Config): Database.Database {
@@ -479,6 +486,17 @@ function runMigrations(db: Database.Database): void {
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     )
   `)
+
+  // Stamp the schema format version last — it reflects the full post-migration
+  // shape. Upgrades forward (old DBs have user_version 0); a DB stamped with a
+  // NEWER version is never downgraded — it is left untouched so the mismatch
+  // is visible (and logged) instead of silently rewritten.
+  const currentVersion = (db.prepare(`PRAGMA user_version`).get() as { user_version: number }).user_version
+  if (currentVersion < SCHEMA_VERSION) {
+    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`)
+  } else if (currentVersion > SCHEMA_VERSION) {
+    logger.warn(`Database schema version ${currentVersion} is newer than the supported version ${SCHEMA_VERSION}`)
+  }
 
   logger.info('Database migrations completed')
 }

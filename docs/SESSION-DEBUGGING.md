@@ -1,7 +1,8 @@
 # Session Debugging Guide
 
 > How to inspect and debug OpenFox sessions directly in the database.
-> Schema version: **v3 conversation tree** (v3.0.0-beta+). Design background:
+> Schema version: **v3 conversation tree** (v3.0.0-beta+), stamped
+> `PRAGMA user_version = 3` at init/migration. Design background:
 > [CONVERSATION-TREE.md](CONVERSATION-TREE.md).
 
 ## Database Locations
@@ -13,10 +14,13 @@
 
 > **Tip:** The agent workdir tells you which DB to use. If `workdir` contains "openfox" and it's your dev machine → dev DB. Otherwise → production DB.
 >
-> **v3 is a breaking release:** databases written by pre-v3 (v1) servers are
-> not migrated — old linear event logs and `turn.snapshot` rows are not
-> readable by v3 code. Back up (`sqlite3 <db> ".backup <copy>"`) before
-> upgrading; export important sessions from the old version first.
+> **v3 is a breaking release:** the upgrade runs an idempotent structural
+> migration (legacy linear `events` table dropped and recreated in tree
+> shape, `tombstones` dropped, `blobs` created, sessions backfilled), but
+> pre-v3 event history is deliberately not carried over — old linear event
+> logs and `turn.snapshot` rows are not readable by v3 code. Back up
+> (`sqlite3 <db> ".backup <copy>"`) before upgrading; export important
+> sessions from the old version first.
 
 ## Tables Overview
 

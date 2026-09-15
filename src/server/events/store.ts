@@ -51,6 +51,7 @@ import {
   externalizeText,
   externalizeToolResult,
   isExternalized,
+  BLOB_EXTERNALIZE_THRESHOLD,
   MESSAGE_EXTERNALIZE_THRESHOLD,
   type MessageBuffer,
   type TreeEventRow,
@@ -172,8 +173,17 @@ function createSubscriber(
 // EventStore Implementation
 // ============================================================================
 
+export interface EventStoreOptions {
+  /** Externalize serialized tool results larger than this many bytes (default 256 KB). */
+  blobExternalizeThreshold?: number
+  /** Externalize serialized message payloads larger than this many bytes (default 1 MB). */
+  messageExternalizeThreshold?: number
+}
+
 export class EventStore {
   private db: Database.Database
+  private blobExternalizeThreshold: number
+  private messageExternalizeThreshold: number
   private subscribers: Map<string, Set<Subscriber>> = new Map()
   private globalSubscribers: Map<number, GlobalSubscriber> = new Map()
   private globalSubscriberIdCounter = 0
@@ -206,8 +216,10 @@ export class EventStore {
   private promptsCache: Map<string, Array<{ id: string; content: string; timestamp: string }>> = new Map()
   private static readonly PROMPTS_CACHE_MAX_ENTRIES = 64
 
-  constructor(db: Database.Database) {
+  constructor(db: Database.Database, options?: EventStoreOptions) {
     this.db = db
+    this.blobExternalizeThreshold = options?.blobExternalizeThreshold ?? BLOB_EXTERNALIZE_THRESHOLD
+    this.messageExternalizeThreshold = options?.messageExternalizeThreshold ?? MESSAGE_EXTERNALIZE_THRESHOLD
     this.initSchema()
   }
 
@@ -513,7 +525,7 @@ export class EventStore {
     if (event.type === 'tool.result') {
       const data = event.data as { result: Parameters<typeof externalizeToolResult>[0] }
       if (!isExternalized(data.result)) {
-        const ref = externalizeToolResult(data.result)
+        const ref = externalizeToolResult(data.result, this.blobExternalizeThreshold)
         if (ref) {
           this.storeBlob(ref.blobRef, JSON.stringify(data.result))
           payloadData = { ...data, result: ref }
@@ -522,7 +534,7 @@ export class EventStore {
     } else if (event.type === 'message') {
       const data = event.data as { content: string }
       if (typeof data.content === 'string' && !isExternalized(data.content)) {
-        if (JSON.stringify(data).length > MESSAGE_EXTERNALIZE_THRESHOLD) {
+        if (JSON.stringify(data).length > this.messageExternalizeThreshold) {
           // The payload is over budget — externalize unconditionally (0
           // threshold); small content with oversized side-fields stays inline.
           const ref = externalizeText(data.content, 0)
@@ -1549,8 +1561,8 @@ export function getStaleRunningSessionIds(): string[] {
   return staleRunningSessionIds
 }
 
-export function initEventStore(db: Database.Database): EventStore {
-  eventStoreInstance = new EventStore(db)
+export function initEventStore(db: Database.Database, options?: EventStoreOptions): EventStore {
+  eventStoreInstance = new EventStore(db, options)
 
   // Reset stale running states from previous server runs.
   // Sessions cannot actually be running when the server starts.

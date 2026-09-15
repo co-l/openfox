@@ -40,6 +40,10 @@ cursor_event_id)`: the cursor is the node the conversation is currently at.
   Two sessions on the same tree (forks) share every prefix node physically.
 - **Blobs** are content-addressed storage for oversized payloads (below).
   Duplicate content is stored exactly once.
+- **Schema version.** The database header carries `PRAGMA user_version = 3`
+  (the v3 tree shape). It is stamped only at database init/migration — never
+  at runtime — and a database stamped with a newer version is left untouched
+  (and logged), so version mismatches stay visible.
 
 ## Node types
 
@@ -91,10 +95,15 @@ Payloads over threshold are stored in `blobs` and the node carries
 - `tool.result` — externalized above 256 KB (`BLOB_EXTERNALIZE_THRESHOLD`),
   preview = first 4 KB of result text
 
-Hydration on read is byte-identical (KV-neutral): the LLM assembly materializes
-the full content from the blob. The UI renders the preview and can load the
-full blob on demand. This eliminates the v1 failure mode where a single
-`tool.result`/snapshot row grew to 200 MB+.
+Both thresholds are configurable in bytes: `OPENFOX_BLOB_EXTERNALIZE_BYTES`
+and `OPENFOX_MESSAGE_EXTERNALIZE_BYTES` (defaults 262144 / 1048576).
+
+Hydration is **transparent**: every read path (REST, WS state, LLM assembly)
+materializes the full content from the blob before it leaves the store, so
+consumers always see byte-identical data and the KV encoding is unchanged.
+The `preview` field exists for storage inspection (raw-payload debugging,
+backups) — it is not a UI loading path. This eliminates the v1 failure mode
+where a single `tool.result`/snapshot row grew to 200 MB+.
 
 ## Garbage collection
 
@@ -145,9 +154,15 @@ Replacement:
   the fact. Liveness debugging uses the WS stream (and verbose logs), not the
   database. This is what makes trees viable: a 300k-chunk stream becomes a
   single node.
-- **No v1→v3 migration.** Old databases are not upgraded; pre-v3 history is
-  not importable and pre-v3 exports are rejected. This is a deliberate
-  breaking change for 3.0.0-beta (see release notes).
+- **Upgrade is structural, not a data migration.** At startup the idempotent
+  migration detects the legacy shape, drops the old linear `events` table and
+  the `tombstones` table, creates the tree-shaped `events` + `blobs` tables,
+  backfills `sessions.tree_id = id` (cursor starts empty), and stamps
+  `PRAGMA user_version = 3`. Pre-v3 event history is deliberately **not
+  carried over** — the linear shape is structurally incompatible with trees —
+  and pre-v3 exports are rejected on import. This is a deliberate breaking
+  change for 3.0.0-beta: back up or export sessions before upgrading (see
+  release notes).
 - **Export carries the current path**, not abandoned branches — a session
   export is the conversation the session is at, plus the cursor. Abandoned
   branches are a live-tree feature; they are not shipped in export documents.

@@ -111,7 +111,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   const db = initDatabase(config)
 
   // Initialize event store
-  initEventStore(db)
+  initEventStore(db, config.database)
 
   // Deferred broadcast for the project-tasks service. The tasks router must be
   // mounted before the Vite middleware (dev mode), but the WebSocket server

@@ -307,9 +307,12 @@ function extractResultText(result: ToolResult): string {
  * hydration is byte-identical); the preview is the head of the result text.
  * Returns null when the payload fits inline.
  */
-export function externalizeToolResult(result: ToolResult): ExternalizedContent | null {
+export function externalizeToolResult(
+  result: ToolResult,
+  threshold: number = BLOB_EXTERNALIZE_THRESHOLD,
+): ExternalizedContent | null {
   const serialized = JSON.stringify(result)
-  if (serialized.length <= BLOB_EXTERNALIZE_THRESHOLD) return null
+  if (serialized.length <= threshold) return null
   return {
     blobRef: hashContent(serialized),
     size: Buffer.byteLength(serialized, 'utf8'),

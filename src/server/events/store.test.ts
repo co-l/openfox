@@ -643,6 +643,39 @@ describe('EventStore (v3 tree)', () => {
       expect((hydrated.data as { content: string }).content).toBe(huge)
     })
 
+    it('honors a custom blobExternalizeThreshold below the default', () => {
+      const customDb = new Database(':memory:')
+      customDb.exec(SESSIONS_TABLE)
+      const customStore = new EventStore(customDb, { blobExternalizeThreshold: 1024 })
+      try {
+        insertSession(customDb, 's1')
+        customStore.append('s1', {
+          type: 'session.initialized',
+          data: { projectId: 'p', workdir: '/w', contextWindowId: 'w1' },
+        })
+        runAssistantTurn(customStore, 's1', 'a1', [
+          {
+            type: 'tool.call',
+            data: { messageId: 'a1', toolCall: { id: 'tc1', name: 'run_command', arguments: {} } },
+          },
+        ])
+        // 2 KB result: below the 256 KB default (would stay inline), above the 1 KB custom threshold.
+        toolResult(customStore, 's1', 'a1', 'tc1', { success: true, output: 'r'.repeat(2048) })
+
+        const raw = customDb
+          .prepare(`SELECT payload FROM events WHERE tree_id = 's1' AND event_id = 'tr_tc1'`)
+          .get() as { payload: string }
+        const rawPayload = JSON.parse(raw.payload) as { result: { blobRef?: string; output?: string } }
+        expect(rawPayload.result.blobRef).toBeTruthy()
+        expect(rawPayload.result.output).toBeUndefined()
+
+        const hydrated = customStore.getEvents('s1').find((e) => e.eventId === 'tr_tc1')!
+        expect((hydrated.data as { result: { output: string } }).result.output).toBe('r'.repeat(2048))
+      } finally {
+        customDb.close()
+      }
+    })
+
     it('keeps small payloads inline (no blobs)', () => {
       insertSession(db, 's1')
       store.append('s1', {

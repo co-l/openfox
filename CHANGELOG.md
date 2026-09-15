@@ -4,14 +4,14 @@
 
 ### Breaking
 
-- **Session history now lives in a conversation tree** — sessions are cursors over a shared, append-only event tree; the old linear log, turn snapshots, and snapshot-based GC are removed. Pre-v3 databases are not migrated: history written by older versions is not loaded, and v1 session exports are rejected on import. Back up (`sqlite3 <db> ".backup <copy>"`) or export sessions before upgrading.
+- **Session history now lives in a conversation tree** — sessions are cursors over a shared, append-only event tree; the old linear log, turn snapshots, and snapshot-based GC are removed. The upgrade runs an idempotent structural migration (legacy tables dropped and recreated, sessions backfilled, schema stamped `PRAGMA user_version = 3`); pre-v3 event history is deliberately not carried over, and v1 session exports are rejected on import. Back up (`sqlite3 <db> ".backup <copy>"`) or export sessions before upgrading.
 
 ### Features
 
 - **O(1) session forking** — forking from any message creates a new session that shares the conversation tree: no history copy, and forking a compacted session can no longer re-inject discarded context (#334).
 - **Non-destructive edit & resend** — resending a message branches to a sibling; the original conversation is preserved and can be switched back to at any time.
 - **Conversation branch switcher** — abandoned branches show in the sidebar's session popover (preview, role, time); one click rewinds the session to that branch.
-- **Oversized payloads externalized to content-addressed blobs** — large tool results and message content (>256 KB / >1 MB) are deduplicated into a blob table with previews, eliminating multi-hundred-MB database rows.
+- **Oversized payloads externalized to content-addressed blobs** — large tool results and message content (>256 KB / >1 MB, thresholds configurable via `OPENFOX_BLOB_EXTERNALIZE_BYTES` / `OPENFOX_MESSAGE_EXTERNALIZE_BYTES`) are deduplicated into a blob table with previews, eliminating multi-hundred-MB database rows.
 
 ### Enhancements
 

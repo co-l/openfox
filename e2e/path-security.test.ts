@@ -397,7 +397,7 @@ describe('Path Security', () => {
   describe('Danger Mode Switch', () => {
     async function collectConfirmations(): Promise<string[]> {
       const callIds: string[] = []
-      const deadline = Date.now() + 3000
+      const deadline = Date.now() + 10000
       while (Date.now() < deadline && callIds.length < 3) {
         const pending = client
           .allEvents()
@@ -436,14 +436,20 @@ describe('Path Security', () => {
       expect(resolved).not.toBeNull()
       for (const callId of callIds) {
         const msg = await client
-          .waitFor<{ callId: string }>('session.confirmation_resolved', (p) => p.callId === callId, 2000)
+          .waitFor<{ callId: string }>('session.confirmation_resolved', (p) => p.callId === callId, 5000)
           .catch(() => null)
         expect(msg, `expected confirmation_resolved for ${callId}`).not.toBeNull()
       }
 
-      // The whole batch completes without further prompting.
-      await client.waitFor('chat.done', undefined, 5000).catch(() => null)
-      const toolResults = client.allEvents().filter((e) => e.type === 'chat.tool_result')
+      // The whole batch completes without further prompting. Poll for the
+      // results instead of a fixed wait: under machine load the post-approval
+      // tool executions can outlast a single fixed timeout.
+      let toolResults = client.allEvents().filter((e) => e.type === 'chat.tool_result')
+      const resultsDeadline = Date.now() + 15000
+      while (toolResults.length < 3 && Date.now() < resultsDeadline) {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+        toolResults = client.allEvents().filter((e) => e.type === 'chat.tool_result')
+      }
       expect(toolResults.length).toBeGreaterThanOrEqual(3)
     })
 
