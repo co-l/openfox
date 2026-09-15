@@ -199,6 +199,7 @@ function App() {
           SETTINGS_KEYS.DISPLAY_CUSTOM_CSS,
           SETTINGS_KEYS.KEYBINDINGS,
           SETTINGS_KEYS.FEATURES_PER_SESSION_MCP,
+          SETTINGS_KEYS.END_OF_SESSION_COMMAND,
         ])
         void mcpServersResource.refresh()
       })

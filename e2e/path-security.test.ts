@@ -441,10 +441,17 @@ describe('Path Security', () => {
         expect(msg, `expected confirmation_resolved for ${callId}`).not.toBeNull()
       }
 
-      // The whole batch completes without further prompting.
+      // The whole batch completes without further prompting. Wait per tool
+      // call rather than gambling on one fixed window: on slow shared runners
+      // the mock's follow-up turn can exceed a flat 5s and the whole batch
+      // would read as "nothing executed" even though it is still in flight.
+      for (const callId of callIds) {
+        const result = await client
+          .waitFor<{ callId: string }>('chat.tool_result', (p) => p.callId === callId, 15000)
+          .catch(() => null)
+        expect(result, `expected chat.tool_result for ${callId}`).not.toBeNull()
+      }
       await client.waitFor('chat.done', undefined, 5000).catch(() => null)
-      const toolResults = client.allEvents().filter((e) => e.type === 'chat.tool_result')
-      expect(toolResults.length).toBeGreaterThanOrEqual(3)
     })
 
     it('switching to dangerous mid-confirmation lets the turn finish and the next turn skips prompting', async () => {

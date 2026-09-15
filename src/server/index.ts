@@ -65,6 +65,7 @@ import { getGlobalConfigDir } from '../cli/paths.js'
 import { ProviderRegistry, loadProviderPlugins } from './providers/plugins/index.js'
 import { createPluginRoutes } from './routes/plugins.js'
 import { registerSessionFavoriteRoute } from './routes/session-favorite.js'
+import { registerSessionEndRoutes } from './routes/session-end.js'
 import { logger, setLogLevel } from './utils/logger.js'
 import { VERSION } from '../constants.js'
 import {
@@ -1025,13 +1026,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     await handleGetSessionStats(sessionManager, req, res)
   })
 
-  app.delete('/api/sessions/:id', async (req, res) => {
-    const sessionId = req.params['id'] as string
-    const session = sessionManager.getSession(sessionId)
-    if (!session) {
-      return res.status(404).json({ error: 'Session not found' })
-    }
-
+  // The destructive session teardown, shared by DELETE /api/sessions/:id and the
+  // end-of-session route when the closing routine is disabled.
+  const performSessionDelete = async (sessionId: string): Promise<void> => {
     // Cancel any active execution before deleting — mirrors /stop endpoint
     const { stopSessionExecution } = await import('./session/chat-handler.js')
     const { cancelQuestionsForSession, cancelPathConfirmationsForSession } = await import('./tools/index.js')
@@ -1048,8 +1045,29 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       sessionId,
       payload: { sessionId },
     })
+  }
+
+  app.delete('/api/sessions/:id', async (req, res) => {
+    const sessionId = req.params['id'] as string
+    const session = sessionManager.getSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+
+    await performSessionDelete(sessionId)
     res.json({ success: true })
   })
+
+  // Two-phase delete: run the end-of-session command inside the session first,
+  // and let the chat confirm the actual deletion afterwards.
+  const sessionEndRouter = express.Router()
+  registerSessionEndRoutes(sessionEndRouter, {
+    sessionManager,
+    configDir,
+    hardDelete: performSessionDelete,
+    broadcast: (message) => wssExports.broadcastAll(message),
+  })
+  app.use('/api', sessionEndRouter)
 
   app.delete('/api/projects/:projectId/sessions', (req, res) => {
     const projectId = req.params['projectId'] as string
@@ -1888,13 +1906,6 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     res.json({ key, value })
   })
 
-  app.get('/api/settings/:key', async (req, res) => {
-    const { getSetting, SETTINGS_DEFAULTS } = await import('./db/settings.js')
-    const key = req.params.key
-    const value = getSetting(key) ?? SETTINGS_DEFAULTS[key] ?? null
-    res.json({ key, value })
-  })
-
   app.put('/api/settings/:key', async (req, res) => {
     const { setSetting } = await import('./db/settings.js')
     const key = req.params.key
@@ -1905,6 +1916,55 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     setSetting(key, value)
     res.json({ key, value })
   })
+
+  // Line verbs for newline-joined settings: such a value is a small line
+  // database (POST appends, PATCH replaces, DELETE removes), so an agent never
+  // has to rewrite the whole store to keep one fact. Lines have no numeric
+  // address - the caller names the line it means, and matching is whole-line.
+  const editSettingLine = async (
+    req: express.Request,
+    res: express.Response,
+    verb: 'append' | 'replace' | 'delete',
+  ) => {
+    const { getSetting, setSetting, SETTINGS_KEYS } = await import('./db/settings.js')
+    const { appendLine, replaceLine, deleteLine, validateLine } = await import('./db/settings-lines.js')
+    const key = req.params['key']
+    if (key !== SETTINGS_KEYS.GLOBAL_INSTRUCTIONS) {
+      return res
+        .status(405)
+        .json({ error: `"${key}" is not line-addressable - use PUT /api/settings/${key} with the full value` })
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>
+    const target = verb === 'replace' ? body['match'] : body['line']
+    const invalid = validateLine(target) ?? (verb === 'replace' ? validateLine(body['line']) : null)
+    if (invalid) return res.status(400).json({ error: invalid })
+
+    const current = getSetting(key) ?? ''
+    const line = typeof body['line'] === 'string' ? body['line'] : ''
+    const edit =
+      verb === 'append'
+        ? appendLine(current, line)
+        : verb === 'replace'
+          ? replaceLine(current, body['match'] as string, line)
+          : deleteLine(current, line)
+    if (edit.changed) setSetting(key, edit.value)
+
+    // Appending a duplicate is a no-op the caller still wants to hear about;
+    // a verb that found nothing to act on is a 404 so the agent can re-read.
+    res.status(edit.changed || verb === 'append' ? 200 : 404).json({
+      key,
+      changed: edit.changed,
+      matched: edit.matched,
+      lineCount: edit.lineCount,
+      removed: edit.removed,
+      added: edit.added,
+      message: edit.message,
+    })
+  }
+
+  app.post('/api/settings/:key', (req, res) => editSettingLine(req, res, 'append'))
+  app.patch('/api/settings/:key', (req, res) => editSettingLine(req, res, 'replace'))
+  app.delete('/api/settings/:key', (req, res) => editSettingLine(req, res, 'delete'))
 
   // RTK availability check
   app.get('/api/tools/rtk-check', async (_req, res) => {
@@ -3801,6 +3861,12 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
           const actualPort = typeof addr === 'object' && addr ? addr.port : listenPort
           setMcpOAuthServerPort(actualPort)
           mcpActualPort = actualPort
+          // Tools run this server's own API through child shells (the end-of-session
+          // routine edits its global instructions over HTTP), and a shell only knows
+          // the default port - so publish the port we actually got, otherwise a dev
+          // server would have its agents write to production.
+          process.env['OPENFOX_PORT'] = String(actualPort)
+          process.env['OPENFOX_API'] = `http://127.0.0.1:${actualPort}`
           // The /mcp endpoint is only reachable once we're listening, so start
           // MCP client connections now — a self-referencing server (OpenFox as
           // its own MCP client) would otherwise race the listen and fail.

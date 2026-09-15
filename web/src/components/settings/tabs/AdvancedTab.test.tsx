@@ -16,12 +16,25 @@ const { mockSettings, mockSetSetting } = vi.hoisted(() => ({
 }))
 
 vi.mock('../../../hooks/useSetting', () => ({
-  useSetting: (key: string, fallback = '') => ({ value: mockSettings[key] ?? fallback, loading: false }),
+  useSetting: (key: string, fallback = '') => ({
+    value: key === 'session.endOfSessionCommand' ? mockEndOfSessionSetting.current : (mockSettings[key] ?? fallback),
+    loading: false,
+  }),
 }))
 
 vi.mock('../../../lib/resources', async (importOriginal) => ({
   ...(await importOriginal()),
   setSetting: mockSetSetting,
+}))
+
+// The command list behind the end-of-session availability hint.
+const { mockCommands, mockEndOfSessionSetting } = vi.hoisted(() => ({
+  mockCommands: { current: undefined as unknown },
+  mockEndOfSessionSetting: { current: '' },
+}))
+vi.mock('../../../hooks/useResource', () => ({
+  useResource: () => ({ data: mockCommands.current, loading: false, refresh: vi.fn() }),
+  useResourceWhen: () => ({ data: mockCommands.current, loading: false, refresh: vi.fn() }),
 }))
 
 vi.mock('../../../hooks/useAgents', () => ({
@@ -100,5 +113,57 @@ describe('AdvancedTab', () => {
     expect(dynamicToggle).toBeTruthy()
     await userEvent.setup().click(dynamicToggle!)
     expect(mockSetSetting).toHaveBeenCalledWith('llm.dynamicSystemPrompt', 'true')
+  })
+
+  describe('end-of-session availability hint', () => {
+    it('says the routine will run when the configured command can run', () => {
+      mockEndOfSessionSetting.current = 'end-of-session'
+      mockCommands.current = {
+        defaults: [{ id: 'end-of-session', name: 'End of Session' }],
+        userItems: [],
+        projectItems: [],
+      }
+      const { container } = render(<AdvancedTab onClose={vi.fn()} />)
+      expect(container.textContent).toContain('Runs when a session closes')
+    })
+
+    it('says the routine is off when the setting is empty', () => {
+      mockEndOfSessionSetting.current = ''
+      mockCommands.current = { defaults: [], userItems: [], projectItems: [] }
+      const { container } = render(<AdvancedTab onClose={vi.fn()} />)
+      expect(container.textContent).toContain('Disabled - sessions are deleted immediately')
+    })
+
+    it('flags a command that is not installed', () => {
+      mockEndOfSessionSetting.current = 'ghost'
+      mockCommands.current = { defaults: [], userItems: [], projectItems: [] }
+      const { container } = render(<AdvancedTab onClose={vi.fn()} />)
+      expect(container.textContent).toContain('Command not found')
+    })
+
+    it('flags a command that demands parameters', () => {
+      mockEndOfSessionSetting.current = 'wrap'
+      mockCommands.current = {
+        defaults: [],
+        userItems: [{ id: 'wrap', name: 'Wrap', paramNames: ['topic'] }],
+        projectItems: [],
+      }
+      const { container } = render(<AdvancedTab onClose={vi.fn()} />)
+      expect(container.textContent).toContain('needs parameters, so it cannot run automatically')
+    })
+
+    it('re-evaluates the hint as the field changes', async () => {
+      mockEndOfSessionSetting.current = 'end-of-session'
+      mockCommands.current = {
+        defaults: [{ id: 'end-of-session', name: 'End of Session' }],
+        userItems: [{ id: 'wrap', name: 'Wrap', paramNames: ['topic'] }],
+        projectItems: [],
+      }
+      const { container } = render(<AdvancedTab onClose={vi.fn()} />)
+      const input = container.querySelector('input[list="end-of-session-commands"]')!
+      await userEvent.setup().clear(input)
+      await userEvent.setup().type(input, 'wrap')
+      expect(container.textContent).toContain('needs parameters, so it cannot run automatically')
+    })
   })
 })

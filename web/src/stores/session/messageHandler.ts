@@ -5,6 +5,7 @@ import type {
   GitDiffFile,
   SessionListPayload,
   SessionRunningPayload,
+  SessionClosingPayload,
   SessionPausePayload,
   ChatAskUserPayload,
   ChatDeltaPayload,
@@ -398,6 +399,18 @@ export function handleServerMessage(
       if (payload.isRunning) {
         set((state) => updatePane(state, eventSessionId, (p) => ({ ...p, restoredInput: null, liveTurnStats: null })))
       }
+      break
+    }
+
+    case 'session.closing': {
+      // The end-of-session routine started (ISO timestamp) or was cancelled (null).
+      const payload = message.payload as SessionClosingPayload
+      updateSessionField(message, set, get, (s) => {
+        const next = { ...s }
+        if (payload.closingAt === null) delete next.closingAt
+        else next.closingAt = payload.closingAt
+        return next
+      })
       break
     }
 

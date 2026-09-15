@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createServer } from 'node:net'
 import { setTimeout as sleep } from 'node:timers/promises'
 import {
   createTestClient,
@@ -9,29 +8,13 @@ import {
   createTestServer,
   createProject,
   createSession,
+  getFreePort,
   type TestClient,
   type TestProject,
   type TestServerHandle,
 } from './utils/index.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-
-function getFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = createServer()
-    srv.once('error', reject)
-    srv.listen(0, '127.0.0.1', () => {
-      const addr = srv.address()
-      srv.close(() => {
-        if (!addr || typeof addr === 'string') {
-          reject(new Error('Failed to allocate a free port'))
-          return
-        }
-        resolve(addr.port)
-      })
-    })
-  })
-}
 
 describe('MCP Integration', () => {
   let server: TestServerHandle

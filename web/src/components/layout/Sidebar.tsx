@@ -10,6 +10,10 @@ import { DropdownMenu } from '../shared/DropdownMenu'
 import { ScrollArea } from '../shared/ScrollArea'
 import { CloseButton } from '../shared/CloseButton'
 import { ConfirmModal } from '../shared/ConfirmModal'
+import { SETTINGS_KEYS, commandsResource } from '../../lib/resources'
+import { useSetting } from '../../hooks/useSetting'
+import { useResource } from '../../hooks/useResource'
+import { resolveCommandAvailability } from '../../lib/command-availability'
 import { Modal } from '../shared/Modal'
 import { ModalFooter } from '../shared/ModalFooter'
 import {
@@ -48,6 +52,11 @@ export function Sidebar({ projectId, isOpen = true, overlay = false, onClose }: 
   const [, navigate] = useLocation()
   const [showSettings, setShowSettings] = useState(false)
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null)
+  // True when the confirm dialog was opened from "Delete now" on a closing session.
+  const [deleteNowMode, setDeleteNowMode] = useState(false)
+  // True after the server refused to close (the routine stopped existing): the
+  // dialog then offers the plain delete instead of pretending nothing happened.
+  const [routineFailed, setRoutineFailed] = useState(false)
   const [sessionToRename, setSessionToRename] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [showDeleteAll, setShowDeleteAll] = useState(false)
@@ -66,8 +75,23 @@ export function Sidebar({ projectId, isOpen = true, overlay = false, onClose }: 
   const sessionsWithPendingConfirmations = useSessionStore((state) => state.sessionsWithPendingConfirmations)
   const pendingPathConfirmations = useSessionStore((state) => state.pendingPathConfirmations)
   const toggleFavorite = useSessionStore((state) => state.toggleFavorite)
+  const endOfSessionCommand = (useSetting(SETTINGS_KEYS.END_OF_SESSION_COMMAND).value ?? '').trim()
 
   const currentProject = useCurrentProject()
+
+  // The delete dialog must say what will happen, so it judges the configured
+  // command from the same merged list the server resolves against - keyed by the
+  // target session's workdir, which the composer has usually warmed already -
+  // instead of hedging about whether the routine exists.
+  const deleteScopeWorkdir = sessionToDelete
+    ? (sessions.find((s) => s.id === sessionToDelete)?.workdir ?? currentProject?.workdir)
+    : currentProject?.workdir
+  const { data: deleteScopeCommands } = useResource(commandsResource, deleteScopeWorkdir)
+  const endOfSession = resolveCommandAvailability(deleteScopeCommands, endOfSessionCommand)
+  // An unfinished lookup still gets the routine buttons: a configured command is
+  // far more likely than a broken one, and the server refuses rather than
+  // deleting if it turns out otherwise.
+  const routineOffered = endOfSession.state === 'available' || endOfSession.state === 'loading'
 
   const [searchQuery, setSearchQuery] = useState('')
   const [focusedIndex, setFocusedIndex] = useState(-1)
@@ -173,16 +197,56 @@ export function Sidebar({ projectId, isOpen = true, overlay = false, onClose }: 
 
   const handleDeleteSession = (sessionId: string, e?: React.MouseEvent) => {
     e?.stopPropagation()
+    setDeleteNowMode(false)
+    setRoutineFailed(false)
     setSessionToDelete(sessionId)
   }
 
-  const handleConfirmDeleteSession = () => {
+  // Escape hatch on an already-closing session: still needs a confirmation.
+  const handleDeleteNow = (sessionId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation()
+    setRoutineFailed(false)
+    setDeleteNowMode(true)
+    setSessionToDelete(sessionId)
+  }
+
+  const handleConfirmDeleteSession = async () => {
     if (!sessionToDelete) return
-    deleteSession(sessionToDelete)
-    if (currentSession?.id === sessionToDelete) {
-      navigate(`/p/${projectId}`)
-    }
+    const sessionId = sessionToDelete
+    const deleteNow = deleteNowMode
+    // A routine the server would refuse (missing, or demanding parameters) must
+    // never be attempted: route straight to the plain delete.
+    const brokenRoutine = endOfSession.state === 'not_found' || endOfSession.state === 'needs_params'
     setSessionToDelete(null)
+    setDeleteNowMode(false)
+    setRoutineFailed(false)
+    if (deleteNow || brokenRoutine || routineFailed) {
+      await deleteSession(sessionId)
+      if (currentSession?.id === sessionId) navigate(`/p/${projectId}`)
+      return
+    }
+    const result = await useSessionStore.getState().endSession(sessionId)
+    if (result === 'error') {
+      // The routine disappeared between opening this dialog and clicking: keep
+      // the session, reopen the dialog and say so, instead of deleting quietly.
+      setSessionToDelete(sessionId)
+      setRoutineFailed(true)
+      return
+    }
+    if (result === 'deleted') {
+      if (currentSession?.id === sessionId) navigate(`/p/${projectId}`)
+    } else if (currentSession?.id !== sessionId) {
+      // Closing: show the session so the routine and its final confirm are visible.
+      navigate(`/p/${projectId}/s/${sessionId}`)
+    }
+  }
+
+  const handleSkipEndOfSession = () => {
+    if (!sessionToDelete) return
+    const sessionId = sessionToDelete
+    setSessionToDelete(null)
+    deleteSession(sessionId)
+    if (currentSession?.id === sessionId) navigate(`/p/${projectId}`)
   }
 
   const handleRenameSession = (sessionId: string, e?: React.MouseEvent) => {
@@ -407,15 +471,63 @@ export function Sidebar({ projectId, isOpen = true, overlay = false, onClose }: 
 
             <ConfirmModal
               isOpen={sessionToDelete !== null}
-              onClose={() => setSessionToDelete(null)}
-              onConfirm={handleConfirmDeleteSession}
-              title={t({ en: 'Delete session?', fr: 'Supprimer la session ?' })}
-              message={t({
-                en: 'This session will be permanently deleted.',
-                fr: 'Cette session sera définitivement supprimée.',
-              })}
-              confirmLabel={t({ en: 'Delete session', fr: 'Supprimer la session' })}
+              onClose={() => {
+                setSessionToDelete(null)
+                setDeleteNowMode(false)
+                setRoutineFailed(false)
+              }}
+              onConfirm={() => void handleConfirmDeleteSession()}
+              title={
+                routineFailed
+                  ? t({ en: 'The closing routine could not run', fr: 'La routine de fermeture n’a pas pu s’exécuter' })
+                  : deleteNowMode
+                    ? t({ en: 'Delete closing session now?', fr: 'Supprimer maintenant ?' })
+                    : t({ en: 'Delete session?', fr: 'Supprimer la session ?' })
+              }
+              message={
+                routineFailed
+                  ? t({
+                      en: 'The end-of-session command could not run, so the session was left alone. Delete it now without the routine?',
+                      fr: 'La commande de fin de session n’a pas pu s’exécuter, la session est intacte. La supprimer maintenant, sans routine ?',
+                    })
+                  : deleteNowMode
+                    ? t({
+                        en: 'This stops the closing routine and permanently deletes the session.',
+                        fr: 'Cela arrête la routine de fermeture et supprime définitivement la session.',
+                      })
+                    : endOfSession.state === 'not_found'
+                      ? t({
+                          en: `End-of-session command "${endOfSession.commandId}" was not found, so it cannot run. The session will be deleted right away.`,
+                          fr: `La commande de fin de session « ${endOfSession.commandId} » est introuvable, elle ne peut pas s’exécuter. La session sera supprimée immédiatement.`,
+                        })
+                      : endOfSession.state === 'needs_params'
+                        ? t({
+                            en: `End-of-session command "${endOfSession.commandId}" needs parameters, so it cannot run automatically. The session will be deleted right away.`,
+                            fr: `La commande de fin de session « ${endOfSession.commandId} » demande des paramètres, elle ne peut pas s’exécuter automatiquement. La session sera supprimée immédiatement.`,
+                          })
+                        : routineOffered
+                          ? t({
+                              en: `End-of-session routine: the /${endOfSessionCommand} command runs first and reports its findings in this session's chat, where you confirm the actual delete.`,
+                              fr: `Routine de fin de session : la commande /${endOfSessionCommand} s’exécute d’abord et rend compte de ses conclusions dans le chat de cette session, où vous confirmez la suppression.`,
+                            })
+                          : t({
+                              en: 'This session will be permanently deleted.',
+                              fr: 'Cette session sera définitivement supprimée.',
+                            })
+              }
+              confirmLabel={
+                routineFailed || deleteNowMode
+                  ? t({ en: 'Delete now', fr: 'Supprimer maintenant' })
+                  : routineOffered
+                    ? t({ en: 'Run & close', fr: 'Exécuter et fermer' })
+                    : t({ en: 'Delete session', fr: 'Supprimer la session' })
+              }
               confirmVariant="danger"
+              altAction={
+                routineOffered && !deleteNowMode && !routineFailed
+                  ? { label: t({ en: 'Skip & close', fr: 'Passer et fermer' }), onClick: handleSkipEndOfSession }
+                  : undefined
+              }
             />
 
             <ConfirmModal
@@ -481,6 +593,7 @@ export function Sidebar({ projectId, isOpen = true, overlay = false, onClose }: 
                       currentSession,
                       unreadSessionIds,
                       handleDeleteSession,
+                      handleDeleteNow,
                       handleRenameSession,
                       handleToggleFavorite,
                       handleExportSession,
@@ -534,6 +647,7 @@ function renderSessionList(
   currentSession: { id: string | null } | null,
   unreadSessionIds: string[],
   handleDeleteSession: (sessionId: string, e?: React.MouseEvent) => void,
+  handleDeleteNow: (sessionId: string, e?: React.MouseEvent) => void,
   handleRenameSession: (sessionId: string, e?: React.MouseEvent) => void,
   handleToggleFavorite: (sessionId: string, isFavorite: boolean) => void,
   handleExportSession: (sessionId: string) => void,
@@ -572,11 +686,20 @@ function renderSessionList(
           className={`block ${isActive ? 'text-accent-primary' : 'text-text-primary'} hover:text-accent-primary`}
         >
           <div className="flex justify-between items-center mb-1">
-            <span className={`font-medium truncate text-sm ${isActive ? 'text-accent-primary' : 'text-text-primary'}`}>
-              {searchQuery
-                ? highlightMatches(session.title ?? session.id.slice(0, 6), searchQuery)
-                : (session.title ?? session.id.slice(0, 6))}
-            </span>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span
+                className={`font-medium truncate text-sm ${isActive ? 'text-accent-primary' : 'text-text-primary'}`}
+              >
+                {searchQuery
+                  ? highlightMatches(session.title ?? session.id.slice(0, 6), searchQuery)
+                  : (session.title ?? session.id.slice(0, 6))}
+              </span>
+              {session.closingAt && (
+                <span className="shrink-0 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-500 border border-amber-500/30">
+                  {t({ en: 'closing', fr: 'fermeture' })}
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-1">
               <DropdownMenu
                 items={[
@@ -608,12 +731,31 @@ function renderSessionList(
                           },
                         },
                       ]),
-                  {
-                    label: t({ en: 'Delete session', fr: 'Supprimer la session' }),
-                    icon: <TrashIcon className="w-3.5 h-3.5" />,
-                    onClick: (e?: React.MouseEvent) => handleDeleteSession(session.id, e),
-                    danger: true,
-                  },
+                  ...(session.closingAt
+                    ? [
+                        {
+                          label: t({ en: 'Delete now', fr: 'Supprimer maintenant' }),
+                          icon: <TrashIcon className="w-3.5 h-3.5" />,
+                          onClick: (e?: React.MouseEvent) => handleDeleteNow(session.id, e),
+                          danger: true,
+                        },
+                        {
+                          label: t({ en: 'Cancel closing', fr: 'Annuler la fermeture' }),
+                          icon: <XCloseIcon className="w-3.5 h-3.5" />,
+                          onClick: (e?: React.MouseEvent) => {
+                            e?.stopPropagation()
+                            void useSessionStore.getState().cancelEndSession(session.id)
+                          },
+                        },
+                      ]
+                    : [
+                        {
+                          label: t({ en: 'Delete session', fr: 'Supprimer la session' }),
+                          icon: <TrashIcon className="w-3.5 h-3.5" />,
+                          onClick: (e?: React.MouseEvent) => handleDeleteSession(session.id, e),
+                          danger: true,
+                        },
+                      ]),
                 ]}
                 trigger={
                   <button

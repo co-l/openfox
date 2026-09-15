@@ -780,7 +780,14 @@ export const useSessionStore = create<SessionState>((set, get) => {
       const projectId = resolveSessionProjectId(get(), sessionId)
       try {
         const res = await authFetch(`/api/sessions/${sessionId}`, { method: 'DELETE' })
-        if (!res.ok) return false
+        // 404 means it is already gone (another client won the race): converge
+        // like a success so the pane does not keep a dead session open. Any
+        // other failure leaves the session alive, so reload the server's truth
+        // instead of reporting a silent no-op.
+        if (!res.ok && res.status !== 404) {
+          await get().listSessions(projectId)
+          return false
+        }
         set({ searchSessions: null })
         await get().listSessions(projectId)
         if (get().focusedSessionId === sessionId || get().currentSession?.id === sessionId) {
@@ -788,8 +795,76 @@ export const useSessionStore = create<SessionState>((set, get) => {
         }
         return true
       } catch {
+        await get().listSessions(projectId)
         return false
       }
+    },
+
+    endSession: async (sessionId) => {
+      // Two-phase close. The server decides: it either runs the configured
+      // end-of-session command in this session (closing) or, when the routine
+      // is disabled, deletes the session outright — same as deleteSession.
+      const projectId = resolveSessionProjectId(get(), sessionId)
+      // null = the server never told us (error response or lost response).
+      let deleted: boolean | null = null
+      try {
+        const res = await authFetch(`/api/sessions/${sessionId}/end-session`, { method: 'POST' })
+        // A 409 is the server refusing to close because the configured command
+        // cannot run: nothing was queued and nothing was deleted, so say so
+        // instead of guessing from a session list that never changed.
+        if (res.status === 409) return 'error'
+        set({ searchSessions: null })
+        if (res.status === 404) deleted = true
+        else if (res.ok) {
+          const body = (await res.json()) as { closing?: boolean; deleted?: boolean }
+          deleted = Boolean(body.deleted)
+        }
+      } catch {
+        // The request may still have reached the server; the reload decides.
+      }
+      await get().listSessions(projectId)
+      const entry = get().sessions.find((s) => s.id === sessionId)
+      if (deleted === null) deleted = entry === undefined
+      if (deleted) {
+        if (get().focusedSessionId === sessionId || get().currentSession?.id === sessionId) {
+          get().clearSession()
+        }
+        return 'deleted'
+      }
+      // Closing: mirror the server's own timestamp into the open pane, so a
+      // cancel that landed in between is not resurrected by a client clock.
+      if (entry) {
+        set((state) =>
+          updatePaneSession(state, sessionId, (session) => {
+            const next = { ...session }
+            if (entry.closingAt) next.closingAt = entry.closingAt
+            else delete next.closingAt
+            return next
+          }),
+        )
+      }
+      return 'closing'
+    },
+
+    cancelEndSession: async (sessionId) => {
+      const projectId = resolveSessionProjectId(get(), sessionId)
+      let confirmed = false
+      try {
+        const res = await authFetch(`/api/sessions/${sessionId}/end-session`, { method: 'DELETE' })
+        confirmed = res.ok || res.status === 404
+      } catch {
+        // Best-effort: a failed cancel must keep the closing state visible.
+      }
+      await get().listSessions(projectId)
+      const closingAt = get().sessions.find((s) => s.id === sessionId)?.closingAt
+      set((state) =>
+        updatePaneSession(state, sessionId, (session) => {
+          const next = { ...session }
+          if (confirmed) delete next.closingAt
+          else if (closingAt !== undefined) next.closingAt = closingAt
+          return next
+        }),
+      )
     },
 
     renameSession: async (sessionId: string, title: string) => {

@@ -132,6 +132,12 @@ export const MessageList = memo(function MessageList({
     (state) => state.currentSession?.phase ?? null,
     null,
   )
+  const closingAt = useScopedPaneState(
+    scopeId,
+    (pane) => pane.session?.closingAt,
+    (state) => state.currentSession?.closingAt,
+    undefined,
+  )
   const error = useScopedPaneState(
     scopeId,
     (pane) => pane.error ?? null,
@@ -155,6 +161,8 @@ export const MessageList = memo(function MessageList({
   )
   const retryLLMNow = useSessionStore((state) => state.retryLLMNow)
   const retryLLM = useSessionStore((state) => state.retryLLM)
+  const deleteSession = useSessionStore((state) => state.deleteSession)
+  const cancelEndSession = useSessionStore((state) => state.cancelEndSession)
   const [showRetryError, setShowRetryError] = useState(false)
   // The modal lives above the per-attempt keyed pill so it survives retries.
   // Close it once the retry state clears (call succeeded, bubble gone).
@@ -431,6 +439,28 @@ export const MessageList = memo(function MessageList({
                     />
                   )
                 })}
+              </div>
+            )}
+
+            {closingAt && !isRunning && (
+              <div className="flex justify-center items-center gap-2 flex-wrap feed-item">
+                <span className="text-xs text-text-secondary">
+                  {t({ en: 'This session is closing.', fr: 'Cette session est en cours de fermeture.' })}
+                </span>
+                <button
+                  onClick={() => sessionId && void deleteSession(sessionId)}
+                  data-testid="closing-delete-button"
+                  className="px-4 py-1.5 text-sm font-medium rounded bg-red-500/15 text-red-500 border border-red-500/25 hover:bg-red-500/25 transition-colors"
+                >
+                  {t({ en: 'Delete session', fr: 'Supprimer la session' })}
+                </button>
+                <button
+                  onClick={() => sessionId && void cancelEndSession(sessionId)}
+                  data-testid="closing-cancel-button"
+                  className="px-3 py-1.5 text-sm text-text-muted hover:text-text-primary transition-colors"
+                >
+                  {t({ en: 'Keep session', fr: 'Garder la session' })}
+                </button>
               </div>
             )}
           </div>

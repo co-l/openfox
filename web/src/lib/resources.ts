@@ -615,6 +615,7 @@ export const SETTINGS_KEYS = {
   FEATURES_PER_SESSION_MCP: 'features.perSessionMcp',
   PROXY_URL: 'network.proxyUrl',
   DEFAULT_AGENT: 'agent.defaultAgent',
+  END_OF_SESSION_COMMAND: 'session.endOfSessionCommand',
 } as const
 
 export const DISPLAY_SETTINGS_KEYS = [

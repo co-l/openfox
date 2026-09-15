@@ -217,6 +217,16 @@ export function updateSessionRunning(id: string, isRunning: boolean): void {
   ).run(isRunning ? 1 : 0, now, id)
 }
 
+/** Set (or clear, with null) the closing marker written when the end-of-session routine starts. */
+export function updateSessionClosing(id: string, closingAt: string | null): void {
+  const db = getDatabase()
+  db.prepare(`UPDATE sessions SET closing_at = ?, updated_at = ? WHERE id = ?`).run(
+    closingAt,
+    new Date().toISOString(),
+    id,
+  )
+}
+
 export function updateSessionMetadata(id: string, metadata: Partial<Session['metadata']>): void {
   const db = getDatabase()
   const now = new Date().toISOString()
@@ -374,6 +384,7 @@ export function listSessions(): SessionSummary[] {
       s.workflow_phase,
       s.is_running,
       s.is_favorite,
+      s.closing_at,
       s.created_at,
       s.updated_at,
       s.title,
@@ -426,6 +437,7 @@ function listSessionsPaged(
       s.workflow_phase,
       s.is_running,
       s.is_favorite,
+      s.closing_at,
       s.created_at,
       s.updated_at,
       s.title,
@@ -468,6 +480,7 @@ export function listHomeSessions(limit = 20): SessionSummary[] {
       s.workflow_phase,
       s.is_running,
       s.is_favorite,
+      s.closing_at,
       s.created_at,
       s.updated_at,
       s.title,
@@ -539,6 +552,7 @@ function mapSessionBase(row: SessionRow | SessionSummaryRow): {
   providerManualActive: boolean
   createdAt: string
   updatedAt: string
+  closingAt?: string
 } {
   return {
     id: row.id,
@@ -546,6 +560,7 @@ function mapSessionBase(row: SessionRow | SessionSummaryRow): {
     workdir: row.workdir,
     ...(row.workspace ? { workspace: row.workspace } : {}),
     ...(row.branch ? { branch: row.branch } : {}),
+    ...(row.closing_at ? { closingAt: row.closing_at } : {}),
     mode: (row.mode ?? 'planner') as SessionMode,
     phase: (row.workflow_phase ?? 'plan') as SessionPhase,
     isRunning: Boolean(row.is_running),
@@ -612,6 +627,7 @@ interface SessionRow {
   cached_tools: string | null
   cached_hash: string | null
   cached_prompt_hash: string | null
+  closing_at: string | null
 }
 
 interface SessionSummaryRow {
@@ -624,6 +640,7 @@ interface SessionSummaryRow {
   workflow_phase: string
   is_running: number
   is_favorite: number
+  closing_at: string | null
   created_at: string
   updated_at: string
   title: string | null

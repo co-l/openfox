@@ -12,6 +12,8 @@ interface ConfirmModalProps {
   confirmLabel?: string
   confirmVariant?: 'danger' | 'primary'
   disabled?: boolean
+  /** Optional extra action rendered beside Cancel (e.g. "Skip & close" on a two-phase delete). */
+  altAction?: { label: string; onClick: () => void }
 }
 
 export function ConfirmModal({
@@ -23,6 +25,7 @@ export function ConfirmModal({
   confirmLabel,
   confirmVariant = 'primary',
   disabled = false,
+  altAction,
 }: ConfirmModalProps) {
   const t = useT()
   const resolvedConfirmLabel = confirmLabel ?? t({ en: 'Confirm', fr: 'Confirmer' })
@@ -37,6 +40,11 @@ export function ConfirmModal({
           <Button variant="secondary" onClick={onClose} disabled={disabled}>
             {t({ en: 'Cancel', fr: 'Annuler' })}
           </Button>
+          {altAction && (
+            <Button variant="secondary" onClick={altAction.onClick} disabled={disabled}>
+              {altAction.label}
+            </Button>
+          )}
           <Button variant={confirmVariant} onClick={onConfirm} disabled={disabled} autoFocus>
             {resolvedConfirmLabel}
           </Button>

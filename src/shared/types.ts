@@ -120,6 +120,7 @@ export interface Session {
   dangerLevel?: DangerLevel // Controls path confirmation bypass
   messageCount?: number // Cached message count for efficient sidebar display (optional, populated on load)
   activeWorkflowExecution?: WorkflowExecution | null // Currently active workflow execution, if any
+  closingAt?: string // Set when the end-of-session routine was requested; cleared by cancelling it
 }
 
 // ============================================================================
@@ -169,6 +170,7 @@ export interface SessionSummary {
   criteriaCompleted: number
   messageCount: number
   recentUserPrompts?: RecentUserPrompt[]
+  closingAt?: string // Set while the session is closing (end-of-session routine), shown as a badge
 }
 
 // ============================================================================

@@ -31,6 +31,9 @@ export default defineConfig({
     pool: 'forks',
     maxWorkers: resolveMaxWorkers(),
 
+    // Bind guard: keeps listen(0) off the ports fetch refuses to reach.
+    setupFiles: [`${__dirname}/../test-port-guard.ts`],
+
     // No global setup - each test file manages its own server
     // globalSetup: './setup.ts',  // REMOVED - using in-process servers
 
