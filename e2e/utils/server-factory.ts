@@ -11,6 +11,7 @@ import { loadConfig } from '../../src/server/config.js'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import net from 'node:net'
 
 export interface CreateTestServerOptions {
   maxContext?: number
@@ -26,7 +27,7 @@ function createTestConfig(options: CreateTestServerOptions = {}): Config {
   process.env['OPENFOX_DB_PATH'] = ':memory:'
   process.env['OPENFOX_LOG_LEVEL'] = 'error'
   process.env['OPENFOX_HOST'] = '127.0.0.1'
-  process.env['OPENFOX_PORT'] = '0' // Will be overridden by start(0) anyway
+  process.env['OPENFOX_PORT'] = '0' // start() publishes the real port anyway
   if (options.maxContext !== undefined) {
     process.env['OPENFOX_MAX_CONTEXT'] = String(options.maxContext)
   }
@@ -73,6 +74,29 @@ export interface TestServerHandle extends ServerHandle {
  * })
  * ```
  */
+// WHATWG fetch port blocklist handling lives in ../../test-port-guard.ts
+// (loaded via setupFiles): listen(0) there retries until the OS-assigned
+// port is one fetch is willing to talk to. getFreePort probes through the
+// same guarded listen, so its probe port is safe by construction.
+
+/** A free loopback port that fetch will talk to (via the guarded listen(0)). */
+export async function getFreePort(): Promise<number> {
+  const srv = net.createServer()
+  try {
+    const port = await new Promise<number>((resolve, reject) => {
+      srv.once('error', reject)
+      srv.listen(0, '127.0.0.1', () => {
+        const addr = srv.address()
+        if (addr && typeof addr === 'object') resolve(addr.port)
+        else reject(new Error('Failed to allocate a free port'))
+      })
+    })
+    return port
+  } finally {
+    await new Promise<void>((resolve) => srv.close(() => resolve()))
+  }
+}
+
 export async function createTestServer(options: CreateTestServerOptions = {}): Promise<TestServerHandle> {
   // Set mock LLM env before importing server (it reads env at module load time)
   process.env['OPENFOX_MOCK_LLM'] = 'true'
@@ -86,7 +110,7 @@ export async function createTestServer(options: CreateTestServerOptions = {}): P
     config.mcpServers = options.mcpServers
   }
   const handle = await createServerHandle(config)
-  const { port } = await handle.start(options.port ?? 0) // Dynamic port by default
+  const { port } = await handle.start(options.port ?? 0) // Dynamic port by default (guarded by test-port-guard)
 
   const url = `http://127.0.0.1:${port}`
   const wsUrl = `ws://127.0.0.1:${port}/ws`

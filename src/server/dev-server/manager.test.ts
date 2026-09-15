@@ -94,28 +94,14 @@ describe('findFreePort', () => {
   })
 
   it('throws when all ports in range are taken', async () => {
-    // Occupy a batch of consecutive ports to force exhaustion
-    const servers: net.Server[] = []
-    const startPort = 18501
-    try {
-      for (let i = 0; i < 5; i++) {
-        const s = net.createServer()
-        await new Promise<void>((resolve, reject) => {
-          s.listen(startPort + i, '127.0.0.1', () => resolve())
-          s.on('error', reject)
-        })
-        servers.push(s)
-      }
-      // findFreePort with MAX_PORT_SCAN=200, but we only occupy 5 ports starting at 18501
-      // It should find a free port beyond 18505, so this should succeed
-      // To test exhaustion we'd need to occupy 200+ ports which is impractical.
-      // Instead, verify it throws for impossible ranges by monkey-patching probePort
-      vi.spyOn(devServerManager, 'probePort').mockResolvedValue(true)
-      await expect(devServerManager.findFreePort('127.0.0.1', 18401)).rejects.toThrow('No free port found')
-      vi.mocked(devServerManager.probePort).mockRestore()
-    } finally {
-      for (const s of servers) s.close()
-    }
+    // findFreePort scans up to MAX_PORT_SCAN ports beyond the preferred one.
+    // Occupying 200+ real ports is impractical, so verify exhaustion by
+    // monkey-patching probePort to report every port taken. No real sockets
+    // are bound here: fixed ports live inside today's ephemeral range, and
+    // a stranger holding one would fail the test with a spurious EADDRINUSE.
+    vi.spyOn(devServerManager, 'probePort').mockResolvedValue(true)
+    await expect(devServerManager.findFreePort('127.0.0.1', 18401)).rejects.toThrow('No free port found')
+    vi.mocked(devServerManager.probePort).mockRestore()
   })
 })
 

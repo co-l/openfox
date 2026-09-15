@@ -209,8 +209,11 @@ describe('path-security', () => {
       })
 
       it('denies subdir/../../../../../etc resolved escape', async () => {
-        // Need to escape far enough to get out of /tmp entirely
-        const maliciousPath = join(WORKDIR, 'subdir', '..', '..', '..', '..', '..', 'etc')
+        // Need to escape far enough to get out of /tmp entirely. The extra ..
+        // clamp at / and cost nothing, so a deeper canonical fixture (or a
+        // symlink hop under the fixture dir) cannot leave the escape
+        // resolving inside /tmp - an allowed root - instead of at /etc.
+        const maliciousPath = join(WORKDIR, 'subdir', '..', '..', '..', '..', '..', '..', '..', 'etc')
         const result = await isPathWithinSandbox(maliciousPath, WORKDIR)
         expect(result.allowed).toBe(false)
         expect(result.resolvedPath.startsWith(CANONICAL_TMP)).toBe(false)
