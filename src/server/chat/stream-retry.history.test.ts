@@ -5,8 +5,9 @@
  *   - Case 1: the request fails before any content → nothing is emitted,
  *     so the event store is untouched (the caller retries the same request).
  *   - Case 2: the request fails mid-stream → the partial content is streamed
- *     live and stays in the store (the caller keeps it and appends a
- *     continuation). Nothing is ever tombstoned or removed.
+ *     live and stays in the in-flight buffer (the caller keeps it and appends
+ *     a continuation; it is persisted when the turn is finalized). Nothing is
+ *     ever tombstoned or removed.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -82,6 +83,10 @@ describe('streamLLMPure history semantics (real EventStore)', () => {
       { type: 'error', error: 'boom' },
     ])
 
+    // The agent loop emits the assistant message.start when the first
+    // streamed event arrives (streamLLMPure itself never yields it).
+    store.append('session-1', { type: 'message.start', data: { messageId: 'assistant-1', role: 'assistant' } })
+
     const gen = streamLLMPure({
       messageId: 'assistant-1',
       systemPrompt: 'system',
@@ -95,10 +100,17 @@ describe('streamLLMPure history semantics (real EventStore)', () => {
 
     expect(result.error).toBe('boom')
     const remaining = store.getEvents('session-1')
-    // Seed + the partial content, exactly as streamed — nothing removed
-    expect(remaining.map((e) => e.type)).toEqual(['message.start', 'message.done', 'message.delta', 'message.thinking'])
-    expect((remaining[2]!.data as { content: string }).content).toBe('partial ')
-    expect((remaining[3]!.data as { content: string }).content).toBe('thinking so far')
+    // Only the merged seed message is persisted — the partial assistant
+    // content is still in-flight (persisted when the turn is finalized).
+    expect(remaining.map((e) => e.type)).toEqual(['message'])
     expect(remaining.some((e) => e.type === 'chat.error')).toBe(false)
+
+    // The partial content is retained in the in-flight buffer — a
+    // continuation builds on it; nothing is removed.
+    const inflight = store.getInflightMessages('session-1')
+    expect(inflight).toHaveLength(1)
+    expect(inflight[0]!.id).toBe('assistant-1')
+    expect(inflight[0]!.content).toBe('partial ')
+    expect(inflight[0]!.thinkingContent).toBe('thinking so far')
   })
 })

@@ -10,7 +10,7 @@ import { handleTerminalMessage, unsubscribeAllFromTerminal } from './terminal.js
 import type { Config } from '../config.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { SessionManager } from '../session/index.js'
-import { getEventStore, combineEventsWithSnapshot } from '../events/index.js'
+import { getEventStore } from '../events/index.js'
 import { getMaxVisibleItems } from '../db/settings.js'
 
 import type { Message, Provider, ProviderBackend, StatsIdentity, Attachment } from '../../shared/types.js'
@@ -680,11 +680,14 @@ export function createWebSocketServer(
     if (event.type === 'session_updated') {
       const updatedSession = event.session
       const eventStore = getEventStore()
-      const { snapshot, events: eventsSinceSnapshot } = eventStore.getEventsSinceSnapshot(updatedSession.id)
-      const events = combineEventsWithSnapshot(updatedSession.id, snapshot, eventsSinceSnapshot)
+      const events = eventStore.getEvents(updatedSession.id)
 
       const maxVisible = getMaxVisibleItems()
       const { messages, hiddenCount } = buildMessagesFromStoredEvents(events, maxVisible || undefined)
+      // Mid-turn parity with the REST session payload: in-flight (streaming)
+      // messages are not on the persisted path yet — attach them so a
+      // reconnecting/switching client sees the same state as a fresh fetch.
+      const inflight = eventStore.getInflightMessages(updatedSession.id)
       const sessionStats = computeSessionStatsSummary(buildSessionStatsMessages(events))
       const pendingConfirmations = foldPendingConfirmations(events)
       const pendingQuestions = getPendingQuestionsForSession(updatedSession.id)
@@ -712,7 +715,7 @@ export function createWebSocketServer(
         updatedSession.id,
         createSessionStateMessage(
           updatedSession,
-          messages,
+          [...messages, ...inflight],
           pendingConfirmations,
           pendingQuestions,
           undefined,

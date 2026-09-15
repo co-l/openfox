@@ -1,10 +1,11 @@
 /**
  * Generic event application helpers
- * Extracted to avoid duplication between Message[] and SnapshotMessage[] contexts
+ * Extracted to avoid duplication between Message[] and FoldedMessage[] contexts
  */
 
 import type { ToolCall, ToolResult, PreparingToolCall } from '../../shared/types.js'
 import type { TurnEvent } from './types.js'
+import { extractMessageOptionalFields } from './tree.js'
 
 export interface FormatRetry {
   attempt: number
@@ -19,40 +20,11 @@ function markComplete(msg: { isComplete?: boolean; completeReason?: CompleteReas
   msg.completeReason = reason
 }
 
-export interface MessageFragment {
-  tokenCount?: number
-  contextWindowId?: string
-  subAgentId?: string
-  subAgentType?: string
-  isSystemGenerated?: boolean
-  messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed' | 'workflow-started' | 'command'
-  isCompactionSummary?: boolean
-  attachments?: unknown[]
-  metadata?: unknown
-}
-
-function extractMessageOptionalFields(data: {
-  tokenCount?: number
-  contextWindowId?: string
-  subAgentId?: string
-  subAgentType?: string
-  isSystemGenerated?: boolean
-  messageKind?: string
-  isCompactionSummary?: boolean
-  attachments?: unknown[]
-  metadata?: unknown
-}): Record<string, unknown> {
-  return {
-    ...(data.tokenCount !== undefined && { tokenCount: data.tokenCount }),
-    ...(data.contextWindowId !== undefined && { contextWindowId: data.contextWindowId }),
-    ...(data.subAgentId !== undefined && { subAgentId: data.subAgentId }),
-    ...(data.subAgentType !== undefined && { subAgentType: data.subAgentType }),
-    ...(data.isSystemGenerated !== undefined && { isSystemGenerated: data.isSystemGenerated }),
-    ...(data.messageKind !== undefined && { messageKind: data.messageKind }),
-    ...(data.isCompactionSummary !== undefined && { isCompactionSummary: data.isCompactionSummary }),
-    ...(data.attachments !== undefined && { attachments: data.attachments }),
-    ...(data.metadata !== undefined && { metadata: data.metadata }),
+function eventTimestamp(event: { timestamp: number | string }, timestampAsNumber?: boolean): number | string {
+  if (timestampAsNumber) {
+    return typeof event.timestamp === 'number' ? event.timestamp : Date.now()
   }
+  return new Date(event.timestamp).toISOString()
 }
 
 export function createMessageStartData(
@@ -166,14 +138,37 @@ export function applyEvents<
 
   for (const event of events) {
     switch (event.type) {
+      // Merged message (v3 tree persistence unit). Folds to exactly the same
+      // state as the v1 chunk sequence it replaced: start (creates the entry,
+      // tokenCount ?? 0) + deltas/thinking (accumulate) + tool.calls (attach)
+      // + done (isStreaming false, stats/segments/partial/tokenCount, clear
+      // preparing). isComplete/completeReason remain chat.done's job.
+      case 'message': {
+        const data = event.data as Extract<TurnEvent, { type: 'message' }>['data']
+        const timestamp = eventTimestamp(event, options.timestampAsNumber)
+        messages.set(data.messageId, {
+          id: data.messageId,
+          role: data.role,
+          content: data.content,
+          timestamp,
+          isStreaming: false,
+          tokenCount: data.tokenCount ?? 0,
+          ...extractMessageOptionalFields(data),
+          ...(data.thinkingContent !== undefined ? { thinkingContent: data.thinkingContent } : {}),
+          ...(data.toolCalls !== undefined
+            ? { toolCalls: (data.toolCalls as ToolCall[]).map((tc) => ({ ...tc })) }
+            : {}),
+          ...(data.toolCalls && data.toolCalls.length > 0 ? { preparingToolCalls: [] as PreparingToolCall[] } : {}),
+          ...(data.stats !== undefined ? { stats: data.stats } : {}),
+          ...(data.segments !== undefined ? { segments: data.segments } : {}),
+          ...(data.partial !== undefined ? { partial: data.partial } : {}),
+        } as unknown as T)
+        break
+      }
       case 'message.start': {
         const data = event.data as Extract<TurnEvent, { type: 'message.start' }>['data']
         const isUserOrSystem = data.role === 'user' || data.role === 'system'
-        const timestamp = options.timestampAsNumber
-          ? typeof event.timestamp === 'number'
-            ? event.timestamp
-            : Date.now()
-          : new Date(event.timestamp).toISOString()
+        const timestamp = eventTimestamp(event, options.timestampAsNumber)
         messages.set(data.messageId, {
           id: data.messageId,
           role: data.role,
@@ -281,7 +276,6 @@ export function applyEvents<
         break
       }
       case 'session.initialized':
-      case 'turn.snapshot':
       case 'phase.changed':
       case 'mode.changed':
       case 'running.changed':

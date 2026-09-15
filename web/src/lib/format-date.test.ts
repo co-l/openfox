@@ -157,11 +157,13 @@ describe('groupSessionsByDate', () => {
     messageCount: 0,
   })
 
+  // Times stay within 00:00–11:59Z so the local calendar date is stable in
+  // every timezone offset (-12h to +12h).
   it('groups sessions by date', () => {
     const sessions = [
-      createSession('1', '2024-01-15T14:30:00Z'),
+      createSession('1', '2024-01-15T11:30:00Z'),
       createSession('2', '2024-01-15T09:15:00Z'),
-      createSession('3', '2024-01-16T16:45:00Z'),
+      createSession('3', '2024-01-16T10:45:00Z'),
     ]
 
     const groups = groupSessionsByDate(sessions)
@@ -173,8 +175,8 @@ describe('groupSessionsByDate', () => {
 
   it('sorts date groups newest first', () => {
     const sessions = [
-      createSession('1', '2024-01-15T14:30:00Z'),
-      createSession('2', '2024-01-16T16:45:00Z'),
+      createSession('1', '2024-01-15T11:30:00Z'),
+      createSession('2', '2024-01-16T10:45:00Z'),
       createSession('3', '2024-01-14T10:00:00Z'),
     ]
 
@@ -186,9 +188,9 @@ describe('groupSessionsByDate', () => {
 
   it('sorts sessions within each group latest to earliest', () => {
     const sessions = [
-      createSession('1', '2024-01-15T14:30:00Z'),
+      createSession('1', '2024-01-15T11:30:00Z'),
       createSession('2', '2024-01-15T09:15:00Z'),
-      createSession('3', '2024-01-15T18:00:00Z'),
+      createSession('3', '2024-01-15T11:45:00Z'),
     ]
 
     const groups = groupSessionsByDate(sessions)
@@ -205,7 +207,7 @@ describe('groupSessionsByDate', () => {
   })
 
   it('handles single session', () => {
-    const sessions = [createSession('1', '2024-01-15T14:30:00Z')]
+    const sessions = [createSession('1', '2024-01-15T11:30:00Z')]
     const groups = groupSessionsByDate(sessions)
 
     expect(groups.size).toBe(1)

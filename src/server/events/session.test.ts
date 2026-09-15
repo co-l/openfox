@@ -6,8 +6,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import Database from 'better-sqlite3'
-import { initEventStore, getEventStore } from './store.js'
-import { buildSnapshot } from './folding.js'
+import { initEventStore } from './store.js'
 import {
   emitSessionInitialized,
   emitUserMessage,
@@ -398,194 +397,41 @@ describe('tool events', () => {
   })
 })
 
-describe('getSessionState with missing session.initialized', () => {
-  it('should still return valid state if sessionInit is present in snapshot', async () => {
-    const { getEventStore } = await import('./store.js')
-    const eventStore = getEventStore()
+describe('getSessionState — missing session.initialized', () => {
+  it('should return undefined when the session has events but no session.initialized', () => {
+    // In the tree-based store every real session starts with session.initialized.
+    // A session whose path lacks it (e.g. partial import) has no state.
+    emitUserMessage('s-noinit', 'Hello', { contextWindowId: 'win-1' })
 
-    initSession('s1', 'original-window')
-    emitUserMessage('s1', 'Hello', { contextWindowId: 'original-window' })
-
-    const state1 = getSessionState('s1')
-    expect(state1).toBeDefined()
-    expect(state1!.currentContextWindowId).toBe('original-window')
-
-    // Simulate what happens after cleanupOldEvents deletes session.initialized
-    // but a snapshot with sessionInit exists - directly insert a snapshot event
-    // with sessionInit but no actual messages (we just need sessionInit to be present)
-    const snapshotWithSessionInit = {
-      mode: 'planner' as const,
-      phase: 'plan' as const,
-      isRunning: false,
-      messages: state1!.messages,
-      criteria: [],
-      metadataEntries: {},
-      contextState: state1!.contextState,
-      currentContextWindowId: 'original-window',
-      todos: [],
-      readFiles: [],
-      snapshotSeq: 99,
-      snapshotAt: Date.now(),
-      sessionInit: {
-        projectId: 'proj-1',
-        workdir: '/tmp/test',
-        contextWindowId: 'original-window',
-      },
-    }
-
-    // Delete the session.initialized event (seq 1)
-    eventStore.deleteEventsUpToSeq('s1', 1)
-
-    // Insert a snapshot with sessionInit
-    eventStore.append('s1', { type: 'turn.snapshot', data: snapshotWithSessionInit })
-
-    const state2 = getSessionState('s1')
-    expect(state2).toBeDefined()
-    expect(state2!.currentContextWindowId).toBe('original-window')
+    expect(getSessionState('s-noinit')).toBeUndefined()
   })
 
-  it('should still return valid state if sessionInit is only in an earlier snapshot (not latest)', async () => {
-    const { getEventStore } = await import('./store.js')
-    const eventStore = getEventStore()
+  it('should return undefined for a session with only non-message events', () => {
+    emitModeChanged('s-noinit2', 'builder', false)
 
-    initSession('s2', 'window-early')
-    emitUserMessage('s2', 'Hello', { contextWindowId: 'window-early' })
-
-    const state1 = getSessionState('s2')
-    expect(state1).toBeDefined()
-
-    // Simulate: snapshot WITH sessionInit is created (like a first snapshot)
-    const snapshotWithSessionInit = {
-      mode: 'planner' as const,
-      phase: 'plan' as const,
-      isRunning: false,
-      messages: state1!.messages,
-      criteria: [],
-      metadataEntries: {},
-      contextState: state1!.contextState,
-      currentContextWindowId: 'window-early',
-      todos: [],
-      readFiles: [],
-      snapshotSeq: 2,
-      snapshotAt: Date.now(),
-      sessionInit: {
-        projectId: 'proj-1',
-        workdir: '/tmp/test',
-        contextWindowId: 'window-early',
-      },
-    }
-    eventStore.append('s2', { type: 'turn.snapshot', data: snapshotWithSessionInit })
-
-    // Now simulate what happens after context compaction changes the window:
-    // A new snapshot is created WITHOUT sessionInit (because session.initialized
-    // was already deleted and the new context window doesn't carry sessionInit)
-    emitContextCompacted('s2', 'window-early', 'window-new', 100, 50, 'summary')
-    emitRunningChanged('s2', false)
-
-    const state2 = getSessionState('s2')
-    const compactedMessages = state2!.messages
-
-    const snapshotWithoutSessionInit = {
-      mode: 'planner' as const,
-      phase: 'plan' as const,
-      isRunning: false,
-      messages: compactedMessages,
-      criteria: [],
-      metadataEntries: {},
-      contextState: state2!.contextState,
-      currentContextWindowId: 'window-new',
-      todos: [],
-      readFiles: [],
-      snapshotSeq: 10,
-      snapshotAt: Date.now(),
-      // NO sessionInit here — this is the bug scenario
-    }
-    eventStore.append('s2', { type: 'turn.snapshot', data: snapshotWithoutSessionInit })
-
-    // Delete session.initialized (simulates cleanupOldEvents)
-    eventStore.deleteEventsUpToSeq('s2', 1)
-
-    // The latest snapshot has NO sessionInit, but an earlier one does
-    // getSessionState should still find the contextWindowId
-    const state3 = getSessionState('s2')
-    expect(state3).toBeDefined()
-    expect(state3!.currentContextWindowId).toBe('window-new')
-    expect(state3!.mode).toBe('planner')
-    expect(state3!.isRunning).toBe(false)
-  })
-
-  it('should use currentContextWindowId from snapshot when both session.initialized and sessionInit are missing', async () => {
-    const { getEventStore } = await import('./store.js')
-    const eventStore = getEventStore()
-
-    // Simulate a session where consolidateSession deleted session.initialized
-    // and snapshots were created without sessionInit (pre-fix)
-    // but snapshots DO have currentContextWindowId
-    const snapshotData = {
-      mode: 'planner' as const,
-      phase: 'plan' as const,
-      isRunning: false,
-      messages: [],
-      criteria: [],
-      metadataEntries: {},
-      contextState: {
-        currentTokens: 1000,
-        maxTokens: 200000,
-        compactionCount: 0,
-        dangerZone: false,
-        canCompact: false,
-        dynamicContextChanged: false,
-      },
-      currentContextWindowId: 'recovered-window-id',
-      todos: [],
-      readFiles: [],
-      snapshotSeq: 1,
-      snapshotAt: Date.now(),
-      // NO sessionInit field
-    }
-
-    eventStore.append('s3', { type: 'turn.snapshot', data: snapshotData })
-    emitRunningChanged('s3', false)
-
-    // No session.initialized event, no sessionInit in snapshot
-    // BUT currentContextWindowId is present in the snapshot
-    const state = getSessionState('s3')
-    expect(state).toBeDefined()
-    expect(state!.currentContextWindowId).toBe('recovered-window-id')
-    expect(state!.mode).toBe('planner')
-    expect(state!.isRunning).toBe(false)
-    expect(state!.messages).toBeDefined()
+    expect(getSessionState('s-noinit2')).toBeUndefined()
   })
 })
 
 // ============================================================================
-// Snapshot-optimized loading (Criterion 6A)
+// Event-history loading
 // ============================================================================
 
-describe('getSessionState — snapshot-optimized (getEventsSinceSnapshot)', () => {
-  it('should return all messages when snapshot exists with events after', () => {
-    const sessionId = 'snapshot-session-a'
+describe('getSessionState — event history', () => {
+  it('should fold all messages from the event history', () => {
+    const sessionId = 'history-session-a'
     initSession(sessionId, 'win-1')
 
-    // Emit several messages
     emitUserMessage(sessionId, 'Hello', { contextWindowId: 'win-1' })
     const msg1 = emitAssistantMessageStart(sessionId, { contextWindowId: 'win-1' })
     emitMessageDelta(sessionId, msg1, 'Hi there')
     emitMessageDone(sessionId, msg1)
 
-    // Simulate a snapshot being created (as happens in production)
-    const stateBeforeSnapshot = getSessionState(sessionId)
-    const eventStore = getEventStore()
-    const snapshot = buildSnapshot(stateBeforeSnapshot!, 5)
-    eventStore.append(sessionId, { type: 'turn.snapshot', data: snapshot })
-
-    // Emit more events after the snapshot
     emitUserMessage(sessionId, 'World', { contextWindowId: 'win-1' })
     const msg2 = emitAssistantMessageStart(sessionId, { contextWindowId: 'win-1' })
     emitMessageDelta(sessionId, msg2, 'Hello back')
     emitMessageDone(sessionId, msg2)
 
-    // getSessionState should return all messages from both snapshot and newer events
     const state = getSessionState(sessionId)
     expect(state).toBeDefined()
     expect(state!.messages.length).toBeGreaterThanOrEqual(4)
@@ -596,8 +442,8 @@ describe('getSessionState — snapshot-optimized (getEventsSinceSnapshot)', () =
     expect(contents).toContain('Hello back')
   })
 
-  it('should return correct state when no snapshot exists', () => {
-    const sessionId = 'snapshot-session-b'
+  it('should return state with all messages for a plain session', () => {
+    const sessionId = 'history-session-b'
     initSession(sessionId, 'win-1')
 
     emitUserMessage(sessionId, 'Message A', { contextWindowId: 'win-1' })
@@ -607,46 +453,11 @@ describe('getSessionState — snapshot-optimized (getEventsSinceSnapshot)', () =
     expect(state).toBeDefined()
     expect(state!.messages.length).toBeGreaterThanOrEqual(2)
   })
-
-  it('should return undefined for session with only snapshot but no session.initialized', () => {
-    const sessionId = 'snapshot-session-c'
-    const eventStore = getEventStore()
-
-    // Directly insert a snapshot without session.initialized
-    eventStore.append(sessionId, {
-      type: 'turn.snapshot',
-      data: {
-        mode: 'builder',
-        phase: 'build',
-        isRunning: false,
-        messages: [],
-        criteria: [],
-        metadataEntries: {},
-        contextState: {
-          currentTokens: 0,
-          maxTokens: 200000,
-          compactionCount: 0,
-          dangerZone: false,
-          canCompact: false,
-          dynamicContextChanged: false,
-        },
-        currentContextWindowId: 'win-1',
-        todos: [],
-        readFiles: [],
-        snapshotSeq: 1,
-        snapshotAt: Date.now(),
-        sessionInit: { projectId: 'proj-1', workdir: '/tmp', contextWindowId: 'win-1' },
-      },
-    })
-
-    const state = getSessionState(sessionId)
-    expect(state).toBeDefined()
-  })
 })
 
-describe('getContextMessages — snapshot-optimized (getEventsSinceSnapshot)', () => {
-  it('should return context messages when snapshot exists with events after', () => {
-    const sessionId = 'ctx-snapshot-a'
+describe('getContextMessages — event history', () => {
+  it('should return context messages folded from the event history', () => {
+    const sessionId = 'ctx-history-a'
     initSession(sessionId, 'win-1')
 
     emitUserMessage(sessionId, 'Hello', { contextWindowId: 'win-1' })
@@ -654,13 +465,6 @@ describe('getContextMessages — snapshot-optimized (getEventsSinceSnapshot)', (
     emitMessageDelta(sessionId, msg1, 'Hi there')
     emitMessageDone(sessionId, msg1)
 
-    // Simulate snapshot
-    const eventStore = getEventStore()
-    const stateBeforeSnapshot = getSessionState(sessionId)
-    const snapshot = buildSnapshot(stateBeforeSnapshot!, 5)
-    eventStore.append(sessionId, { type: 'turn.snapshot', data: snapshot })
-
-    // Events after snapshot
     emitUserMessage(sessionId, 'World', { contextWindowId: 'win-1' })
     const msg2 = emitAssistantMessageStart(sessionId, { contextWindowId: 'win-1' })
     emitMessageDelta(sessionId, msg2, 'Hello back')

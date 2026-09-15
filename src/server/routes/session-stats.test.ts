@@ -63,9 +63,8 @@ describe('GET /api/sessions/:id/stats — real handler', () => {
 
     vi.doMock('../events/index.js', () => ({
       getEventStore: () => ({
-        getEventsSinceSnapshot: vi.fn(() => ({ snapshot: undefined, events: [] })),
+        getEvents: vi.fn(() => []),
       }),
-      combineEventsWithSnapshot: vi.fn((_id: string, _snapshot: unknown, events: unknown[]) => events),
     }))
 
     vi.doMock('../events/folding.js', () => ({

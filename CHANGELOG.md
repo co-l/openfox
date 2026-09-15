@@ -1,5 +1,24 @@
 # Changelog
 
+## 3.0.0-beta - 2026-09-15
+
+### Breaking
+
+- **Session history now lives in a conversation tree** — sessions are cursors over a shared, append-only event tree; the old linear log, turn snapshots, and snapshot-based GC are removed. Pre-v3 databases are not migrated: history written by older versions is not loaded, and v1 session exports are rejected on import. Back up (`sqlite3 <db> ".backup <copy>"`) or export sessions before upgrading.
+
+### Features
+
+- **O(1) session forking** — forking from any message creates a new session that shares the conversation tree: no history copy, and forking a compacted session can no longer re-inject discarded context (#334).
+- **Non-destructive edit & resend** — resending a message branches to a sibling; the original conversation is preserved and can be switched back to at any time.
+- **Conversation branch switcher** — abandoned branches show in the sidebar's session popover (preview, role, time); one click rewinds the session to that branch.
+- **Oversized payloads externalized to content-addressed blobs** — large tool results and message content (>256 KB / >1 MB) are deduplicated into a blob table with previews, eliminating multi-hundred-MB database rows.
+
+### Enhancements
+
+- **KV-prefix-friendly requests** — after fork, rewind, or resend the LLM request is a prefix the provider already served, maximizing prefix-cache hits; compaction stays in-context.
+- **Dead-branch garbage collection** — unreferenced trees and orphaned blobs are reclaimed (7-day grace) instead of the old seq-truncation GC.
+- **v2 session export/import** — exports carry the tree document (event ids, parent links, cursor) and round-trip losslessly into new projects.
+
 ## 2.0.146 - 2026-09-12
 
 ### Bug Fixes

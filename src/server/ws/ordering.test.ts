@@ -211,13 +211,11 @@ describe('WebSocket Message Ordering Integration', () => {
     const client = new WebSocket(wsUrl)
     await new Promise<void>((resolve) => client.once('open', resolve))
 
-    const receivedMessages: Array<{ seq: number; type: string }> = []
+    const receivedMessages: Array<{ type: string; content?: string }> = []
 
     client.on('message', (data) => {
       const message = JSON.parse(data.toString())
-      if (message.seq !== undefined) {
-        receivedMessages.push({ seq: message.seq, type: message.type })
-      }
+      receivedMessages.push({ type: message.type, content: message.payload?.content })
     })
 
     // Wait for connection to be established
@@ -243,13 +241,21 @@ describe('WebSocket Message Ordering Integration', () => {
     // Wait for all events to be processed and sent
     await new Promise((resolve) => setTimeout(resolve, 300))
 
-    // Verify events were received in strict FIFO order
+    // Verify events were received in strict FIFO order. Live streaming
+    // events are ephemeral (seq 0) and only tree-persisted nodes carry
+    // tree seqs, so ordering is asserted on the wire types — the WebSocket
+    // transport itself is ordered.
     expect(receivedMessages.length).toBe(eventTypes.length)
-    receivedMessages.forEach((msg, index) => {
-      if (index > 0) {
-        expect(msg.seq).toBeGreaterThan(receivedMessages[index - 1]!.seq)
-      }
-    })
+    expect(receivedMessages.map((m) => m.type)).toEqual([
+      'chat.message',
+      'chat.delta',
+      'chat.delta',
+      'chat.thinking',
+      'chat.message_updated',
+      'chat.done',
+    ])
+    expect(receivedMessages[1]!.content).toBe('content-1')
+    expect(receivedMessages[2]!.content).toBe('content-2')
 
     client.close()
     wss.close()
@@ -356,13 +362,11 @@ describe('WebSocket Message Ordering Integration', () => {
     const client = new WebSocket(wsUrl)
     await new Promise<void>((resolve) => client.once('open', resolve))
 
-    const receivedMessages: Array<{ seq: number }> = []
+    const receivedMessages: Array<{ type: string; content?: string }> = []
 
     client.on('message', (data) => {
       const message = JSON.parse(data.toString())
-      if (message.seq !== undefined) {
-        receivedMessages.push({ seq: message.seq })
-      }
+      receivedMessages.push({ type: message.type, content: message.payload?.content })
     })
 
     await new Promise((resolve) => setTimeout(resolve, 100))
@@ -378,12 +382,9 @@ describe('WebSocket Message Ordering Integration', () => {
     await new Promise((resolve) => setTimeout(resolve, 500))
 
     expect(receivedMessages.length).toBe(50)
-    // Check sequence numbers are strictly increasing
-    receivedMessages.forEach((msg, index) => {
-      if (index > 0) {
-        expect(msg.seq).toBeGreaterThan(receivedMessages[index - 1]!.seq)
-      }
-    })
+    // Check delivery order: every delta arrives in emission order
+    expect(receivedMessages.map((m) => m.type)).toEqual(Array(50).fill('chat.delta'))
+    expect(receivedMessages.map((m) => m.content)).toEqual(Array.from({ length: 50 }, (_, i) => `content-${i}`))
 
     client.close()
     wss.close()

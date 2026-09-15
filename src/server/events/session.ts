@@ -17,7 +17,6 @@
  * ```
  */
 
-import { updateSessionMessageCount } from '../db/sessions.js'
 import type {
   SessionMode,
   SessionPhase,
@@ -30,55 +29,24 @@ import type {
   MessageSegment,
   Attachment,
 } from '../../shared/types.js'
-import type { SessionSnapshot, SnapshotMessage, ReadFileEntry } from './types.js'
+import type { ReadFileEntry } from './types.js'
 import { getEventStore } from './store.js'
 import { getRuntimeConfig } from '../runtime-config.js'
 import {
   foldSessionState,
   foldContextState,
   buildContextMessagesFromEventHistory,
-  buildMessagesFromStoredEvents,
-  spreadOptionalMessageFields,
   type ContextMessage,
   type FoldedSessionState,
 } from './folding.js'
-
-export function combineEventsWithSnapshot(
-  sessionId: string,
-  snapshot: import('./types.js').SessionSnapshot | undefined,
-  events: import('./types.js').StoredEvent[],
-): import('./types.js').StoredEvent[] {
-  if (!snapshot) return events
-  const snapshotEvent: import('./types.js').StoredEvent = {
-    seq: 0,
-    timestamp: snapshot.snapshotAt,
-    sessionId,
-    type: 'turn.snapshot',
-    data: snapshot,
-  }
-  return [snapshotEvent, ...events]
-}
-
-function toSnapshotMessage(message: import('../../shared/types.js').Message): SnapshotMessage {
-  return {
-    id: message.id,
-    role: message.role,
-    content: message.content,
-    timestamp: new Date(message.timestamp).getTime(),
-    ...spreadOptionalMessageFields(message as unknown as SnapshotMessage),
-  }
-}
 
 // ============================================================================
 // Session State Retrieval
 // ============================================================================
 
 /**
- * Get full session state by folding all events.
+ * Get full session state by folding the session's active path events.
  * Returns undefined if no session.initialized event exists.
- *
- * If a snapshot exists, messages are loaded from the snapshot instead of
- * reconstructing from individual events (which may have been deleted).
  *
  * maxTokens should come from providerManager.getCurrentModelContext()
  */
@@ -88,44 +56,17 @@ export function getSessionState(
   defaultMode?: SessionMode,
 ): FoldedSessionState | undefined {
   const eventStore = getEventStore()
-
-  // Check for the latest snapshot first
-  // Use snapshot-optimized loading
-  const { snapshot: latestSnapshot, events: rawEvents } = eventStore.getEventsSinceSnapshot(sessionId)
-  const events = combineEventsWithSnapshot(sessionId, latestSnapshot, rawEvents)
+  const events = eventStore.getEvents(sessionId)
   if (events.length === 0) {
     return undefined
   }
+
   let initialWindowId: string | undefined
   for (const event of events) {
     if (event.type === 'session.initialized') {
       const data = event.data as { contextWindowId: string }
       initialWindowId = data.contextWindowId
       break
-    }
-  }
-
-  if (!initialWindowId) {
-    for (const event of events) {
-      if (event.type === 'turn.snapshot') {
-        const snapshotData = event.data as { sessionInit?: { contextWindowId: string } }
-        if (snapshotData.sessionInit?.contextWindowId) {
-          initialWindowId = snapshotData.sessionInit.contextWindowId
-          break
-        }
-      }
-    }
-  }
-
-  if (!initialWindowId) {
-    for (const event of events) {
-      if (event.type === 'turn.snapshot') {
-        const snapshotData = event.data as { currentContextWindowId?: string }
-        if (snapshotData.currentContextWindowId) {
-          initialWindowId = snapshotData.currentContextWindowId
-          break
-        }
-      }
     }
   }
 
@@ -137,28 +78,13 @@ export function getSessionState(
   const config = getRuntimeConfig()
   const effectiveMaxTokens = maxTokens ?? config.context.maxTokens
 
-  // If we have a snapshot, use it as the base for messages and replay newer events
-  if (latestSnapshot) {
-    const state = foldSessionState(events, initialWindowId, effectiveMaxTokens, undefined, defaultMode)
-
-    // Override folded messages with the latest snapshot plus replayed events.
-    return {
-      ...state,
-      messages: buildMessagesFromStoredEvents(events).messages.map(toSnapshotMessage),
-    }
-  }
-
-  return foldSessionState(events, initialWindowId, effectiveMaxTokens, undefined, defaultMode)
+  return foldSessionState(events, initialWindowId, effectiveMaxTokens, defaultMode)
 }
 
 /**
  * Get messages for the current context window (for LLM context building)
- *
- * If a snapshot exists, messages are loaded from the snapshot.
- * Otherwise, they're built from events.
  */
-export function getCurrentWindowMessages(sessionId: string): SnapshotMessage[] {
-  // Get current context window ID from events (not from snapshot, as snapshot may be stale)
+export function getCurrentWindowMessages(sessionId: string): FoldedSessionState['messages'] {
   const currentWindowId = getCurrentContextWindowId(sessionId)
   if (!currentWindowId) return []
 
@@ -170,17 +96,12 @@ export function getCurrentWindowMessages(sessionId: string): SnapshotMessage[] {
 
 /**
  * Get context messages for LLM from current window
- *
- * If a snapshot exists, messages are loaded from the snapshot.
- * Otherwise, they're built from events.
  */
 export function getContextMessages(sessionId: string): ContextMessage[] {
   const eventStore = getEventStore()
-  // Get current context window ID from events (not from snapshot, as snapshot may be stale)
   const currentWindowId = getCurrentContextWindowId(sessionId)
   if (!currentWindowId) return []
-  const { snapshot: ctxSnapshot, events: ctxRawEvents } = eventStore.getEventsSinceSnapshot(sessionId)
-  const events = combineEventsWithSnapshot(sessionId, ctxSnapshot, ctxRawEvents)
+  const events = eventStore.getEvents(sessionId)
   if (events.length === 0) return []
 
   return buildContextMessagesFromEventHistory(events, currentWindowId, { includeVerifier: false })
@@ -289,8 +210,6 @@ export function emitUserMessage(
     data: { messageId },
   })
 
-  updateSessionMessageCount(sessionId, 1)
-
   return messageId
 }
 
@@ -318,8 +237,6 @@ export function emitAssistantMessageStart(
       ...(options?.subAgentType !== undefined && { subAgentType: options.subAgentType }),
     },
   })
-
-  updateSessionMessageCount(sessionId, 1)
 
   return messageId
 }
@@ -648,50 +565,6 @@ export function emitPatternRetry(
     type: 'pattern.retry',
     data: { messageId, pattern, field, attempt, maxAttempts, matchedContent },
   })
-}
-
-/**
- * Emit turn snapshot
- */
-export function emitTurnSnapshot(sessionId: string, snapshot: SessionSnapshot): void {
-  const eventStore = getEventStore()
-  eventStore.append(sessionId, {
-    type: 'turn.snapshot',
-    data: snapshot,
-  })
-}
-
-/**
- * Truncate session messages at a given index.
- * Keeps messages[0..messageIndex], removes everything after.
- * messageIndex is 0-based — the message at that index is kept.
- * Emits a new snapshot with the truncated messages and cleans up stale events.
- */
-export function truncateSessionMessages(sessionId: string, messageIndex: number): void {
-  const eventStore = getEventStore()
-
-  const snapshotEvent = eventStore.getLatestSnapshot(sessionId)
-  if (!snapshotEvent) return
-
-  const snapshot = snapshotEvent.data
-  const messages = snapshot.messages
-
-  const lastKept = messageIndex + 1
-  if (lastKept < 0 || lastKept >= messages.length) return
-
-  // Clone before mutating: the snapshot object is shared with the in-memory
-  // snapshot cache, and the cache is only invalidated by the append below.
-  const truncatedSnapshot = { ...snapshot, messages: messages.slice(0, lastKept) }
-
-  eventStore.deleteEventsAfterSeq(sessionId, snapshotEvent.seq)
-
-  eventStore.append(sessionId, {
-    type: 'turn.snapshot',
-    data: truncatedSnapshot,
-  })
-
-  const removed = messages.length - lastKept
-  updateSessionMessageCount(sessionId, -removed)
 }
 
 // ============================================================================

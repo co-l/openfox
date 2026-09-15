@@ -185,18 +185,12 @@ describe('agent loop retry history (real EventStore)', () => {
     const result = await runTopLevelAgentLoop(config, mockTurnMetrics)
 
     expect(result.failed).toBeUndefined()
-    const events = store.getEvents('session-1').map((e) => e.type)
-    // Seed user message + only the successful attempt's assistant message
-    expect(events).toEqual([
-      'message.start',
-      'message.done',
-      'message.start',
-      'message.delta',
-      'message.done',
-      'chat.done',
-    ])
-    const delta = store.getEvents('session-1')[3]!
-    expect((delta.data as { content: string }).content).toBe('ok')
+    const events = store.getEvents('session-1')
+    // Seed user message (merged node) + only the successful attempt's
+    // assistant message (merged node) + chat.done
+    expect(events.map((e) => e.type)).toEqual(['message', 'message', 'chat.done'])
+    const assistant = events[1]!
+    expect((assistant.data as { content: string }).content).toBe('ok')
   })
 
   it('case 2 — keeps partial content plus exactly one continuation, then retries', async () => {
@@ -216,31 +210,17 @@ describe('agent loop retry history (real EventStore)', () => {
 
     expect(result.failed).toBeUndefined()
     const events = store.getEvents('session-1')
-    const types = events.map((e) => e.type)
-    // Seed + partial attempt (kept) + one continuation + successful retry
-    expect(types).toEqual([
-      'message.start',
-      'message.done',
-      // partial attempt: assistant start + delta + done(partial)
-      'message.start',
-      'message.delta',
-      'message.done',
-      // continuation user message
-      'message.start',
-      'message.done',
-      // successful retry
-      'message.start',
-      'message.delta',
-      'message.done',
-      'chat.done',
-    ])
-    const partialDone = events[4]!
-    expect((partialDone.data as { partial?: boolean }).partial).toBe(true)
-    const continueMsg = events[5]!
+    // Seed (merged) + partial attempt (merged, partial flag) + one
+    // continuation (merged) + successful retry (merged) + chat.done
+    expect(events.map((e) => e.type)).toEqual(['message', 'message', 'message', 'message', 'chat.done'])
+    const partialMsg = events[1]!
+    expect((partialMsg.data as { partial?: boolean }).partial).toBe(true)
+    expect((partialMsg.data as { content: string }).content).toBe('partial ')
+    const continueMsg = events[2]!
     expect((continueMsg.data as { content?: string }).content).toContain('interrupted')
     // No chat.error, nothing removed
-    expect(types.includes('chat.error')).toBe(false)
-    const finalDelta = events[8]!
-    expect((finalDelta.data as { content: string }).content).toBe('final')
+    expect(events.map((e) => e.type).includes('chat.error')).toBe(false)
+    const finalMsg = events[3]!
+    expect((finalMsg.data as { content: string }).content).toBe('final')
   })
 })

@@ -36,7 +36,6 @@ import {
   updateSessionCachedPrompt,
   updateSessionWorkdir,
   updateSessionBranch,
-  updateSessionMessageCount,
   setSessionMessageCount,
   getSessionCachedPrompt,
   createWorkflowExecution,
@@ -88,7 +87,6 @@ import {
   emitCriterionUpdated,
   emitMetadataSet,
   emitContextState,
-  getCurrentContextWindowId,
 } from '../events/index.js'
 import type { Message, CriterionStatus } from '../../shared/types.js'
 import { isInDangerZone, canCompact } from '../context/tokenizer.js'
@@ -450,10 +448,13 @@ export class SessionManager {
   }
 
   /**
-   * Fork a session from a specific message.
-   * Creates a new session with all messages up to (and including) the target message,
-   * preserving the conversation history. Copies the cached system prompt to avoid
-   * recomputation and marks the new session as warmed up for KV cache benefits.
+   * Fork a session from a specific message. O(1): the new session SHARES the
+   * source's conversation tree and starts its cursor at the target message —
+   * no events are copied. The source's `session.initialized` (and context
+   * windows, compaction boundaries) stays in place, so the forked path
+   * contains exactly the messages up to the fork point and nothing after.
+   * Copies the cached system prompt to avoid recomputation and marks the new
+   * session as warmed up for KV cache benefits.
    *
    * @param originalSessionId - Source session ID
    * @param messageId - Target message ID to fork at
@@ -465,75 +466,90 @@ export class SessionManager {
     const originalSession = this.requireSession(originalSessionId)
 
     const projectId = originalSession.projectId
+    const project = getProject(projectId)
+    if (!project) throw new Error(`Project not found: ${projectId}`)
     const effectiveTitle = title ?? `Fork of ${originalSession.metadata?.title ?? 'Untitled'}`
 
-    const state = getSessionState(originalSessionId)
-    if (!state) throw new Error(`Session ${originalSessionId} has no state`)
+    const eventStore = getEventStore()
+    const treeId = eventStore.getTreeId(originalSessionId)
+    const messageRow = eventStore.findMessageEvent(treeId, messageId)
+    if (!messageRow) throw new Error(`Message ${messageId} not found`)
 
-    const msgIndex = state.messages.findIndex((m) => m.id === messageId)
-    if (msgIndex === -1) throw new Error(`Message ${messageId} not found`)
-
-    const newSession = this.createSession(
+    // No session.initialized here — the shared tree already carries the
+    // source's initialization (same project/workdir/context window).
+    const dbSession = dbCreateSession(
       projectId,
+      originalSession.workdir,
       effectiveTitle,
       originalSession.providerId,
       originalSession.providerModel,
       originalSession.workspace,
+      originalSession.branch ?? undefined,
+      { treeId, cursorEventId: messageRow.eventId },
     )
-    const newWindowId = getCurrentContextWindowId(newSession.id) ?? crypto.randomUUID()
 
-    const messages = state.messages.slice(0, msgIndex + 1)
+    // In-process cursor + message count for the shared path.
+    eventStore.setCursor(dbSession.id, messageRow.eventId)
 
-    const snapshot: import('../events/types.js').SessionSnapshot = {
-      mode: state.mode,
-      phase: state.phase,
-      isRunning: false,
-      messages: messages.map((m) => ({
-        ...m,
-        timestamp: typeof m.timestamp === 'string' ? new Date(m.timestamp).getTime() : m.timestamp,
-        contextWindowId: newWindowId,
-      })),
-      criteria: state.criteria,
-      metadataEntries: state.metadataEntries,
-      contextState: {
-        currentTokens: 0,
-        maxTokens: state.contextState.maxTokens,
-        compactionCount: 0,
-        dangerZone: false,
-        canCompact: false,
-        dynamicContextChanged: false,
-      },
-      currentContextWindowId: newWindowId,
-      todos: state.todos,
-      readFiles: state.readFiles,
-      snapshotSeq: 0,
-      snapshotAt: Date.now(),
-      sessionInit: {
-        projectId: originalSession.projectId,
-        workdir: originalSession.workdir,
-        contextWindowId: newWindowId,
-      },
+    try {
+      initSessionMcpOverrides(dbSession.id, projectId, project.mcpOverrides)
+    } catch {
+      // Non-critical — session works without MCP overrides
     }
 
-    const eventStore = getEventStore()
-    eventStore.append(newSession.id, { type: 'turn.snapshot', data: snapshot })
-    updateSessionMessageCount(newSession.id, messages.length)
+    // Preserve source session MCP disabled servers in the forked session
+    const parentDisabledServers = getSessionDisabledServers(originalSessionId)
+    if (parentDisabledServers.length > 0) {
+      setSessionDisabledServers(dbSession.id, parentDisabledServers)
+    }
 
     const cached = getSessionCachedPrompt(originalSessionId)
     if (cached) {
-      updateSessionCachedPrompt(newSession.id, cached.systemPrompt, cached.tools, cached.hash, cached.promptHash)
-      this.markWarmedUp(newSession.id)
+      updateSessionCachedPrompt(dbSession.id, cached.systemPrompt, cached.tools, cached.hash, cached.promptHash)
+      this.markWarmedUp(dbSession.id)
     }
 
-    // Preserve parent session MCP disabled servers in the forked session
-    const parentDisabledServers = getSessionDisabledServers(originalSessionId)
-    if (parentDisabledServers.length > 0) {
-      setSessionDisabledServers(newSession.id, parentDisabledServers)
+    const session = this.buildSessionFromDb(dbSession)
+    this.emit({ type: 'session_created', session })
+
+    return this.requireSession(dbSession.id)
+  }
+
+  /**
+   * Edit & resend a user message: persist a sibling node under the same
+   * parent (fresh id, optionally edited content/attachments) and move the
+   * cursor to it, then queue an asap turn for the sibling. Non-destructive —
+   * the original branch stays switchable.
+   *
+   * @returns the sibling message id
+   */
+  resendMessage(
+    sessionId: string,
+    messageId: string,
+    options?: { content?: string; attachments?: import('../../shared/types.js').Attachment[] },
+  ): string {
+    this.requireSession(sessionId)
+    const eventStore = getEventStore()
+    const siblingId = eventStore.resendMessage(sessionId, messageId, options ?? {})
+    // The sibling is already on the path (the session_updated broadcast
+    // carries it) — queue the turn without re-adding the message.
+    this.queueMessage(sessionId, 'asap', options?.content ?? undefined, options?.attachments, undefined, siblingId)
+    this.emit({ type: 'session_updated', session: this.requireSession(sessionId) })
+    return siblingId
+  }
+
+  /**
+   * Switch the session's conversation branch to an existing message boundary
+   * (rewind / follow an abandoned tip). The session must not be running.
+   */
+  branchTo(sessionId: string, eventId: string): void {
+    this.requireSession(sessionId)
+    if (this.requireSession(sessionId).isRunning) {
+      throw new Error('Session is running — stop it before switching branches')
     }
-
-    this.emit({ type: 'session_updated', session: this.requireSession(newSession.id) })
-
-    return this.requireSession(newSession.id)
+    const eventStore = getEventStore()
+    eventStore.setCursor(sessionId, eventId)
+    this.emit({ type: 'session_updated', session: this.requireSession(sessionId) })
   }
 
   /**
@@ -610,6 +626,9 @@ export class SessionManager {
 
     const eventStore = getEventStore()
     eventStore.importEvents(session.id, payload.events as unknown as import('../events/types.js').StoredEvent[])
+    if (payload.cursorEventId) {
+      eventStore.restoreCursor(session.id, payload.cursorEventId)
+    }
 
     // Mode fallback: the restored source mode is only kept when the agent
     // exists in the target environment; otherwise fall back to the project's
@@ -1708,6 +1727,7 @@ export class SessionManager {
     content?: string,
     attachments?: Attachment[],
     messageKind?: string,
+    existingMessageId?: string,
   ): QueuedMessage {
     const queue = this.messageQueues.get(sessionId) ?? []
     const msg: QueuedMessage = {
@@ -1716,6 +1736,7 @@ export class SessionManager {
       content: content ?? '',
       ...(attachments ? { attachments } : {}),
       ...(messageKind ? { messageKind } : {}),
+      ...(existingMessageId ? { existingMessageId } : {}),
       queuedAt: new Date().toISOString(),
     }
     queue.push(msg)
@@ -2320,7 +2341,7 @@ export class SessionManager {
       }
     }
 
-    // Map SnapshotMessage[] to Message[]
+    // Map FoldedMessage[] to Message[]
     const messages = eventState.messages.map((m) => {
       const msg: import('../../shared/types.js').Message = {
         id: m.id,
@@ -2358,27 +2379,20 @@ export class SessionManager {
       criteria: eventState.criteria,
       metadataEntries: eventState.metadataEntries,
       contextWindows: [], // Derived from events, not stored separately
-      executionState:
-        eventState.cachedSystemPrompt || cachedPrompt
-          ? {
-              iteration: 0,
-              readFiles: {},
-              consecutiveFailures: 0,
-              currentTokenCount: 0,
-              messageCountAtLastUpdate: messages.length,
-              compactionCount: 0,
-              startedAt: new Date().toISOString(),
-              lastActivityAt: new Date().toISOString(),
-              ...(cachedPrompt?.systemPrompt ? { cachedSystemPrompt: cachedPrompt.systemPrompt } : {}),
-              ...(eventState.cachedSystemPrompt && !cachedPrompt?.systemPrompt
-                ? { cachedSystemPrompt: eventState.cachedSystemPrompt }
-                : {}),
-              ...(cachedPrompt?.hash ? { dynamicContextHash: cachedPrompt.hash } : {}),
-              ...(eventState.dynamicContextHash && !cachedPrompt?.hash
-                ? { dynamicContextHash: eventState.dynamicContextHash }
-                : {}),
-            }
-          : null,
+      executionState: cachedPrompt
+        ? {
+            iteration: 0,
+            readFiles: {},
+            consecutiveFailures: 0,
+            currentTokenCount: 0,
+            messageCountAtLastUpdate: messages.length,
+            compactionCount: 0,
+            startedAt: new Date().toISOString(),
+            lastActivityAt: new Date().toISOString(),
+            ...(cachedPrompt.systemPrompt ? { cachedSystemPrompt: cachedPrompt.systemPrompt } : {}),
+            ...(cachedPrompt.hash ? { dynamicContextHash: cachedPrompt.hash } : {}),
+          }
+        : null,
     }
   }
 }

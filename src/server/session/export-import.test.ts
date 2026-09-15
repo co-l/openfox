@@ -72,15 +72,13 @@ import {
   emitMessageDone,
   emitToolCall,
   emitToolResult,
-  emitTurnSnapshot,
   emitCriteriaSet,
   emitTodosUpdated,
   emitModeChanged,
   getSessionState,
   getCurrentWindowMessageOptions,
-  buildSnapshotFromSessionState,
 } from '../events/index.js'
-import type { SnapshotMessage } from '../events/types.js'
+import type { FoldedMessage } from '../events/types.js'
 import { SessionManager } from './manager.js'
 import { buildSessionExport, SESSION_EXPORT_FORMAT, SESSION_EXPORT_VERSION } from './export-import.js'
 import { injectContextDriftReminders } from '../chat/dynamic-context.js'
@@ -166,20 +164,6 @@ describe('Session export / import', () => {
       truncated: false,
     })
     manager.setCachedPrompt(session.id, OLD_SYSTEM_PROMPT, [CACHED_TOOL], 'source-hash', 'source-prompt-hash')
-    // Realistic snapshot at turn end
-    const events = getEventStore().getEvents(session.id)
-    const latestSeq = getEventStore().getLatestSeq(session.id) ?? events.length
-    emitTurnSnapshot(
-      session.id,
-      buildSnapshotFromSessionState({
-        session: manager.requireSession(session.id),
-        events,
-        latestSeq,
-        cachedSystemPrompt: OLD_SYSTEM_PROMPT,
-        dynamicContextHash: 'source-hash',
-      }),
-    )
-    // State events land after the snapshot in production (next turn start)
     emitCriteriaSet(session.id, [{ id: 'c1', description: 'Export works', status: { type: 'pending' }, attempts: [] }])
     emitTodosUpdated(session.id, [{ content: 'Implement export', status: 'pending' }])
     return session.id
@@ -266,7 +250,7 @@ describe('Session export / import', () => {
       // Import appends drift reminders + the import marker, so the source
       // history must be preserved verbatim as a prefix of the imported one.
       expect(importedState!.messages.length).toBeGreaterThanOrEqual(sourceState!.messages.length)
-      const projectMessages = (messages: SnapshotMessage[]) =>
+      const projectMessages = (messages: FoldedMessage[]) =>
         messages.map((m) => ({
           id: m.id,
           role: m.role,
@@ -367,15 +351,6 @@ describe('Session export / import', () => {
     it('falls back to the default agent when the source mode does not exist', async () => {
       const sessionId = manager.createSession(projectId, 'Ghost mode session', 'test-provider', 'test-model').id
       emitModeChanged(sessionId, 'ghost-agent', false)
-      const events = getEventStore().getEvents(sessionId)
-      emitTurnSnapshot(
-        sessionId,
-        buildSnapshotFromSessionState({
-          session: manager.requireSession(sessionId),
-          events,
-          latestSeq: getEventStore().getLatestSeq(sessionId) ?? events.length,
-        }),
-      )
       const payload = buildSessionExport(manager, sessionId)
       expect(payload.session.mode).toBe('ghost-agent')
 
@@ -395,7 +370,7 @@ describe('Session export / import', () => {
         .getEvents(imported.id)
         .filter(
           (e) =>
-            e.type === 'message.start' &&
+            e.type === 'message' &&
             (e.data as { role?: string; isSystemGenerated?: boolean }).role === 'user' &&
             (e.data as { isSystemGenerated?: boolean }).isSystemGenerated,
         )
@@ -421,7 +396,7 @@ describe('Session export / import', () => {
 
       const marker = getEventStore()
         .getEvents(imported.id)
-        .filter((e) => e.type === 'message.start')
+        .filter((e) => e.type === 'message')
         .at(-1)!
       const markerData = marker.data as {
         role: string
@@ -445,6 +420,11 @@ describe('Session export / import', () => {
       await expect(manager.importSession(targetProjectId, { format: 'nope' })).rejects.toThrow()
       const payload = buildSessionExport(manager, createSourceSession())
       await expect(manager.importSession('missing-project', payload)).rejects.toThrow('Project not found')
+    })
+
+    it('rejects pre-v3 (v1) exports with a clear error', async () => {
+      const payload = buildSessionExport(manager, createSourceSession())
+      await expect(manager.importSession(targetProjectId, { ...payload, version: 1 })).rejects.toThrow('not supported')
     })
   })
 })

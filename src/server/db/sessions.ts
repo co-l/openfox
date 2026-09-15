@@ -33,6 +33,12 @@ export function createSession(
   providerModel?: string | null,
   workspace?: string,
   branch?: string,
+  options?: {
+    /** Share an existing conversation tree (forks). Defaults to a new tree. */
+    treeId?: string
+    /** Starting cursor inside the (shared) tree. Defaults to root. */
+    cursorEventId?: string
+  },
 ): Session {
   const db = getDatabase()
   const now = new Date().toISOString()
@@ -41,10 +47,13 @@ export function createSession(
 
   const defaultAgent = resolveDefaultAgentId(projectId)
 
+  // Every session owns its own conversation tree (tree_id = id) unless a
+  // shared tree is given (forks reference the source session's tree).
+  const treeId = options?.treeId ?? id
   db.prepare(
     `
-    INSERT INTO sessions (id, project_id, workdir, workspace, branch, phase, mode, workflow_phase, is_running, created_at, updated_at, title, provider_id, provider_model, danger_level)
-    VALUES (?, ?, ?, ?, ?, 'idle', ?, 'plan', 0, ?, ?, ?, ?, ?, ?)
+    INSERT INTO sessions (id, project_id, workdir, workspace, branch, phase, mode, workflow_phase, is_running, created_at, updated_at, title, provider_id, provider_model, danger_level, tree_id, cursor_event_id)
+    VALUES (?, ?, ?, ?, ?, 'idle', ?, 'plan', 0, ?, ?, ?, ?, ?, ?, ?, ?)
   `,
   ).run(
     id,
@@ -59,6 +68,8 @@ export function createSession(
     providerId ?? null,
     providerModel ?? null,
     dangerLevel,
+    treeId,
+    options?.cursorEventId ?? null,
   )
 
   return {
@@ -520,6 +531,17 @@ export function updateSessionBranch(id: string, branch: string): void {
 export function deleteSession(id: string): void {
   const db = getDatabase()
   db.prepare('DELETE FROM sessions WHERE id = ?').run(id)
+}
+
+export function updateSessionCursor(id: string, cursorEventId: string | null): void {
+  const db = getDatabase()
+  db.prepare('UPDATE sessions SET cursor_event_id = ? WHERE id = ?').run(cursorEventId, id)
+}
+
+export function getSessionsForTree(treeId: string): string[] {
+  const db = getDatabase()
+  const rows = db.prepare('SELECT id FROM sessions WHERE tree_id = ?').all(treeId) as { id: string }[]
+  return rows.map((r) => r.id)
 }
 
 function mapSessionBase(row: SessionRow | SessionSummaryRow): {

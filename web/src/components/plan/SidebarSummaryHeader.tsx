@@ -19,6 +19,7 @@ import { DevServerFooter } from './DevServerFooter'
 import { DevServerConfigModal } from './DevServerConfigModal'
 import { DynamicContextPreviewModal } from './DynamicContextPreviewModal'
 import { WorkspaceBranchSection } from './WorkspaceBranchSection'
+import { ConversationBranchSection } from './ConversationBranchSection'
 import { WorkspaceModal } from './WorkspaceModal'
 import { BranchModal } from './BranchModal'
 import { useScopedContext } from '../../stores/session/session-scope'
@@ -274,6 +275,7 @@ export function SidebarSummaryHeader({ visible }: SidebarSummaryHeaderProps) {
                 setShowBranchModal(true)
               }}
             />
+            <ConversationBranchSection sessionId={session.id} />
           </Popover>
         </div>
 

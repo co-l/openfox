@@ -20,7 +20,7 @@ import { VERSION } from '../../constants.js'
 import type { SessionManager } from './manager.js'
 
 export const SESSION_EXPORT_FORMAT = 'openfox-session'
-export const SESSION_EXPORT_VERSION = 1
+export const SESSION_EXPORT_VERSION = 2
 
 export const IMPORTED_SESSION_REMINDER =
   'This session was imported from another environment. The latest system reminders are authoritative.'
@@ -64,6 +64,8 @@ export interface SessionExportPayload {
   }
   messages: Message[]
   events: StoredEvent[]
+  /** The source session's cursor (tree node id) so branch state is restored. */
+  cursorEventId: string | null
 }
 
 const cachedLayoutSchema = z.object({
@@ -116,10 +118,13 @@ const sessionExportSchema = z.object({
       seq: z.number().int().positive(),
       timestamp: z.number(),
       sessionId: z.string(),
+      eventId: z.string(),
+      parentId: z.string().nullable().optional(),
       type: z.string(),
       data: z.unknown(),
     }),
   ),
+  cursorEventId: z.string().nullable(),
 })
 
 export type ParsedSessionExport = z.infer<typeof sessionExportSchema>
@@ -129,6 +134,15 @@ export type ParsedSessionExport = z.infer<typeof sessionExportSchema>
  * Throws a ZodError when the payload is not a valid session export.
  */
 export function parseSessionExport(payload: unknown): ParsedSessionExport {
+  // Pre-v3 exports fail the v2 schema with an opaque Zod error — surface a
+  // clear message for the known legacy format instead.
+  const candidate = payload as { format?: unknown; version?: unknown } | null
+  if (candidate && candidate.format === SESSION_EXPORT_FORMAT && candidate.version === 1) {
+    throw new Error(
+      'Session export version 1 (pre-v3 conversation tree) is not supported by this release. ' +
+        'Re-export the session from a v3-capable OpenFox.',
+    )
+  }
   return sessionExportSchema.parse(payload)
 }
 
@@ -191,5 +205,6 @@ export function buildSessionExport(sessionManager: SessionManager, sessionId: st
       : {}),
     messages: sessionManager.getCurrentWindowMessages(sessionId),
     events: getEventStore().getEvents(sessionId),
+    cursorEventId: getEventStore().getCursorEventId(sessionId),
   }
 }

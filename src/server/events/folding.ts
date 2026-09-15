@@ -30,10 +30,7 @@ export {
   reorderToolMessages,
   buildContextMessagesFromEventHistory,
   buildSessionStatsMessages,
-  foldTurnEventsToSnapshotMessages,
-  foldTurnEventsToSnapshotMessagesFromInitial,
-  buildContextMessagesFromMessages,
-  snapshotMessagesToEvents,
+  foldTurnEventsToMessages,
 } from './fold-messages.js'
 
 export {
@@ -47,7 +44,4 @@ export {
   foldPendingConfirmations,
   foldSessionState,
   foldWaitingWorkflow,
-  buildSnapshot,
-  buildSnapshotFromSessionState,
-  trimSnapshotStreamingOutput,
 } from './fold-state.js'

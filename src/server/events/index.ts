@@ -7,7 +7,7 @@
  * Usage:
  * ```typescript
  * import { getEventStore, getSessionState, emitUserMessage } from './events/index.js'
- * import type { TurnEvent, StoredEvent, SessionSnapshot } from './events/index.js'
+ * import type { TurnEvent, StoredEvent, FoldedMessage } from './events/index.js'
  *
  * // Initialize (once, at app startup)
  * initEventStore(db)
@@ -34,8 +34,7 @@ export { EventStore, initEventStore, getEventStore } from './store.js'
 export type {
   TurnEvent,
   StoredEvent,
-  SessionSnapshot,
-  SnapshotMessage,
+  FoldedMessage,
   ToolCallWithResult,
   ReadFileEntry,
   EventType,
@@ -52,7 +51,7 @@ export {
   buildSessionStatsMessages,
   buildContextMessagesFromStoredEvents,
   buildContextMessagesFromEventHistory,
-  foldTurnEventsToSnapshotMessages,
+  foldTurnEventsToMessages,
   foldSessionState,
   foldCriteria,
   foldTodos,
@@ -60,9 +59,6 @@ export {
   foldPhase,
   foldIsRunning,
   foldContextState,
-  buildSnapshot,
-  buildSnapshotFromSessionState,
-  buildContextMessagesFromMessages,
 } from './folding.js'
 
 // Session State API
@@ -97,9 +93,6 @@ export {
   emitChatDone,
   emitChatError,
   emitPatternRetry,
-  emitTurnSnapshot,
   emitMetadataSet,
-  truncateSessionMessages,
   getRecentUserPromptsForSession,
-  combineEventsWithSnapshot,
 } from './session.js'

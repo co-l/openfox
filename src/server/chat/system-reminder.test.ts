@@ -23,8 +23,30 @@ vi.mock('../agents/registry.js', () => ({
 
 function createEventStore(initialEvents: any[] = []) {
   const events: any[] = [...initialEvents]
+  const pendingAssistant = new Map<string, any>()
   return {
     append: vi.fn((_sessionId: string, event: any) => {
+      // Mirror the v2 store: user/system messages persist as merged
+      // `message` nodes; assistant messages buffer until message.done.
+      if (event.type === 'message.start') {
+        if (event.data.role === 'assistant') {
+          pendingAssistant.set(event.data.messageId, { ...event.data, content: '' })
+          return
+        }
+        events.push({ type: 'message', data: { ...event.data } })
+        return
+      }
+      if (event.type === 'message.delta' || event.type === 'message.thinking') {
+        const buf = pendingAssistant.get(event.data.messageId)
+        if (buf) buf.content = (buf.content ?? '') + (event.data.content ?? '')
+        return
+      }
+      if (event.type === 'message.done') {
+        const buf = pendingAssistant.get(event.data.messageId)
+        pendingAssistant.delete(event.data.messageId)
+        if (buf) events.push({ type: 'message', data: buf })
+        return
+      }
       events.push(event)
     }),
     getEvents: vi.fn(() => events),
@@ -39,6 +61,7 @@ function createEventStore(initialEvents: any[] = []) {
 function createSessionManager(state: any) {
   return {
     requireSession: vi.fn(() => state['current']),
+    getSession: vi.fn(() => state['current']),
     getCurrentWindowMessages: vi.fn(() => state['current'].messages ?? []),
     getContextState: vi.fn(() => ({
       currentTokens: 0,
@@ -136,7 +159,7 @@ describe('System Reminder Injection', () => {
   it('injects small reminder on subsequent turn in same mode', async () => {
     const existingEvents = [
       {
-        type: 'message.start',
+        type: 'message',
         data: {
           messageId: 'reminder-1',
           role: 'user',
@@ -146,7 +169,6 @@ describe('System Reminder Injection', () => {
           metadata: { type: 'agent', name: 'Planner', color: '#a855f7' },
         },
       },
-      { type: 'message.done', data: { messageId: 'reminder-1' } },
     ]
     const eventStore = createEventStore(existingEvents)
     vi.mocked(getEventStore).mockReturnValue(eventStore as any)
@@ -187,7 +209,7 @@ describe('System Reminder Injection', () => {
   it('injects full definition when switching modes', async () => {
     const existingEvents = [
       {
-        type: 'message.start',
+        type: 'message',
         data: {
           messageId: 'reminder-1',
           role: 'user',
@@ -197,7 +219,6 @@ describe('System Reminder Injection', () => {
           metadata: { type: 'agent', name: 'Planner', color: '#a855f7' },
         },
       },
-      { type: 'message.done', data: { messageId: 'reminder-1' } },
     ]
     const eventStore = createEventStore(existingEvents)
     vi.mocked(getEventStore).mockReturnValue(eventStore as any)
@@ -238,7 +259,7 @@ describe('System Reminder Injection', () => {
 
     const existingEvents = [
       {
-        type: 'message.start',
+        type: 'message',
         data: {
           messageId: 'reminder-1',
           role: 'user',
@@ -249,7 +270,6 @@ describe('System Reminder Injection', () => {
           metadata: { type: 'agent', name: 'Planner', color: '#a855f7' },
         },
       },
-      { type: 'message.done', data: { messageId: 'reminder-1' } },
       {
         type: 'context.compacted',
         data: {
@@ -261,7 +281,7 @@ describe('System Reminder Injection', () => {
         },
       },
       {
-        type: 'message.start',
+        type: 'message',
         data: {
           messageId: 'summary-1',
           role: 'assistant',
@@ -270,7 +290,6 @@ describe('System Reminder Injection', () => {
           isCompactionSummary: true,
         },
       },
-      { type: 'message.done', data: { messageId: 'summary-1' } },
     ]
     const eventStore = createEventStore(existingEvents)
     vi.mocked(getEventStore).mockReturnValue(eventStore as any)

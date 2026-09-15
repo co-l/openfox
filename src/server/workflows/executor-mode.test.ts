@@ -181,6 +181,11 @@ describe('executeWorkflow mode changes', () => {
         messages: [],
         metadataEntries: {},
       })),
+      getSession: vi.fn(() => ({
+        workdir: '/tmp/test',
+        messages: [],
+        metadataEntries: {},
+      })),
       setMode,
       setPhase,
       getEffectiveWorkdir: vi.fn().mockReturnValue('/tmp/test'),

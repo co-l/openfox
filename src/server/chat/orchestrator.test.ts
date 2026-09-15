@@ -211,6 +211,7 @@ function createSessionManager(state: Record<string, any>) {
   }
   return {
     requireSession: vi.fn(() => structuredClone(state['current'])),
+    getSession: vi.fn(() => structuredClone(state['current'])),
     getCurrentWindowMessages: vi.fn(() => state['current'].messages ?? []),
     getContextState: vi.fn(() => ({ ...contextState })),
     getCurrentModelContext: vi.fn(() => 200000),
@@ -305,7 +306,7 @@ describe('chat orchestrator', () => {
     })
   })
 
-  it('runs a planner chat turn to completion and appends a snapshot', async () => {
+  it('runs a planner chat turn to completion', async () => {
     const eventStore = createEventStore()
     getEventStoreMock.mockReturnValue(eventStore)
     getAllInstructionsMock.mockResolvedValue({ content: 'Plan carefully', files: [] })
@@ -348,13 +349,8 @@ describe('chat orchestrator', () => {
     expect(eventTypes).toContain('message.start')
     expect(eventTypes).toContain('message.done')
     expect(eventTypes).toContain('chat.done')
-    expect(eventTypes).toContain('turn.snapshot')
     expect(eventTypes.at(-1)).toBe('running.changed')
     expect(sessionManager.setCurrentContextSize).toHaveBeenCalledWith('session-1', 30, 10, undefined)
-    expect(eventStore.append.mock.calls.find(([, event]) => event.type === 'turn.snapshot')?.[1]).toMatchObject({
-      type: 'turn.snapshot',
-      data: expect.objectContaining({ mode: 'planner', phase: 'plan', snapshotSeq: expect.any(Number) }),
-    })
   })
 
   it('auto-compacts planner context before the next LLM call when over threshold', async () => {
@@ -732,7 +728,6 @@ describe('chat orchestrator', () => {
     expect(eventStore.append.mock.calls.find(([, event]) => event.type === 'chat.done')?.[1]).toMatchObject({
       data: { reason: 'stopped' },
     })
-    expect(eventStore.append.mock.calls.some(([, event]) => event.type === 'turn.snapshot')).toBe(true)
   })
 
   it('aborts tool execution loop when signal is aborted between tool calls', async () => {

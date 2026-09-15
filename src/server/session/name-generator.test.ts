@@ -398,7 +398,7 @@ describe('Session Name Generator', () => {
       }
       const broadcastForSession = vi.fn()
       const eventStore = {
-        getEventsSinceSnapshot: vi.fn().mockReturnValue({ snapshot: undefined, events: [] }),
+        getEvents: vi.fn().mockReturnValue([]),
         append: vi.fn(),
       }
 

@@ -11,7 +11,7 @@ import type { ServerHandle } from './context.js'
 import type { VisionBackend } from './llm/vision-fallback.js'
 import { initDatabase } from './db/index.js'
 import { getProject, deleteProject } from './db/projects.js'
-import { initEventStore, getEventStore, combineEventsWithSnapshot } from './events/index.js'
+import { initEventStore, getEventStore } from './events/index.js'
 import { buildMessagesFromStoredEvents } from './events/folding.js'
 import { provideAnswer, getPendingQuestionsForSession } from './tools/ask.js'
 import { providePathConfirmation, getPendingConfirmationsBySession } from './tools/path-security.js'
@@ -936,7 +936,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   })
 
   app.get('/api/sessions/:id', async (req, res) => {
-    const { getEventStore, combineEventsWithSnapshot } = await import('./events/index.js')
+    const { getEventStore } = await import('./events/index.js')
     const { buildMessagesFromStoredEvents, buildSessionStatsMessages, foldPendingConfirmations } =
       await import('./events/folding.js')
     const { computeSessionStatsSummary } = await import('../shared/stats.js')
@@ -952,11 +952,13 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     // preference and is returned as-is. The effective model (agent override >
     // session preference > default) is derived client-side and at runtime.
     const eventStore = getEventStore()
-    const { snapshot, events: eventsSinceSnapshot } = eventStore.getEventsSinceSnapshot(req.params.id)
-    const events = combineEventsWithSnapshot(req.params.id, snapshot, eventsSinceSnapshot)
+    const events = eventStore.getEvents(req.params.id)
 
     const maxVisibleItems = req.query['full'] === 'true' ? undefined : getMaxVisibleItems() || undefined
     const { messages, hiddenCount } = buildMessagesFromStoredEvents(events, maxVisibleItems)
+    // Mid-turn reload parity: in-flight (still streaming) messages are not on
+    // the persisted path yet — attach them like the live WS stream does.
+    const inflight = eventStore.getInflightMessages(req.params.id)
     const sessionStats = computeSessionStatsSummary(buildSessionStatsMessages(events))
     const contextState = sessionManager.getContextState(req.params.id)
     const queueState = sessionManager.getQueueState(req.params.id)
@@ -966,7 +968,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
     res.json({
       session: toClientSession(session!),
-      messages,
+      messages: [...messages, ...inflight],
       hiddenCount,
       sessionStats,
       contextState,
@@ -982,7 +984,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   app.get('/api/sessions/:id/status', async (req, res) => {
     const { projectSessionStatus } = await import('./routes/session-status.js')
     const { getPendingQuestionsForSession } = await import('./tools/index.js')
-    const { getEventStore, combineEventsWithSnapshot } = await import('./events/index.js')
+    const { getEventStore } = await import('./events/index.js')
     const { foldPendingConfirmations } = await import('./events/folding.js')
 
     const sessionId = req.params['id'] as string
@@ -1001,8 +1003,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const pendingQuestions = getPendingQuestionsForSession(sessionId)
 
     const eventStore = getEventStore()
-    const { snapshot, events: eventsSinceSnapshot } = eventStore.getEventsSinceSnapshot(sessionId)
-    const events = combineEventsWithSnapshot(sessionId, snapshot, eventsSinceSnapshot)
+    const events = eventStore.getEvents(sessionId)
     const pendingConfirmations = foldPendingConfirmations(events)
 
     const status = projectSessionStatus({
@@ -1068,7 +1069,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   // Session provider configuration (session-scoped only, does NOT update global default)
   app.post('/api/sessions/:id/provider', async (req, res) => {
-    const { getEventStore, combineEventsWithSnapshot: combineEv } = await import('./events/index.js')
+    const { getEventStore } = await import('./events/index.js')
     const { buildMessagesFromStoredEvents } = await import('./events/folding.js')
     const { getMaxVisibleItems } = await import('./db/settings.js')
 
@@ -1111,8 +1112,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
     // Get updated session with messages
     const eventStore = getEventStore()
-    const { snapshot, events: eventsSinceSnapshot } = eventStore.getEventsSinceSnapshot(sessionId)
-    const events = combineEv(sessionId, snapshot, eventsSinceSnapshot)
+    const events = eventStore.getEvents(sessionId)
     const maxVisibleItems = getMaxVisibleItems()
     const { messages, hiddenCount } = buildMessagesFromStoredEvents(events, maxVisibleItems || undefined)
     const updatedSession = sessionManager.getSession(sessionId)
@@ -1123,7 +1123,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   // Reset the session's manual provider pick (REST): clears the sticky preference
   // so agent overrides and the global default apply again.
   app.delete('/api/sessions/:id/provider', async (req, res) => {
-    const { getEventStore, combineEventsWithSnapshot: combineEv } = await import('./events/index.js')
+    const { getEventStore } = await import('./events/index.js')
     const { buildMessagesFromStoredEvents } = await import('./events/folding.js')
     const { getMaxVisibleItems } = await import('./db/settings.js')
 
@@ -1138,8 +1138,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     await announceContextDrift(sessionManager, [sessionId])
 
     const eventStore = getEventStore()
-    const { snapshot, events: eventsSinceSnapshot } = eventStore.getEventsSinceSnapshot(sessionId)
-    const events = combineEv(sessionId, snapshot, eventsSinceSnapshot)
+    const events = eventStore.getEvents(sessionId)
     const maxVisibleItems = getMaxVisibleItems()
     const { messages, hiddenCount } = buildMessagesFromStoredEvents(events, maxVisibleItems || undefined)
     const updatedSession = sessionManager.getSession(sessionId)
@@ -1298,7 +1297,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   // Session mode (REST)
   app.put('/api/sessions/:id/mode', async (req, res) => {
-    const { getEventStore, combineEventsWithSnapshot: combineEv } = await import('./events/index.js')
+    const { getEventStore } = await import('./events/index.js')
     const { buildMessagesFromStoredEvents } = await import('./events/folding.js')
     const { getMaxVisibleItems } = await import('./db/settings.js')
 
@@ -1324,8 +1323,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     sessionManager.setMode(sessionId, mode)
 
     const eventStore = getEventStore()
-    const { snapshot, events: eventsSinceSnapshot } = eventStore.getEventsSinceSnapshot(sessionId)
-    const events = combineEv(sessionId, snapshot, eventsSinceSnapshot)
+    const events = eventStore.getEvents(sessionId)
     const maxVisibleItems = getMaxVisibleItems()
     const { messages, hiddenCount } = buildMessagesFromStoredEvents(events, maxVisibleItems || undefined)
     const updatedSession = sessionManager.getSession(sessionId)
@@ -1451,14 +1449,13 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
 
     // Broadcast updated session state so all clients see the confirmation removed
-    const { getEventStore, combineEventsWithSnapshot: combineEvents } = await import('./events/index.js')
+    const { getEventStore } = await import('./events/index.js')
     const { buildMessagesFromStoredEvents, foldPendingConfirmations } = await import('./events/folding.js')
     const { createSessionStateMessage } = await import('./ws/protocol.js')
     const { getPendingQuestionsForSession } = await import('./tools/index.js')
     const { getMaxVisibleItems } = await import('./db/settings.js')
     const eventStore = getEventStore()
-    const { snapshot, events: eventsSinceSnapshot } = eventStore.getEventsSinceSnapshot(sessionId)
-    const events = combineEvents(sessionId, snapshot, eventsSinceSnapshot)
+    const events = eventStore.getEvents(sessionId)
 
     const maxVisibleItems = getMaxVisibleItems()
     const { messages, hiddenCount } = buildMessagesFromStoredEvents(events, maxVisibleItems || undefined)
@@ -1693,25 +1690,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   })
 
   // Truncate session messages at a given index
-  app.post('/api/sessions/:id/truncate', async (req, res) => {
-    const sessionId = req.params.id as string
-    const session = sessionManager.getSession(sessionId)
-    if (!session) {
-      return res.status(404).json({ error: 'Session not found' })
-    }
-
-    const { messageIndex } = req.body
-    if (typeof messageIndex !== 'number' || messageIndex < 0) {
-      return res.status(400).json({ error: 'messageIndex must be a non-negative number' })
-    }
-
-    const { truncateSessionMessages } = await import('./events/index.js')
-    truncateSessionMessages(sessionId, messageIndex)
-
-    res.json({ success: true })
-  })
-
-  // Replay: truncate at the replayed message and re-queue it
+  // Resend (edit & replay): persist a SIBLING message node (same parent, new
+  // id, optionally edited content) and queue a turn for it. Non-destructive —
+  // the original branch stays switchable via the branch switcher.
   app.post('/api/sessions/:id/replay', async (req, res) => {
     const sessionId = req.params.id as string
     const session = sessionManager.getSession(sessionId)
@@ -1730,34 +1711,94 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       return res.status(400).json({ error: 'attachments must be an array if provided' })
     }
 
-    const { getEventStore } = await import('./events/index.js')
-    const { buildMessagesFromStoredEvents } = await import('./events/folding.js')
+    // resendMessage persists the sibling AND queues the turn (with the
+    // existing id, so the processor does not re-add the message).
+    let siblingId: string
+    try {
+      siblingId = sessionManager.resendMessage(sessionId, messageId, {
+        ...(content !== undefined ? { content } : {}),
+        ...(attachments !== undefined ? { attachments: attachments as import('../shared/types.js').Attachment[] } : {}),
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (message.includes('not found')) {
+        return res.status(404).json({ error: message })
+      }
+      return res.status(400).json({ error: message })
+    }
+
+    res.json({ success: true, messageId: siblingId, queueState: sessionManager.getQueueState(sessionId) })
+  })
+
+  // Switch conversation branch: move the session cursor to an existing
+  // message boundary (rewind / follow a previously abandoned tip).
+  app.post('/api/sessions/:id/conversation-branch', async (req, res) => {
+    const sessionId = req.params.id as string
+    const session = sessionManager.getSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+    if (session.isRunning) {
+      return res.status(409).json({ error: 'Session is running — stop it before switching branches' })
+    }
+
+    const { messageId } = req.body
+    if (typeof messageId !== 'string' || !messageId) {
+      return res.status(400).json({ error: 'messageId is required' })
+    }
+
+    try {
+      sessionManager.branchTo(sessionId, messageId)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (message.includes('not found')) {
+        return res.status(404).json({ error: message })
+      }
+      return res.status(400).json({ error: message })
+    }
+
+    // Broadcast the new path so connected clients render the switched branch
+    // without a full refetch (parity with GET /api/sessions/:id).
+    const { buildMessagesFromStoredEvents, buildSessionStatsMessages, foldPendingConfirmations } =
+      await import('./events/folding.js')
+    const { computeSessionStatsSummary } = await import('../shared/stats.js')
+    const { createSessionStateMessage } = await import('./ws/protocol.js')
+    const { getMaxVisibleItems } = await import('./db/settings.js')
     const eventStore = getEventStore()
     const events = eventStore.getEvents(sessionId)
-    const { messages } = buildMessagesFromStoredEvents(events)
-
-    const msgIndex = messages.findIndex((m) => m.id === messageId)
-    if (msgIndex === -1) {
-      return res.status(400).json({ error: 'Message not found' })
-    }
-
-    const msg = messages[msgIndex]!
-    if (msg.role !== 'user' || msg.isSystemGenerated) {
-      return res.status(400).json({ error: 'Can only replay user messages' })
-    }
-
-    const { truncateSessionMessages } = await import('./events/index.js')
-    truncateSessionMessages(sessionId, msgIndex - 1)
-
-    sessionManager.queueMessage(
-      sessionId,
-      'asap',
-      content ?? msg.content,
-      attachments ?? msg.attachments,
-      msg.messageKind,
+    const maxVisibleItems = getMaxVisibleItems() || undefined
+    const { messages, hiddenCount } = buildMessagesFromStoredEvents(events, maxVisibleItems)
+    const inflight = eventStore.getInflightMessages(sessionId)
+    const sessionStats = computeSessionStatsSummary(buildSessionStatsMessages(events))
+    const pendingQuestions = getPendingQuestionsForSession(sessionId)
+    const stateMsg = createSessionStateMessage(
+      session,
+      [...messages, ...inflight],
+      foldPendingConfirmations(events),
+      pendingQuestions,
+      undefined,
+      undefined,
+      hiddenCount,
+      sessionManager.getDisplayWorkflowExecution(sessionId) ?? undefined,
+      sessionStats,
     )
+    wssExports.broadcastForSession(sessionId, { ...stateMsg, sessionId })
 
     res.json({ success: true })
+  })
+
+  // Conversation tree structure (nodes + branch tips + current cursor)
+  app.get('/api/sessions/:id/conversation-tree', async (req, res) => {
+    const sessionId = req.params.id as string
+    const session = sessionManager.getSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+
+    const eventStore = getEventStore()
+    const tree = eventStore.getConversationTree(sessionId)
+    const tips = eventStore.getBranchTips(sessionId)
+    res.json({ ...tree, tips })
   })
 
   // Fork: create a new session from a specific message
@@ -3768,8 +3809,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     setMetadataEntries: (sessionId, key, entries) => sessionManager.setMetadataEntries(sessionId, key, entries),
     recentMessages: (sessionId, limit) => {
       const eventStore = getEventStore()
-      const { snapshot, events } = eventStore.getEventsSinceSnapshot(sessionId)
-      const combined = combineEventsWithSnapshot(sessionId, snapshot, events)
+      const combined = eventStore.getEvents(sessionId)
       return buildMessagesFromStoredEvents(combined, Math.max(1, Math.min(limit, 50)))
     },
   }

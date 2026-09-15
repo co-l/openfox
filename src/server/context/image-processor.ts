@@ -1,4 +1,4 @@
-import type { StoredEvent, TurnEvent, SessionSnapshot } from '../events/types.js'
+import type { StoredEvent, TurnEvent } from '../events/types.js'
 import type { Attachment } from '../../shared/types.js'
 import { describeImageFromDataUrl } from '../llm/vision-fallback.js'
 import type { VisionBackend } from '../llm/vision-fallback.js'
@@ -54,7 +54,7 @@ export interface ImageProcessorOptions {
   signal?: AbortSignal
   onEvent?: (event: TurnEvent) => void
   /** Called to persist enriched event data (e.g., attachment descriptions) back to the event store */
-  persistEvent?: (sessionId: string, seq: number, data: unknown) => void
+  persistEvent?: (sessionId: string, eventId: string, data: unknown) => void
 }
 
 export interface ProcessContextResult {
@@ -213,8 +213,8 @@ export async function processContextImages(
   const modifiedEvents: StoredEvent[] = events.map((event) => structuredClone(event))
 
   for (const event of modifiedEvents) {
-    if (event.type === 'message.start') {
-      const data = event.data as Extract<TurnEvent, { type: 'message.start' }>['data']
+    if (event.type === 'message') {
+      const data = event.data as Extract<TurnEvent, { type: 'message' }>['data']
       if (!data.attachments || data.attachments.length === 0) continue
 
       let enriched = false
@@ -241,8 +241,8 @@ export async function processContextImages(
         enriched = true
       }
 
-      if (enriched && options.persistEvent) {
-        options.persistEvent(event.sessionId, event.seq, data)
+      if (enriched && options.persistEvent && event.eventId) {
+        options.persistEvent(event.sessionId, event.eventId, data)
       }
     }
 
@@ -272,69 +272,8 @@ export async function processContextImages(
       meta['description'] = description
 
       // Persist enriched metadata back to the store
-      if (options.persistEvent) {
-        options.persistEvent(event.sessionId, event.seq, data)
-      }
-    }
-
-    if (event.type === 'turn.snapshot') {
-      const snapshot = event.data as SessionSnapshot
-      let enriched = false
-
-      for (const message of snapshot.messages) {
-        if (message.role === 'user' && message.attachments && message.attachments.length > 0) {
-          for (const att of message.attachments) {
-            if (isImageAttachment(att)) {
-              if (att.description) {
-                descriptions.set(att.id, att.description)
-                continue
-              }
-              const description = await describeAttachment(att, message.id, options, descriptions)
-              att.description = description
-              enriched = true
-            } else if (isPdfAttachment(att)) {
-              if (att.pdfContent) {
-                descriptions.set(att.id, att.pdfContent)
-                continue
-              }
-              const pdfContent = await describePdfAttachment(att, message.id, options, descriptions)
-              att.pdfContent = pdfContent
-              enriched = true
-            }
-          }
-        }
-
-        if (message.role === 'assistant' && message.toolCalls) {
-          for (const toolCall of message.toolCalls) {
-            if (!toolCall.result || !toolCall.result.metadata || !hasImageMetadata(toolCall.result)) continue
-
-            const meta = toolCall.result.metadata
-            if (meta['description']) {
-              descriptions.set(toolCall.id, meta['description'] as string)
-              continue
-            }
-
-            const dataUrl = meta['dataUrl'] as string
-            const path = meta['path'] as string | undefined
-
-            const description = await describeImageDataUrl(
-              dataUrl,
-              toolCall.id,
-              message.id,
-              options,
-              descriptions,
-              path,
-            )
-
-            meta['description'] = description
-            enriched = true
-          }
-        }
-      }
-
-      // Persist enriched snapshot back to the store
-      if (enriched && options.persistEvent) {
-        options.persistEvent(event.sessionId, event.seq, snapshot)
+      if (options.persistEvent && event.eventId) {
+        options.persistEvent(event.sessionId, event.eventId, data)
       }
     }
   }

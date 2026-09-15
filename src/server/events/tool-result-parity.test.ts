@@ -2,12 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { ToolResult } from '../../shared/types.js'
 import type { LLMMessage } from '../llm/types.js'
 import { convertMessages } from '../llm/client-pure.js'
-import {
-  buildContextMessagesFromEventHistory,
-  buildContextMessagesFromStoredEvents,
-  foldTurnEventsToSnapshotMessages,
-} from './folding.js'
-import type { SessionSnapshot, StoredEvent } from './types.js'
+import { buildContextMessagesFromEventHistory, buildContextMessagesFromStoredEvents } from './folding.js'
+import type { StoredEvent } from './types.js'
 
 const baseEvent = {
   seq: 1,
@@ -49,6 +45,7 @@ const failingResult: ToolResult = {
   truncated: false,
 }
 
+// Chunk encoding: the raw streaming events (as buffered live in v1).
 const rawEvents: StoredEvent[] = [
   {
     ...baseEvent,
@@ -125,54 +122,81 @@ const rawEvents: StoredEvent[] = [
   { ...baseEvent, seq: 14, type: 'message.done', data: { messageId: 'm3' } },
 ]
 
-const snapshotMessages = foldTurnEventsToSnapshotMessages(rawEvents)
-
-const snapshotEvent: StoredEvent = {
-  ...baseEvent,
-  seq: 100,
-  type: 'turn.snapshot',
-  data: {
-    mode: 'builder',
-    phase: 'build',
-    isRunning: false,
-    messages: snapshotMessages,
-    criteria: [],
-    metadataEntries: {},
-    todos: [],
-    contextState: {
-      currentTokens: 0,
-      maxTokens: 200000,
-      compactionCount: 0,
-      dangerZone: false,
-      canCompact: false,
-      dynamicContextChanged: false,
+// Tree encoding: what the v2 conversation tree persists (merged message
+// nodes + separate tool.result nodes).
+const treeEvents: StoredEvent[] = [
+  {
+    ...baseEvent,
+    seq: 1,
+    type: 'message',
+    data: {
+      messageId: 'm1',
+      role: 'user',
+      content: 'look at this',
+      contextWindowId: windowId,
+      attachments: [
+        {
+          id: 'att-1',
+          filename: 'notes.txt',
+          mimeType: 'text/plain',
+          size: 10,
+          data: 'data:text/plain;base64,aGVsbG8=',
+        },
+      ],
     },
-    currentContextWindowId: windowId,
-    readFiles: [],
-    snapshotSeq: 100,
-    snapshotAt: baseEvent.timestamp,
-  } as SessionSnapshot,
-}
+  },
+  {
+    ...baseEvent,
+    seq: 3,
+    type: 'message',
+    data: {
+      messageId: 'm2',
+      role: 'assistant',
+      content: 'The screenshot shows a dark theme.',
+      thinkingContent: 'I should inspect the screenshot',
+      toolCalls: [
+        { id: 'call-img', name: 'read_file', arguments: { path: 'page.png' } },
+        { id: 'call-pdf', name: 'read_file', arguments: { path: 'doc.pdf' } },
+        { id: 'call-fail', name: 'run_command', arguments: { command: 'false' } },
+      ],
+      contextWindowId: windowId,
+    },
+  },
+  { ...baseEvent, seq: 6, type: 'tool.result', data: { messageId: 'm2', toolCallId: 'call-img', result: imageResult } },
+  { ...baseEvent, seq: 8, type: 'tool.result', data: { messageId: 'm2', toolCallId: 'call-pdf', result: pdfResult } },
+  {
+    ...baseEvent,
+    seq: 10,
+    type: 'tool.result',
+    data: { messageId: 'm2', toolCallId: 'call-fail', result: failingResult },
+  },
+  {
+    ...baseEvent,
+    seq: 13,
+    type: 'message',
+    data: { messageId: 'm3', role: 'user', content: 'thanks', contextWindowId: windowId },
+  },
+]
 
 async function rawWirePayload(): Promise<unknown[]> {
   const messages = buildContextMessagesFromStoredEvents(rawEvents, windowId) as LLMMessage[]
   return convertMessages(messages, false)
 }
 
-async function snapshotWirePayload(): Promise<unknown[]> {
-  const messages = buildContextMessagesFromEventHistory([snapshotEvent], windowId) as LLMMessage[]
+async function treeWirePayload(): Promise<unknown[]> {
+  const messages = buildContextMessagesFromEventHistory(treeEvents, windowId) as LLMMessage[]
   return convertMessages(messages, false)
 }
 
-describe('tool result parity: raw events vs snapshot reconstruction', () => {
-  it('produces byte-identical LLM wire payloads from raw events and snapshot', async () => {
-    const [raw, snap] = await Promise.all([rawWirePayload(), snapshotWirePayload()])
-    expect(snap).toEqual(raw)
+describe('tool result parity: chunk events vs tree-persisted encoding', () => {
+  it('produces byte-identical LLM wire payloads from chunk and tree encodings', async () => {
+    const [raw, tree] = await Promise.all([rawWirePayload(), treeWirePayload()])
+    expect(tree).toEqual(raw)
   })
 
-  it('keeps the vision description on image tool results when rebuilt from a snapshot', async () => {
-    const snap = await snapshotWirePayload()
-    const toolMsg = snap.find((m) => (m as { tool_call_id?: string }).tool_call_id === 'call-img') as {
+  it('keeps the vision description on image tool results when rebuilt from tree events', async () => {
+    const tree = await treeWirePayload()
+    const toolMsg = tree.find((m) => (m as { tool_call_id?: string }).tool_call_id === 'call-img') as {
       content: unknown
     }
     const serialized = JSON.stringify(toolMsg.content)

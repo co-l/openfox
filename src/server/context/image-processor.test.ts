@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { processContextImages, clearImageDescriptionCache } from './image-processor.js'
-import type { StoredEvent, TurnEvent, SessionSnapshot, SnapshotMessage } from '../events/types.js'
+import type { StoredEvent, TurnEvent } from '../events/types.js'
 import type { Attachment } from '../../shared/types.js'
 
 vi.mock('../llm/vision-fallback.js', () => ({
@@ -100,7 +100,7 @@ describe('processContextImages', () => {
     const events: StoredEvent[] = [
       makeEvent({
         seq: 1,
-        type: 'message.start',
+        type: 'message',
         data: {
           messageId: 'msg-1',
           role: 'user',
@@ -109,7 +109,6 @@ describe('processContextImages', () => {
           contextWindowId: 'window-1',
         },
       }),
-      makeEvent({ seq: 2, type: 'message.done', data: { messageId: 'msg-1' } }),
     ]
 
     const result = await processContextImages(events, { modelSupportsVision: true })
@@ -122,7 +121,7 @@ describe('processContextImages', () => {
     const events: StoredEvent[] = [
       makeEvent({
         seq: 1,
-        type: 'message.start',
+        type: 'message',
         data: {
           messageId: 'msg-1',
           role: 'user',
@@ -131,15 +130,14 @@ describe('processContextImages', () => {
           contextWindowId: 'window-1',
         },
       }),
-      makeEvent({ seq: 2, type: 'message.done', data: { messageId: 'msg-1' } }),
     ]
 
     const result = await processContextImages(events, { modelSupportsVision: false })
 
     expect(result.events).not.toEqual(events)
-    const msgStart = result.events[0]!
-    expect(msgStart.type).toBe('message.start')
-    const data = msgStart.data as Extract<TurnEvent, { type: 'message.start' }>['data']
+    const msgEvent = result.events[0]!
+    expect(msgEvent.type).toBe('message')
+    const data = msgEvent.data as Extract<TurnEvent, { type: 'message' }>['data']
     // Attachments are kept intact (UI needs them)
     expect(data.attachments).toBeDefined()
     expect(data.attachments).toHaveLength(1)
@@ -156,7 +154,7 @@ describe('processContextImages', () => {
     const events: StoredEvent[] = [
       makeEvent({
         seq: 1,
-        type: 'message.start',
+        type: 'message',
         data: {
           messageId: 'msg-1',
           role: 'user',
@@ -165,7 +163,6 @@ describe('processContextImages', () => {
           contextWindowId: 'window-1',
         },
       }),
-      makeEvent({ seq: 2, type: 'message.done', data: { messageId: 'msg-1' } }),
     ]
 
     const result = await processContextImages(events, {
@@ -179,9 +176,9 @@ describe('processContextImages', () => {
       expect.objectContaining({ context: 'File: screenshot.png' }),
     )
 
-    const msgStart = result.events[0]!
-    expect(msgStart.type).toBe('message.start')
-    const data = msgStart.data as Extract<TurnEvent, { type: 'message.start' }>['data']
+    const msgEvent = result.events[0]!
+    expect(msgEvent.type).toBe('message')
+    const data = msgEvent.data as Extract<TurnEvent, { type: 'message' }>['data']
     // Attachments are kept intact with description enriched
     expect(data.attachments).toBeDefined()
     expect(data.attachments).toHaveLength(1)
@@ -203,7 +200,7 @@ describe('processContextImages', () => {
     const events: StoredEvent[] = [
       makeEvent({
         seq: 1,
-        type: 'message.start',
+        type: 'message',
         data: {
           messageId: 'msg-1',
           role: 'user',
@@ -212,7 +209,6 @@ describe('processContextImages', () => {
           contextWindowId: 'window-1',
         },
       }),
-      makeEvent({ seq: 2, type: 'message.done', data: { messageId: 'msg-1' } }),
     ]
 
     const result = await processContextImages(events, {
@@ -222,7 +218,7 @@ describe('processContextImages', () => {
 
     // Vision model should NOT be called — description already exists
     expect(describeImageFromDataUrl).not.toHaveBeenCalled()
-    const data = result.events[0]!.data as Extract<TurnEvent, { type: 'message.start' }>['data']
+    const data = result.events[0]!.data as Extract<TurnEvent, { type: 'message' }>['data']
     expect(data.attachments![0]!.description).toBe('Already described image')
     expect(result.descriptions.get('att-1')).toBe('Already described image')
   })
@@ -233,7 +229,7 @@ describe('processContextImages', () => {
     const events1: StoredEvent[] = [
       makeEvent({
         seq: 1,
-        type: 'message.start',
+        type: 'message',
         data: {
           messageId: 'msg-1',
           role: 'user',
@@ -242,7 +238,6 @@ describe('processContextImages', () => {
           contextWindowId: 'window-1',
         },
       }),
-      makeEvent({ seq: 2, type: 'message.done', data: { messageId: 'msg-1' } }),
     ]
 
     await processContextImages(events1, {
@@ -255,7 +250,7 @@ describe('processContextImages', () => {
     const events2: StoredEvent[] = [
       makeEvent({
         seq: 3,
-        type: 'message.start',
+        type: 'message',
         data: {
           messageId: 'msg-2',
           role: 'user',
@@ -264,7 +259,6 @@ describe('processContextImages', () => {
           contextWindowId: 'window-1',
         },
       }),
-      makeEvent({ seq: 4, type: 'message.done', data: { messageId: 'msg-2' } }),
     ]
 
     await processContextImages(events2, {
@@ -279,19 +273,17 @@ describe('processContextImages', () => {
     const events: StoredEvent[] = [
       makeEvent({
         seq: 1,
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'assistant', contextWindowId: 'window-1' },
-      }),
-      makeEvent({
-        seq: 2,
-        type: 'tool.call',
+        type: 'message',
         data: {
           messageId: 'msg-1',
-          toolCall: { id: 'call-1', name: 'read_file', arguments: { path: '/test/image.png' } },
+          role: 'assistant',
+          content: '',
+          contextWindowId: 'window-1',
+          toolCalls: [{ id: 'call-1', name: 'read_file', arguments: { path: '/test/image.png' } }],
         },
       }),
       makeEvent({
-        seq: 3,
+        seq: 2,
         type: 'tool.result',
         data: {
           messageId: 'msg-1',
@@ -313,7 +305,6 @@ describe('processContextImages', () => {
           },
         },
       }),
-      makeEvent({ seq: 4, type: 'message.done', data: { messageId: 'msg-1' } }),
     ]
 
     const result = await processContextImages(events, {
@@ -321,7 +312,7 @@ describe('processContextImages', () => {
       visionModel: { baseUrl: 'http://localhost:11434', model: 'llava', timeout: 30000, backend: 'ollama' },
     })
 
-    const toolResult = result.events[2]!
+    const toolResult = result.events[1]!
     expect(toolResult.type).toBe('tool.result')
     const trData = toolResult.data as Extract<TurnEvent, { type: 'tool.result' }>['data']
     // Metadata is kept intact with description added
@@ -335,7 +326,7 @@ describe('processContextImages', () => {
     const events: StoredEvent[] = [
       makeEvent({
         seq: 1,
-        type: 'message.start',
+        type: 'message',
         data: {
           messageId: 'msg-1',
           role: 'user',
@@ -344,7 +335,6 @@ describe('processContextImages', () => {
           contextWindowId: 'window-1',
         },
       }),
-      makeEvent({ seq: 2, type: 'message.done', data: { messageId: 'msg-1' } }),
     ]
 
     const result = await processContextImages(events, {
@@ -352,8 +342,8 @@ describe('processContextImages', () => {
       visionModel: { baseUrl: 'http://localhost:11434', model: 'llava', timeout: 30000, backend: 'ollama' },
     })
 
-    const msgStart = result.events[0]!
-    const data = msgStart.data as Extract<TurnEvent, { type: 'message.start' }>['data']
+    const msgEvent = result.events[0]!
+    const data = msgEvent.data as Extract<TurnEvent, { type: 'message' }>['data']
     // Attachments kept intact, both enriched with descriptions
     expect(data.attachments).toBeDefined()
     expect(data.attachments).toHaveLength(2)
@@ -366,10 +356,9 @@ describe('processContextImages', () => {
     const events: StoredEvent[] = [
       makeEvent({
         seq: 1,
-        type: 'message.start',
+        type: 'message',
         data: { messageId: 'msg-1', role: 'user', content: 'Hello', contextWindowId: 'window-1' },
       }),
-      makeEvent({ seq: 2, type: 'message.done', data: { messageId: 'msg-1' } }),
     ]
 
     const result = await processContextImages(events, {
@@ -403,7 +392,7 @@ describe('processContextImages', () => {
     const events: StoredEvent[] = [
       makeEvent({
         seq: 1,
-        type: 'message.start',
+        type: 'message',
         data: {
           messageId: 'msg-1',
           role: 'user',
@@ -412,7 +401,6 @@ describe('processContextImages', () => {
           contextWindowId: 'window-1',
         },
       }),
-      makeEvent({ seq: 2, type: 'message.done', data: { messageId: 'msg-1' } }),
     ]
 
     const abortController = new AbortController()
@@ -425,8 +413,8 @@ describe('processContextImages', () => {
     abortController.abort()
 
     const result = await resultPromise
-    const msgStart = result.events[0]!
-    const data = msgStart.data as Extract<TurnEvent, { type: 'message.start' }>['data']
+    const msgEvent = result.events[0]!
+    const data = msgEvent.data as Extract<TurnEvent, { type: 'message' }>['data']
     // Attachment gets the timeout description
     expect(data.attachments![0]!.description).toBe('[Image description timed out]')
 
@@ -439,7 +427,8 @@ describe('processContextImages', () => {
     const events: StoredEvent[] = [
       makeEvent({
         seq: 5,
-        type: 'message.start',
+        eventId: 'evt-att-1',
+        type: 'message',
         data: {
           messageId: 'msg-1',
           role: 'user',
@@ -448,7 +437,6 @@ describe('processContextImages', () => {
           contextWindowId: 'window-1',
         },
       }),
-      makeEvent({ seq: 6, type: 'message.done', data: { messageId: 'msg-1' } }),
     ]
 
     await processContextImages(events, {
@@ -457,11 +445,11 @@ describe('processContextImages', () => {
       persistEvent,
     })
 
-    // Should have been called with sessionId, seq, and enriched data
+    // Should have been called with sessionId, eventId, and enriched data
     expect(persistEvent).toHaveBeenCalledTimes(1)
     expect(persistEvent).toHaveBeenCalledWith(
       'test-session',
-      5,
+      'evt-att-1',
       expect.objectContaining({
         messageId: 'msg-1',
         attachments: [
@@ -485,7 +473,8 @@ describe('processContextImages', () => {
     const events: StoredEvent[] = [
       makeEvent({
         seq: 5,
-        type: 'message.start',
+        eventId: 'evt-att-2',
+        type: 'message',
         data: {
           messageId: 'msg-1',
           role: 'user',
@@ -494,7 +483,6 @@ describe('processContextImages', () => {
           contextWindowId: 'window-1',
         },
       }),
-      makeEvent({ seq: 6, type: 'message.done', data: { messageId: 'msg-1' } }),
     ]
 
     await processContextImages(events, {
@@ -506,42 +494,20 @@ describe('processContextImages', () => {
     expect(persistEvent).not.toHaveBeenCalled()
   })
 
-  it('enriches user message attachments inside turn.snapshot events', async () => {
+  it('enriches user message attachments inside merged message events', async () => {
     const { describeImageFromDataUrl } = await import('../llm/vision-fallback.js')
-
-    const snapshotMsg: SnapshotMessage = {
-      id: 'msg-1',
-      role: 'user',
-      content: 'What is in this image?',
-      timestamp: Date.now(),
-      attachments: [imageAttachment],
-      contextWindowId: 'window-1',
-    }
 
     const events: StoredEvent[] = [
       makeEvent({
         seq: 1,
-        type: 'turn.snapshot',
+        type: 'message',
         data: {
-          mode: 'planner',
-          phase: 'plan',
-          isRunning: false,
-          messages: [snapshotMsg],
-          criteria: [],
-          metadataEntries: {},
-          contextState: {
-            currentTokens: 0,
-            maxTokens: 200000,
-            compactionCount: 0,
-            dangerZone: false,
-            canCompact: true,
-            dynamicContextChanged: false,
-          },
-          currentContextWindowId: 'window-1',
-          todos: [],
-          snapshotSeq: 1,
-          snapshotAt: Date.now(),
-        } satisfies SessionSnapshot,
+          messageId: 'msg-1',
+          role: 'user',
+          content: 'What is in this image?',
+          attachments: [imageAttachment],
+          contextWindowId: 'window-1',
+        },
       }),
     ]
 
@@ -551,33 +517,38 @@ describe('processContextImages', () => {
     })
 
     expect(describeImageFromDataUrl).toHaveBeenCalledTimes(1)
-    const snapshotEvent = result.events[0]!
-    expect(snapshotEvent.type).toBe('turn.snapshot')
-    const snapshotData = snapshotEvent.data as SessionSnapshot
-    const processedMsg = snapshotData.messages[0]!
+    const msgEvent = result.events[0]!
+    expect(msgEvent.type).toBe('message')
+    const data = msgEvent.data as { content: string; attachments?: Attachment[] }
     // Attachments kept intact with description enriched
-    expect(processedMsg.attachments).toBeDefined()
-    expect(processedMsg.attachments).toHaveLength(1)
-    expect(processedMsg.attachments![0]!.description).toBe('A screenshot showing a terminal with error messages')
+    expect(data.attachments).toHaveLength(1)
+    expect(data.attachments![0]!.description).toBe('A screenshot showing a terminal with error messages')
     // Original content unchanged
-    expect(processedMsg.content).toBe('What is in this image?')
+    expect(data.content).toBe('What is in this image?')
     expect(result.descriptions.get('att-1')).toBe('A screenshot showing a terminal with error messages')
   })
 
-  it('enriches tool result images inside assistant messages in turn.snapshot events', async () => {
+  it('enriches tool result images inside tool.result events', async () => {
     const { describeImageFromDataUrl } = await import('../llm/vision-fallback.js')
 
-    const snapshotMsg: SnapshotMessage = {
-      id: 'msg-1',
-      role: 'assistant',
-      content: 'Here is the image you requested.',
-      timestamp: Date.now(),
-      contextWindowId: 'window-1',
-      toolCalls: [
-        {
-          id: 'call-1',
-          name: 'read_file',
-          arguments: { path: '/test/image.png' },
+    const events: StoredEvent[] = [
+      makeEvent({
+        seq: 1,
+        type: 'message',
+        data: {
+          messageId: 'msg-1',
+          role: 'assistant',
+          content: 'Here is the image you requested.',
+          contextWindowId: 'window-1',
+          toolCalls: [{ id: 'call-1', name: 'read_file', arguments: { path: '/test/image.png' } }],
+        },
+      }),
+      makeEvent({
+        seq: 2,
+        type: 'tool.result',
+        data: {
+          messageId: 'msg-1',
+          toolCallId: 'call-1',
           result: {
             success: true,
             output: '[Image: /test/image.png (image/png, 1024 bytes)]',
@@ -592,33 +563,6 @@ describe('processContextImages', () => {
             },
           },
         },
-      ],
-    }
-
-    const events: StoredEvent[] = [
-      makeEvent({
-        seq: 1,
-        type: 'turn.snapshot',
-        data: {
-          mode: 'planner',
-          phase: 'plan',
-          isRunning: false,
-          messages: [snapshotMsg],
-          criteria: [],
-          metadataEntries: {},
-          contextState: {
-            currentTokens: 0,
-            maxTokens: 200000,
-            compactionCount: 0,
-            dangerZone: false,
-            canCompact: true,
-            dynamicContextChanged: false,
-          },
-          currentContextWindowId: 'window-1',
-          todos: [],
-          snapshotSeq: 1,
-          snapshotAt: Date.now(),
-        } satisfies SessionSnapshot,
       }),
     ]
 
@@ -628,54 +572,29 @@ describe('processContextImages', () => {
     })
 
     expect(describeImageFromDataUrl).toHaveBeenCalledTimes(1)
-    const snapshotEvent = result.events[0]!
-    expect(snapshotEvent.type).toBe('turn.snapshot')
-    const snapshotData = snapshotEvent.data as SessionSnapshot
-    const processedMsg = snapshotData.messages[0]!
+    const trEvent = result.events[1]!
+    expect(trEvent.type).toBe('tool.result')
+    const data = trEvent.data as { result: { output?: string; metadata?: Record<string, unknown> } }
     // Metadata kept intact with description added
-    expect(processedMsg.toolCalls![0]!.result!.metadata).toBeDefined()
-    expect(processedMsg.toolCalls![0]!.result!.metadata!['description']).toBe(
-      'A screenshot showing a terminal with error messages',
-    )
+    expect(data.result.metadata).toBeDefined()
+    expect(data.result.metadata!['description']).toBe('A screenshot showing a terminal with error messages')
     // Original output unchanged
-    expect(processedMsg.toolCalls![0]!.result!.output).toBe('[Image: /test/image.png (image/png, 1024 bytes)]')
+    expect(data.result.output).toBe('[Image: /test/image.png (image/png, 1024 bytes)]')
     expect(result.descriptions.get('call-1')).toBe('A screenshot showing a terminal with error messages')
   })
 
-  it('leaves snapshot messages unchanged when model supports vision', async () => {
-    const snapshotMsg: SnapshotMessage = {
-      id: 'msg-1',
-      role: 'user',
-      content: 'What is in this image?',
-      timestamp: Date.now(),
-      attachments: [imageAttachment],
-      contextWindowId: 'window-1',
-    }
-
+  it('leaves merged message events unchanged when model supports vision', async () => {
     const events: StoredEvent[] = [
       makeEvent({
         seq: 1,
-        type: 'turn.snapshot',
+        type: 'message',
         data: {
-          mode: 'planner',
-          phase: 'plan',
-          isRunning: false,
-          messages: [snapshotMsg],
-          criteria: [],
-          metadataEntries: {},
-          contextState: {
-            currentTokens: 0,
-            maxTokens: 200000,
-            compactionCount: 0,
-            dangerZone: false,
-            canCompact: true,
-            dynamicContextChanged: false,
-          },
-          currentContextWindowId: 'window-1',
-          todos: [],
-          snapshotSeq: 1,
-          snapshotAt: Date.now(),
-        } satisfies SessionSnapshot,
+          messageId: 'msg-1',
+          role: 'user',
+          content: 'What is in this image?',
+          attachments: [imageAttachment],
+          contextWindowId: 'window-1',
+        },
       }),
     ]
 
@@ -685,39 +604,17 @@ describe('processContextImages', () => {
     expect(result.descriptions.size).toBe(0)
   })
 
-  it('processes snapshot messages without attachments unchanged', async () => {
-    const snapshotMsg: SnapshotMessage = {
-      id: 'msg-1',
-      role: 'user',
-      content: 'Just text, no images',
-      timestamp: Date.now(),
-      contextWindowId: 'window-1',
-    }
-
+  it('processes message events without attachments unchanged', async () => {
     const events: StoredEvent[] = [
       makeEvent({
         seq: 1,
-        type: 'turn.snapshot',
+        type: 'message',
         data: {
-          mode: 'planner',
-          phase: 'plan',
-          isRunning: false,
-          messages: [snapshotMsg],
-          criteria: [],
-          metadataEntries: {},
-          contextState: {
-            currentTokens: 0,
-            maxTokens: 200000,
-            compactionCount: 0,
-            dangerZone: false,
-            canCompact: true,
-            dynamicContextChanged: false,
-          },
-          currentContextWindowId: 'window-1',
-          todos: [],
-          snapshotSeq: 1,
-          snapshotAt: Date.now(),
-        } satisfies SessionSnapshot,
+          messageId: 'msg-1',
+          role: 'user',
+          content: 'Just text, no images',
+          contextWindowId: 'window-1',
+        },
       }),
     ]
 
@@ -730,12 +627,12 @@ describe('processContextImages', () => {
     expect(result.descriptions.size).toBe(0)
   })
 
-  it('preserves image descriptions across snapshot boundary (integration)', async () => {
+  it('preserves enriched image descriptions in the built context (integration)', async () => {
     const { buildContextMessagesFromEventHistory } = await import('../events/folding.js')
 
-    const imageMsgEvent = makeEvent({
+    const imageEvent = makeEvent({
       seq: 1,
-      type: 'message.start',
+      type: 'message',
       data: {
         messageId: 'msg-1',
         role: 'user',
@@ -744,45 +641,9 @@ describe('processContextImages', () => {
         contextWindowId: 'window-1',
       },
     })
-    const imageDoneEvent = makeEvent({ seq: 2, type: 'message.done', data: { messageId: 'msg-1' } })
-
-    const snapshotEvent = makeEvent({
-      seq: 3,
-      type: 'turn.snapshot',
-      data: {
-        mode: 'planner',
-        phase: 'plan',
-        isRunning: false,
-        messages: [
-          {
-            id: 'msg-1',
-            role: 'user',
-            content: 'What is in this image?',
-            timestamp: Date.now(),
-            attachments: [imageAttachment],
-            contextWindowId: 'window-1',
-          },
-        ],
-        criteria: [],
-        metadataEntries: {},
-        contextState: {
-          currentTokens: 0,
-          maxTokens: 200000,
-          compactionCount: 0,
-          dangerZone: false,
-          canCompact: true,
-          dynamicContextChanged: false,
-        },
-        currentContextWindowId: 'window-1',
-        todos: [],
-        snapshotSeq: 3,
-        snapshotAt: Date.now(),
-      } satisfies SessionSnapshot,
-    })
-
-    const textMsgEvent = makeEvent({
-      seq: 4,
-      type: 'message.start',
+    const textEvent = makeEvent({
+      seq: 2,
+      type: 'message',
       data: {
         messageId: 'msg-2',
         role: 'user',
@@ -790,9 +651,8 @@ describe('processContextImages', () => {
         contextWindowId: 'window-1',
       },
     })
-    const textDoneEvent = makeEvent({ seq: 5, type: 'message.done', data: { messageId: 'msg-2' } })
 
-    const events: StoredEvent[] = [imageMsgEvent, imageDoneEvent, snapshotEvent, textMsgEvent, textDoneEvent]
+    const events: StoredEvent[] = [imageEvent, textEvent]
 
     const { events: processedEvents } = await processContextImages(events, {
       modelSupportsVision: false,
@@ -801,12 +661,10 @@ describe('processContextImages', () => {
 
     const contextMessages = buildContextMessagesFromEventHistory(processedEvents, 'window-1')
 
-    // The first message should contain the image description (via convertAttachmentSync)
+    // The first message keeps its attachment, enriched with the description.
     const firstMsg = contextMessages[0]!
     expect(firstMsg.role).toBe('user')
-    // Content is unchanged, but attachments are preserved with description
     expect(firstMsg.content).toBe('What is in this image?')
-    // Attachments are present (UI needs them) and have description
     expect(firstMsg.attachments).toBeDefined()
     expect(firstMsg.attachments).toHaveLength(1)
     expect(firstMsg.attachments![0]!.description).toBe('A screenshot showing a terminal with error messages')
@@ -825,7 +683,7 @@ describe('processContextImages', () => {
     const events: StoredEvent[] = [
       makeEvent({
         seq: 1,
-        type: 'message.start',
+        type: 'message',
         data: {
           messageId: 'msg-1',
           role: 'user',
@@ -834,7 +692,6 @@ describe('processContextImages', () => {
           contextWindowId: 'window-1',
         },
       }),
-      makeEvent({ seq: 2, type: 'message.done', data: { messageId: 'msg-1' } }),
     ]
 
     await processContextImages(events, {
@@ -880,7 +737,7 @@ describe('processContextImages', () => {
     const events: StoredEvent[] = [
       makeEvent({
         seq: 1,
-        type: 'message.start',
+        type: 'message',
         data: {
           messageId: 'msg-pdf-1',
           role: 'user',
@@ -889,7 +746,6 @@ describe('processContextImages', () => {
           contextWindowId: 'window-1',
         },
       }),
-      makeEvent({ seq: 2, type: 'message.done', data: { messageId: 'msg-pdf-1' } }),
     ]
 
     const result = await processContextImages(events, {
@@ -899,9 +755,9 @@ describe('processContextImages', () => {
 
     expect(describeImageFromDataUrl).not.toHaveBeenCalled()
 
-    const msgStart = result.events[0]!
-    expect(msgStart.type).toBe('message.start')
-    const data = msgStart.data as Extract<TurnEvent, { type: 'message.start' }>['data']
+    const msgEvent = result.events[0]!
+    expect(msgEvent.type).toBe('message')
+    const data = msgEvent.data as Extract<TurnEvent, { type: 'message' }>['data']
     expect(data.attachments).toHaveLength(1)
     const att = data.attachments![0]!
     expect(att.pdfContent).toBeDefined()
@@ -916,7 +772,7 @@ describe('processContextImages', () => {
     const events: StoredEvent[] = [
       makeEvent({
         seq: 1,
-        type: 'message.start',
+        type: 'message',
         data: {
           messageId: 'msg-pdf-img-1',
           role: 'user',
@@ -925,7 +781,6 @@ describe('processContextImages', () => {
           contextWindowId: 'window-1',
         },
       }),
-      makeEvent({ seq: 2, type: 'message.done', data: { messageId: 'msg-pdf-img-1' } }),
     ]
 
     const result = await processContextImages(events, {
@@ -946,8 +801,8 @@ describe('processContextImages', () => {
       expect.any(Object),
     )
 
-    const msgStart = result.events[0]!
-    const data = msgStart.data as Extract<TurnEvent, { type: 'message.start' }>['data']
+    const msgEvent = result.events[0]!
+    const data = msgEvent.data as Extract<TurnEvent, { type: 'message' }>['data']
     const att = data.attachments![0]!
     expect(att.pdfContent).toBeDefined()
     expect(att.pdfContent).toContain('Some text before')
@@ -961,7 +816,7 @@ describe('processContextImages', () => {
     const events: StoredEvent[] = [
       makeEvent({
         seq: 1,
-        type: 'message.start',
+        type: 'message',
         data: {
           messageId: 'msg-pdf-order',
           role: 'user',
@@ -970,7 +825,6 @@ describe('processContextImages', () => {
           contextWindowId: 'window-1',
         },
       }),
-      makeEvent({ seq: 2, type: 'message.done', data: { messageId: 'msg-pdf-order' } }),
     ]
 
     const result = await processContextImages(events, {
@@ -978,7 +832,7 @@ describe('processContextImages', () => {
       visionModel: { baseUrl: 'http://localhost:11434', model: 'llava', timeout: 30000, backend: 'ollama' },
     })
 
-    const data = result.events[0]!.data as Extract<TurnEvent, { type: 'message.start' }>['data']
+    const data = result.events[0]!.data as Extract<TurnEvent, { type: 'message' }>['data']
     const pdfContent = data.attachments![0]!.pdfContent!
     expect(pdfContent).toBeDefined()
 
@@ -996,14 +850,11 @@ describe('processContextImages', () => {
     const makeEventWithAtt = (seq: number, msgId: string, content: string, att: Attachment): StoredEvent =>
       makeEvent({
         seq,
-        type: 'message.start',
+        type: 'message',
         data: { messageId: msgId, role: 'user', content, attachments: [att], contextWindowId: 'window-1' },
       })
 
-    const events1: StoredEvent[] = [
-      makeEventWithAtt(1, 'm1', 'first', imagePdfAttachment),
-      makeEvent({ seq: 2, type: 'message.done', data: { messageId: 'm1' } }),
-    ]
+    const events1: StoredEvent[] = [makeEventWithAtt(1, 'm1', 'first', imagePdfAttachment)]
 
     await processContextImages(events1, {
       modelSupportsVision: false,
@@ -1012,10 +863,7 @@ describe('processContextImages', () => {
 
     expect(describeImageFromDataUrl).toHaveBeenCalledTimes(2)
 
-    const events2: StoredEvent[] = [
-      makeEventWithAtt(3, 'm2', 'again', imagePdfAttachment),
-      makeEvent({ seq: 4, type: 'message.done', data: { messageId: 'm2' } }),
-    ]
+    const events2: StoredEvent[] = [makeEventWithAtt(3, 'm2', 'again', imagePdfAttachment)]
 
     const result2 = await processContextImages(events2, {
       modelSupportsVision: false,
@@ -1025,7 +873,7 @@ describe('processContextImages', () => {
     // No additional vision calls — cached
     expect(describeImageFromDataUrl).toHaveBeenCalledTimes(2)
 
-    const data2 = result2.events[0]!.data as Extract<TurnEvent, { type: 'message.start' }>['data']
+    const data2 = result2.events[0]!.data as Extract<TurnEvent, { type: 'message' }>['data']
     expect(data2.attachments![0]!.pdfContent).toBeDefined()
   })
 
@@ -1040,7 +888,7 @@ describe('processContextImages', () => {
     const events: StoredEvent[] = [
       makeEvent({
         seq: 1,
-        type: 'message.start',
+        type: 'message',
         data: {
           messageId: 'm-persisted',
           role: 'user',
@@ -1049,7 +897,6 @@ describe('processContextImages', () => {
           contextWindowId: 'window-1',
         },
       }),
-      makeEvent({ seq: 2, type: 'message.done', data: { messageId: 'm-persisted' } }),
     ]
 
     const result = await processContextImages(events, {
@@ -1058,46 +905,24 @@ describe('processContextImages', () => {
     })
 
     expect(describeImageFromDataUrl).not.toHaveBeenCalled()
-    const data = result.events[0]!.data as Extract<TurnEvent, { type: 'message.start' }>['data']
+    const data = result.events[0]!.data as Extract<TurnEvent, { type: 'message' }>['data']
     expect(data.attachments![0]!.pdfContent).toContain('Already enriched content')
   })
 
-  it('handles PDF attachments in turn.snapshot events', async () => {
+  it('handles PDF attachments in merged message events', async () => {
     const { describeImageFromDataUrl } = await import('../llm/vision-fallback.js')
-
-    const snapshotMsg: SnapshotMessage = {
-      id: 'snap-msg-1',
-      role: 'user',
-      content: 'PDF in snapshot',
-      timestamp: Date.now(),
-      attachments: [imagePdfAttachment],
-      contextWindowId: 'window-1',
-    }
 
     const events: StoredEvent[] = [
       makeEvent({
         seq: 1,
-        type: 'turn.snapshot',
+        type: 'message',
         data: {
-          mode: 'planner',
-          phase: 'plan',
-          isRunning: false,
-          messages: [snapshotMsg],
-          criteria: [],
-          metadataEntries: {},
-          contextState: {
-            currentTokens: 0,
-            maxTokens: 200000,
-            compactionCount: 0,
-            dangerZone: false,
-            canCompact: true,
-            dynamicContextChanged: false,
-          },
-          currentContextWindowId: 'window-1',
-          todos: [],
-          snapshotSeq: 1,
-          snapshotAt: Date.now(),
-        } satisfies SessionSnapshot,
+          messageId: 'snap-msg-1',
+          role: 'user',
+          content: 'PDF in message',
+          attachments: [imagePdfAttachment],
+          contextWindowId: 'window-1',
+        },
       }),
     ]
 
@@ -1107,13 +932,11 @@ describe('processContextImages', () => {
     })
 
     expect(describeImageFromDataUrl).toHaveBeenCalledTimes(2)
-    const snapshotEvent = result.events[0]!
-    expect(snapshotEvent.type).toBe('turn.snapshot')
-    const snapshotData = snapshotEvent.data as SessionSnapshot
-    const msg = snapshotData.messages[0]!
-    expect(msg.attachments![0]!.pdfContent).toBeDefined()
-    expect(msg.attachments![0]!.pdfContent).toContain('[PDF: image_doc.pdf]')
-    expect(msg.attachments![0]!.data).toBe(imagePdfAttachment.data)
+    const msgEvent = result.events[0]!
+    const data = msgEvent.data as { attachments?: Attachment[] }
+    expect(data.attachments![0]!.pdfContent).toBeDefined()
+    expect(data.attachments![0]!.pdfContent).toContain('[PDF: image_doc.pdf]')
+    expect(data.attachments![0]!.data).toBe(imagePdfAttachment.data)
   })
 
   it('emits vision_fallback events for each PDF embedded image', async () => {
@@ -1122,7 +945,7 @@ describe('processContextImages', () => {
     const events: StoredEvent[] = [
       makeEvent({
         seq: 1,
-        type: 'message.start',
+        type: 'message',
         data: {
           messageId: 'msg-events',
           role: 'user',
@@ -1131,7 +954,6 @@ describe('processContextImages', () => {
           contextWindowId: 'window-1',
         },
       }),
-      makeEvent({ seq: 2, type: 'message.done', data: { messageId: 'msg-events' } }),
     ]
 
     await processContextImages(events, {
@@ -1164,7 +986,8 @@ describe('processContextImages', () => {
     const events: StoredEvent[] = [
       makeEvent({
         seq: 10,
-        type: 'message.start',
+        eventId: 'evt-pdf-persist',
+        type: 'message',
         data: {
           messageId: 'msg-persist',
           role: 'user',
@@ -1173,7 +996,6 @@ describe('processContextImages', () => {
           contextWindowId: 'window-1',
         },
       }),
-      makeEvent({ seq: 11, type: 'message.done', data: { messageId: 'msg-persist' } }),
     ]
 
     await processContextImages(events, {
@@ -1185,7 +1007,7 @@ describe('processContextImages', () => {
     expect(persistEvent).toHaveBeenCalledTimes(1)
     expect(persistEvent).toHaveBeenCalledWith(
       'test-session',
-      10,
+      'evt-pdf-persist',
       expect.objectContaining({
         messageId: 'msg-persist',
         attachments: [
@@ -1209,7 +1031,8 @@ describe('processContextImages', () => {
     const events: StoredEvent[] = [
       makeEvent({
         seq: 12,
-        type: 'message.start',
+        eventId: 'evt-pdf-no-persist',
+        type: 'message',
         data: {
           messageId: 'msg-no-persist',
           role: 'user',
@@ -1218,7 +1041,6 @@ describe('processContextImages', () => {
           contextWindowId: 'window-1',
         },
       }),
-      makeEvent({ seq: 13, type: 'message.done', data: { messageId: 'msg-no-persist' } }),
     ]
 
     await processContextImages(events, {
