@@ -30,6 +30,7 @@ export const STEP_TYPES = [
   { value: 'sub_agent', label: 'Sub-Agent' },
   { value: 'shell', label: 'Shell' },
   { value: 'user', label: 'User (pause)' },
+  { value: 'parallel', label: 'Parallel' },
 ] as const
 
 export interface LayoutNode {
@@ -76,6 +77,9 @@ export function resolveAgent(step: WorkflowStep, agentTypes: AgentInfo[]): { nam
   if (step.type === 'user') {
     return { name: 'User', color: '#f59e0b' }
   }
+  if (step.type === 'parallel') {
+    return { name: 'Parallel', color: '#06b6d4' }
+  }
   return { name: 'Shell', color: '#22c55e' }
 }
 
@@ -94,7 +98,9 @@ export function computeLayout(
   const edges: LayoutEdge[] = []
   const posMap = new Map<string, { cx: number; cy: number; w: number; h: number }>()
 
-  const leftSteps = steps.filter((s) => s.type === 'agent' || s.type === 'shell' || s.type === 'user')
+  const leftSteps = steps.filter(
+    (s) => s.type === 'agent' || s.type === 'shell' || s.type === 'user' || s.type === 'parallel',
+  )
   const rightSteps = steps.filter((s) => s.type === 'sub_agent')
   const hasRight = rightSteps.length > 0
   const effectiveLeftCx = hasRight ? leftColCx : centerX

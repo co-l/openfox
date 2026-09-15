@@ -48,7 +48,7 @@ export interface UserStep extends StepBase {
   type: 'user'
 }
 
-export type WorkflowStep = AgentStep | SubAgentStep | ShellStep | UserStep
+export type WorkflowStep = AgentStep | SubAgentStep | ShellStep | UserStep | ParallelStep
 
 interface StepBase {
   /** Unique within this workflow */
@@ -98,6 +98,49 @@ export interface ShellStep extends StepBase {
   timeout?: number
   /** Which exit codes count as success (default [0]) */
   successExitCodes?: number[]
+}
+
+// ============================================================================
+// Parallel step
+// ============================================================================
+
+/** A sub_agent child of a parallel step */
+export interface SubAgentChildStep {
+  /** Unique within the parent; doubles as the stepOutput key prefix and UI label */
+  id: string
+  type: 'sub_agent'
+  /** e.g. "verifier" or a custom sub-agent type */
+  subAgentType: string
+  /** Injected as the child's task. Supports template variables (pre-run context). */
+  prompt?: string
+}
+
+/** A shell child of a parallel step */
+export interface ShellChildStep {
+  /** Unique within the parent; doubles as the stepOutput key prefix and UI label */
+  id: string
+  type: 'shell'
+  /** Shell command to run. Supports template variables (pre-run context). */
+  command: string
+  /** Timeout in milliseconds (default 60000) */
+  timeout?: number
+  /** Which exit codes count as success (default [0]) */
+  successExitCodes?: number[]
+}
+
+export type ParallelChildStep = SubAgentChildStep | ShellChildStep
+
+/**
+ * Run multiple children concurrently, then aggregate their results into a
+ * single step outcome. Children: `sub_agent` and `shell` only (no `agent`,
+ * no `user`, no nested `parallel`).
+ */
+export interface ParallelStep extends StepBase {
+  type: 'parallel'
+  /** Children to run concurrently */
+  children: ParallelChildStep[]
+  /** Max children running at once (default: all children) */
+  maxConcurrency?: number
 }
 
 // ============================================================================

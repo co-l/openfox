@@ -50,6 +50,13 @@ vi.mock('../runtime-config.js', () => ({
 vi.mock('../agents/model-overrides.js', () => ({
   getAgentModelOverride: getAgentModelOverrideMock,
   resolveLLMClientForAgent: resolveLLMClientForAgentMock,
+  buildAgentOverrideStatsIdentity: vi.fn((_pm, _client, override) => ({
+    providerId: override.providerId,
+    providerName: override.providerId,
+    backend: 'vllm',
+    model: override.model,
+    ...(override.reasoningEffort ? { reasoningEffort: override.reasoningEffort } : {}),
+  })),
   getAgentModelOverrides: vi.fn(() => ({})),
   setAgentModelOverride: vi.fn(),
   parseAgentModelOverrides: vi.fn(() => ({})),

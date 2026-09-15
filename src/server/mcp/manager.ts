@@ -11,6 +11,38 @@ import { readMcpOAuthEntry } from './oauth-store.js'
 import { sanitizeToolSchema } from '../llm/schema-sanitizer.js'
 
 /**
+ * The server may answer up to a polling interval after its own deadline, so the SDK request
+ * timeout needs headroom beyond the wait a tool asks for.
+ */
+const TOOL_CALL_TIMEOUT_MARGIN_SECONDS = 30
+/** Preserves the SDK's implicit 60s default when neither config nor tool arg sets a timeout. */
+const TOOL_CALL_TIMEOUT_DEFAULT_SECONDS = 60
+const TOOL_CALL_TIMEOUT_MAX_SECONDS = 3600
+
+/**
+ * Effective SDK request timeout in seconds.
+ *
+ * Assumption (accepted tradeoff): any numeric `timeout` tool argument is treated as a wait
+ * duration in SECONDS for every MCP server. This only ever extends the timeout (never
+ * shortens it) and is bounded by TOOL_CALL_TIMEOUT_MAX_SECONDS, so a third-party tool that
+ * uses `timeout` in a different unit can at most delay a failure — it cannot lower a
+ * configured timeout.
+ *
+ * The per-server config timeout is never lowered: neither the tool arg nor the cap can
+ * shorten it (a server configured above the cap keeps its full configured timeout).
+ */
+function effectiveRequestTimeoutSeconds(configTimeout: number | undefined, args: Record<string, unknown>): number {
+  const configSeconds =
+    typeof configTimeout === 'number' && Number.isFinite(configTimeout) && configTimeout > 0 ? configTimeout : 0
+  const arg = args['timeout']
+  const argSeconds = typeof arg === 'number' && Number.isFinite(arg) && arg > 0 ? arg : 0
+  const argCandidate =
+    argSeconds > 0 ? Math.min(argSeconds + TOOL_CALL_TIMEOUT_MARGIN_SECONDS, TOOL_CALL_TIMEOUT_MAX_SECONDS) : 0
+  const effective = Math.max(configSeconds, argCandidate)
+  return effective > 0 ? effective : TOOL_CALL_TIMEOUT_DEFAULT_SECONDS
+}
+
+/**
  * The SDK merges requestInit headers after the ones it derives from the auth provider, so a static
  * Authorization header would silently shadow the OAuth token and every request would look unauthorized.
  */
@@ -261,27 +293,31 @@ export class McpManager {
     if (!entry) return { success: false, error: `MCP server '${serverName}' not found` }
 
     if (!entry.client) return { success: false, error: `MCP server '${serverName}' is not connected` }
+    const timeoutSeconds = effectiveRequestTimeoutSeconds(entry.config.timeout, args)
+    const timeoutMs = timeoutSeconds * 1000
+    const controller = new AbortController()
+    let timer: NodeJS.Timeout | undefined
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        // Aborting makes the SDK cancel the in-flight request (cancelled notification to the
+        // remote server), so a timed-out call does not leak a pending request.
+        const reason = new Error(`MCP tool call timed out after ${timeoutSeconds} seconds`)
+        controller.abort(reason)
+        reject(reason)
+      }, timeoutMs)
+    })
     try {
-      const timeout = entry.config.timeout
-      const requestOptions = timeout !== undefined && timeout > 0 ? { timeout: timeout * 1000 } : undefined
       let result
-      if (timeout !== undefined && timeout > 0) {
-        let timer: NodeJS.Timeout | undefined
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          timer = setTimeout(() => {
-            reject(new Error(`MCP tool call timed out after ${timeout} seconds`))
-          }, timeout * 1000)
-        })
-        try {
-          result = await Promise.race([
-            entry.client.callTool({ name: toolName, arguments: args }, undefined, requestOptions),
-            timeoutPromise,
-          ])
-        } finally {
-          if (timer) clearTimeout(timer)
-        }
-      } else {
-        result = await entry.client.callTool({ name: toolName, arguments: args })
+      try {
+        result = await Promise.race([
+          entry.client.callTool({ name: toolName, arguments: args }, undefined, {
+            timeout: timeoutMs,
+            signal: controller.signal,
+          }),
+          timeoutPromise,
+        ])
+      } finally {
+        if (timer) clearTimeout(timer)
       }
       const content = result.content as Array<{ type: string; text?: string }>
       const textParts = content.filter((c) => c.type === 'text').map((c) => c.text)

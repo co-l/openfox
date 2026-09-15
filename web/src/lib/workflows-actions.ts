@@ -28,10 +28,21 @@ export interface WorkflowInfo {
   scope: WorkflowScope
 }
 
+/** A child of a `parallel` step (sub_agent or shell only) */
+export interface ParallelChildStep {
+  id: string
+  type: 'sub_agent' | 'shell'
+  subAgentType?: string
+  prompt?: string
+  command?: string
+  timeout?: number
+  successExitCodes?: number[]
+}
+
 export interface WorkflowStep {
   id: string
   name: string
-  type: 'agent' | 'sub_agent' | 'shell' | 'user'
+  type: 'agent' | 'sub_agent' | 'shell' | 'user' | 'parallel'
   phase: string
   transitions: Array<{ when: WorkflowCondition; goto: string; subGroup?: string }>
   agentId?: string
@@ -42,6 +53,8 @@ export interface WorkflowStep {
   timeout?: number
   successExitCodes?: number[]
   subGroup?: string
+  children?: ParallelChildStep[]
+  maxConcurrency?: number
 }
 
 export interface WorkflowFull {

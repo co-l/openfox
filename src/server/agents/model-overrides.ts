@@ -10,6 +10,7 @@ import { z } from 'zod'
 import { getSetting, setSetting, SETTINGS_KEYS } from '../db/settings.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { ProviderManager } from '../provider-manager.js'
+import type { StatsIdentity } from '../../shared/types.js'
 
 export const AGENT_MODEL_OVERRIDES_KEY = SETTINGS_KEYS.AGENT_MODEL_OVERRIDES
 
@@ -104,5 +105,24 @@ export function resolveLLMClientForAgent(
     client,
     usedOverride: true,
     override: effectiveEffort ? { ...override, reasoningEffort: effectiveEffort } : override,
+  }
+}
+
+/**
+ * Build the stats identity for a resolved agent override (shared by the
+ * sub-agent manager and the workflow executor).
+ */
+export function buildAgentOverrideStatsIdentity(
+  providerManager: ProviderManager,
+  client: LLMClientWithModel,
+  override: AgentModelOverride,
+): StatsIdentity {
+  const provider = providerManager.getProviders().find((p) => p.id === override.providerId)
+  return {
+    providerId: override.providerId,
+    providerName: provider?.name ?? override.providerId,
+    backend: provider?.backend ?? client.getBackend(),
+    model: override.model,
+    ...(override.reasoningEffort ? { reasoningEffort: override.reasoningEffort } : {}),
   }
 }

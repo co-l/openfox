@@ -1,4 +1,4 @@
-import type { WorkflowStep, TemplateVariable } from '../../../lib/workflows-actions'
+import type { WorkflowStep, TemplateVariable, ParallelChildStep } from '../../../lib/workflows-actions'
 import type { AgentInfo } from '../../../lib/agents-actions'
 import { resolveAgent, STEP_TYPES } from './layout'
 import { useT } from '../../../hooks/useT'
@@ -8,6 +8,15 @@ const inputClass =
 const selectClass =
   'w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary'
 const labelClass = 'block text-[11px] text-text-secondary mb-0.5'
+
+/** Slugify a child id so it stays addressable as a stepOutput key ([a-z0-9-]). */
+function slugifyChildId(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+}
 
 function TemplateVariablesHint({
   variables,
@@ -34,6 +43,100 @@ function TemplateVariablesHint({
   )
 }
 
+function PromptField({
+  value,
+  rows,
+  placeholder,
+  variables,
+  onValueChange,
+  onInsert,
+}: {
+  value: string
+  rows: number
+  placeholder: string
+  variables: TemplateVariable[]
+  onValueChange: (value: string) => void
+  onInsert: (name: string) => void
+}) {
+  const t = useT()
+  return (
+    <div>
+      <label className={labelClass}>{t({ en: 'Prompt', fr: 'Invite' })}</label>
+      <textarea
+        value={value}
+        onChange={(e) => onValueChange(e.target.value)}
+        rows={rows}
+        className={`${inputClass} resize-y text-xs`}
+        placeholder={placeholder}
+      />
+      <TemplateVariablesHint variables={variables} onInsert={onInsert} />
+    </div>
+  )
+}
+
+function SubAgentTypeSelect({
+  value,
+  agentTypes,
+  onChange,
+}: {
+  value: string
+  agentTypes: AgentInfo[]
+  onChange: (id: string) => void
+}) {
+  const t = useT()
+  return (
+    <div>
+      <label className={labelClass}>{t({ en: 'Sub-Agent Type', fr: 'Type de sous-agent' })}</label>
+      <select value={value} onChange={(e) => onChange(e.target.value)} className={selectClass}>
+        <option value="">{t({ en: '— select —', fr: '— sélectionner —' })}</option>
+        {agentTypes
+          .filter((a) => a.subagent)
+          .map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+      </select>
+    </div>
+  )
+}
+
+function TimeoutField({ value, onChange }: { value: number; onChange: (ms: number) => void }) {
+  const t = useT()
+  return (
+    <div>
+      <label className={labelClass}>{t({ en: 'Timeout (ms)', fr: 'Délai (ms)' })}</label>
+      <input
+        type="number"
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className={`${inputClass} font-mono text-xs`}
+      />
+    </div>
+  )
+}
+
+function SuccessCodesField({ value, onValueChange }: { value: number[]; onValueChange: (codes: number[]) => void }) {
+  const t = useT()
+  return (
+    <div>
+      <label className={labelClass}>{t({ en: 'Success Codes', fr: 'Codes de succès' })}</label>
+      <input
+        value={value.join(', ')}
+        onChange={(e) =>
+          onValueChange(
+            e.target.value
+              .split(',')
+              .map((s) => Number(s.trim()))
+              .filter((n) => !isNaN(n)),
+          )
+        }
+        className={`${inputClass} font-mono text-xs`}
+      />
+    </div>
+  )
+}
+
 export function StepPanel({
   step,
   isEntry,
@@ -55,6 +158,54 @@ export function StepPanel({
 }) {
   const t = useT()
   const { color, name: agentName } = resolveAgent(step, agentTypes)
+
+  const updateChild = (index: number, patch: Partial<ParallelChildStep>) => {
+    const children = [...(step.children ?? [])]
+    const child = children[index]
+    if (!child) return
+    let next: ParallelChildStep = { ...child, ...patch }
+    // Keep ids addressable: slugify a rename (spaces/special chars are not
+    // valid stepOutput keys) and auto-suffix a collision with a sibling
+    if (patch.id !== undefined && patch.id !== child.id) {
+      const slugged = slugifyChildId(patch.id) || `child-${index + 1}`
+      const siblingIds = children.filter((_, i) => i !== index).map((c) => c.id)
+      let id = slugged
+      if (siblingIds.includes(id)) {
+        let n = 2
+        id = `${slugged}-${n}`
+        while (siblingIds.includes(id)) {
+          n += 1
+          id = `${slugged}-${n}`
+        }
+      }
+      next = { ...next, id }
+    }
+    // A type switch drops the previous type's fields
+    if (patch.type !== undefined && patch.type !== child.type) {
+      next =
+        patch.type === 'shell'
+          ? { id: next.id, type: 'shell', command: next.command ?? '' }
+          : { id: next.id, type: 'sub_agent', subAgentType: next.subAgentType ?? '' }
+    }
+    children[index] = next
+    onUpdate({ ...step, children })
+  }
+
+  const removeChild = (index: number) => {
+    onUpdate({ ...step, children: (step.children ?? []).filter((_, i) => i !== index) })
+  }
+
+  const addChild = () => {
+    const children = [...(step.children ?? [])]
+    const taken = new Set(children.map((c) => c.id))
+    let n = 1
+    let id = `child-${n}`
+    while (taken.has(id)) {
+      n += 1
+      id = `child-${n}`
+    }
+    onUpdate({ ...step, children: [...children, { id, type: 'shell', command: '' }] })
+  }
 
   return (
     <div className="space-y-3 text-sm">
@@ -101,29 +252,51 @@ export function StepPanel({
           onChange={(e) => {
             const newType = e.target.value as WorkflowStep['type']
             const phase = newType === 'sub_agent' ? 'verification' : 'build'
+            let next: WorkflowStep
             if (newType === 'agent') {
               const agent = agentTypes.find((a) => !a.subagent)
-              onUpdate({
+              next = {
                 ...step,
                 type: newType,
                 phase,
                 agentId: agent?.id ?? 'builder',
                 name: agent?.name ?? t({ en: 'Agent', fr: 'Agent' }),
-              })
+              }
             } else if (newType === 'sub_agent') {
               const agent = agentTypes.find((a) => a.subagent)
-              onUpdate({
+              next = {
                 ...step,
                 type: newType,
                 phase,
                 subAgentType: agent?.id ?? '',
                 name: agent?.name ?? t({ en: 'Sub-Agent', fr: 'Sous-agent' }),
-              })
+              }
             } else if (newType === 'user') {
-              onUpdate({ ...step, type: newType, phase, name: t({ en: 'User', fr: 'Utilisateur' }) })
+              next = { ...step, type: newType, phase, name: t({ en: 'User', fr: 'Utilisateur' }) }
+            } else if (newType === 'parallel') {
+              next = {
+                ...step,
+                type: newType,
+                phase,
+                name: t({ en: 'Parallel', fr: 'Parallèle' }),
+                children: step.children ?? [],
+              }
+              // Parallel owns only children + maxConcurrency — drop other types' fields
+              delete next.agentId
+              delete next.subAgentType
+              delete next.prompt
+              delete next.command
+              delete next.timeout
+              delete next.successExitCodes
             } else {
-              onUpdate({ ...step, type: newType, phase, name: t({ en: 'Shell', fr: 'Shell' }) })
+              next = { ...step, type: newType, phase, name: t({ en: 'Shell', fr: 'Shell' }) }
             }
+            // Leaving parallel drops the parallel-only fields
+            if (step.type === 'parallel' && newType !== 'parallel') {
+              delete next.children
+              delete next.maxConcurrency
+            }
+            onUpdate(next)
           }}
           className={selectClass}
         >
@@ -162,44 +335,26 @@ export function StepPanel({
       )}
 
       {step.type === 'sub_agent' && (
-        <div>
-          <label className={labelClass}>{t({ en: 'Sub-Agent Type', fr: 'Type de sous-agent' })}</label>
-          <select
-            value={step.subAgentType ?? ''}
-            onChange={(e) => {
-              const agent = agentTypes.find((a) => a.id === e.target.value)
-              onUpdate({ ...step, subAgentType: e.target.value, name: agent?.name ?? e.target.value })
-            }}
-            className={selectClass}
-          >
-            <option value="">{t({ en: '— select —', fr: '— sélectionner —' })}</option>
-            {agentTypes
-              .filter((a) => a.subagent)
-              .map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-          </select>
-        </div>
+        <SubAgentTypeSelect
+          value={step.subAgentType ?? ''}
+          agentTypes={agentTypes}
+          onChange={(id) => {
+            const agent = agentTypes.find((a) => a.id === id)
+            onUpdate({ ...step, subAgentType: id, name: agent?.name ?? id })
+          }}
+        />
       )}
 
       {(step.type === 'agent' || step.type === 'sub_agent') && (
         <>
-          <div>
-            <label className={labelClass}>{t({ en: 'Prompt', fr: 'Invite' })}</label>
-            <textarea
-              value={step.prompt ?? ''}
-              onChange={(e) => onUpdate({ ...step, prompt: e.target.value || undefined })}
-              rows={6}
-              className={`${inputClass} resize-y text-xs`}
-              placeholder={t({ en: 'Injected on first entry...', fr: 'Injecté à la première entrée...' })}
-            />
-            <TemplateVariablesHint
-              variables={templateVariables}
-              onInsert={(name) => onUpdate({ ...step, prompt: (step.prompt ?? '') + `{{${name}}}` })}
-            />
-          </div>
+          <PromptField
+            value={step.prompt ?? ''}
+            rows={6}
+            placeholder={t({ en: 'Injected on first entry...', fr: 'Injecté à la première entrée...' })}
+            variables={templateVariables}
+            onValueChange={(v) => onUpdate({ ...step, prompt: v || undefined })}
+            onInsert={(name) => onUpdate({ ...step, prompt: (step.prompt ?? '') + `{{${name}}}` })}
+          />
           <div>
             <label className={labelClass}>{t({ en: 'Nudge Prompt', fr: 'Invite de relance' })}</label>
             <textarea
@@ -234,33 +389,115 @@ export function StepPanel({
             />
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className={labelClass}>{t({ en: 'Timeout (ms)', fr: 'Délai (ms)' })}</label>
-              <input
-                type="number"
-                value={step.timeout ?? 60000}
-                onChange={(e) => onUpdate({ ...step, timeout: Number(e.target.value) })}
-                className={`${inputClass} font-mono text-xs`}
-              />
-            </div>
-            <div>
-              <label className={labelClass}>{t({ en: 'Success Codes', fr: 'Codes de succès' })}</label>
-              <input
-                value={(step.successExitCodes ?? [0]).join(', ')}
-                onChange={(e) =>
-                  onUpdate({
-                    ...step,
-                    successExitCodes: e.target.value
-                      .split(',')
-                      .map((s) => Number(s.trim()))
-                      .filter((n) => !isNaN(n)),
-                  })
-                }
-                className={`${inputClass} font-mono text-xs`}
-              />
-            </div>
+            <TimeoutField value={step.timeout ?? 60000} onChange={(ms) => onUpdate({ ...step, timeout: ms })} />
+            <SuccessCodesField
+              value={step.successExitCodes ?? [0]}
+              onValueChange={(codes) => onUpdate({ ...step, successExitCodes: codes })}
+            />
           </div>
         </>
+      )}
+
+      {step.type === 'parallel' && (
+        <div className="space-y-2">
+          <div>
+            <label className={labelClass}>{t({ en: 'Max concurrency', fr: 'Concurrence max' })}</label>
+            <input
+              type="number"
+              value={step.maxConcurrency ?? ''}
+              onChange={(e) =>
+                onUpdate({
+                  ...step,
+                  maxConcurrency: e.target.value === '' ? undefined : Number(e.target.value),
+                })
+              }
+              placeholder={t({ en: 'all children', fr: 'tous les enfants' })}
+              className={`${inputClass} font-mono text-xs`}
+            />
+          </div>
+
+          {(step.children ?? []).map((child, index) => (
+            <div key={`${child.id}-${index}`} className="border border-border/60 rounded p-2 space-y-2">
+              <div className="flex items-center gap-2">
+                <input
+                  value={child.id}
+                  onChange={(e) => updateChild(index, { id: e.target.value })}
+                  aria-label={t({ en: 'Child ID', fr: 'ID de l’étape enfant' })}
+                  placeholder={t({ en: 'Child ID', fr: 'ID de l’étape enfant' })}
+                  className={`${inputClass} font-mono text-xs flex-1`}
+                />
+                <select
+                  value={child.type}
+                  onChange={(e) => updateChild(index, { type: e.target.value as ParallelChildStep['type'] })}
+                  className={`${selectClass} w-28`}
+                >
+                  <option value="sub_agent">{t({ en: 'Sub-Agent', fr: 'Sous-agent' })}</option>
+                  <option value="shell">{t({ en: 'Shell', fr: 'Shell' })}</option>
+                </select>
+                <button
+                  onClick={() => removeChild(index)}
+                  className="p-1 rounded text-text-muted hover:text-accent-error text-xs"
+                >
+                  {t({ en: 'Delete', fr: 'Supprimer' })}
+                </button>
+              </div>
+
+              {child.type === 'sub_agent' && (
+                <>
+                  <SubAgentTypeSelect
+                    value={child.subAgentType ?? ''}
+                    agentTypes={agentTypes}
+                    onChange={(id) => updateChild(index, { subAgentType: id })}
+                  />
+                  <PromptField
+                    value={child.prompt ?? ''}
+                    rows={3}
+                    placeholder={t({ en: 'Child prompt…', fr: 'Invite de l’étape enfant…' })}
+                    variables={templateVariables}
+                    onValueChange={(v) => updateChild(index, { prompt: v || undefined })}
+                    onInsert={(name) => updateChild(index, { prompt: (child.prompt ?? '') + `{{${name}}}` })}
+                  />
+                </>
+              )}
+
+              {child.type === 'shell' && (
+                <>
+                  <div>
+                    <label className={labelClass}>{t({ en: 'Command', fr: 'Commande' })}</label>
+                    <textarea
+                      value={child.command ?? ''}
+                      onChange={(e) => updateChild(index, { command: e.target.value })}
+                      rows={2}
+                      className={`${inputClass} font-mono text-xs resize-y`}
+                      placeholder={t({ en: 'npm run lint', fr: 'npm run lint' })}
+                    />
+                    <TemplateVariablesHint
+                      variables={templateVariables}
+                      onInsert={(name) => updateChild(index, { command: (child.command ?? '') + `{{${name}}}` })}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <TimeoutField
+                      value={child.timeout ?? 60000}
+                      onChange={(ms) => updateChild(index, { timeout: ms })}
+                    />
+                    <SuccessCodesField
+                      value={child.successExitCodes ?? [0]}
+                      onValueChange={(codes) => updateChild(index, { successExitCodes: codes })}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+
+          <button
+            onClick={addChild}
+            className="w-full px-2 py-1 rounded text-xs border border-dashed border-border text-text-secondary hover:text-accent-primary hover:border-accent-primary/40"
+          >
+            {t({ en: 'Add child step', fr: 'Ajouter une étape enfant' })}
+          </button>
+        </div>
       )}
 
       <div>

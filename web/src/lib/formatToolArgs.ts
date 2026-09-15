@@ -83,6 +83,7 @@ export function formatToolArgs(tool: string, args: Record<string, unknown>): str
     let label = taskId ? `${action}: ${taskId}` : action
     if (action === 'move' && args.to) label += ` → ${String(args.to)}`
     if (action === 'set_gate_value' && args.gateId) label += ` (${String(args.gateId)})`
+    if (action === 'get_attachment' && args.attachmentId) label += ` (${String(args.attachmentId)})`
     return label
   }
 

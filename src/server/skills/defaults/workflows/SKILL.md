@@ -212,6 +212,70 @@ Every step shares these base fields:
   `always` transitions matter for choices; other conditions are ignored when deriving
   buttons.
 
+### 3.5 `parallel` — run children concurrently, then aggregate
+
+```jsonc
+{
+  "id": "reviews",
+  "name": "Parallel Reviews",
+  "type": "parallel",
+  "phase": "verification",
+  "maxConcurrency": 2, // optional — default: all children at once
+  "children": [
+    { "id": "lint", "type": "shell", "command": "npm run lint", "timeout": 90000 },
+    { "id": "review", "type": "sub_agent", "subAgentType": "code_reviewer", "prompt": "Review {{workdir}}" },
+  ],
+  "transitions": [
+    { "when": { "type": "step_result", "result": "success" }, "goto": "finalize" },
+    { "when": { "type": "always" }, "goto": "rework" },
+  ],
+}
+```
+
+- Runs `children` **concurrently** (bounded by `maxConcurrency`), then
+  **aggregates** all results before the step advances. All-complete-then-aggregate:
+  a failing child never cancels its siblings.
+- **Allowed children:** `sub_agent` and `shell` only.
+  - No `agent` children — an agent step drives the full tool loop on the shared
+    session history; concurrent agent loops would corrupt the context.
+  - No `user` children — a human pause would need per-child resume state.
+  - No nested `parallel`.
+- **Child fields:** `id` (required, a slug `[a-z0-9-]` — the editor slugifies as you type; doubles as the
+  `stepOutput` key prefix and the UI label) plus the same fields as the
+  top-level type (`subAgentType`/`prompt` for `sub_agent`,
+  `command`/`timeout`/`successExitCodes` for `shell`). Children carry no
+  `phase`, `transitions`, or `subGroup` — the parent owns those.
+  - A shell child with no `command` resolves to result `"error"`
+    (`{{stepOutput.<childId>.error}}` = "Missing command") instead of running.
+  - Duplicate child ids trigger a warning log and their per-child output keys
+    collide (last child wins) — keep ids unique.
+- **Template variables:** child prompts/commands resolve against the context
+  **before** the parallel step runs (the previous step's `stepOutput`, built-ins,
+  `params`). Children cannot reference each other's output.
+- **Aggregate result** (what the parent's `step_result` transitions see):
+  - all children `success` → `"success"`
+  - no child `success` → `"failure"`
+  - mixed → `"partial"`
+  - empty `children` → `"failure"` (the executor logs a warning)
+  - Only the literal `"success"` result counts as a pass — a child that returns a
+    custom result (e.g. a verifier returning `"passed"`) is **not** a success;
+    have children return `"success"`/`"failure"` when the parent branches on them.
+- **`stepOutput` merge** — flat, dotted keys (no nested map):
+  - `{{stepOutput.result}}` — the aggregate result
+  - `{{stepOutput.summary}}` — one line per child (`- <id>: <result>`)
+  - `{{stepOutput.<childId>.result}}` plus the child's own keys:
+    sub_agent → `{{stepOutput.<childId>.content}}`;
+    shell → `{{stepOutput.<childId>.stdout}}`, `{{stepOutput.<childId>.stderr}}`,
+    `{{stepOutput.<childId>.exitCode}}`;
+    a failed/unknown child also exposes `{{stepOutput.<childId>.error}}`.
+- **Cost:** the step consumes **one** `maxIterations` iteration regardless of
+  how many children run.
+- **Abort/resume:** aborting mid-parallel cancels the running children and
+  preserves the execution; resuming **re-runs every child**, so keep child
+  commands and reviews idempotent.
+- **Metadata:** children may use `session_metadata`, but don't have two
+  children write the same key — concurrent writers race and last write wins.
+
 ---
 
 ## 4. Transitions & Conditions
@@ -269,7 +333,11 @@ fix  ──(always)────────────────────�
   to `success`; agent steps default to `completed`.
 - **`maxIterations` caps the whole workflow**, not individual steps. Tight loops +
   `always` self-transitions can burn it fast. Escape loops with `step_result` /
-  `metadata_*` conditions.
+  `metadata_*` conditions. A `parallel` step counts as **one** iteration no matter
+  how many children it runs.
+- **`parallel` steps** run all children to completion, then aggregate
+  (`success` / `partial` / `failure`) — a failing child never cancels its siblings.
+  See §3.5.
 - **Blocking:** no matching transition ⇒ `$blocked`. `startCondition` unmet ⇒ blocked
   before the first step. Hitting `maxIterations` ⇒ blocked.
 - **Abort/resume:** aborting mid-workflow keeps the execution record alive; sending a new
@@ -286,21 +354,23 @@ The named variables below are the canonical list (the API exposes them via
 `GET /api/workflows/template-variables`); `{{stepOutput.<key>}}` resolves generically
 against the previous step's output map:
 
-| Variable                        | Meaning                                                                                                        |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `{{workdir}}`                   | Session working directory                                                                                      |
-| `{{reason}}`                    | Human-readable reason (e.g. "N criteria remaining")                                                            |
-| `{{criteriaCount}}`             | Total number of criteria                                                                                       |
-| `{{pendingCount}}`              | Number of pending/failed criteria                                                                              |
-| `{{criteriaList}}`              | Formatted list of all criteria with status (`[PASSED]`, `[NEEDS VERIFICATION]`, `[FAILED]`, `[NOT COMPLETED]`) |
-| `{{modifiedFiles}}`             | Git-diff list of files modified this session                                                                   |
-| `{{stepOutput.content}}`        | Text output of the previous step (agent/sub-agent `return_value` content)                                      |
-| `{{stepOutput.result}}`         | Result string of the previous step                                                                             |
-| `{{stepOutput.stdout}}`         | Previous **shell** step stdout                                                                                 |
-| `{{stepOutput.stderr}}`         | Previous **shell** step stderr                                                                                 |
-| `{{stepOutput.exitCode}}`       | Previous **shell** step exit code                                                                              |
-| `{{stepOutput.stepDoneCalled}}` | Whether the previous agent step called `step_done()`                                                           |
-| `{{params}}` / `{{someParam}}`  | User-supplied launch parameters (see below)                                                                    |
+| Variable                         | Meaning                                                                                                        |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `{{workdir}}`                    | Session working directory                                                                                      |
+| `{{reason}}`                     | Human-readable reason (e.g. "N criteria remaining")                                                            |
+| `{{criteriaCount}}`              | Total number of criteria                                                                                       |
+| `{{pendingCount}}`               | Number of pending/failed criteria                                                                              |
+| `{{criteriaList}}`               | Formatted list of all criteria with status (`[PASSED]`, `[NEEDS VERIFICATION]`, `[FAILED]`, `[NOT COMPLETED]`) |
+| `{{modifiedFiles}}`              | Git-diff list of files modified this session                                                                   |
+| `{{stepOutput.content}}`         | Text output of the previous step (agent/sub-agent `return_value` content)                                      |
+| `{{stepOutput.result}}`          | Result string of the previous step                                                                             |
+| `{{stepOutput.stdout}}`          | Previous **shell** step stdout                                                                                 |
+| `{{stepOutput.stderr}}`          | Previous **shell** step stderr                                                                                 |
+| `{{stepOutput.exitCode}}`        | Previous **shell** step exit code                                                                              |
+| `{{stepOutput.stepDoneCalled}}`  | Whether the previous agent step called `step_done()`                                                           |
+| `{{stepOutput.summary}}`         | Previous **parallel** step: one line per child (`- <childId>: <result>`)                                       |
+| `{{stepOutput.<childId>.<key>}}` | Previous **parallel** step, per child: `.result`, `.content`, `.stdout`, `.stderr`, `.exitCode`, `.error`      |
+| `{{params}}` / `{{someParam}}`   | User-supplied launch parameters (see below)                                                                    |
 
 - `{{stepOutput.<anything>}}` is resolved generically from the previous step's output map;
   unknown keys render empty.
@@ -502,6 +572,66 @@ fallback that loops back to the builder.
 }
 ```
 
+### 9.3 Parallel — concurrent reviews with a rework loop
+
+Two children (a lint shell step + a code-review sub-agent) run at once; the
+aggregate drives the branch. `partial`/`failure` loop back to a fix step that
+sees the per-child summary, then re-run the reviews.
+
+```json
+{
+  "metadata": {
+    "id": "parallel-reviews",
+    "name": "Parallel Reviews",
+    "description": "Lint and review in parallel; fix anything that fails.",
+    "version": "1.0.0",
+    "color": "#06b6d4"
+  },
+  "entryStep": "reviews",
+  "settings": { "maxIterations": 20 },
+  "steps": [
+    {
+      "id": "reviews",
+      "name": "Reviews",
+      "type": "parallel",
+      "phase": "verification",
+      "children": [
+        { "id": "lint", "type": "shell", "command": "npm run lint" },
+        {
+          "id": "review",
+          "type": "sub_agent",
+          "subAgentType": "code_reviewer",
+          "prompt": "Review the modified files ({{modifiedFiles}}) and report issues."
+        }
+      ],
+      "transitions": [
+        { "when": { "type": "step_result", "result": "success" }, "goto": "report" },
+        { "when": { "type": "always" }, "goto": "fix" }
+      ]
+    },
+    {
+      "id": "fix",
+      "name": "Fix Issues",
+      "type": "agent",
+      "phase": "build",
+      "agentId": "builder",
+      "prompt": "Address these findings, then call step_done():\n{{stepOutput.summary}}",
+      "transitions": [{ "when": { "type": "always" }, "goto": "reviews" }]
+    },
+    {
+      "id": "report",
+      "name": "Report",
+      "type": "agent",
+      "phase": "verification",
+      "agentId": "builder",
+      "prompt": "All checks passed. Summarize the review in two lines, then call step_done().",
+      "transitions": [{ "when": { "type": "always" }, "goto": "$done" }]
+    }
+  ],
+  "startCondition": { "type": "always" }
+}
+```
+
 ---
 
 ## 10. Troubleshooting (authoring mistakes)
@@ -515,3 +645,6 @@ fallback that loops back to the builder.
 | Blocked immediately at start               | `startCondition` (non-`always`) evaluated false against current session metadata.                                                         |
 | "Max iterations (N) reached"               | Loop lacks a terminating condition. Widen the escape conditions, not just `maxIterations`.                                                |
 | User step shows unexpected/missing buttons | Choices are derived only from `step_result` and `always` transitions of that step.                                                        |
+| Parallel step always returns `partial`     | Inspect `{{stepOutput.<childId>.result}}` per child and fix the failing child (`success` needs **all** children green).                   |
+| Missing child output in a later step       | `{{stepOutput.<childId>.<key>}}` — check the child `id` and key name; unknown keys render empty. Keys are flat (no nested map).           |
+| Parallel children run one at a time        | `maxConcurrency` is set to 1 — raise it or remove it (default runs all children at once).                                                 |

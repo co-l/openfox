@@ -68,6 +68,11 @@ async function lastHttpTransportOptions(): Promise<any> {
   return vi.mocked(StreamableHTTPClientTransport).mock.calls.at(-1)![1]
 }
 
+/** RequestOptions (3rd argument) the mock client's callTool was last invoked with. */
+function lastCallOptions(): { timeout?: number; signal?: AbortSignal } | undefined {
+  return mockClientInstance.callTool.mock.calls.at(-1)![2] as { timeout?: number; signal?: AbortSignal } | undefined
+}
+
 describe('McpManager', () => {
   let manager: McpManager
 
@@ -352,6 +357,59 @@ describe('McpManager', () => {
         }))
       }
     })
+
+    it('should extend the SDK request timeout for the tool timeout arg (no config timeout)', async () => {
+      await manager.addServer('test', { transport: 'stdio', command: 'node' })
+
+      const result = await manager.callTool('test', 'get_weather', { location: 'Paris', timeout: 300 })
+      expect(result.success).toBe(true)
+      expect(lastCallOptions()?.timeout).toBe(330_000)
+    })
+
+    it('should never lower the configured timeout below the tool arg plus margin', async () => {
+      await manager.addServer('test', { transport: 'stdio', command: 'node', timeout: 120 })
+
+      await manager.callTool('test', 'get_weather', { timeout: 300 })
+      expect(lastCallOptions()?.timeout).toBe(330_000)
+    })
+
+    it('should keep the configured timeout when it exceeds the tool arg plus margin', async () => {
+      await manager.addServer('test', { transport: 'stdio', command: 'node', timeout: 600 })
+
+      await manager.callTool('test', 'get_weather', { timeout: 300 })
+      expect(lastCallOptions()?.timeout).toBe(600_000)
+    })
+
+    it('should ignore invalid tool timeout args and fall back to the 60s default', async () => {
+      await manager.addServer('test', { transport: 'stdio', command: 'node' })
+
+      for (const arg of [0, -5, '300', Number.NaN]) {
+        mockClientInstance.callTool.mockClear()
+        await manager.callTool('test', 'get_weather', { timeout: arg })
+        expect(lastCallOptions()?.timeout).toBe(60_000)
+      }
+    })
+
+    it('should cap huge tool timeout args at 3600s', async () => {
+      await manager.addServer('test', { transport: 'stdio', command: 'node' })
+
+      await manager.callTool('test', 'get_weather', { timeout: 999999 })
+      expect(lastCallOptions()?.timeout).toBe(3_600_000)
+    })
+
+    it('should not shorten a configured timeout above the 3600s cap', async () => {
+      await manager.addServer('test', { transport: 'stdio', command: 'node', timeout: 7200 })
+
+      await manager.callTool('test', 'get_weather', { location: 'Paris' })
+      expect(lastCallOptions()?.timeout).toBe(7_200_000)
+    })
+
+    it('should pass the 60s default request timeout when neither config nor arg sets one', async () => {
+      await manager.addServer('test', { transport: 'stdio', command: 'node' })
+
+      await manager.callTool('test', 'get_weather', { location: 'Paris' })
+      expect(lastCallOptions()).toEqual({ timeout: 60_000, signal: expect.any(AbortSignal) })
+    })
   })
 
   describe('setToolEnabled', () => {
@@ -550,9 +608,23 @@ describe('createMcpTools', () => {
 
     // The MCP server must receive the original param name, with no stray `props` key.
     const lastCall = mockClientInstance.callTool.mock.calls.at(-1)!
-    const payload = lastCall[lastCall.length - 1] as { arguments?: Record<string, unknown> }
+    const payload = lastCall[0] as { arguments?: Record<string, unknown> }
     expect(payload.arguments).toEqual({ properties: { a: 'x' } })
     expect(payload.arguments).not.toHaveProperty('props')
+  })
+
+  it('passes the tool timeout arg through to the SDK request options (openfox_wait regression)', async () => {
+    const manager = new McpManager()
+    await manager.addServer('test', { transport: 'stdio', command: 'node' })
+
+    const tools = createMcpTools(manager)
+    const result = await tools[0]!.execute({ location: 'Paris', timeout: 300 }, {} as any)
+    expect(result.success).toBe(true)
+
+    // The SDK request must outlive the requested 300s wait (plus margin), not die at the 60s default.
+    const options = lastCallOptions()
+    expect(options?.timeout).toBeGreaterThanOrEqual(300_000)
+    expect(options?.signal).toBeInstanceOf(AbortSignal)
   })
 })
 

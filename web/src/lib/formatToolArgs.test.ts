@@ -60,5 +60,15 @@ describe('formatToolArgsWithMetadata', () => {
 
       expect(result).toBe('set_gate_value: tk_02 (commit)')
     })
+
+    it('formats project_tasks get_attachment with the attachment being read', () => {
+      const result = formatToolArgsWithMetadata(
+        'project_tasks',
+        { action: 'get_attachment', taskId: 'tk_02', attachmentId: 'att_01' },
+        undefined,
+      )
+
+      expect(result).toBe('get_attachment: tk_02 (att_01)')
+    })
   })
 })

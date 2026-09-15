@@ -203,11 +203,12 @@ A `project_tasks` tool is available to the built-in Planner and Builder agents (
 
 Behavioral contract:
 
-- **Full parity with the human**: the agent can list, create, edit, move, fill gate fields, duplicate, and delete tasks — every capability the modal offers.
+- **Agent-facing surface**: the agent can list, create, edit, move, fill gate fields, read attachments, and delete tasks. The service retains extra capabilities (duplicate, reorder, gate config) for the human modal; they are deliberately not exposed to agents.
 - **Per-action permissions**: the tool is granted granularly per action (e.g. list-only agents exist); denying an action to an agent denies only that action, not the whole tool.
 - **The current-session rule** (§7.3) is non-negotiable: an agent's `move(..., "in_progress")` binds to the session it is executing in. It can never create sessions on its own through this tool.
 - **Gates are server-enforced**: the agent cannot move past a gate it didn't satisfy, no matter how it phrases the call. It receives the actionable gate error (§9.1) and completes the loop by setting the required fields.
 - **Concurrent access** is safe: two agents (or an agent and the human) acting on the same task cannot clobber each other — transitions serialize, and conflicting operations return a clear "task changed, refresh and retry" style error rather than corrupting state.
+- **Attachments are readable**: task attachments (screenshots, text, PDFs) live only in the database, never on disk, so `read_file` cannot reach them. The agent reads them through the `get_attachment` action (see §10.1) — images flow through the standard tool-result → image pipeline (vision models see the pixels; non-vision models fall back to the stored description), text comes back inline, and PDFs come back as extracted text.
 - The agent always sees the same gate configuration and audit history as the human, so its judgment and the human's review operate on identical facts.
 
 ### 10.1 What the agent sees
@@ -215,6 +216,19 @@ Behavioral contract:
 The tool surfaces, per task: title, description/prompt, attachments, current state, queue position, bound session, model, gate values and status, and the audit trail. It reads the same facts the modal renders, one page at a time.
 
 The `list` action is paginated to keep agent context lean: it returns at most 10 tasks by default (max 25 via `limit`, `offset` for paging) plus a `total` and `hasMore` flag, so the agent pages through large boards instead of loading everything at once. Pages are snapshots of the board at call time — re-list after any mutation for a fresh, consistent view.
+
+#### Attachments & `get_attachment`
+
+Every task in any tool output carries a numeric `attachments` count (rendered by the board UI) and — when the task has at least one attachment — an `attachmentList` array of `{id, filename, mimeType, size}`. The list is additive metadata for agents; it never replaces the count.
+
+`get_attachment(taskId, attachmentId)` reads one attachment of the session's own project, resolved against the task's `attachmentList`:
+
+- **Images (`image/*`)**: returned in the exact `read_file` image shape (`metadata: {mimeType, size, dataUrl, base64Data, path}` plus `description` when the attachment carries one), so the standard tool-result → attachment → `image_url` pipeline applies unchanged — vision models see the screenshot, non-vision models get the stored fallback description. Images larger than the `read_file` image cap (2 MB) are rejected with a structured error that routes the fix to the user (stored attachments cannot be modified in place, so the user must compress/downsize and re-upload); since the web compresses png/jpeg/gif to ≤1 MB, this only bites raw webp/bmp/svg uploads.
+- **Text (`text/*` plus the exact text types the chat pipeline treats as text — `application/json`, `application/xml`, `application/yaml`, `application/x-yaml`, `application/javascript`, `application/xhtml+xml`, `application/x-sh`)**: returned inline — decoded from the data URL (falling back to the raw data when no data URL is present) — and truncated at the `read_file` limit (~100 KB, `truncated: true` when it overflows).
+- **PDF (`application/pdf`)**: enriched `pdfContent` is returned verbatim when present; otherwise the PDF bytes are text-extracted through the same `read_file` path (page text, page count, title/author metadata). A PDF with no text layer (scanned) returns a structured placeholder instead — since attachments live only in the database, the placeholder directs the agent to ask the user to re-upload a version with a text layer or describe the content.
+- **Anything else**: a structured "unsupported attachment type" error naming the MIME type.
+
+All failures are structured `{success: false, error}` results: unknown task, task with no attachments, unknown attachment id (the error lists the available `id (filename)` pairs), oversized image, corrupt/undecodable data, unsupported type. Because the action is part of the tool, per-action permissions apply automatically — an agent restricted to `project_tasks:list` cannot call `get_attachment`, while the standard Planner/Builder allowlist grants it without any agent-file change. The `taskId` is always required (no "read the bound task's attachment" shortcut), keeping permission checks predictable.
 
 ## 11. Situational Reminders
 

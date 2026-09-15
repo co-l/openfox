@@ -112,6 +112,7 @@ export interface WorkflowStepLike {
   agentId?: string
   subAgentType?: string
   subGroup?: string
+  children?: Array<{ type: string; subAgentType?: string }>
 }
 
 /**
@@ -119,9 +120,10 @@ export interface WorkflowStepLike {
  * actually issue an LLM query. Mirrors the server executor's start-step
  * selection (entry step, or the first step of the launched sub-group slice),
  * then walks the steps in order and returns the first one with an agent
- * identity (agent → agentId, sub_agent → subAgentType), skipping `user` and
- * `shell` steps that pause or run commands without querying the LLM. Returns
- * undefined when the workflow has no agent/sub_agent step at all.
+ * identity (agent → agentId, sub_agent → subAgentType, parallel → the first
+ * sub_agent child's subAgentType), skipping `user` and `shell` steps that
+ * pause or run commands without querying the LLM. Returns undefined when the
+ * workflow has no agent/sub_agent step at all.
  */
 export function resolveWorkflowFirstAgentId(
   workflow: { entryStep: string; steps: WorkflowStepLike[] },
@@ -141,6 +143,10 @@ export function resolveWorkflowFirstAgentId(
     if (!step) continue
     if (step.type === 'agent') return step.agentId
     if (step.type === 'sub_agent') return step.subAgentType
+    if (step.type === 'parallel') {
+      const firstSubAgentChild = step.children?.find((c) => c.type === 'sub_agent')
+      if (firstSubAgentChild?.subAgentType) return firstSubAgentChild.subAgentType
+    }
   }
   return undefined
 }

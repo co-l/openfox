@@ -363,12 +363,19 @@ export async function runTopLevelAgentLoop(
       }
 
       const contextState = sessionManager.getContextState(sessionId)
-      previousContextTokens = contextState.currentTokens
+      // Sub-agents run in a fresh scoped context: their output budget must be
+      // clamped against their own context usage, never the parent session's
+      // (a big parent session would otherwise leave the sub-agent only the
+      // 256-token safety floor — the root cause of truncated sub-agent plans).
+      const subAgentContextTokens = config.subAgentMetadata
+        ? (sessionManager.getSubAgentContextTokens?.(config.subAgentMetadata.subAgentId) ?? 0)
+        : undefined
+      previousContextTokens = subAgentContextTokens ?? contextState.currentTokens
 
       const contextWindow = sessionManager.getCurrentModelContext(sessionId, config.mode)
       const availableForOutput = Math.max(
         256,
-        contextWindow - contextState.currentTokens - pendingToolResultTokens - OUTPUT_RESERVE_TOKENS,
+        contextWindow - previousContextTokens - pendingToolResultTokens - OUTPUT_RESERVE_TOKENS,
       )
 
       let modelSettings = config.modelSettings ?? sessionManager.getCurrentModelSettings(sessionId, config.mode)
@@ -562,10 +569,16 @@ export async function runTopLevelAgentLoop(
     if (!compacting) {
       const contextState = sessionManager.getContextState(sessionId)
       const { shouldCompact, appendCompactionPrompt } = await import('../context/compactor.js')
+      const compactionTokens = config.subAgentMetadata
+        ? (sessionManager.getSubAgentContextTokens?.(config.subAgentMetadata.subAgentId) ?? 0)
+        : contextState.currentTokens
+      const compactionWindow = config.subAgentMetadata
+        ? sessionManager.getCurrentModelContext(sessionId, config.mode)
+        : contextState.maxTokens
       if (
         shouldCompact(
-          contextState.currentTokens,
-          contextState.maxTokens,
+          compactionTokens,
+          compactionWindow,
           sessionManager.getModelCompactionThreshold(sessionId, config.mode) ??
             runtimeConfig.context.compactionThreshold,
         )
