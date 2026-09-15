@@ -39,7 +39,20 @@ jobs:
       - run: npm ci
       - run: npm run duplicate
 
-  test:
+  test-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - run: npm ci
+      - run: cd web && npm ci
+      - run: npm run test:unit
+
+  test-e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -50,7 +63,9 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: cd web && npm ci
-      - run: npm test
+      - run: npm run test:e2e
+        env:
+          OPENFOX_E2E_MAX_WORKERS: 2
 
   windows:
     runs-on: windows-latest
