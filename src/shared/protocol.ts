@@ -69,6 +69,9 @@ export interface QueuedMessage {
   attachments?: Attachment[]
   queuedAt: string
   messageKind?: string
+  /** Resend: the message already exists in the tree at this event id — the
+   *  processor must not re-add it, just run the turn. */
+  existingMessageId?: string
 }
 
 // ============================================================================

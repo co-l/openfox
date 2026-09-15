@@ -119,6 +119,11 @@ function createMockOptions(extra?: Partial<OrchestratorOptions>): OrchestratorOp
         messages: [],
         metadataEntries: {},
       })),
+      getSession: vi.fn(() => ({
+        workdir: '/tmp/test',
+        messages: [],
+        metadataEntries: {},
+      })),
       setMode: vi.fn(),
       setPhase: vi.fn(),
       getEffectiveWorkdir: vi.fn().mockReturnValue('/tmp/test'),

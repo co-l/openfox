@@ -2,7 +2,6 @@ import type { Criterion, SessionMode, SessionPhase, ContextState, Todo } from '.
 import { resolveDefaultAgentId } from '../agents/registry.js'
 import type {
   TurnEvent,
-  SessionSnapshot,
   ReadFileEntry,
   PendingPathConfirmation,
   VisionFallback,
@@ -10,18 +9,12 @@ import type {
   TaskStats,
   MessageStatsEntry,
   CompactionRecord,
-  SnapshotMessage,
-  ToolCallWithResult,
 } from './types.js'
 import type { FormatRetry } from './apply-events.js'
 import type { WorkflowWaitingPayload } from '../../shared/protocol.js'
 import type { EventLike, FoldedSessionState } from './fold-types.js'
 import type { MessageStats, MetadataEntry } from '../../shared/types.js'
-import {
-  foldTurnEventsToSnapshotMessages,
-  foldTurnEventsToSnapshotMessagesFromInitial,
-  applyTurnEventsToSnapshotMessages,
-} from './fold-messages.js'
+import { foldTurnEventsToMessages } from './fold-messages.js'
 import { normalizeAskOptions } from '../../shared/ask-options.js'
 
 function getTimestamp(event: EventLike): number {
@@ -89,19 +82,6 @@ export function foldContextState(events: EventLike[], initialWindowId: string): 
         currentContextWindowId = data.contextWindowId
         break
       }
-      case 'turn.snapshot': {
-        const data = event.data as SessionSnapshot
-        currentContextWindowId = data.currentContextWindowId
-        compactionCount = data.contextState.compactionCount
-        latestContextState = data.contextState
-        readFilesMap.clear()
-        if (data.readFiles) {
-          for (const entry of data.readFiles) {
-            readFilesMap.set(entry.path, { ...entry })
-          }
-        }
-        break
-      }
       case 'context.state': {
         const data = event.data as ContextState & { subAgentId?: string }
         if (!data.subAgentId) {
@@ -144,9 +124,6 @@ export function foldMode(events: EventLike[], defaultMode?: SessionMode): Sessio
     if (event.type === 'mode.changed') {
       const data = event.data as Extract<TurnEvent, { type: 'mode.changed' }>['data']
       mode = data.mode
-    } else if (event.type === 'turn.snapshot') {
-      const snapshot = event.data as SessionSnapshot
-      mode = snapshot.mode
     }
   }
   return mode
@@ -210,19 +187,15 @@ export function foldSessionState(
   events: EventLike[],
   initialWindowId: string,
   maxTokens: number,
-  initialMessages?: SnapshotMessage[],
   defaultMode?: SessionMode,
 ): FoldedSessionState {
   const mode = foldMode(events, defaultMode)
   const phase = foldPhase(events)
   const isRunning = foldIsRunning(events)
-  const messages =
-    initialMessages && initialMessages.length > 0
-      ? foldTurnEventsToSnapshotMessagesFromInitial(events, initialMessages)
-      : foldTurnEventsToSnapshotMessages(events)
+  const messages = foldTurnEventsToMessages(events)
   const criteria = foldCriteria(events)
   const todos = foldTodos(events)
-  let metadataEntries = foldMetadata(events)
+  const metadataEntries = foldMetadata(events)
   const contextResult = foldContextState(events, initialWindowId)
   const pendingConfirmations = foldPendingConfirmations(events)
 
@@ -238,24 +211,6 @@ export function foldSessionState(
     baseContextState.compactionCount !== contextResult.compactionCount || baseContextState.maxTokens !== maxTokens
       ? { ...baseContextState, compactionCount: contextResult.compactionCount, maxTokens }
       : { ...baseContextState, maxTokens }
-
-  let cachedSystemPrompt: string | undefined
-  let dynamicContextHash: string | undefined
-  let metadataEntriesMerged = false
-
-  for (let i = events.length - 1; i >= 0; i--) {
-    const event = events[i]!
-    if (event.type === 'turn.snapshot') {
-      const snapshotData = event.data as SessionSnapshot
-      if (snapshotData.cachedSystemPrompt && !cachedSystemPrompt) cachedSystemPrompt = snapshotData.cachedSystemPrompt
-      if (snapshotData.dynamicContextHash && !dynamicContextHash) dynamicContextHash = snapshotData.dynamicContextHash
-      if (snapshotData.metadataEntries && !metadataEntriesMerged) {
-        metadataEntries = { ...snapshotData.metadataEntries, ...metadataEntries }
-        metadataEntriesMerged = true
-      }
-      if (cachedSystemPrompt && dynamicContextHash && metadataEntriesMerged) break
-    }
-  }
 
   let sessionInit: FoldedSessionState['sessionInit']
   let sessionTitle: string | undefined
@@ -370,8 +325,6 @@ export function foldSessionState(
     contextState,
     currentContextWindowId: contextResult.currentContextWindowId,
     readFiles: contextResult.readFiles,
-    ...(cachedSystemPrompt !== undefined && { cachedSystemPrompt }),
-    ...(dynamicContextHash !== undefined && { dynamicContextHash }),
     pendingConfirmations,
     ...(sessionInit !== undefined && { sessionInit }),
     ...(sessionTitle !== undefined && { sessionTitle }),
@@ -411,172 +364,4 @@ export function foldWaitingWorkflow(events: EventLike[]): FoldedSessionState['wa
     }
   }
   return waitingWorkflow
-}
-
-// ============================================================================
-// Snapshot streaming de-duplication
-//
-// A finished tool call's `streamingOutput` (the raw stdout/stderr feed shown
-// live in the feed) is NOT reused anywhere once the call has a result:
-// - The web UI renders it only while status === 'pending'; finished calls show
-//   `result` (RunCommandView, ToolCallDisplay).
-// - The LLM context is built exclusively from `result.output`
-//   (tool messages are folded through buildContextMessagesFromStoredEvents,
-//   whether they come from raw events or a snapshot replay).
-// Persisting it therefore just bloats snapshots (a single session once
-// accumulated 41MB of it). We drop it from snapshots for EVERY finished call
-// (one that has a result) — unconditionally, no content inspection needed,
-// because no consumer ever reads a finished call's stream. Pending (in-flight)
-// calls keep their stream in full, without any size cap: a mid-run reload must
-// keep showing the live feed, and the raw tool.output events remain the source
-// of truth while the session runs.
-// ============================================================================
-
-/**
- * Remove streaming output from finished tool calls in snapshot messages.
- * Returns new message objects for modified messages — inputs are not mutated.
- */
-export function trimSnapshotStreamingOutput(messages: SnapshotMessage[]): {
-  messages: SnapshotMessage[]
-  droppedStreams: number
-  keptStreams: number
-} {
-  let droppedStreams = 0
-  let keptStreams = 0
-  const trimmedMessages = messages.map((message) => {
-    const toolCalls = message.toolCalls
-    if (!toolCalls) return message
-    let changed = false
-    const newToolCalls = toolCalls.map((tc) => {
-      if (!tc.streamingOutput || tc.streamingOutput.length === 0) return tc
-      // Finished calls (with a result): the stream is dead weight — the feed
-      // shows `result`, and the LLM context never included it.
-      if (tc.result !== undefined) {
-        droppedStreams++
-        changed = true
-        const { streamingOutput: _omitted, streamingOutputTruncated: _omittedFlag, ...rest } = tc
-        void _omitted
-        void _omittedFlag
-        return rest as ToolCallWithResult
-      }
-      // Pending call: keep the live stream so a mid-run reload keeps showing it.
-      keptStreams++
-      return tc
-    })
-    if (!changed) return message
-    return { ...message, toolCalls: newToolCalls }
-  })
-  return { messages: trimmedMessages, droppedStreams, keptStreams }
-}
-
-export function buildSnapshot(
-  foldedState: FoldedSessionState,
-  latestSeq: number,
-  snapshotAt: number = Date.now(),
-): SessionSnapshot {
-  // The snapshot is the hot path loaded on every session open — de-duplicate
-  // the never-displayed streaming output before persisting it. The function
-  // returns new objects for any modified messages so foldedState is not mutated.
-  const { messages } = trimSnapshotStreamingOutput(foldedState.messages)
-  return {
-    mode: foldedState.mode,
-    phase: foldedState.phase,
-    isRunning: foldedState.isRunning,
-    messages,
-    criteria: foldedState.criteria,
-    metadataEntries: foldedState.metadataEntries,
-    contextState: foldedState.contextState,
-    currentContextWindowId: foldedState.currentContextWindowId,
-    todos: foldedState.todos,
-    readFiles: foldedState.readFiles,
-    ...(foldedState.cachedSystemPrompt !== undefined && { cachedSystemPrompt: foldedState.cachedSystemPrompt }),
-    ...(foldedState.dynamicContextHash !== undefined && { dynamicContextHash: foldedState.dynamicContextHash }),
-    snapshotSeq: latestSeq,
-    snapshotAt,
-    ...(foldedState.sessionInit !== undefined && { sessionInit: foldedState.sessionInit }),
-    ...(foldedState.sessionTitle !== undefined && { sessionTitle: foldedState.sessionTitle }),
-    ...(foldedState.visionFallbacks !== undefined && { visionFallbacks: foldedState.visionFallbacks }),
-    ...(foldedState.formatRetries !== undefined && { formatRetries: foldedState.formatRetries }),
-    ...(foldedState.pendingUserInput !== undefined && { pendingUserInput: foldedState.pendingUserInput }),
-    ...(foldedState.taskStats !== undefined && { taskStats: foldedState.taskStats }),
-    ...(foldedState.messageStats !== undefined && { messageStats: foldedState.messageStats }),
-    ...(foldedState.pendingConfirmations !== undefined && { pendingConfirmations: foldedState.pendingConfirmations }),
-    ...(foldedState.contextWindows !== undefined && { contextWindows: foldedState.contextWindows }),
-    ...(foldedState.waitingWorkflow !== undefined && { waitingWorkflow: foldedState.waitingWorkflow }),
-  }
-}
-
-export function buildSnapshotFromSessionState(input: {
-  session: {
-    mode: SessionMode
-    phase: SessionPhase
-    isRunning: boolean
-    criteria: Criterion[]
-    executionState?: { currentTokenCount?: number; compactionCount?: number } | null
-  }
-  events: EventLike[]
-  latestSeq: number
-  snapshotAt?: number
-  maxTokens?: number
-  cachedSystemPrompt?: string
-  dynamicContextHash?: string
-}): SessionSnapshot {
-  const { session, events, latestSeq, snapshotAt = Date.now(), maxTokens = 200000 } = input
-  let initialWindowId = ''
-  for (const event of events) {
-    if (event.type === 'session.initialized') {
-      const data = event.data as Extract<TurnEvent, { type: 'session.initialized' }>['data']
-      initialWindowId = data.contextWindowId
-      break
-    }
-  }
-  if (!initialWindowId) initialWindowId = 'legacy-window-1'
-
-  const foldedState = foldSessionState(events, initialWindowId, maxTokens)
-  const latestSnapshotIndex = events.map((event) => event.type).lastIndexOf('turn.snapshot')
-  const latestSnapshotEvent = latestSnapshotIndex >= 0 ? events[latestSnapshotIndex] : undefined
-  const messages = latestSnapshotEvent
-    ? applyTurnEventsToSnapshotMessages(
-        (latestSnapshotEvent.data as SessionSnapshot).messages,
-        events.slice(latestSnapshotIndex + 1),
-      )
-    : foldedState.messages
-  // The snapshot is the hot path loaded on every session open — de-duplicate
-  // the never-displayed streaming output before persisting it. The function
-  // returns new objects for modified messages so the source arrays are not mutated.
-  const { messages: trimmedMessages } = trimSnapshotStreamingOutput(messages)
-
-  return {
-    mode: session.mode,
-    phase: session.phase,
-    isRunning: session.isRunning,
-    messages: trimmedMessages,
-    criteria: session.criteria,
-    metadataEntries: foldedState.metadataEntries,
-    contextState: {
-      currentTokens: foldedState.contextState.currentTokens,
-      maxTokens: foldedState.contextState.maxTokens,
-      compactionCount: foldedState.contextState.compactionCount,
-      dangerZone: foldedState.contextState.dangerZone,
-      canCompact: foldedState.contextState.canCompact,
-      dynamicContextChanged: foldedState.contextState.dynamicContextChanged,
-    },
-    currentContextWindowId: foldedState.currentContextWindowId,
-    todos: foldedState.todos,
-    readFiles: foldedState.readFiles,
-    snapshotSeq: latestSeq,
-    snapshotAt,
-    ...(foldedState.sessionInit !== undefined && { sessionInit: foldedState.sessionInit }),
-    ...(input.cachedSystemPrompt !== undefined
-      ? { cachedSystemPrompt: input.cachedSystemPrompt }
-      : foldedState.cachedSystemPrompt !== undefined
-        ? { cachedSystemPrompt: foldedState.cachedSystemPrompt }
-        : {}),
-    ...(input.dynamicContextHash !== undefined
-      ? { dynamicContextHash: input.dynamicContextHash }
-      : foldedState.dynamicContextHash !== undefined
-        ? { dynamicContextHash: foldedState.dynamicContextHash }
-        : {}),
-    ...(foldedState.waitingWorkflow !== undefined && { waitingWorkflow: foldedState.waitingWorkflow }),
-  }
 }

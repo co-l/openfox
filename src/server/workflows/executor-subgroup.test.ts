@@ -161,6 +161,11 @@ function makeHarness(criteria: MetadataEntry[]) {
       messages: [],
       metadataEntries: { criteria },
     })),
+    getSession: vi.fn(() => ({
+      workdir: '/tmp/test',
+      messages: [],
+      metadataEntries: { criteria },
+    })),
     setMode,
     setPhase,
     getEffectiveWorkdir: vi.fn().mockReturnValue('/tmp/test'),

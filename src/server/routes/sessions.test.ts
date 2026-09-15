@@ -61,22 +61,16 @@ describe('GET /api/sessions/:id — server-side truncation', () => {
   let server: ReturnType<express.Express['listen']>
   let baseUrl: string
   let getEventsMock: ReturnType<typeof vi.fn>
-  let getEventsSinceSnapshotMock: ReturnType<typeof vi.fn>
   let getSessionMock: ReturnType<typeof vi.fn>
 
   beforeEach(async () => {
     getEventsMock = vi.fn(() => mockEvents)
-    getEventsSinceSnapshotMock = vi.fn(() => ({
-      snapshot: undefined,
-      events: mockEvents,
-    }))
     getSessionMock = vi.fn(() => mockSession) as ReturnType<typeof vi.fn>
 
     vi.doMock('../events/index.js', () => ({
       getEventStore: () => ({
         getEvents: getEventsMock,
-        getEventsSinceSnapshot: getEventsSinceSnapshotMock,
-        getLatestSnapshot: vi.fn(() => undefined),
+        getInflightMessages: vi.fn(() => []),
       }),
       getContextMessages: vi.fn(() => []),
       getCurrentContextWindowId: vi.fn(() => 'win-1'),
@@ -114,6 +108,7 @@ describe('GET /api/sessions/:id — server-side truncation', () => {
       const events = eventStore.getEvents(req.params.id)
       const maxVisibleItems = req.query['full'] === 'true' ? undefined : getMaxVisibleItems() || undefined
       const { messages, hiddenCount } = buildMessagesFromStoredEvents(events, maxVisibleItems)
+      const inflight = eventStore.getInflightMessages(req.params.id)
       const contextState = null
       const queueState = null
       const pendingQuestions = getPendingQuestionsForSession(req.params.id)
@@ -121,7 +116,7 @@ describe('GET /api/sessions/:id — server-side truncation', () => {
 
       res.json({
         session,
-        messages,
+        messages: [...messages, ...inflight],
         hiddenCount,
         contextState,
         queueState,
@@ -238,28 +233,22 @@ describe('GET /api/sessions/:id — server-side truncation', () => {
 })
 
 // ============================================================================
-// POST /api/sessions/:id/provider — getEventsSinceSnapshot (Criterion 9D)
+// POST /api/sessions/:id/provider — conversation loaded from the event tree
 // ============================================================================
 
-describe('POST /api/sessions/:id/provider — snapshot-optimized loading', () => {
+describe('POST /api/sessions/:id/provider — loads the conversation from the event tree', () => {
   let app: express.Express
   let server: ReturnType<express.Express['listen']>
   let baseUrl: string
   let getEventsMock: ReturnType<typeof vi.fn>
-  let getEventsSinceSnapshotMock: ReturnType<typeof vi.fn>
 
   beforeEach(async () => {
     getEventsMock = vi.fn(() => [])
-    getEventsSinceSnapshotMock = vi.fn(() => ({
-      snapshot: undefined,
-      events: [],
-    }))
 
     vi.doMock('../events/index.js', () => ({
       getEventStore: () => ({
         getEvents: getEventsMock,
-        getEventsSinceSnapshot: getEventsSinceSnapshotMock,
-        getLatestSnapshot: vi.fn(() => undefined),
+        getInflightMessages: vi.fn(() => []),
       }),
     }))
 
@@ -319,7 +308,7 @@ describe('POST /api/sessions/:id/provider — snapshot-optimized loading', () =>
       const contextState = mockSessionManager.getContextState(req.params.id)
 
       const eventStore = getEventStore()
-      const { events } = eventStore.getEventsSinceSnapshot(req.params.id)
+      const events = eventStore.getEvents(req.params.id)
       const { messages } = buildMessagesFromStoredEvents(events)
       const updatedSession = mockSessionManager.getSession(req.params.id)
 
@@ -339,24 +328,14 @@ describe('POST /api/sessions/:id/provider — snapshot-optimized loading', () =>
     vi.resetModules()
   })
 
-  it('[AUTOMATED] uses getEventsSinceSnapshot instead of getEvents for provider handler', async () => {
+  it('[AUTOMATED] uses getEvents for the provider handler', async () => {
     await fetch(`${baseUrl}/api/sessions/session-1/provider`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ providerId: 'test-provider', model: 'test-model' }),
     })
 
-    expect(getEventsSinceSnapshotMock).toHaveBeenCalledWith('session-1')
-  })
-
-  it('[AUTOMATED] does not call getEvents directly for provider handler', async () => {
-    await fetch(`${baseUrl}/api/sessions/session-1/provider`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ providerId: 'test-provider', model: 'test-model' }),
-    })
-
-    expect(getEventsMock).not.toHaveBeenCalled()
+    expect(getEventsMock).toHaveBeenCalledWith('session-1')
   })
 
   it('[AUTOMATED] returns session data from provider handler', async () => {
@@ -383,28 +362,22 @@ describe('POST /api/sessions/:id/provider — snapshot-optimized loading', () =>
 })
 
 // ============================================================================
-// PUT /api/sessions/:id/mode — getEventsSinceSnapshot (Criterion 9D)
+// PUT /api/sessions/:id/mode — conversation loaded from the event tree
 // ============================================================================
 
-describe('PUT /api/sessions/:id/mode — snapshot-optimized loading', () => {
+describe('PUT /api/sessions/:id/mode — loads the conversation from the event tree', () => {
   let app: express.Express
   let server: ReturnType<express.Express['listen']>
   let baseUrl: string
   let getEventsMock: ReturnType<typeof vi.fn>
-  let getEventsSinceSnapshotMock: ReturnType<typeof vi.fn>
 
   beforeEach(async () => {
     getEventsMock = vi.fn(() => [])
-    getEventsSinceSnapshotMock = vi.fn(() => ({
-      snapshot: undefined,
-      events: [],
-    }))
 
     vi.doMock('../events/index.js', () => ({
       getEventStore: () => ({
         getEvents: getEventsMock,
-        getEventsSinceSnapshot: getEventsSinceSnapshotMock,
-        getLatestSnapshot: vi.fn(() => undefined),
+        getInflightMessages: vi.fn(() => []),
       }),
     }))
 
@@ -460,7 +433,7 @@ describe('PUT /api/sessions/:id/mode — snapshot-optimized loading', () => {
       mockSessionManager.setMode(req.params.id, mode)
 
       const eventStore = getEventStore()
-      const { events } = eventStore.getEventsSinceSnapshot(req.params.id)
+      const events = eventStore.getEvents(req.params.id)
       const { messages } = buildMessagesFromStoredEvents(events)
       const updatedSession = mockSessionManager.getSession(req.params.id)
 
@@ -480,24 +453,14 @@ describe('PUT /api/sessions/:id/mode — snapshot-optimized loading', () => {
     vi.resetModules()
   })
 
-  it('[AUTOMATED] uses getEventsSinceSnapshot instead of getEvents for mode handler', async () => {
+  it('[AUTOMATED] uses getEvents for the mode handler', async () => {
     await fetch(`${baseUrl}/api/sessions/session-1/mode`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mode: 'planner' }),
     })
 
-    expect(getEventsSinceSnapshotMock).toHaveBeenCalledWith('session-1')
-  })
-
-  it('[AUTOMATED] does not call getEvents directly for mode handler', async () => {
-    await fetch(`${baseUrl}/api/sessions/session-1/mode`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'planner' }),
-    })
-
-    expect(getEventsMock).not.toHaveBeenCalled()
+    expect(getEventsMock).toHaveBeenCalledWith('session-1')
   })
 
   it('[AUTOMATED] returns session data from mode handler', async () => {

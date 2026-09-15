@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { fileURLToPath } from 'node:url'
 import { projectSessionStatus } from './session-status.js'
 import { buildContextMessagesFromEventHistory } from '../events/folding.js'
-import type { ToolCallWithResult, StoredEvent, TurnEvent, SessionSnapshot } from '../events/types.js'
+import type { StoredEvent, TurnEvent } from '../events/types.js'
 import type { Session } from '../../shared/types.js'
 
 // ---------------------------------------------------------------------------
@@ -41,62 +41,50 @@ function buildSession(overrides: Partial<Session> = {}): Session {
   }
 }
 
-function buildSnapshotEvent(): StoredEvent<TurnEvent> {
-  const toolResult = {
-    success: true,
-    output: 'frozen stdout line 1\nfrozen stdout line 2',
-    durationMs: 10,
-    truncated: false,
-  }
-  const toolCall: ToolCallWithResult = {
-    id: 'call-1',
-    name: 'run_command',
-    arguments: { command: 'echo hello' },
-    result: toolResult,
-  }
-  return {
-    type: 'turn.snapshot',
-    sessionId: 'session-1',
-    seq: 1,
-    timestamp: Date.now(),
-    data: {
-      messages: [
-        {
-          id: 'msg-1',
-          role: 'assistant',
-          content: 'Run something',
-          timestamp: Date.now(),
-          isStreaming: false,
-          toolCalls: [toolCall],
-        },
-      ],
-      mode: 'builder',
-      phase: 'build',
-      isRunning: true,
-      criteria: [],
-      metadataEntries: {},
-      todos: [],
-      contextState: {
-        promptTokens: 0,
-        compactionCount: 0,
-        currentTokens: 0,
-        maxTokens: 200000,
-        dangerZone: false,
-        canCompact: false,
-        dynamicContextChanged: false,
+function buildMessageEvents(): StoredEvent<TurnEvent>[] {
+  const now = Date.now()
+  return [
+    {
+      type: 'message',
+      sessionId: 'session-1',
+      seq: 1,
+      timestamp: now,
+      data: {
+        messageId: 'msg-1',
+        role: 'assistant',
+        content: 'Run something',
+        contextWindowId: 'window-1',
+        toolCalls: [
+          {
+            id: 'call-1',
+            name: 'run_command',
+            arguments: { command: 'echo hello' },
+          },
+        ],
       },
-      currentContextWindowId: 'window-1',
-      readFiles: [],
-      snapshotSeq: 1,
-      snapshotAt: Date.now(),
-    } as SessionSnapshot,
-  }
+    },
+    {
+      type: 'tool.result',
+      sessionId: 'session-1',
+      seq: 2,
+      timestamp: now,
+      data: {
+        messageId: 'msg-1',
+        toolCallId: 'call-1',
+        result: {
+          success: true,
+          output: 'frozen stdout line 1\nfrozen stdout line 2',
+          durationMs: 10,
+          truncated: false,
+        },
+      },
+    },
+  ]
 }
 
 describe('session status projection — KV-cache invariant (Cache Impact: No)', () => {
-  it('does not affect the cached prompt input (snapshot events) on repeated status reads', () => {
-    const event: StoredEvent<TurnEvent> = buildSnapshotEvent()
-    const events: StoredEvent<TurnEvent>[] = [event]
+  it('does not affect the cached prompt input (stored events) on repeated status reads', () => {
+    const events: StoredEvent<TurnEvent>[] = buildMessageEvents()
 
     // Build the input the LLM would receive from the same event history.
     const before = JSON.stringify(buildContextMessagesFromEventHistory(events))

@@ -8,7 +8,7 @@ import type {
   TaskStats,
   MessageStatsEntry,
   CompactionRecord,
-  SnapshotMessage,
+  FoldedMessage,
 } from './types.js'
 import type { SessionMode, SessionPhase, ContextState, Criterion, Todo, MetadataEntry } from '../../shared/types.js'
 import type { WorkflowWaitingPayload } from '../../shared/protocol.js'
@@ -43,15 +43,13 @@ export interface FoldedSessionState {
   mode: SessionMode
   phase: SessionPhase
   isRunning: boolean
-  messages: SnapshotMessage[]
+  messages: FoldedMessage[]
   criteria: Criterion[]
   todos: Todo[]
   metadataEntries: Record<string, MetadataEntry[]>
   contextState: ContextState
   currentContextWindowId: string
   readFiles: ReadFileEntry[]
-  cachedSystemPrompt?: string
-  dynamicContextHash?: string
   pendingConfirmations: PendingPathConfirmation[]
   sessionInit?: {
     projectId: string

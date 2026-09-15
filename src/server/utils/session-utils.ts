@@ -11,7 +11,7 @@ export function getSessionMessageCount(sessionId: string): number {
 
   let count = 0
   for (const event of events) {
-    if (event.type === 'message.start') {
+    if (event.type === 'message') {
       const data = event.data as { role: string; isSystemGenerated?: boolean }
       // System-generated messages (task reminders, auto prompts) are not
       // "real" user input — they must not count as the first user message so

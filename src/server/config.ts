@@ -23,6 +23,10 @@ const envSchema = z.object({
   OPENFOX_DEV: z.coerce.boolean().default(false),
   OPENFOX_DISABLE_AUTO_SESSION_TITLE: z.coerce.boolean().optional(),
   OPENFOX_DEFAULT_AGENT: z.string().optional(),
+  // Blob externalization thresholds (bytes). Payloads above these sizes are
+  // stored in the blobs table; defaults are 256 KB / 1 MB.
+  OPENFOX_BLOB_EXTERNALIZE_BYTES: z.coerce.number().optional(),
+  OPENFOX_MESSAGE_EXTERNALIZE_BYTES: z.coerce.number().optional(),
 })
 
 export function loadConfig(): Config {
@@ -63,6 +67,12 @@ export function loadConfig(): Config {
     },
     database: {
       path: env.OPENFOX_DB_PATH,
+      ...(env.OPENFOX_BLOB_EXTERNALIZE_BYTES !== undefined
+        ? { blobExternalizeThreshold: env.OPENFOX_BLOB_EXTERNALIZE_BYTES }
+        : {}),
+      ...(env.OPENFOX_MESSAGE_EXTERNALIZE_BYTES !== undefined
+        ? { messageExternalizeThreshold: env.OPENFOX_MESSAGE_EXTERNALIZE_BYTES }
+        : {}),
     },
     mode: env.OPENFOX_DEV ? 'development' : 'production',
     workdir,

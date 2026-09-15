@@ -8,8 +8,8 @@
 
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { LLMMessage } from '../llm/types.js'
-import type { Session } from '../../shared/types.js'
-import type { StoredEvent, TurnEvent, SessionSnapshot } from '../events/types.js'
+import type { Message, Session } from '../../shared/types.js'
+import type { StoredEvent, TurnEvent } from '../events/types.js'
 import type { ProviderManager } from '../provider-manager.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import { logger } from '../utils/logger.js'
@@ -19,7 +19,6 @@ import { createSessionStateMessage } from '../ws/protocol.js'
 import { getPendingQuestionsForSession } from '../tools/index.js'
 import { getSessionMessageCount } from '../utils/session-utils.js'
 import { getRuntimeConfig } from '../runtime-config.js'
-import { combineEventsWithSnapshot } from '../events/index.js'
 import { getMaxVisibleItems } from '../db/settings.js'
 
 // ============================================================================
@@ -181,8 +180,9 @@ export interface ApplyGeneratedSessionNameDeps {
     getDisplayWorkflowExecution?: (id: string) => import('../../shared/types.js').WorkflowExecution | null
   }
   eventStore: {
-    getEventsSinceSnapshot: (sessionId: string) => { snapshot: SessionSnapshot | undefined; events: StoredEvent[] }
+    getEvents: (sessionId: string) => StoredEvent[]
     append: (sessionId: string, event: TurnEvent) => void
+    getInflightMessages?: (sessionId: string) => Message[]
   }
   broadcastForSession: (sessionId: string, msg: ReturnType<typeof createSessionStateMessage>) => void
 }
@@ -195,10 +195,12 @@ export function applyGeneratedSessionName(sessionId: string, name: string, deps:
   })
   const updatedSession = deps.sessionManager.getSession(sessionId)
   if (updatedSession) {
-    const { snapshot, events: eventsSinceSnapshot } = deps.eventStore.getEventsSinceSnapshot(sessionId)
-    const events = combineEventsWithSnapshot(sessionId, snapshot, eventsSinceSnapshot)
+    const events = deps.eventStore.getEvents(sessionId)
     const maxVisibleItems = getMaxVisibleItems()
     const { messages, hiddenCount } = buildMessagesFromStoredEvents(events, maxVisibleItems || undefined)
+    // Mid-turn parity with the REST session payload: attach in-flight
+    // (streaming) messages that are not on the persisted path yet.
+    const inflight = deps.eventStore.getInflightMessages?.(sessionId) ?? []
     const pendingConfirmations = foldPendingConfirmations(events)
     const pendingQuestions = getPendingQuestionsForSession(sessionId)
     // Carry the live workflow execution (e.g. a paused user step) through the
@@ -209,7 +211,7 @@ export function applyGeneratedSessionName(sessionId: string, name: string, deps:
       sessionId,
       createSessionStateMessage(
         updatedSession,
-        messages,
+        [...messages, ...inflight],
         pendingConfirmations,
         pendingQuestions,
         undefined,
@@ -234,8 +236,9 @@ export interface GenerateSessionNameForSessionDeps {
   providerManager: ProviderManager
   broadcastForSession: (sessionId: string, msg: ServerMessage) => void
   eventStore: {
-    getEventsSinceSnapshot: (sessionId: string) => { snapshot: SessionSnapshot | undefined; events: StoredEvent[] }
+    getEvents: (sessionId: string) => StoredEvent[]
     append: (sessionId: string, event: TurnEvent) => void
+    getInflightMessages?: (sessionId: string) => Message[]
   }
   /** Optional factory to get an LLM client. When provided (e.g. from QueueProcessor),
    *  it's used instead of creating a new client via dynamic import. This ensures the

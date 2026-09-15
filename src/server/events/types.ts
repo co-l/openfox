@@ -26,7 +26,19 @@ import type {
   PreparingToolCall,
   WorkflowExecutionStatus,
 } from '../../shared/types.js'
-import type { WorkflowWaitingPayload } from '../../shared/protocol.js'
+
+/**
+ * Reference to an externalized blob (large tool results / oversized message
+ * content). Stored inline in event payloads in place of the full content;
+ * hydrated transparently by the store on read. Keeps the events table free
+ * of multi-MB single rows while LLM assembly sees the byte-identical content.
+ */
+export interface ExternalizedContent {
+  blobRef: string // content hash (sha256 hex)
+  size: number // full content size in bytes
+  preview: string // truncated head of the text content
+  truncated: boolean
+}
 
 // ============================================================================
 // Stored Event (what goes in the database)
@@ -38,11 +50,32 @@ export interface StoredEvent<T extends TurnEvent = TurnEvent> {
   sessionId: string
   type: T['type']
   data: T['data']
+  /** Tree node id. For v2 `message` events this equals the messageId. */
+  eventId?: string
+  /** Id of the parent tree node (null/undefined for the tree root). */
+  parentId?: string | null
 }
 
 // ============================================================================
 // Turn Events (discriminated union)
 // ============================================================================
+
+/**
+ * The optional fields shared by message-shaped event data (message.start,
+ * merged message, merge buffers). Single source of truth so the variants
+ * never drift apart.
+ */
+export interface MessageOptionalData {
+  contextWindowId?: string
+  subAgentId?: string
+  subAgentType?: string
+  isSystemGenerated?: boolean
+  messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed' | 'workflow-started' | 'command'
+  isCompactionSummary?: boolean
+  tokenCount?: number
+  attachments?: Attachment[]
+  metadata?: { type: string; name: string; color: string; kind?: 'definition' | 'reminder' }
+}
 
 export type TurnEvent =
   // ----------------------------------------------------------------------------
@@ -68,16 +101,7 @@ export type TurnEvent =
         messageId: string
         role: 'user' | 'assistant' | 'system'
         content?: string // For user/system messages, content is known upfront
-        contextWindowId?: string
-        subAgentId?: string
-        subAgentType?: string
-        isSystemGenerated?: boolean
-        messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed' | 'workflow-started' | 'command'
-        isCompactionSummary?: boolean // True if this is the summary message after compaction
-        tokenCount?: number // Known upfront for user messages
-        attachments?: Attachment[] // Optional image attachments
-        metadata?: { type: string; name: string; color: string; kind?: 'definition' | 'reminder' } // For auto-prompt messages
-      }
+      } & MessageOptionalData
     }
   | {
       type: 'message.delta'
@@ -103,6 +127,28 @@ export type TurnEvent =
         partial?: boolean // True if interrupted
         tokenCount?: number // Final token count for assistant messages
       }
+    }
+
+  // ----------------------------------------------------------------------------
+  // Merged message (v2 tree persistence unit)
+  // A fully resolved message persisted as a single tree node. Carries the
+  // folded content/thinking and tool calls (without results - results are
+  // separate tool.result events so large payloads can be externalized).
+  // ----------------------------------------------------------------------------
+  | {
+      type: 'message'
+      data: {
+        messageId: string
+        role: 'user' | 'assistant' | 'system'
+        content: string
+        thinkingContent?: string
+        toolCalls?: ToolCall[]
+        stats?: MessageStats
+        segments?: MessageSegment[]
+        partial?: boolean
+        isComplete?: boolean
+        completeReason?: 'complete' | 'stopped' | 'error' | 'waiting_for_user' | 'truncated' | 'step_done'
+      } & MessageOptionalData
     }
 
   // ----------------------------------------------------------------------------
@@ -403,52 +449,9 @@ export type TurnEvent =
       }
     }
 
-  // ----------------------------------------------------------------------------
-  // Snapshots (agent end-of-turn)
-  // ----------------------------------------------------------------------------
-  | {
-      type: 'turn.snapshot'
-      data: SessionSnapshot
-    }
-
 // ============================================================================
-// Session Snapshot (full state at a point in time)
+// Session state fold types
 // ============================================================================
-
-export interface SessionSnapshot {
-  mode: SessionMode
-  phase: SessionPhase
-  isRunning: boolean
-
-  messages: SnapshotMessage[]
-  criteria: Criterion[]
-  metadataEntries: Record<string, import('../../shared/types.js').MetadataEntry[]>
-  contextState: ContextState
-  currentContextWindowId: string
-  todos: Todo[]
-  readFiles?: ReadFileEntry[]
-  cachedSystemPrompt?: string
-  dynamicContextHash?: string
-  snapshotSeq: number
-  snapshotAt: number
-
-  sessionInit?: {
-    projectId: string
-    workdir: string
-    contextWindowId: string
-    maxTokens?: number
-  }
-  sessionTitle?: string
-  preparingToolCalls?: PreparingToolCall[]
-  visionFallbacks?: VisionFallback[]
-  formatRetries?: FormatRetry[]
-  pendingUserInput?: PendingUserInput
-  taskStats?: TaskStats
-  messageStats?: MessageStatsEntry[]
-  pendingConfirmations?: PendingPathConfirmation[]
-  contextWindows?: CompactionRecord[]
-  waitingWorkflow?: WorkflowWaitingPayload
-}
 
 /**
  * Entry in the file read cache
@@ -524,7 +527,7 @@ export interface CompactionRecord {
  * Message in a snapshot - fully resolved with tool results
  * This is what the frontend stores in state
  */
-export interface SnapshotMessage {
+export interface FoldedMessage {
   id: string
   role: 'user' | 'assistant' | 'system' | 'tool'
   content: string

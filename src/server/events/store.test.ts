@@ -1,35 +1,95 @@
 /**
- * EventStore Tests (TDD)
+ * EventStore Tests (v3 conversation tree)
  *
- * These tests define the expected behavior of the EventStore.
- * The EventStore is the single source of truth for session events.
+ * Sessions are (tree_id, cursor_event_id) over a shared tree of events.
+ * Streaming chunks are ephemeral; a message is persisted once as a single
+ * `message` node. Branches fork at message boundaries; forks share the tree
+ * (O(1)); large payloads are externalized to blobs.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import Database from 'better-sqlite3'
-import { mkdtempSync, rmSync, existsSync, statSync, writeFileSync, utimesSync } from 'node:fs'
-import { join } from 'node:path'
-import { tmpdir } from 'node:os'
 import { EventStore, initEventStore, getStaleRunningSessionIds } from './store.js'
-import { SETTINGS_KEYS } from '../db/settings.js'
-import type { TurnEvent, StoredEvent, SessionSnapshot } from './types.js'
+import type { TurnEvent, StoredEvent } from './types.js'
+import type { ToolResult } from '../../shared/types.js'
+import { buildContextMessagesFromStoredEvents } from './folding.js'
+import { foldContextState } from './fold-state.js'
 
-describe('EventStore', () => {
+const SESSIONS_TABLE = `
+  CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    workdir TEXT,
+    is_running INTEGER DEFAULT 0,
+    tree_id TEXT,
+    cursor_event_id TEXT,
+    message_count INTEGER DEFAULT 0,
+    updated_at TEXT
+  )
+`
+
+function insertSession(db: Database.Database, id: string, opts?: { treeId?: string; cursor?: string | null }) {
+  db.prepare(
+    `INSERT INTO sessions (id, project_id, is_running, tree_id, cursor_event_id, updated_at) VALUES (?, 'p', 0, ?, ?, ?)`,
+  ).run(id, opts?.treeId ?? id, opts?.cursor ?? null, new Date().toISOString())
+}
+
+function getSessionCount(db: Database.Database, id: string): number {
+  const row = db.prepare(`SELECT message_count FROM sessions WHERE id = ?`).get(id) as { message_count: number }
+  return row?.message_count ?? 0
+}
+
+/** Drive a realistic assistant turn through the store's single append path. */
+function runAssistantTurn(
+  store: EventStore,
+  sessionId: string,
+  messageId: string,
+  chunks: TurnEvent[],
+  options?: { contextWindowId?: string },
+): void {
+  store.append(sessionId, {
+    type: 'message.start',
+    data: {
+      messageId,
+      role: 'assistant',
+      ...(options?.contextWindowId ? { contextWindowId: options.contextWindowId } : {}),
+    },
+  })
+  for (const chunk of chunks) store.append(sessionId, chunk)
+  store.append(sessionId, {
+    type: 'message.done',
+    data: { messageId, ...(chunks.length > 0 ? {} : {}) },
+  })
+}
+
+function userMessage(
+  store: EventStore,
+  sessionId: string,
+  content: string,
+  messageId?: string,
+  opts?: Record<string, unknown>,
+): string {
+  const id = messageId ?? crypto.randomUUID()
+  store.append(sessionId, {
+    type: 'message.start',
+    data: { messageId: id, role: 'user', content, ...opts },
+  })
+  store.append(sessionId, { type: 'message.done', data: { messageId: id } })
+  return id
+}
+
+function toolResult(store: EventStore, sessionId: string, messageId: string, toolCallId: string, result: object): void {
+  store.append(sessionId, { type: 'tool.result', data: { messageId, toolCallId, result: result as ToolResult } })
+}
+
+describe('EventStore (v3 tree)', () => {
   let db: Database.Database
   let store: EventStore
 
   beforeEach(() => {
-    // In-memory database for testing
     db = new Database(':memory:')
+    db.exec(SESSIONS_TABLE)
     store = new EventStore(db)
-    // Create sessions table for tests that need it
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS sessions (
-        id TEXT PRIMARY KEY,
-        is_running INTEGER DEFAULT 0,
-        updated_at INTEGER
-      )
-    `)
   })
 
   afterEach(() => {
@@ -37,1912 +97,905 @@ describe('EventStore', () => {
   })
 
   // ============================================================================
-  // Core append/retrieve
+  // Merge semantics
   // ============================================================================
 
-  describe('append', () => {
-    it('should append an event and return it with seq and timestamp', () => {
-      const event: TurnEvent = {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
-      }
-
-      const stored = store.append('session-1', event)
-
-      expect(stored.seq).toBe(1)
-      expect(stored.sessionId).toBe('session-1')
-      expect(stored.type).toBe('message.start')
-      expect(stored.data).toEqual(event.data)
-      expect(stored.timestamp).toBeGreaterThan(0)
-    })
-
-    it('should auto-increment seq per session', () => {
-      const event1: TurnEvent = {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
-      }
-      const event2: TurnEvent = {
-        type: 'message.delta',
-        data: { messageId: 'msg-1', content: ' world' },
-      }
-
-      const stored1 = store.append('session-1', event1)
-      const stored2 = store.append('session-1', event2)
-
-      expect(stored1.seq).toBe(1)
-      expect(stored2.seq).toBe(2)
-    })
-
-    it('should maintain separate seq per session', () => {
-      const event: TurnEvent = {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
-      }
-
-      const stored1 = store.append('session-1', event)
-      const stored2 = store.append('session-2', event)
-      const stored3 = store.append('session-1', event)
-
-      expect(stored1.seq).toBe(1)
-      expect(stored2.seq).toBe(1) // Different session, starts at 1
-      expect(stored3.seq).toBe(2)
-    })
-  })
-
-  describe('appendBatch', () => {
-    it('should append multiple events atomically', () => {
-      const events: TurnEvent[] = [
-        { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hi' } },
-        { type: 'message.delta', data: { messageId: 'msg-1', content: ' there' } },
-        { type: 'message.done', data: { messageId: 'msg-1' } },
-      ]
-
-      const stored = store.appendBatch('session-1', events)
-
-      expect(stored).toHaveLength(3)
-      expect(stored[0]!.seq).toBe(1)
-      expect(stored[1]!.seq).toBe(2)
-      expect(stored[2]!.seq).toBe(3)
-    })
-
-    it('should continue sequence after previous events', () => {
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-0', role: 'user', content: 'First' },
+  describe('message merging', () => {
+    it('persists a full assistant turn as ONE message node', () => {
+      insertSession(db, 's1')
+      store.append('s1', {
+        type: 'session.initialized',
+        data: { projectId: 'p', workdir: '/w', contextWindowId: 'w1' },
       })
-
-      const events: TurnEvent[] = [
-        { type: 'message.start', data: { messageId: 'msg-1', role: 'assistant' } },
-        { type: 'message.delta', data: { messageId: 'msg-1', content: 'Hello' } },
-      ]
-
-      const stored = store.appendBatch('session-1', events)
-
-      expect(stored[0]!.seq).toBe(2)
-      expect(stored[1]!.seq).toBe(3)
-    })
-  })
-
-  // ============================================================================
-  // Retrieval
-  // ============================================================================
-
-  describe('getEvents', () => {
-    it('should return all events for a session in order', () => {
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
-      })
-      store.append('session-1', {
-        type: 'message.delta',
-        data: { messageId: 'msg-1', content: ' world' },
-      })
-      store.append('session-2', {
-        type: 'message.start',
-        data: { messageId: 'msg-2', role: 'user', content: 'Other session' },
-      })
-
-      const events = store.getEvents('session-1')
-
-      expect(events).toHaveLength(2)
-      expect(events[0]!.type).toBe('message.start')
-      expect(events[1]!.type).toBe('message.delta')
-    })
-
-    it('should return events from a specific seq', () => {
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
-      })
-      store.append('session-1', {
-        type: 'message.delta',
-        data: { messageId: 'msg-1', content: ' world' },
-      })
-      store.append('session-1', {
-        type: 'message.done',
-        data: { messageId: 'msg-1' },
-      })
-
-      const events = store.getEvents('session-1', 2)
-
-      expect(events).toHaveLength(2)
-      expect(events[0]!.seq).toBe(2)
-      expect(events[1]!.seq).toBe(3)
-    })
-
-    it('should return empty array for non-existent session', () => {
-      const events = store.getEvents('non-existent')
-      expect(events).toHaveLength(0)
-    })
-  })
-
-  describe('getLatestSeq', () => {
-    it('should return the latest seq for a session', () => {
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
-      })
-      store.append('session-1', {
-        type: 'message.delta',
-        data: { messageId: 'msg-1', content: ' world' },
-      })
-
-      expect(store.getLatestSeq('session-1')).toBe(2)
-    })
-
-    it('should return undefined for non-existent session', () => {
-      expect(store.getLatestSeq('non-existent')).toBeUndefined()
-    })
-  })
-
-  // ============================================================================
-  // Snapshots
-  // ============================================================================
-
-  describe('getLatestSnapshot', () => {
-    it('should return the latest snapshot event', () => {
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
-      })
-      store.append('session-1', {
-        type: 'turn.snapshot',
-        data: {
-          mode: 'planner',
-          phase: 'plan',
-          isRunning: false,
-          messages: [],
-          criteria: [],
-          metadataEntries: {},
-          contextState: {
-            currentTokens: 0,
-            maxTokens: 200000,
-            compactionCount: 0,
-            dangerZone: false,
-            canCompact: false,
-            dynamicContextChanged: false,
-          },
-          currentContextWindowId: 'window-1',
-          todos: [],
-          readFiles: [],
-          snapshotSeq: 1,
-          snapshotAt: Date.now(),
+      const messageId = 'msg-a1'
+      runAssistantTurn(store, 's1', messageId, [
+        { type: 'message.thinking', data: { messageId, content: 'let me think' } },
+        { type: 'message.delta', data: { messageId, content: 'Hello ' } },
+        { type: 'message.delta', data: { messageId, content: 'world' } },
+        {
+          type: 'tool.call',
+          data: { messageId, toolCall: { id: 'tc1', name: 'read_file', arguments: { path: 'a.ts' } } },
         },
-      })
-      store.append('session-1', {
-        type: 'message.delta',
-        data: { messageId: 'msg-1', content: ' world' },
-      })
-      store.append('session-1', {
-        type: 'turn.snapshot',
-        data: {
-          mode: 'builder',
-          phase: 'build',
-          isRunning: true,
-          messages: [],
-          criteria: [],
-          metadataEntries: {},
-          contextState: {
-            currentTokens: 1000,
-            maxTokens: 200000,
-            compactionCount: 0,
-            dangerZone: false,
-            canCompact: false,
-            dynamicContextChanged: false,
-          },
-          currentContextWindowId: 'window-1',
-          todos: [],
-          readFiles: [],
-          snapshotSeq: 3,
-          snapshotAt: Date.now(),
-        },
-      })
+      ])
 
-      const snapshot = store.getLatestSnapshot('session-1')
+      const events = store.getEvents('s1')
+      const messages = events.filter((e) => e.type === 'message')
+      expect(messages).toHaveLength(1)
+      const msg = messages[0]!
+      expect(msg.data).toMatchObject({
+        messageId,
+        role: 'assistant',
+        content: 'Hello world',
+        thinkingContent: 'let me think',
+      })
+      const toolCalls = (msg.data as { toolCalls: Array<{ id: string; name: string }> }).toolCalls
+      expect(toolCalls).toEqual([{ id: 'tc1', name: 'read_file', arguments: { path: 'a.ts' } }])
 
-      expect(snapshot).toBeDefined()
-      expect(snapshot!.type).toBe('turn.snapshot')
-      expect(snapshot!.data.mode).toBe('builder')
-      expect(snapshot!.data.snapshotSeq).toBe(3)
+      // No chunk nodes persisted — only the merged message + tree root.
+      const types = events.map((e) => e.type)
+      expect(types).toEqual(['session.initialized', 'message'])
+      // The persisted node carries a real (non-ephemeral) seq.
+      expect(msg.seq).toBe(2)
+      expect(msg.eventId).toBe(messageId)
     })
 
-    it('should return undefined if no snapshots exist', () => {
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
-      })
+    it('persists a user message on start (no second node on done)', () => {
+      insertSession(db, 's1')
+      const id = userMessage(store, 's1', 'Hi there')
+      const events = store.getEvents('s1')
+      const messages = events.filter((e) => e.type === 'message')
+      expect(messages).toHaveLength(1)
+      expect(messages[0]!.data).toMatchObject({ messageId: id, role: 'user', content: 'Hi there' })
+    })
 
-      expect(store.getLatestSnapshot('session-1')).toBeUndefined()
+    it('tool results persist as their own nodes attached after the message', () => {
+      insertSession(db, 's1')
+      store.append('s1', {
+        type: 'session.initialized',
+        data: { projectId: 'p', workdir: '/w', contextWindowId: 'w1' },
+      })
+      userMessage(store, 's1', 'do it', 'u1')
+      runAssistantTurn(store, 's1', 'a1', [
+        { type: 'message.delta', data: { messageId: 'a1', content: 'ok' } },
+        {
+          type: 'tool.call',
+          data: { messageId: 'a1', toolCall: { id: 'tc1', name: 'run_command', arguments: { command: 'ls' } } },
+        },
+      ])
+      toolResult(store, 's1', 'a1', 'tc1', { success: true, output: 'file.txt' })
+
+      const events = store.getEvents('s1')
+      expect(events.map((e) => e.type)).toEqual(['session.initialized', 'message', 'message', 'tool.result'])
+      const tr = events[3]!
+      expect(tr.eventId).toBe('tr_tc1')
+      expect(tr.data).toMatchObject({ messageId: 'a1', toolCallId: 'tc1' })
+      expect((tr.data as { result: { output: string } }).result.output).toBe('file.txt')
+    })
+
+    it('stores the merged message timestamp at message START (not done)', () => {
+      vi.useFakeTimers()
+      try {
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
+        insertSession(db, 's1')
+        store.append('s1', {
+          type: 'session.initialized',
+          data: { projectId: 'p', workdir: '/w', contextWindowId: 'w1' },
+        })
+        store.append('s1', { type: 'message.start', data: { messageId: 'a1', role: 'assistant' } })
+        vi.setSystemTime(new Date('2026-01-01T00:01:00Z'))
+        store.append('s1', { type: 'message.delta', data: { messageId: 'a1', content: 'streaming' } })
+        vi.setSystemTime(new Date('2026-01-01T00:02:00Z'))
+        store.append('s1', { type: 'message.done', data: { messageId: 'a1' } })
+
+        const msg = store.getEvents('s1').find((e) => e.type === 'message')!
+        expect(msg.timestamp).toBe(Date.parse('2026-01-01T00:00:00Z'))
+      } finally {
+        vi.useRealTimers()
+      }
     })
   })
 
-  describe('getEventsSinceSnapshot', () => {
-    it('should return snapshot + events since', () => {
-      store.append('session-1', {
+  describe('injected messages (mid-turn user messages)', () => {
+    it('persists a mid-turn injected message after the merged assistant message', () => {
+      insertSession(db, 's1')
+      store.append('s1', {
+        type: 'session.initialized',
+        data: { projectId: 'p', workdir: '/w', contextWindowId: 'w1' },
+      })
+      userMessage(store, 's1', 'create workspace', 'u1', { contextWindowId: 'w1' })
+
+      store.append('s1', {
         type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
+        data: { messageId: 'a1', role: 'assistant', contextWindowId: 'w1' },
       })
-      store.append('session-1', {
-        type: 'turn.snapshot',
-        data: {
-          mode: 'planner',
-          phase: 'plan',
-          isRunning: false,
-          messages: [],
-          criteria: [],
-          metadataEntries: {},
-          contextState: {
-            currentTokens: 0,
-            maxTokens: 200000,
-            compactionCount: 0,
-            dangerZone: false,
-            canCompact: false,
-            dynamicContextChanged: false,
-          },
-          currentContextWindowId: 'window-1',
-          todos: [],
-          readFiles: [],
-          snapshotSeq: 1,
-          snapshotAt: Date.now(),
-        },
+      store.append('s1', {
+        type: 'tool.call',
+        data: { messageId: 'a1', toolCall: { id: 'tc1', name: 'workspace', arguments: { action: 'create' } } },
       })
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-2', role: 'assistant' },
-      })
-      store.append('session-1', {
-        type: 'message.delta',
-        data: { messageId: 'msg-2', content: 'Hi!' },
-      })
-
-      const { snapshot, events } = store.getEventsSinceSnapshot('session-1')
-
-      expect(snapshot).toBeDefined()
-      expect(snapshot!.mode).toBe('planner')
-      expect(events).toHaveLength(2) // Events AFTER snapshot (seq 3, 4)
-      expect(events[0]!.type).toBe('message.start')
-      expect(events[1]!.type).toBe('message.delta')
-    })
-
-    it('should return all events if no snapshot exists', () => {
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
-      })
-      store.append('session-1', {
-        type: 'message.delta',
-        data: { messageId: 'msg-1', content: ' world' },
-      })
-
-      const { snapshot, events } = store.getEventsSinceSnapshot('session-1')
-
-      expect(snapshot).toBeUndefined()
-      expect(events).toHaveLength(2)
-    })
-  })
-
-  describe('getAllEvents', () => {
-    it('should return all events including synthetic from snapshot messages', () => {
-      // Events before snapshot
-      store.append('session-1', {
+      // A system-reminder user message injected during tool execution.
+      store.append('s1', {
         type: 'message.start',
         data: {
-          messageId: 'msg-1',
+          messageId: 'inj1',
           role: 'user',
-          content: 'Hello',
+          content: '<system-reminder>now in workspace</system-reminder>',
           isSystemGenerated: true,
           messageKind: 'auto-prompt',
-          metadata: { type: 'agent', name: 'Planner', color: '#a855f7', kind: 'definition' },
+          contextWindowId: 'w1',
         },
       })
-      store.append('session-1', { type: 'message.done', data: { messageId: 'msg-1' } })
+      store.append('s1', { type: 'message.done', data: { messageId: 'inj1' } })
 
-      // Snapshot with messages (simulates after cleanup)
-      store.append('session-1', {
-        type: 'turn.snapshot',
-        data: {
-          mode: 'planner',
-          phase: 'plan',
-          isRunning: false,
-          messages: [
-            {
-              id: 'msg-1',
-              role: 'user',
-              content: 'Hello',
-              timestamp: Date.now(),
-              isSystemGenerated: true,
-              messageKind: 'auto-prompt',
-              metadata: { type: 'agent', name: 'Planner', color: '#a855f7', kind: 'definition' },
-            },
-          ],
-          criteria: [],
-          metadataEntries: {},
-          contextState: {
-            currentTokens: 0,
-            maxTokens: 200000,
-            compactionCount: 0,
-            dangerZone: false,
-            canCompact: false,
-            dynamicContextChanged: false,
-          },
-          currentContextWindowId: 'window-1',
-          todos: [],
-          readFiles: [],
-          snapshotSeq: 2,
-          snapshotAt: Date.now(),
+      // In-flight view: the streaming assistant plus the complete injection.
+      const inflight = store.getInflightMessages('s1')
+      expect(inflight.map((m) => m.id)).toEqual(['a1', 'inj1'])
+      expect(inflight[0]).toMatchObject({ role: 'assistant', isStreaming: true })
+      expect(inflight[1]).toMatchObject({
+        role: 'user',
+        isStreaming: false,
+        content: '<system-reminder>now in workspace</system-reminder>',
+      })
+
+      store.append('s1', { type: 'message.delta', data: { messageId: 'a1', content: 'done' } })
+      toolResult(store, 's1', 'a1', 'tc1', { success: true, output: 'created' })
+      store.append('s1', { type: 'message.done', data: { messageId: 'a1' } })
+      expect(store.getInflightMessages('s1')).toHaveLength(0)
+
+      // Path order matches the v1 live order: u1 → a1 → injected → result.
+      const events = store.getEvents('s1')
+      expect(events.map((e) => e.eventId)).toEqual(['evt_1', 'u1', 'a1', 'inj1', 'tr_tc1'])
+
+      // Context parity with the v1 chunk encoding: the tool message is
+      // inserted between the assistant and the injected reminder.
+      expect(buildContextMessagesFromStoredEvents(events, 'w1')).toEqual([
+        { role: 'user', content: 'create workspace' },
+        {
+          role: 'assistant',
+          content: 'done',
+          toolCalls: [{ id: 'tc1', name: 'workspace', arguments: { action: 'create' } }],
         },
-      })
-
-      // Events after snapshot
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-2', role: 'assistant', content: 'Hi!' },
-      })
-      store.append('session-1', { type: 'message.done', data: { messageId: 'msg-2' } })
-
-      const allEvents = store.getAllEvents('session-1')
-
-      // Should include synthetic events from snapshot + real events after
-      const startEvents = allEvents.filter((e) => e.type === 'message.start')
-      expect(startEvents.length).toBe(2) // msg-1 (synthetic) + msg-2 (real)
-
-      // Synthetic events have seq=0
-      const syntheticStarts = startEvents.filter((e) => e.seq === 0)
-      expect(syntheticStarts).toHaveLength(1)
-      const syntheticData = syntheticStarts[0]!.data as { messageId: string; metadata?: { kind?: string } }
-      expect(syntheticData.messageId).toBe('msg-1')
-      expect(syntheticData.metadata?.kind).toBe('definition')
-    })
-
-    it('should return all real events if no snapshot exists', () => {
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
-      })
-      store.append('session-1', { type: 'message.done', data: { messageId: 'msg-1' } })
-
-      const allEvents = store.getAllEvents('session-1')
-      expect(allEvents).toHaveLength(2)
-      expect(allEvents[0]!.seq).toBe(1)
-      expect(allEvents[1]!.seq).toBe(2)
+        { role: 'tool', content: 'created', toolCallId: 'tc1' },
+        { role: 'user', content: '<system-reminder>now in workspace</system-reminder>' },
+      ])
     })
   })
 
-  // ============================================================================
-  // Subscriptions (live streaming)
-  // ============================================================================
-
-  describe('subscribe', () => {
-    it('should receive events as they are appended', async () => {
-      const { iterator, unsubscribe } = store.subscribe('session-1')
-      const received: StoredEvent[] = []
-
-      // Start collecting events in background
-      const collectPromise = (async () => {
+  describe('live notification parity', () => {
+    it('subscribers see the original chunk events, never the merged node', async () => {
+      insertSession(db, 's1')
+      store.append('s1', {
+        type: 'session.initialized',
+        data: { projectId: 'p', workdir: '/w', contextWindowId: 'w1' },
+      })
+      const { iterator, unsubscribe } = store.subscribe('s1')
+      const received: string[] = []
+      const consumer = (async () => {
         for await (const event of iterator) {
-          received.push(event)
-          if (received.length >= 2) break
+          received.push(event.type)
+          if (received.length === 4) break
         }
       })()
-
-      // Give the iterator time to set up
-      await new Promise((r) => setTimeout(r, 10))
-
-      // Append events
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
-      })
-      store.append('session-1', {
-        type: 'message.delta',
-        data: { messageId: 'msg-1', content: ' world' },
-      })
-
-      await collectPromise
+      runAssistantTurn(store, 's1', 'a1', [{ type: 'message.delta', data: { messageId: 'a1', content: 'hi' } }])
+      toolResult(store, 's1', 'a1', 'tc1', { success: true })
+      await consumer
       unsubscribe()
 
-      expect(received).toHaveLength(2)
-      expect(received[0]!.type).toBe('message.start')
-      expect(received[1]!.type).toBe('message.delta')
+      expect(received).toEqual(['message.start', 'message.delta', 'message.done', 'tool.result'])
+      // No merged `message` event is ever pushed to live clients.
+      expect(received).not.toContain('message')
     })
 
-    it('should only receive events for subscribed session', async () => {
-      const { iterator, unsubscribe } = store.subscribe('session-1')
-      const received: StoredEvent[] = []
+    it('exposes in-flight messages until done, then not', () => {
+      insertSession(db, 's1')
+      store.append('s1', {
+        type: 'session.initialized',
+        data: { projectId: 'p', workdir: '/w', contextWindowId: 'w1' },
+      })
+      store.append('s1', { type: 'message.start', data: { messageId: 'a1', role: 'assistant' } })
+      store.append('s1', { type: 'message.delta', data: { messageId: 'a1', content: 'partial ' } })
 
-      const collectPromise = (async () => {
+      const inflight = store.getInflightMessages('s1')
+      expect(inflight).toHaveLength(1)
+      expect(inflight[0]).toMatchObject({ id: 'a1', role: 'assistant', content: 'partial ', isStreaming: true })
+
+      store.append('s1', { type: 'message.done', data: { messageId: 'a1' } })
+      expect(store.getInflightMessages('s1')).toHaveLength(0)
+    })
+
+    it('replays path events on subscribe(fromSeq) for reconnect catch-up', async () => {
+      insertSession(db, 's1')
+      store.append('s1', {
+        type: 'session.initialized',
+        data: { projectId: 'p', workdir: '/w', contextWindowId: 'w1' },
+      })
+      userMessage(store, 's1', 'one', 'u1')
+      userMessage(store, 's1', 'two', 'u2')
+
+      const { iterator, unsubscribe } = store.subscribe('s1', 2)
+      const replayed: string[] = []
+      const consumer = (async () => {
         for await (const event of iterator) {
-          received.push(event)
-          if (received.length >= 1) break
+          replayed.push(event.type)
+          break
         }
       })()
-
-      await new Promise((r) => setTimeout(r, 10))
-
-      // Append to different session first
-      store.append('session-2', {
-        type: 'message.start',
-        data: { messageId: 'msg-other', role: 'user', content: 'Other' },
-      })
-
-      // Then to subscribed session
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
-      })
-
-      await collectPromise
+      await consumer
       unsubscribe()
-
-      expect(received).toHaveLength(1)
-      expect(received[0]!.sessionId).toBe('session-1')
-    })
-
-    it('should support multiple concurrent subscribers', async () => {
-      const sub1 = store.subscribe('session-1')
-      const sub2 = store.subscribe('session-1')
-      const received1: StoredEvent[] = []
-      const received2: StoredEvent[] = []
-
-      const collect1 = (async () => {
-        for await (const event of sub1.iterator) {
-          received1.push(event)
-          if (received1.length >= 1) break
-        }
-      })()
-
-      const collect2 = (async () => {
-        for await (const event of sub2.iterator) {
-          received2.push(event)
-          if (received2.length >= 1) break
-        }
-      })()
-
-      await new Promise((r) => setTimeout(r, 10))
-
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
-      })
-
-      await Promise.all([collect1, collect2])
-      sub1.unsubscribe()
-      sub2.unsubscribe()
-
-      expect(received1).toHaveLength(1)
-      expect(received2).toHaveLength(1)
-    })
-
-    it('should handle unsubscribe during notification without race condition', async () => {
-      const { iterator: iter1, unsubscribe: unsub1 } = store.subscribe('session-1')
-      const { iterator: iter2, unsubscribe: unsub2 } = store.subscribe('session-1')
-      const received1: StoredEvent[] = []
-      const received2: StoredEvent[] = []
-
-      const collect1 = (async () => {
-        for await (const event of iter1) {
-          received1.push(event)
-          if (received1.length >= 1) break
-        }
-      })()
-
-      const collect2 = (async () => {
-        for await (const event of iter2) {
-          received2.push(event)
-          if (received2.length >= 1) break
-        }
-      })()
-
-      await new Promise((r) => setTimeout(r, 10))
-
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
-      })
-
-      await new Promise((r) => setTimeout(r, 10))
-
-      unsub1()
-      unsub2()
-
-      await Promise.all([collect1, collect2])
-
-      expect(received1).toHaveLength(1)
-      expect(received2).toHaveLength(1)
-    })
-
-    it('should replay events from a specific seq on subscribe', async () => {
-      // Pre-populate events
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
-      })
-      store.append('session-1', {
-        type: 'message.delta',
-        data: { messageId: 'msg-1', content: ' world' },
-      })
-      store.append('session-1', {
-        type: 'message.done',
-        data: { messageId: 'msg-1' },
-      })
-
-      // Subscribe from seq 2
-      const { iterator, unsubscribe } = store.subscribe('session-1', 2)
-      const received: StoredEvent[] = []
-
-      const collectPromise = (async () => {
-        for await (const event of iterator) {
-          received.push(event)
-          if (received.length >= 3) break
-        }
-      })()
-
-      // Add one more event
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-2', role: 'assistant' },
-      })
-
-      await collectPromise
-      unsubscribe()
-
-      // Should get seq 2, 3 (replayed) and seq 4 (live)
-      expect(received).toHaveLength(3)
-      expect(received[0]!.seq).toBe(2)
-      expect(received[1]!.seq).toBe(3)
-      expect(received[2]!.seq).toBe(4)
-    })
-
-    it('should stop iteration when unsubscribed', async () => {
-      const { iterator, unsubscribe } = store.subscribe('session-1')
-      const received: StoredEvent[] = []
-
-      const collectPromise = (async () => {
-        for await (const event of iterator) {
-          received.push(event)
-        }
-      })()
-
-      await new Promise((r) => setTimeout(r, 10))
-
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
-      })
-
-      // Give it time to receive
-      await new Promise((r) => setTimeout(r, 10))
-
-      // Unsubscribe
-      unsubscribe()
-
-      // Should complete without hanging
-      await collectPromise
-
-      expect(received).toHaveLength(1)
+      expect(replayed[0]).toBe('message')
     })
   })
 
   // ============================================================================
-  // Cleanup
+  // Cursors, branches, forks
   // ============================================================================
 
-  describe('deleteSession', () => {
-    it('should delete all events for a session', () => {
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
+  describe('cursors and branching', () => {
+    function buildBaseTree(): void {
+      insertSession(db, 's1')
+      store.append('s1', {
+        type: 'session.initialized',
+        data: { projectId: 'p', workdir: '/w', contextWindowId: 'w1' },
       })
-      store.append('session-2', {
-        type: 'message.start',
-        data: { messageId: 'msg-2', role: 'user', content: 'Other' },
-      })
-
-      store.deleteSession('session-1')
-
-      expect(store.getEvents('session-1')).toHaveLength(0)
-      expect(store.getEvents('session-2')).toHaveLength(1)
-    })
-
-    it('should notify subscribers that session is deleted', async () => {
-      const { iterator, unsubscribe } = store.subscribe('session-1')
-      let completed = false
-
-      const collectPromise = (async () => {
-        for await (const _event of iterator) {
-          // Should not receive anything
-        }
-        completed = true
-      })()
-
-      await new Promise((r) => setTimeout(r, 10))
-
-      store.deleteSession('session-1')
-
-      await collectPromise
-      unsubscribe()
-
-      expect(completed).toBe(true)
-    })
-  })
-
-  // ============================================================================
-  // Edge cases
-  // ============================================================================
-
-  describe('edge cases', () => {
-    it('should handle empty batch', () => {
-      const stored = store.appendBatch('session-1', [])
-      expect(stored).toHaveLength(0)
-    })
-
-    it('should preserve event data integrity through JSON serialization', () => {
-      const complexData = {
-        messageId: 'msg-1',
-        toolCall: {
-          id: 'call-1',
-          name: 'read_file',
-          arguments: {
-            path: '/some/path',
-            nested: { key: 'value', num: 42, bool: true, arr: [1, 2, 3] },
-          },
-        },
-      }
-
-      store.append('session-1', { type: 'tool.call', data: complexData })
-
-      const events = store.getEvents('session-1')
-      expect(events[0]!.data).toEqual(complexData)
-    })
-
-    it('should validate sessionId is non-empty string', () => {
-      expect(() =>
-        store.append('', { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hello' } }),
-      ).toThrow('Invalid sessionId: must be a non-empty string')
-    })
-
-    it('should validate event has type property', () => {
-      expect(() =>
-        store.append('session-1', { type: '', data: { messageId: 'msg-1', role: 'user', content: 'Hello' } } as any),
-      ).toThrow('Invalid event: must have a type property')
-    })
-
-    it('should validate event has data object', () => {
-      expect(() => store.append('session-1', { type: 'message.start' } as any)).toThrow(
-        'Invalid event: must have data object',
-      )
-    })
-  })
-
-  // ============================================================================
-  // Tombstoning
-  // ============================================================================
-
-  describe('tombstoneEvents', () => {
-    it('should hide tombstoned events from getEvents', () => {
-      const e1 = store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
-      })
-      const e2 = store.append('session-1', { type: 'message.done', data: { messageId: 'msg-1' } })
-      const e3 = store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-2', role: 'user', content: 'World' },
-      })
-
-      store.tombstoneEvents('session-1', [e2.seq])
-
-      const events = store.getEvents('session-1')
-      expect(events).toHaveLength(2)
-      expect(events[0]!.seq).toBe(e1.seq)
-      expect(events[1]!.seq).toBe(e3.seq)
-    })
-
-    it('should not affect other sessions', () => {
-      const e1 = store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
-      })
-      const e2 = store.append('session-2', {
-        type: 'message.start',
-        data: { messageId: 'msg-2', role: 'user', content: 'World' },
-      })
-
-      store.tombstoneEvents('session-1', [e1.seq])
-
-      const events1 = store.getEvents('session-1')
-      expect(events1).toHaveLength(0)
-
-      const events2 = store.getEvents('session-2')
-      expect(events2).toHaveLength(1)
-      expect(events2[0]!.seq).toBe(e2.seq)
-    })
-
-    it('should handle tombstoning non-existent seqs gracefully', () => {
-      store.append('session-1', { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hello' } })
-
-      expect(() => store.tombstoneEvents('session-1', [999])).not.toThrow()
-    })
-
-    it('should return the number of events tombstoned', () => {
-      const e1 = store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
-      })
-      store.append('session-1', { type: 'message.done', data: { messageId: 'msg-1' } })
-
-      const count = store.tombstoneEvents('session-1', [e1.seq])
-      expect(count).toBe(1)
-    })
-
-    it('should not tombstone already tombstoned events', () => {
-      const e1 = store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
-      })
-
-      store.tombstoneEvents('session-1', [e1.seq])
-      const count = store.tombstoneEvents('session-1', [e1.seq])
-
-      expect(count).toBe(0)
-    })
-  })
-})
-
-describe('initEventStore', () => {
-  it('should reset stale running sessions on startup', () => {
-    // This simulates a server crash/restart scenario:
-    // 1. Server was running, session was in running state
-    // 2. Server crashed (no clean shutdown)
-    // 3. Server restarts and loads the session - it should reset to not running
-
-    const db = new Database(':memory:')
-
-    // Create sessions table (normally done by db migrations)
-    db.exec(`
-      CREATE TABLE sessions (
-        id TEXT PRIMARY KEY,
-        project_id TEXT NOT NULL,
-        workdir TEXT NOT NULL,
-        is_running INTEGER NOT NULL DEFAULT 0
-      )
-    `)
-
-    // Create a session
-    db.prepare(`INSERT INTO sessions (id, project_id, workdir, is_running) VALUES (?, ?, ?, 1)`).run(
-      'session-1',
-      'project-1',
-      '/tmp/test',
-    )
-
-    // Manually create the EventStore first (simulates first server run)
-    const firstStore = new EventStore(db)
-
-    // Simulate: session was running when server crashed
-    firstStore.append('session-1', { type: 'running.changed', data: { isRunning: true } })
-
-    // Verify the session shows as running
-    const eventsBeforeRestart = firstStore.getEvents('session-1')
-    const lastRunningBefore = eventsBeforeRestart.filter((e) => e.type === 'running.changed').pop()
-    expect((lastRunningBefore?.data as { isRunning: boolean }).isRunning).toBe(true)
-
-    // Now simulate server restart by calling initEventStore
-    // This should detect the stale running state and emit a false event
-    const restartedStore = initEventStore(db)
-
-    // Check that a running.changed: false event was emitted
-    const eventsAfterRestart = restartedStore.getEvents('session-1')
-    const lastRunningAfter = eventsAfterRestart.filter((e) => e.type === 'running.changed').pop()
-    expect((lastRunningAfter?.data as { isRunning: boolean }).isRunning).toBe(false)
-
-    // Should have one more event than before
-    expect(eventsAfterRestart.length).toBe(eventsBeforeRestart.length + 1)
-
-    db.close()
-  })
-
-  it('records stale running session ids for boot auto-continuation', () => {
-    const db = new Database(':memory:')
-
-    db.exec(`
-      CREATE TABLE sessions (
-        id TEXT PRIMARY KEY,
-        project_id TEXT NOT NULL,
-        workdir TEXT NOT NULL,
-        is_running INTEGER NOT NULL DEFAULT 0
-      )
-    `)
-
-    db.prepare(`INSERT INTO sessions (id, project_id, workdir, is_running) VALUES (?, ?, ?, 1)`).run(
-      'session-stale',
-      'project-1',
-      '/tmp/test',
-    )
-    db.prepare(`INSERT INTO sessions (id, project_id, workdir, is_running) VALUES (?, ?, ?, 0)`).run(
-      'session-idle',
-      'project-1',
-      '/tmp/test',
-    )
-
-    const firstStore = new EventStore(db)
-    firstStore.append('session-stale', { type: 'running.changed', data: { isRunning: true } })
-    firstStore.append('session-idle', { type: 'running.changed', data: { isRunning: false } })
-
-    initEventStore(db)
-
-    const staleIds = getStaleRunningSessionIds()
-    expect(staleIds).toContain('session-stale')
-    expect(staleIds).not.toContain('session-idle')
-
-    db.close()
-  })
-
-  it('should not emit reset event for sessions already not running', () => {
-    const db = new Database(':memory:')
-
-    db.exec(`
-      CREATE TABLE sessions (
-        id TEXT PRIMARY KEY,
-        project_id TEXT NOT NULL,
-        workdir TEXT NOT NULL,
-        is_running INTEGER NOT NULL DEFAULT 0
-      )
-    `)
-
-    db.prepare(`INSERT INTO sessions (id, project_id, workdir, is_running) VALUES (?, ?, ?, 1)`).run(
-      'session-1',
-      'project-1',
-      '/tmp/test',
-    )
-
-    const firstStore = new EventStore(db)
-
-    // Session was properly stopped (running.changed: false)
-    firstStore.append('session-1', { type: 'running.changed', data: { isRunning: true } })
-    firstStore.append('session-1', { type: 'running.changed', data: { isRunning: false } })
-
-    const eventsBeforeRestart = firstStore.getEvents('session-1')
-
-    // Restart
-    const restartedStore = initEventStore(db)
-
-    // Should NOT have added any new events
-    const eventsAfterRestart = restartedStore.getEvents('session-1')
-    expect(eventsAfterRestart.length).toBe(eventsBeforeRestart.length)
-
-    db.close()
-  })
-
-  it('should handle sessions with no running.changed events', () => {
-    const db = new Database(':memory:')
-
-    db.exec(`
-      CREATE TABLE sessions (
-        id TEXT PRIMARY KEY,
-        project_id TEXT NOT NULL,
-        workdir TEXT NOT NULL,
-        is_running INTEGER NOT NULL DEFAULT 0
-      )
-    `)
-
-    db.prepare(`INSERT INTO sessions (id, project_id, workdir, is_running) VALUES (?, ?, ?, 0)`).run(
-      'session-1',
-      'project-1',
-      '/tmp/test',
-    )
-
-    const firstStore = new EventStore(db)
-
-    // Session has some events but no running.changed
-    firstStore.append('session-1', { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'hi' } })
-
-    const eventsBeforeRestart = firstStore.getEvents('session-1')
-
-    // Restart
-    const restartedStore = initEventStore(db)
-
-    // Should NOT have added any new events
-    const eventsAfterRestart = restartedStore.getEvents('session-1')
-    expect(eventsAfterRestart.length).toBe(eventsBeforeRestart.length)
-
-    db.close()
-  })
-
-  it('should clear is_running in DB on startup regardless of prior state', () => {
-    const db = new Database(':memory:')
-
-    db.exec(`
-      CREATE TABLE sessions (
-        id TEXT PRIMARY KEY,
-        project_id TEXT NOT NULL,
-        workdir TEXT NOT NULL,
-        is_running INTEGER NOT NULL DEFAULT 1
-      )
-    `)
-
-    // Insert session explicitly marked as running in DB
-    db.prepare(`INSERT INTO sessions (id, project_id, workdir, is_running) VALUES (?, ?, ?, 1)`).run(
-      'session-stale',
-      'project-1',
-      '/tmp/test',
-    )
-
-    // No running.changed events at all (crash happened mid-run, before first event)
-    // Init the event store (simulates server startup)
-    initEventStore(db)
-
-    // DB should have is_running cleared
-    const row = db.prepare(`SELECT is_running FROM sessions WHERE id = ?`).get('session-stale') as {
-      is_running: number
+      userMessage(store, 's1', 'first', 'u1')
+      runAssistantTurn(store, 's1', 'a1', [{ type: 'message.delta', data: { messageId: 'a1', content: 'ans1' } }])
     }
-    expect(row.is_running).toBe(0)
 
-    db.close()
-  })
-
-  it('should reject stale path confirmations on startup', () => {
-    const db = new Database(':memory:')
-
-    db.exec(`
-      CREATE TABLE sessions (
-        id TEXT PRIMARY KEY,
-        project_id TEXT NOT NULL,
-        workdir TEXT NOT NULL,
-        is_running INTEGER NOT NULL DEFAULT 0
-      )
-    `)
-
-    db.prepare(`INSERT INTO sessions (id, project_id, workdir, is_running) VALUES (?, ?, ?, 0)`).run(
-      'session-1',
-      'project-1',
-      '/tmp/test',
-    )
-
-    const firstStore = new EventStore(db)
-
-    // Simulate: a pending confirmation that was never responded to (server crash)
-    firstStore.append('session-1', {
-      type: 'path.confirmation_pending',
-      data: {
-        callId: 'stale-call-1',
-        tool: 'run_command',
-        paths: ['some command'],
-        workdir: '/tmp/test',
-        reason: 'dangerous_command',
-      },
-    })
-    // This one was responded to — should be skipped
-    firstStore.append('session-1', {
-      type: 'path.confirmation_pending',
-      data: {
-        callId: 'resolved-call',
-        tool: 'run_command',
-        paths: ['other command'],
-        workdir: '/tmp/test',
-        reason: 'dangerous_command',
-      },
-    })
-    firstStore.append('session-1', {
-      type: 'path.confirmation_responded',
-      data: { callId: 'resolved-call', approved: true, alwaysAllow: false },
+    it('advances the cursor (in DB and process) past every persisted node', () => {
+      buildBaseTree()
+      expect(store.getCursorEventId('s1')).toBe('a1')
+      const row = db.prepare(`SELECT cursor_event_id FROM sessions WHERE id = ?`).get('s1') as {
+        cursor_event_id: string
+      }
+      expect(row.cursor_event_id).toBe('a1')
     })
 
-    const eventsBefore = firstStore.getEvents('session-1')
-    const pendingBefore = eventsBefore.filter((e) => e.type === 'path.confirmation_pending')
-    const respondedBefore = eventsBefore.filter((e) => e.type === 'path.confirmation_responded')
-    expect(pendingBefore).toHaveLength(2)
-    expect(respondedBefore).toHaveLength(1)
+    it('resend creates a sibling node and moves the cursor (original branch survives)', () => {
+      buildBaseTree()
+      const siblingId = store.resendMessage('s1', 'u1', { content: 'first (edited)' })
 
-    // Restart — should reject the stale one
-    const restartedStore = initEventStore(db)
+      expect(store.getCursorEventId('s1')).toBe(siblingId)
+      const path = store.getEvents('s1')
+      const pathContents = path.map((e) => (e.type === 'message' ? (e.data as { content?: string }).content : e.type))
+      expect(pathContents).toEqual(['session.initialized', 'first (edited)'])
 
-    const eventsAfter = restartedStore.getEvents('session-1')
-    const pendingAfter = eventsAfter.filter((e) => e.type === 'path.confirmation_pending')
-    const respondedAfter = eventsAfter.filter((e) => e.type === 'path.confirmation_responded')
+      // The original u1 → a1 branch is still in the tree, exposed as a tip.
+      const tips = store.getBranchTips('s1')
+      const tipIds = tips.map((t) => t.eventId)
+      expect(tipIds).toContain('a1')
+      const a1Tip = tips.find((t) => t.eventId === 'a1')!
+      expect(a1Tip.preview).toContain('ans1')
+      expect(a1Tip.role).toBe('assistant')
 
-    // Stale confirmation should now have a responded event
-    expect(pendingAfter).toHaveLength(2) // original pending events remain
-    expect(respondedAfter).toHaveLength(2) // one new responded event
-
-    // Verify the new responded event is for the stale callId with approved:false
-    const staleResponded = respondedAfter.find((e) => (e.data as { callId: string }).callId === 'stale-call-1')
-    expect(staleResponded).toBeDefined()
-    expect((staleResponded!.data as { approved: boolean }).approved).toBe(false)
-
-    db.close()
-  })
-})
-
-// ============================================================================
-// Event cleanup tests
-// ============================================================================
-
-describe('EventStore - Event Cleanup', () => {
-  let db: Database.Database
-  let store: EventStore
-
-  beforeEach(() => {
-    db = new Database(':memory:')
-    store = new EventStore(db)
-  })
-
-  afterEach(() => {
-    db.close()
-  })
-
-  describe('deleteEventsUpToSeq', () => {
-    it('should delete events up to and including the given seq', () => {
-      // Append several events
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
-      })
-      store.append('session-1', {
-        type: 'message.delta',
-        data: { messageId: 'msg-1', content: ' world' },
-      })
-      store.append('session-1', {
-        type: 'message.done',
-        data: { messageId: 'msg-1' },
-      })
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-2', role: 'assistant', content: 'Hi' },
-      })
-
-      // Delete up to seq 2
-      const deletedCount = store.deleteEventsUpToSeq('session-1', 2)
-      expect(deletedCount).toBe(2)
-
-      // Remaining events should be seq 3 and 4
-      const remaining = store.getEvents('session-1')
-      expect(remaining).toHaveLength(2)
-      expect(remaining[0]!.seq).toBe(3)
-      expect(remaining[1]!.seq).toBe(4)
+      // Message count reflects the (shorter) active path.
+      expect(getSessionCount(db, 's1')).toBe(1) // only the sibling message
     })
 
-    it('should delete all events when upToSeq is the latest seq', () => {
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
-      })
-      store.append('session-1', {
-        type: 'message.done',
-        data: { messageId: 'msg-1' },
-      })
+    it('normalizes lifecycle-node leaves up to their message boundary in tips', () => {
+      buildBaseTree()
+      store.resendMessage('s1', 'u1', { content: 'first (edited)' })
+      // The sibling branch gets a reply, then a trailing lifecycle node...
+      runAssistantTurn(store, 's1', 'a1e', [{ type: 'message.delta', data: { messageId: 'a1e', content: 'ans1e' } }])
+      store.append('s1', { type: 'mode.changed', data: { mode: 'builder', auto: false } })
+      // ...and the session switches back to the original branch, abandoning it.
+      store.setCursor('s1', 'a1')
 
-      const deletedCount = store.deleteEventsUpToSeq('session-1', 2)
-      expect(deletedCount).toBe(2)
-
-      const remaining = store.getEvents('session-1')
-      expect(remaining).toHaveLength(0)
+      // ...so the abandoned branch's raw leaf is the mode.changed node. The
+      // tip must still point at the switchable message boundary (a1e).
+      const tips = store.getBranchTips('s1')
+      const tipIds = tips.map((t) => t.eventId)
+      expect(tipIds).toEqual(['a1e'])
+      expect(tips.find((t) => t.eventId === 'a1e')!.preview).toContain('ans1e')
+      expect(tips.find((t) => t.eventId === 'a1e')!.role).toBe('assistant')
     })
 
-    it('should return 0 when deleting up to seq 0', () => {
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
-      })
-
-      const deletedCount = store.deleteEventsUpToSeq('session-1', 0)
-      expect(deletedCount).toBe(0)
-
-      const remaining = store.getEvents('session-1')
-      expect(remaining).toHaveLength(1)
-    })
-
-    it('should not affect events from other sessions', () => {
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
-      })
-      store.append('session-2', {
-        type: 'message.start',
-        data: { messageId: 'msg-2', role: 'user', content: 'Hi' },
-      })
-
-      store.deleteEventsUpToSeq('session-1', 1)
-
-      const session1Events = store.getEvents('session-1')
-      const session2Events = store.getEvents('session-2')
-
-      expect(session1Events).toHaveLength(0)
-      expect(session2Events).toHaveLength(1)
-    })
-  })
-
-  describe('getLatestSnapshotSeq', () => {
-    it('should return the seq of the latest snapshot', () => {
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
-      })
-      store.append('session-1', {
-        type: 'turn.snapshot',
-        data: {
-          mode: 'planner',
-          phase: 'plan',
-          isRunning: false,
-          messages: [],
-          criteria: [],
-          metadataEntries: {},
-          contextState: {
-            currentTokens: 100,
-            maxTokens: 200000,
-            compactionCount: 0,
-            dangerZone: false,
-            canCompact: false,
-            dynamicContextChanged: false,
-          },
-          currentContextWindowId: 'window-1',
-          todos: [],
-          readFiles: [],
-          snapshotSeq: 2,
-          snapshotAt: Date.now(),
+    it('resend preserves attachments and context window of the original message', () => {
+      buildBaseTree()
+      const attachments = [
+        {
+          id: 'att1',
+          filename: 'a.png',
+          mimeType: 'image/png' as const,
+          size: 10,
+          data: 'data:image/png;base64,x',
         },
-      })
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-2', role: 'assistant', content: 'Hi' },
-      })
-
-      const latestSnapshotSeq = store.getLatestSnapshotSeq('session-1')
-      expect(latestSnapshotSeq).toBe(2)
+      ]
+      const id = store.resendMessage('s1', 'u1', { attachments })
+      const msg = store.getEvents('s1').find((e) => e.eventId === id)!
+      expect((msg.data as { attachments?: unknown[] }).attachments).toHaveLength(1)
     })
 
-    it('should return 0 when no snapshot exists', () => {
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
-      })
-
-      const latestSnapshotSeq = store.getLatestSnapshotSeq('session-1')
-      expect(latestSnapshotSeq).toBe(0)
+    it('refuses to resend assistant / system-generated messages', () => {
+      buildBaseTree()
+      expect(() => store.resendMessage('s1', 'a1')).toThrow(/Only plain user messages/)
+      userMessage(store, 's1', 'system note', 'sys1', { isSystemGenerated: true })
+      expect(() => store.resendMessage('s1', 'sys1')).toThrow(/Only plain user messages/)
     })
 
-    it('should return the latest snapshot seq when multiple snapshots exist', () => {
-      store.append('session-1', {
-        type: 'turn.snapshot',
-        data: {
-          mode: 'planner',
-          phase: 'plan',
-          isRunning: false,
-          messages: [],
-          criteria: [],
-          metadataEntries: {},
-          contextState: {
-            currentTokens: 100,
-            maxTokens: 200000,
-            compactionCount: 0,
-            dangerZone: false,
-            canCompact: false,
-            dynamicContextChanged: false,
-          },
-          currentContextWindowId: 'window-1',
-          todos: [],
-          readFiles: [],
-          snapshotSeq: 1,
-          snapshotAt: Date.now(),
-        },
-      })
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
-      })
-      store.append('session-1', {
-        type: 'turn.snapshot',
-        data: {
-          mode: 'builder',
-          phase: 'build',
-          isRunning: false,
-          messages: [],
-          criteria: [],
-          metadataEntries: {},
-          contextState: {
-            currentTokens: 200,
-            maxTokens: 200000,
-            compactionCount: 1,
-            dangerZone: false,
-            canCompact: false,
-            dynamicContextChanged: false,
-          },
-          currentContextWindowId: 'window-2',
-          todos: [],
-          readFiles: [],
-          snapshotSeq: 3,
-          snapshotAt: Date.now(),
-        },
-      })
+    it('fork is O(1): shares the tree, copies no events', () => {
+      buildBaseTree()
+      const before = db.prepare(`SELECT COUNT(*) as n FROM events`).get() as { n: number }
+      const treeId = store.getTreeId('s1')
 
-      const latestSnapshotSeq = store.getLatestSnapshotSeq('session-1')
-      expect(latestSnapshotSeq).toBe(3)
+      insertSession(db, 's2', { treeId, cursor: 'u1' })
+      store.setCursor('s2', 'u1')
+
+      const after = db.prepare(`SELECT COUNT(*) as n FROM events`).get() as { n: number }
+      expect(after.n).toBe(before.n) // nothing copied
+
+      // Fork path shares the exact same node ids as the source (no copies).
+      const forkPath = store.getEvents('s2')
+      const sourcePath = store.getEvents('s1')
+      expect(forkPath.map((e) => e.eventId)).toEqual(sourcePath.map((e) => e.eventId).slice(0, -1))
+
+      // The source's tail (a1) is a switchable tip from the fork.
+      const tips = store.getBranchTips('s2').map((t) => t.eventId)
+      expect(tips).toContain('a1')
+    })
+
+    it('setCursor validates message boundaries', () => {
+      buildBaseTree()
+      toolResult(store, 's1', 'a1', 'tc1', { success: true })
+      expect(() => store.setCursor('s1', 'tr_tc1')).toThrow(/message boundaries/)
+      expect(() => store.setCursor('s1', 'nope')).toThrow(/not found/)
+
+      store.setCursor('s1', 'u1')
+      expect(store.getCursorEventId('s1')).toBe('u1')
+      expect(store.getEvents('s1').map((e) => e.type)).toEqual(['session.initialized', 'message'])
+      expect(getSessionCount(db, 's1')).toBe(1)
+    })
+
+    it('maintains message_count for sessions sharing the tree', () => {
+      buildBaseTree()
+      const treeId = store.getTreeId('s1')
+      insertSession(db, 's2', { treeId, cursor: 'u1' })
+      store.setCursor('s2', 'u1')
+      expect(getSessionCount(db, 's1')).toBe(2) // u1 + a1
+      expect(getSessionCount(db, 's2')).toBe(1) // u1
+
+      // A new message appended by s1 only bumps s1 (s2's cursor was not the parent).
+      userMessage(store, 's1', 'second', 'u2')
+      expect(getSessionCount(db, 's1')).toBe(3)
+      expect(getSessionCount(db, 's2')).toBe(1)
+
+      // A fork whose cursor IS the append parent must not be bumped: the new
+      // node extends s1's path, not the fork's.
+      insertSession(db, 's3', { treeId, cursor: 'u2' })
+      store.setCursor('s3', 'u2')
+      expect(getSessionCount(db, 's3')).toBe(3) // u1 + a1 + u2
+      userMessage(store, 's1', 'third', 'u3')
+      expect(getSessionCount(db, 's1')).toBe(4)
+      expect(getSessionCount(db, 's3')).toBe(3) // path unchanged
     })
   })
 
-  describe('cleanup after snapshot', () => {
-    it('should keep only snapshot and current window events after cleanup', () => {
-      // Simulate a conversation with multiple turns
-      store.append('session-1', {
+  // ============================================================================
+  // Issue #334 regression: fork of a compacted session
+  // ============================================================================
+
+  describe('compaction + fork (issue #334)', () => {
+    it('fork at a closed-window message never re-injects discarded history', () => {
+      insertSession(db, 's1')
+      store.append('s1', {
         type: 'session.initialized',
-        data: { projectId: 'proj-1', workdir: '/tmp', contextWindowId: 'window-1' },
-      })
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
-      })
-      store.append('session-1', {
-        type: 'message.delta',
-        data: { messageId: 'msg-1', content: ' world' },
-      })
-      store.append('session-1', {
-        type: 'message.done',
-        data: { messageId: 'msg-1' },
-      })
-      store.append('session-1', {
-        type: 'turn.snapshot',
-        data: {
-          mode: 'planner',
-          phase: 'plan',
-          isRunning: false,
-          messages: [{ id: 'msg-1', role: 'user', content: 'Hello world', timestamp: Date.now() }],
-          criteria: [],
-          metadataEntries: {},
-          contextState: {
-            currentTokens: 100,
-            maxTokens: 200000,
-            compactionCount: 0,
-            dangerZone: false,
-            canCompact: false,
-            dynamicContextChanged: false,
-          },
-          currentContextWindowId: 'window-1',
-          todos: [],
-          readFiles: [],
-          snapshotSeq: 5,
-          snapshotAt: Date.now(),
-        },
-      })
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-2', role: 'assistant', content: 'Hi' },
-      })
-      store.append('session-1', {
-        type: 'message.done',
-        data: { messageId: 'msg-2' },
+        data: { projectId: 'p', workdir: '/w', contextWindowId: 'w1' },
       })
 
-      // Simulate cleanup: delete events before the snapshot (seq 1-4)
-      store.deleteEventsUpToSeq('session-1', 4)
-
-      // Should have snapshot (seq 5) and current window events (seq 6, 7)
-      const remaining = store.getEvents('session-1')
-      expect(remaining).toHaveLength(3)
-      expect(remaining[0]!.type).toBe('turn.snapshot')
-      expect(remaining[0]!.seq).toBe(5)
-      expect(remaining[1]!.type).toBe('message.start')
-      expect(remaining[2]!.type).toBe('message.done')
-    })
-
-    it('should not delete when snapshot is the first event', () => {
-      store.append('session-1', {
-        type: 'turn.snapshot',
-        data: {
-          mode: 'planner',
-          phase: 'plan',
-          isRunning: false,
-          messages: [],
-          criteria: [],
-          metadataEntries: {},
-          contextState: {
-            currentTokens: 100,
-            maxTokens: 200000,
-            compactionCount: 0,
-            dangerZone: false,
-            canCompact: false,
-            dynamicContextChanged: false,
-          },
-          currentContextWindowId: 'window-1',
-          todos: [],
-          readFiles: [],
-          snapshotSeq: 1,
-          snapshotAt: Date.now(),
-        },
-      })
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
-      })
-
-      // Try to delete events before seq 1 (should delete nothing)
-      store.deleteEventsUpToSeq('session-1', 0)
-
-      const remaining = store.getEvents('session-1')
-      expect(remaining).toHaveLength(2)
-    })
-  })
-
-  describe('consolidateSession', () => {
-    it('should consolidate orphaned events into a new snapshot', () => {
-      const sessionId = 'session-1'
-
-      store.append(sessionId, {
-        type: 'session.initialized',
-        data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
-      })
-      store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hello' } })
-      store.append(sessionId, {
-        type: 'turn.snapshot',
-        data: {
-          mode: 'planner',
-          phase: 'plan',
-          isRunning: false,
-          messages: [],
-          criteria: [],
-          metadataEntries: {},
-          contextState: {
-            currentTokens: 100,
-            maxTokens: 200000,
-            compactionCount: 0,
-            dangerZone: false,
-            canCompact: false,
-            dynamicContextChanged: false,
-          },
-          currentContextWindowId: 'window-1',
-          todos: [],
-          readFiles: [],
-          snapshotSeq: 2,
-          snapshotAt: Date.now(),
-        },
-      })
-      store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-2', role: 'assistant' } })
-      store.append(sessionId, { type: 'message.delta', data: { messageId: 'msg-2', content: 'Hi there' } })
-
-      const eventsBefore = store.getEvents(sessionId)
-      expect(eventsBefore).toHaveLength(5)
-
-      const result = store.consolidateSession(sessionId)
-      expect(result).not.toBeNull()
-      expect(result!.deletedCount).toBe(4) // session.initialized is preserved
-
-      const eventsAfter = store.getEvents(sessionId)
-      expect(eventsAfter).toHaveLength(2) // session.initialized + new snapshot
-      expect(eventsAfter.find((e) => e.type === 'session.initialized')).toBeDefined()
-      expect(eventsAfter.find((e) => e.type === 'turn.snapshot')).toBeDefined()
-      const snapshotEvent = eventsAfter.find((e) => e.type === 'turn.snapshot')!
-      const snapshotData = snapshotEvent!.data as { messages: { id: string; content: string }[] }
-      expect(snapshotData.messages).toHaveLength(2)
-      expect(snapshotData.messages[0]!.id).toBe('msg-1')
-      expect(snapshotData.messages[1]!.id).toBe('msg-2')
-      expect(snapshotData.messages[1]!.content).toBe('Hi there')
-    })
-
-    it('should return null when no orphaned events to consolidate', () => {
-      const sessionId = 'session-1'
-
-      store.append(sessionId, {
-        type: 'session.initialized',
-        data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
-      })
-      store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hello' } })
-      store.append(sessionId, {
-        type: 'turn.snapshot',
-        data: {
-          mode: 'planner',
-          phase: 'plan',
-          isRunning: false,
-          messages: [],
-          criteria: [],
-          metadataEntries: {},
-          contextState: {
-            currentTokens: 100,
-            maxTokens: 200000,
-            compactionCount: 0,
-            dangerZone: false,
-            canCompact: false,
-            dynamicContextChanged: false,
-          },
-          currentContextWindowId: 'window-1',
-          todos: [],
-          readFiles: [],
-          snapshotSeq: 2,
-          snapshotAt: Date.now(),
-        },
-      })
-
-      const result = store.consolidateSession(sessionId)
-      expect(result).toBeNull()
-    })
-
-    it('should preserve session.initialized event during consolidation', () => {
-      const sessionId = 'session-preserve-init'
-
-      store.append(sessionId, {
-        type: 'session.initialized',
-        data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
-      })
-      store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hello' } })
-      store.append(sessionId, {
-        type: 'turn.snapshot',
-        data: {
-          mode: 'planner',
-          phase: 'plan',
-          isRunning: false,
-          messages: [],
-          criteria: [],
-          metadataEntries: {},
-          contextState: {
-            currentTokens: 100,
-            maxTokens: 200000,
-            compactionCount: 0,
-            dangerZone: false,
-            canCompact: false,
-            dynamicContextChanged: false,
-          },
-          currentContextWindowId: 'window-1',
-          todos: [],
-          readFiles: [],
-          snapshotSeq: 2,
-          snapshotAt: Date.now(),
-        },
-      })
-      store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-2', role: 'assistant' } })
-
-      // Before consolidation: session.initialized exists at seq 1
-      const eventsBefore = store.getEvents(sessionId)
-      const initBefore = eventsBefore.find((e) => e.type === 'session.initialized')
-      expect(initBefore).toBeDefined()
-
-      const result = store.consolidateSession(sessionId)
-      expect(result).not.toBeNull()
-
-      // After consolidation: session.initialized should still exist
-      const eventsAfter = store.getEvents(sessionId)
-      const initAfter = eventsAfter.find((e) => e.type === 'session.initialized')
-      expect(initAfter).toBeDefined()
-      expect((initAfter!.data as { contextWindowId: string }).contextWindowId).toBe('window-1')
-    })
-  })
-
-  describe('findOrphanedSessions', () => {
-    beforeEach(() => {
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS sessions (
-          id TEXT PRIMARY KEY,
-          is_running INTEGER DEFAULT 0,
-          updated_at INTEGER
-        )
-      `)
-    })
-
-    it('should find sessions with events after latest snapshot', () => {
-      const sessionId = 'session-1'
-      db.prepare(`INSERT INTO sessions (id, is_running, updated_at) VALUES (?, 0, ?)`).run(
-        sessionId,
-        Date.now() - 10 * 60 * 1000,
+      // Window 1: a long old conversation.
+      userMessage(store, 's1', 'OLD user message one', 'old-u1', { contextWindowId: 'w1' })
+      runAssistantTurn(
+        store,
+        's1',
+        'old-a1',
+        [{ type: 'message.delta', data: { messageId: 'old-a1', content: 'OLD assistant answer one' } }],
+        { contextWindowId: 'w1' },
       )
 
-      store.append(sessionId, {
-        type: 'session.initialized',
-        data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
-      })
-      store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hello' } })
-      store.append(sessionId, {
-        type: 'turn.snapshot',
+      // Compaction closes window 1 and opens window 2.
+      store.append('s1', {
+        type: 'context.compacted',
         data: {
-          mode: 'planner',
-          phase: 'plan',
-          isRunning: false,
-          messages: [],
-          criteria: [],
-          metadataEntries: {},
-          contextState: {
-            currentTokens: 100,
-            maxTokens: 200000,
-            compactionCount: 0,
-            dangerZone: false,
-            canCompact: false,
-            dynamicContextChanged: false,
-          },
-          currentContextWindowId: 'window-1',
-          todos: [],
-          readFiles: [],
-          snapshotSeq: 2,
-          snapshotAt: Date.now(),
+          closedWindowId: 'w1',
+          newWindowId: 'w2',
+          beforeTokens: 50000,
+          afterTokens: 2000,
+          summary: 'Discussed old stuff.',
         },
       })
-      store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-2', role: 'assistant' } })
+      userMessage(store, 's1', '[compaction summary]', 'comp-1', {
+        isCompactionSummary: true,
+        contextWindowId: 'w2',
+      })
 
-      const orphaned = store.findOrphanedSessions()
-      expect(orphaned).toContain(sessionId)
-    })
-
-    it('should exclude sessions without orphaned events', () => {
-      const sessionId = 'session-1'
-      db.prepare(`INSERT INTO sessions (id, is_running, updated_at) VALUES (?, 0, ?)`).run(
-        sessionId,
-        Date.now() - 10 * 60 * 1000,
+      // Window 2: the current conversation.
+      userMessage(store, 's1', 'NEW question', 'new-u1', { contextWindowId: 'w2' })
+      runAssistantTurn(
+        store,
+        's1',
+        'new-a1',
+        [{ type: 'message.delta', data: { messageId: 'new-a1', content: 'NEW answer' } }],
+        { contextWindowId: 'w2' },
       )
 
-      store.append(sessionId, {
-        type: 'session.initialized',
-        data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
-      })
-      store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hello' } })
-      store.append(sessionId, {
-        type: 'turn.snapshot',
-        data: {
-          mode: 'planner',
-          phase: 'plan',
-          isRunning: false,
-          messages: [],
-          criteria: [],
-          metadataEntries: {},
-          contextState: {
-            currentTokens: 100,
-            maxTokens: 200000,
-            compactionCount: 0,
-            dangerZone: false,
-            canCompact: false,
-            dynamicContextChanged: false,
-          },
-          currentContextWindowId: 'window-1',
-          todos: [],
-          readFiles: [],
-          snapshotSeq: 2,
-          snapshotAt: Date.now(),
-        },
-      })
+      // Fork at the NEW question (window 2).
+      const treeId = store.getTreeId('s1')
+      insertSession(db, 's2', { treeId, cursor: 'new-u1' })
+      store.setCursor('s2', 'new-u1')
 
-      const orphaned = store.findOrphanedSessions()
-      expect(orphaned).not.toContain(sessionId)
-    })
-
-    it('should exclude currently running sessions', () => {
-      const sessionId = 'session-1'
-      db.prepare(`INSERT INTO sessions (id, is_running, updated_at) VALUES (?, 1, ?)`).run(
-        sessionId,
-        Date.now() - 10 * 60 * 1000,
-      )
-
-      store.append(sessionId, {
-        type: 'session.initialized',
-        data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
+      // The served LLM context of the fork (current window filter) contains the
+      // window-2 conversation and the compaction summary — but NONE of the
+      // discarded window-1 messages.
+      const forkContext = buildContextMessagesFromStoredEvents(store.getEvents('s2'), 'w2', {
+        includeVerifier: false,
       })
-      store.append(sessionId, {
-        type: 'turn.snapshot',
-        data: {
-          mode: 'planner',
-          phase: 'plan',
-          isRunning: true,
-          messages: [],
-          criteria: [],
-          metadataEntries: {},
-          contextState: {
-            currentTokens: 100,
-            maxTokens: 200000,
-            compactionCount: 0,
-            dangerZone: false,
-            canCompact: false,
-            dynamicContextChanged: false,
-          },
-          currentContextWindowId: 'window-1',
-          todos: [],
-          readFiles: [],
-          snapshotSeq: 1,
-          snapshotAt: Date.now(),
-        },
-      })
-      store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hello' } })
+      // The fork serves exactly the window-2 prefix up to the fork point —
+      // summary + the forked message, and NONE of the discarded window-1 history.
+      expect(forkContext.map((m) => m.content)).toEqual(['[compaction summary]', 'NEW question'])
+      const forkText = forkContext.map((m) => m.content).join('\n')
+      expect(forkText).not.toContain('OLD user message one')
+      expect(forkText).not.toContain('OLD assistant answer one')
 
-      const orphaned = store.findOrphanedSessions()
-      expect(orphaned).not.toContain(sessionId)
+      // Prefix-cache coherence: the fork's context is a byte-identical prefix
+      // of the source's context.
+      const sourceContext = buildContextMessagesFromStoredEvents(store.getEvents('s1'), 'w2', {
+        includeVerifier: false,
+      })
+      expect(sourceContext.slice(0, forkContext.length)).toEqual(forkContext)
+
+      // Fork at the last OLD message (window 1): the window-1 filter shows the
+      // old conversation; the session's CURRENT window (post-compaction w2)
+      // serves the same coherent context as the source — no re-injection.
+      insertSession(db, 's3', { treeId, cursor: 'old-a1' })
+      store.setCursor('s3', 'old-a1')
+      const oldForkW1 = buildContextMessagesFromStoredEvents(store.getEvents('s3'), 'w1', {
+        includeVerifier: false,
+      })
+      const oldW1Text = oldForkW1.map((m) => m.content).join('\n')
+      expect(oldW1Text).toContain('OLD user message one')
+      expect(oldW1Text).toContain('OLD assistant answer one')
+      expect(oldW1Text).not.toContain('NEW question')
+
+      // s3's path predates the compaction event — its current window is still
+      // w1, so it continues the OLD conversation without window-2 content.
+      expect(foldContextState(store.getEvents('s3'), 'w1').currentContextWindowId).toBe('w1')
+      expect(foldContextState(store.getEvents('s2'), 'w1').currentContextWindowId).toBe('w2')
     })
   })
 
-  describe('snapshot cache invalidation', () => {
-    const snapshotData = (mode: string, snapshotSeq: number) => ({
-      mode,
-      phase: 'plan' as const,
-      isRunning: false,
-      messages: [],
-      criteria: [],
-      metadataEntries: {},
-      contextState: {
-        currentTokens: 0,
-        maxTokens: 200000,
-        compactionCount: 0,
-        dangerZone: false,
-        canCompact: false,
-        dynamicContextChanged: false,
-      },
-      currentContextWindowId: 'window-1',
-      todos: [],
-      readFiles: [],
-      snapshotSeq,
-      snapshotAt: Date.now(),
-    })
+  // ============================================================================
+  // Blob externalization
+  // ============================================================================
 
-    it('serves the cached snapshot until an append invalidates it', () => {
-      store.append('session-1', { type: 'turn.snapshot', data: snapshotData('planner', 1) })
-      const first = store.getLatestSnapshot('session-1')
-      expect(first!.data.mode).toBe('planner')
-
-      // Second read comes from cache — same object identity
-      expect(store.getLatestSnapshot('session-1')).toBe(first)
-
-      store.append('session-1', { type: 'turn.snapshot', data: snapshotData('builder', 2) })
-      const second = store.getLatestSnapshot('session-1')
-      expect(second).toBeDefined()
-      expect(second!.data.mode).toBe('builder')
-      expect(second).not.toBe(first)
-    })
-
-    it('does not bake the first caller limit into the cached prompts', () => {
-      const messages = Array.from({ length: 8 }, (_, i) => ({
-        id: `m${i}`,
-        role: 'user' as const,
-        content: `Prompt ${i}`,
-        timestamp: 1000 + i,
-      }))
-      store.append('session-1', {
-        type: 'turn.snapshot',
-        data: { ...snapshotData('planner', 1), messages },
+  describe('blob externalization', () => {
+    it('externalizes tool results over 256KB and hydrates byte-identically', () => {
+      insertSession(db, 's1')
+      store.append('s1', {
+        type: 'session.initialized',
+        data: { projectId: 'p', workdir: '/w', contextWindowId: 'w1' },
       })
-      // Extra user messages newer than the snapshot, coming from message.start
-      // events — these must not be clipped to the first caller's limit either.
-      for (let i = 8; i < 13; i++) {
-        store.append('session-1', {
-          type: 'message.start',
-          data: { messageId: `m${i}`, role: 'user', content: `Prompt ${i}` },
+      userMessage(store, 's1', 'big output', 'u1')
+      runAssistantTurn(store, 's1', 'a1', [
+        {
+          type: 'tool.call',
+          data: { messageId: 'a1', toolCall: { id: 'tc1', name: 'run_command', arguments: { command: 'cat big' } } },
+        },
+      ])
+      const big = 'x'.repeat(300 * 1024)
+      const result = { success: true, output: big, metadata: { durationMs: 12 } }
+      toolResult(store, 's1', 'a1', 'tc1', result)
+
+      // Persisted payload carries a blob ref, not the full content.
+      const raw = db.prepare(`SELECT payload FROM events WHERE tree_id = 's1' AND event_id = 'tr_tc1'`).get() as {
+        payload: string
+      }
+      const rawPayload = JSON.parse(raw.payload) as { result: { blobRef?: string; output?: string } }
+      expect(rawPayload.result.blobRef).toBeTruthy()
+      expect(rawPayload.result.output).toBeUndefined()
+
+      // The blob stores the FULL serialized result.
+      const blob = db.prepare(`SELECT content FROM blobs WHERE content_hash = ?`).get(rawPayload.result.blobRef) as {
+        content: string
+      }
+      expect(JSON.parse(blob.content)).toEqual(result)
+
+      // Hydration is byte-identical to the original object.
+      const hydrated = store.getEvents('s1').find((e) => e.eventId === 'tr_tc1')!
+      expect((hydrated.data as { result: object }).result).toEqual(result)
+    })
+
+    it('dedupes identical large results into one blob', () => {
+      insertSession(db, 's1')
+      store.append('s1', {
+        type: 'session.initialized',
+        data: { projectId: 'p', workdir: '/w', contextWindowId: 'w1' },
+      })
+      userMessage(store, 's1', 'one', 'u1')
+      runAssistantTurn(store, 's1', 'a1', [
+        { type: 'tool.call', data: { messageId: 'a1', toolCall: { id: 'tc1', name: 'run_command', arguments: {} } } },
+      ])
+      userMessage(store, 's1', 'two', 'u2')
+      runAssistantTurn(store, 's1', 'a2', [
+        { type: 'tool.call', data: { messageId: 'a2', toolCall: { id: 'tc2', name: 'run_command', arguments: {} } } },
+      ])
+      const big = { success: true, output: 'y'.repeat(300 * 1024) }
+      toolResult(store, 's1', 'a1', 'tc1', big)
+      toolResult(store, 's1', 'a2', 'tc2', big)
+
+      const blobs = db.prepare(`SELECT COUNT(*) as n FROM blobs`).get() as { n: number }
+      expect(blobs.n).toBe(1)
+    })
+
+    it('externalizes message content over 1MB and hydrates it back', () => {
+      insertSession(db, 's1')
+      store.append('s1', {
+        type: 'session.initialized',
+        data: { projectId: 'p', workdir: '/w', contextWindowId: 'w1' },
+      })
+      const huge = 'z'.repeat(1_100_000)
+      userMessage(store, 's1', huge, 'u1')
+
+      const raw = db.prepare(`SELECT payload FROM events WHERE tree_id = 's1' AND event_id = 'u1'`).get() as {
+        payload: string
+      }
+      const rawPayload = JSON.parse(raw.payload) as { content: { blobRef?: string } }
+      expect(rawPayload.content.blobRef).toBeTruthy()
+
+      const hydrated = store.getEvents('s1').find((e) => e.eventId === 'u1')!
+      expect((hydrated.data as { content: string }).content).toBe(huge)
+    })
+
+    it('honors a custom blobExternalizeThreshold below the default', () => {
+      const customDb = new Database(':memory:')
+      customDb.exec(SESSIONS_TABLE)
+      const customStore = new EventStore(customDb, { blobExternalizeThreshold: 1024 })
+      try {
+        insertSession(customDb, 's1')
+        customStore.append('s1', {
+          type: 'session.initialized',
+          data: { projectId: 'p', workdir: '/w', contextWindowId: 'w1' },
         })
-      }
-
-      const small = store.getRecentUserPrompts('session-1', 3)
-      expect(small).toHaveLength(3)
-
-      // A larger limit than the first call must not be constrained by what the
-      // first call happened to cache.
-      const large = store.getRecentUserPrompts('session-1', 13)
-      expect(large).toHaveLength(13)
-    })
-
-    it('refreshes recent user prompts after an append', () => {
-      store.append('session-1', {
-        type: 'turn.snapshot',
-        data: {
-          ...snapshotData('planner', 1),
-          messages: [{ id: 'm1', role: 'user', content: 'First', timestamp: 1000 }],
-        },
-      })
-
-      const prompts = store.getRecentUserPrompts('session-1', 10)
-      expect(prompts.map((p) => p.id)).toEqual(['m1'])
-
-      store.append('session-1', {
-        type: 'message.start',
-        data: { messageId: 'm2', role: 'user', content: 'Second' },
-      })
-
-      const refreshed = store.getRecentUserPrompts('session-1', 10)
-      expect(refreshed.map((p) => p.id)).toContain('m2')
-      expect(refreshed).not.toEqual(prompts)
-    })
-  })
-
-  describe('migrateSnapshotStreams', () => {
-    function snapshotWithStreams(): SessionSnapshot {
-      return {
-        mode: 'planner',
-        phase: 'plan',
-        isRunning: false,
-        messages: [
+        runAssistantTurn(customStore, 's1', 'a1', [
           {
-            id: 'm1',
-            role: 'assistant',
-            content: '',
-            timestamp: 1000,
-            toolCalls: [
-              {
-                id: 'c-red',
-                name: 'run_command',
-                arguments: {},
-                streamingOutput: [{ stream: 'stdout', content: 'alpha\nbeta\n', timestamp: 1000 }],
-                result: { success: true, output: 'alpha\nbeta', durationMs: 1, truncated: false },
-              },
-              {
-                id: 'c-unique',
-                name: 'run_command',
-                arguments: {},
-                streamingOutput: [{ stream: 'stdout', content: 'gamma\ndelta\n', timestamp: 1000 }],
-                result: { success: true, output: 'Done', durationMs: 1, truncated: false },
-              },
-              {
-                id: 'c-pending',
-                name: 'run_command',
-                arguments: {},
-                streamingOutput: [{ stream: 'stdout', content: 'eta\n', timestamp: 1000 }],
-              },
-            ],
+            type: 'tool.call',
+            data: { messageId: 'a1', toolCall: { id: 'tc1', name: 'run_command', arguments: {} } },
           },
-        ],
-        criteria: [],
-        metadataEntries: {},
-        contextState: {
-          currentTokens: 0,
-          maxTokens: 200000,
-          compactionCount: 0,
-          dangerZone: false,
-          canCompact: false,
-          dynamicContextChanged: false,
-        },
-        currentContextWindowId: 'w1',
-        todos: [],
-        snapshotSeq: 1,
-        snapshotAt: 1000,
+        ])
+        // 2 KB result: below the 256 KB default (would stay inline), above the 1 KB custom threshold.
+        toolResult(customStore, 's1', 'a1', 'tc1', { success: true, output: 'r'.repeat(2048) })
+
+        const raw = customDb
+          .prepare(`SELECT payload FROM events WHERE tree_id = 's1' AND event_id = 'tr_tc1'`)
+          .get() as { payload: string }
+        const rawPayload = JSON.parse(raw.payload) as { result: { blobRef?: string; output?: string } }
+        expect(rawPayload.result.blobRef).toBeTruthy()
+        expect(rawPayload.result.output).toBeUndefined()
+
+        const hydrated = customStore.getEvents('s1').find((e) => e.eventId === 'tr_tc1')!
+        expect((hydrated.data as { result: { output: string } }).result.output).toBe('r'.repeat(2048))
+      } finally {
+        customDb.close()
       }
-    }
-
-    it('drops finished-call streams and keeps only pending (in-flight) streams', async () => {
-      store.append('session-1', { type: 'turn.snapshot', data: snapshotWithStreams() })
-
-      const report = await store.migrateSnapshotStreams()
-
-      expect(report.skipped).toBe(false)
-      expect(report.scanned).toBe(1)
-      expect(report.rewritten).toBe(1)
-      expect(report.droppedStreams).toBe(2)
-      expect(report.kept.pending).toBe(1)
-
-      const row = db.prepare(`SELECT payload FROM events WHERE event_type = 'turn.snapshot'`).get() as {
-        payload: string
-      }
-      const parsed = JSON.parse(row.payload) as SessionSnapshot
-      const byId = Object.fromEntries(parsed.messages[0]!.toolCalls!.map((tc) => [tc.id, tc]))
-      expect(byId['c-red']!.streamingOutput).toBeUndefined()
-      expect(byId['c-red']!.result!.output).toBe('alpha\nbeta')
-      expect(byId['c-unique']!.streamingOutput).toBeUndefined()
-      expect(byId['c-pending']!.streamingOutput).toHaveLength(1)
     })
 
-    it('is idempotent once the maintenance flag is set', async () => {
-      db.exec(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)`)
-      store.append('session-1', { type: 'turn.snapshot', data: snapshotWithStreams() })
-
-      await store.migrateSnapshotStreams()
-      const second = await store.migrateSnapshotStreams()
-
-      expect(second.skipped).toBe(true)
-    })
-
-    it('creates a rollback backup on a file-backed database before rewriting', async () => {
-      const dir = mkdtempSync(join(tmpdir(), 'openfox-bak-'))
-      const path = join(dir, 'test.db')
-      const fileDb = new Database(path)
-      fileDb.exec(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)`)
-      const fileStore = new EventStore(fileDb)
-      fileStore.append('session-1', { type: 'turn.snapshot', data: snapshotWithStreams() })
-
-      const report = await fileStore.migrateSnapshotStreams()
-
-      const backupPath = path + '.pre-de-dup.bak'
-      expect(report.skipped).toBe(false)
-      expect(report.backupPath).toBe(backupPath)
-      expect(existsSync(backupPath)).toBe(true)
-
-      // The rollback copy still holds the redundant stream; the live DB dropped it.
-      const backupDb = new Database(backupPath, { readonly: true })
-      const backupRow = backupDb.prepare(`SELECT payload FROM events WHERE event_type = 'turn.snapshot'`).get() as {
-        payload: string
-      }
-      const backupParsed = JSON.parse(backupRow.payload) as SessionSnapshot
-      expect(backupParsed.messages[0]!.toolCalls!.find((tc) => tc.id === 'c-red')!.streamingOutput).toHaveLength(1)
-      backupDb.close()
-
-      const liveRow = fileDb.prepare(`SELECT payload FROM events WHERE event_type = 'turn.snapshot'`).get() as {
-        payload: string
-      }
-      const liveParsed = JSON.parse(liveRow.payload) as SessionSnapshot
-      expect(liveParsed.messages[0]!.toolCalls!.find((tc) => tc.id === 'c-red')!.streamingOutput).toBeUndefined()
-
-      // Idempotent afterwards, and the backup is not re-created/overwritten.
-      const backupMtime = statSync(backupPath).mtimeMs
-      const second = await fileStore.migrateSnapshotStreams()
-      expect(second.skipped).toBe(true)
-      expect(statSync(backupPath).mtimeMs).toBe(backupMtime)
-
-      fileDb.close()
-      rmSync(dir, { recursive: true, force: true })
-    })
-
-    it('leaves snapshots with only pending streams untouched', async () => {
-      const snap = snapshotWithStreams()
-      snap.messages[0]!.toolCalls = snap.messages[0]!.toolCalls!.filter((tc) => tc.id === 'c-pending')
-      store.append('session-1', { type: 'turn.snapshot', data: snap })
-
-      const report = await store.migrateSnapshotStreams()
-
-      expect(report.rewritten).toBe(0)
-      expect(report.droppedStreams).toBe(0)
-      expect(report.kept.pending).toBe(1)
-    })
-
-    it('prunes an expired rollback backup even when the migration is already done', async () => {
-      const dir = mkdtempSync(join(tmpdir(), 'openfox-bak-'))
-      const path = join(dir, 'test.db')
-      const fileDb = new Database(path)
-      fileDb.exec(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)`)
-      const fileStore = new EventStore(fileDb)
-
-      // Flag already set -> the rewrite is skipped, but expired rollback
-      // backups still get cleaned up on every invocation.
-      fileDb
-        .prepare(`INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, 'true', ?)`)
-        .run(SETTINGS_KEYS.MAINTENANCE_SNAPSHOT_STREAMS_MIGRATED, new Date().toISOString())
-
-      const backupPath = path + '.pre-de-dup.bak'
-      writeFileSync(backupPath, 'stale rollback backup')
-      const elevenDaysAgo = new Date(Date.now() - 11 * 24 * 60 * 60 * 1000)
-      utimesSync(backupPath, elevenDaysAgo, elevenDaysAgo)
-
-      const report = await fileStore.migrateSnapshotStreams()
-
-      expect(report.skipped).toBe(true)
-      expect(existsSync(backupPath)).toBe(false)
-
-      fileDb.close()
-      rmSync(dir, { recursive: true, force: true })
-    })
-
-    it('keeps a recently-created rollback backup', async () => {
-      const dir = mkdtempSync(join(tmpdir(), 'openfox-bak-'))
-      const path = join(dir, 'test.db')
-      const fileDb = new Database(path)
-      fileDb.exec(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)`)
-      const fileStore = new EventStore(fileDb)
-      fileDb
-        .prepare(`INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, 'true', ?)`)
-        .run(SETTINGS_KEYS.MAINTENANCE_SNAPSHOT_STREAMS_MIGRATED, new Date().toISOString())
-
-      const backupPath = path + '.pre-de-dup.bak'
-      writeFileSync(backupPath, 'fresh rollback backup')
-
-      await fileStore.migrateSnapshotStreams()
-
-      expect(existsSync(backupPath)).toBe(true)
-
-      fileDb.close()
-      rmSync(dir, { recursive: true, force: true })
+    it('keeps small payloads inline (no blobs)', () => {
+      insertSession(db, 's1')
+      store.append('s1', {
+        type: 'session.initialized',
+        data: { projectId: 'p', workdir: '/w', contextWindowId: 'w1' },
+      })
+      userMessage(store, 's1', 'small', 'u1')
+      runAssistantTurn(store, 's1', 'a1', [
+        { type: 'tool.call', data: { messageId: 'a1', toolCall: { id: 'tc1', name: 'read_file', arguments: {} } } },
+      ])
+      toolResult(store, 's1', 'a1', 'tc1', { success: true, output: 'ok' })
+      const blobs = db.prepare(`SELECT COUNT(*) as n FROM blobs`).get() as { n: number }
+      expect(blobs.n).toBe(0)
     })
   })
 
-  describe('checkpointWal', () => {
-    it('returns a checkpoint summary without throwing', () => {
-      store.append('session-1', { type: 'message.start', data: { messageId: 'm1', role: 'user', content: 'hi' } })
+  // ============================================================================
+  // updateEventPayload / prompts / tree view
+  // ============================================================================
 
-      const result = store.checkpointWal()
+  describe('payload update and tree views', () => {
+    it('updateEventPayload rewrites a node in place and invalidates caches', () => {
+      insertSession(db, 's1')
+      store.append('s1', {
+        type: 'session.initialized',
+        data: { projectId: 'p', workdir: '/w', contextWindowId: 'w1' },
+      })
+      userMessage(store, 's1', 'original', 'u1')
+      expect((store.getEvents('s1')[1]!.data as { content: string }).content).toBe('original')
 
-      expect(typeof result).toBe('object')
-      expect(result).toHaveProperty('checkpointed')
+      const data = { messageId: 'u1', role: 'user', content: 'enriched', attachments: [] }
+      store.updateEventPayload('s1', 'u1', data)
+      expect((store.getEvents('s1')[1]!.data as { content: string }).content).toBe('enriched')
+      expect(() => store.updateEventPayload('s1', 'missing', {})).toThrow(/not found/)
+    })
+
+    it('getRecentUserPrompts returns real user prompts newest-first', () => {
+      vi.useFakeTimers()
+      try {
+        let t = Date.parse('2026-01-01T00:00:00Z')
+        vi.setSystemTime(t)
+        insertSession(db, 's1')
+        store.append('s1', {
+          type: 'session.initialized',
+          data: { projectId: 'p', workdir: '/w', contextWindowId: 'w1' },
+        })
+        userMessage(store, 's1', 'first prompt', 'u1')
+        vi.setSystemTime((t += 1000))
+        userMessage(store, 's1', 'system reminder', 'sys1', { isSystemGenerated: true, messageKind: 'auto-prompt' })
+        vi.setSystemTime((t += 1000))
+        userMessage(store, 's1', 'second prompt', 'u2')
+
+        const prompts = store.getRecentUserPrompts('s1', 10)
+        expect(prompts.map((p) => p.content)).toEqual(['second prompt', 'first prompt'])
+
+        // Memoized until the next append.
+        vi.setSystemTime((t += 1000))
+        userMessage(store, 's1', 'third prompt', 'u3')
+        expect(store.getRecentUserPrompts('s1', 2).map((p) => p.content)).toEqual(['third prompt', 'second prompt'])
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('getConversationTree returns nodes, tips and cursor', () => {
+      insertSession(db, 's1')
+      store.append('s1', {
+        type: 'session.initialized',
+        data: { projectId: 'p', workdir: '/w', contextWindowId: 'w1' },
+      })
+      userMessage(store, 's1', 'branch point', 'u1')
+      runAssistantTurn(store, 's1', 'a1', [{ type: 'message.delta', data: { messageId: 'a1', content: 'ans1' } }])
+      const sibling = store.resendMessage('s1', 'u1', { content: 'branch point v2' })
+
+      const tree = store.getConversationTree('s1')
+      expect(tree.treeId).toBe('s1')
+      expect(tree.cursor).toBe(sibling)
+      expect(tree.nodes.map((n) => n.eventId).sort()).toEqual([tree.nodes[0]!.eventId, 'u1', 'a1', sibling].sort())
+      expect(tree.tips).toContain('a1')
+      const u1Node = tree.nodes.find((n) => n.eventId === 'u1')!
+      expect(u1Node.preview).toBe('branch point')
+      expect(u1Node.role).toBe('user')
+    })
+  })
+
+  // ============================================================================
+  // Import / delete / GC
+  // ============================================================================
+
+  describe('import, delete, GC', () => {
+    it('importEvents inserts v2 tree nodes; v1 (no eventId) is rejected', () => {
+      insertSession(db, 's1')
+      const v1Events: StoredEvent[] = [
+        {
+          seq: 1,
+          timestamp: 1,
+          sessionId: 's1',
+          type: 'session.initialized',
+          data: { projectId: 'p', workdir: '/w', contextWindowId: 'w1' },
+        },
+      ]
+      expect(() => store.importEvents('s1', v1Events)).toThrow(/v2/)
+
+      const v2: StoredEvent[] = [
+        {
+          seq: 1,
+          timestamp: 1,
+          sessionId: 'src',
+          type: 'session.initialized',
+          data: { projectId: 'p', workdir: '/w', contextWindowId: 'w1' },
+          eventId: 'init-1',
+          parentId: null,
+        },
+        {
+          seq: 2,
+          timestamp: 2,
+          sessionId: 'src',
+          type: 'message',
+          data: { messageId: 'm1', role: 'user', content: 'imported' },
+          eventId: 'm1',
+          parentId: 'init-1',
+        },
+      ]
+      const stored = store.importEvents('s1', v2)
+      expect(stored).toHaveLength(2)
+      store.setCursor('s1', 'm1')
+      const events = store.getEvents('s1')
+      expect(events.map((e) => e.type)).toEqual(['session.initialized', 'message'])
+      expect((events[1]!.data as { content: string }).content).toBe('imported')
+    })
+
+    it('deleteSession removes an unowned tree (events + blobs)', () => {
+      insertSession(db, 's1')
+      store.append('s1', {
+        type: 'session.initialized',
+        data: { projectId: 'p', workdir: '/w', contextWindowId: 'w1' },
+      })
+      userMessage(store, 's1', 'hi', 'u1')
+      runAssistantTurn(store, 's1', 'a1', [
+        { type: 'tool.call', data: { messageId: 'a1', toolCall: { id: 'tc1', name: 'run_command', arguments: {} } } },
+      ])
+      toolResult(store, 's1', 'a1', 'tc1', { success: true, output: 'B'.repeat(300 * 1024) })
+      expect((db.prepare(`SELECT COUNT(*) as n FROM events`).get() as { n: number }).n).toBeGreaterThan(0)
+      expect((db.prepare(`SELECT COUNT(*) as n FROM blobs`).get() as { n: number }).n).toBe(1)
+
+      store.deleteSession('s1')
+      expect((db.prepare(`SELECT COUNT(*) as n FROM events WHERE tree_id = 's1'`).get() as { n: number }).n).toBe(0)
+      expect((db.prepare(`SELECT COUNT(*) as n FROM blobs`).get() as { n: number }).n).toBe(0)
+    })
+
+    it('deleteSession keeps a shared tree (forks still reference it)', () => {
+      insertSession(db, 's1')
+      store.append('s1', {
+        type: 'session.initialized',
+        data: { projectId: 'p', workdir: '/w', contextWindowId: 'w1' },
+      })
+      userMessage(store, 's1', 'hi', 'u1')
+      const treeId = store.getTreeId('s1')
+      insertSession(db, 's2', { treeId, cursor: 'u1' })
+      store.setCursor('s2', 'u1')
+
+      store.deleteSession('s1')
+      expect(
+        (db.prepare(`SELECT COUNT(*) as n FROM events WHERE tree_id = ?`).get(treeId) as { n: number }).n,
+      ).toBeGreaterThan(0)
+      expect(store.getEvents('s2')).toHaveLength(2)
+    })
+
+    it('appends after deleteSession are no-ops (no orphan tree resurrected)', () => {
+      insertSession(db, 's1')
+      store.append('s1', {
+        type: 'session.initialized',
+        data: { projectId: 'p', workdir: '/w', contextWindowId: 'w1' },
+      })
+      userMessage(store, 's1', 'hi', 'u1')
+      runAssistantTurn(store, 's1', 'a1', [{ type: 'message.delta', data: { messageId: 'a1', content: 'partial ' } }])
+      expect((db.prepare(`SELECT COUNT(*) as n FROM events`).get() as { n: number }).n).toBeGreaterThan(0)
+
+      store.deleteSession('s1')
+
+      // A turn in flight at deletion time notices the abort asynchronously —
+      // its late finalization appends must not recreate an orphan tree.
+      store.append('s1', { type: 'message.done', data: { messageId: 'a1' } })
+      store.append('s1', { type: 'chat.done', data: { messageId: 'a1', reason: 'stopped' } })
+      userMessage(store, 's1', 'late', 'u2')
+
+      expect((db.prepare(`SELECT COUNT(*) as n FROM events`).get() as { n: number }).n).toBe(0)
+      expect(store.getEvents('s1')).toEqual([])
+    })
+
+    it('gcDeadBranches reclaims unreferenced branches and their exclusive blobs', () => {
+      insertSession(db, 's1')
+      store.append('s1', {
+        type: 'session.initialized',
+        data: { projectId: 'p', workdir: '/w', contextWindowId: 'w1' },
+      })
+      userMessage(store, 's1', 'anchor', 'u1')
+      runAssistantTurn(store, 's1', 'a1', [
+        { type: 'tool.call', data: { messageId: 'a1', toolCall: { id: 'tc1', name: 'run_command', arguments: {} } } },
+      ])
+      toolResult(store, 's1', 'a1', 'tc1', { success: true, output: 'dead-blob'.repeat(50_000) })
+
+      // Branch away: sibling resend orphans a1 + its tool result.
+      const sibling = store.resendMessage('s1', 'u1', { content: 'anchor v2' })
+
+      // New live branch: another assistant turn under the sibling, carrying a
+      // DIFFERENT large result (its blob must survive GC).
+      runAssistantTurn(store, 's1', 'a2', [
+        { type: 'tool.call', data: { messageId: 'a2', toolCall: { id: 'tc2', name: 'run_command', arguments: {} } } },
+      ])
+      toolResult(store, 's1', 'a2', 'tc2', { success: true, output: 'live-blob'.repeat(50_000) })
+
+      const before = db.prepare(`SELECT COUNT(*) as n FROM events WHERE tree_id = 's1'`).get() as { n: number }
+      expect((db.prepare(`SELECT COUNT(*) as n FROM blobs`).get() as { n: number }).n).toBe(2)
+
+      const report = store.gcDeadBranches()
+      // Dead nodes: u1 + a1 + tr_tc1 (the abandoned branch, incl. the
+      // original message — the sibling replaced it at the same parent).
+      expect(report.eventsDeleted).toBe(3)
+      expect(report.blobsDeleted).toBe(1) // the dead branch's exclusive blob
+      expect(getSessionCount(db, 's1')).toBe(2) // sibling, a2 — stable through GC
+
+      const after = db.prepare(`SELECT COUNT(*) as n FROM events WHERE tree_id = 's1'`).get() as { n: number }
+      expect(after.n).toBe(before.n - report.eventsDeleted)
+      // Live path still hydrates from its blob.
+      const livePath = store.getEvents('s1')
+      expect(livePath.map((e) => e.eventId)).toContain(sibling)
+      const trLive = livePath.find((e) => e.eventId === 'tr_tc2')
+      expect(trLive).toBeDefined()
+      expect((trLive!.data as { result: { output: string } }).result.output).toContain('live-blob')
+    })
+
+    it('gcDeadBranches honors the grace period for recent dead branches', () => {
+      insertSession(db, 's1')
+      store.append('s1', {
+        type: 'session.initialized',
+        data: { projectId: 'p', workdir: '/w', contextWindowId: 'w1' },
+      })
+      userMessage(store, 's1', 'anchor', 'u1')
+      runAssistantTurn(store, 's1', 'a1', [{ type: 'message.delta', data: { messageId: 'a1', content: 'x' } }])
+      store.resendMessage('s1', 'u1', { content: 'anchor v2' }) // orphans a1 (just now)
+
+      const recent = store.gcDeadBranches(24 * 60 * 60 * 1000)
+      expect(recent.eventsDeleted).toBe(0) // fresh orphan — still switchable
+
+      // Age the WHOLE dead branch past the grace period (grace is keyed on the
+      // newest dead node); a fresh store (post-restart) re-reads the rows.
+      db.prepare(`UPDATE events SET timestamp = ? WHERE tree_id = 's1' AND event_id IN ('u1', 'a1')`).run(
+        Date.now() - 8 * 24 * 60 * 60 * 1000,
+      )
+      const freshStore = new EventStore(db)
+      const aged = freshStore.gcDeadBranches(24 * 60 * 60 * 1000)
+      expect(aged.eventsDeleted).toBe(2)
+    })
+
+    it('gcDeadBranches reclaims orphaned trees in full', () => {
+      insertSession(db, 's1')
+      store.append('s1', {
+        type: 'session.initialized',
+        data: { projectId: 'p', workdir: '/w', contextWindowId: 'w1' },
+      })
+      userMessage(store, 's1', 'hi', 'u1')
+
+      // Simulate an orphaned tree: events exist, no session row references it.
+      db.prepare(`DELETE FROM sessions WHERE id = 's1'`).run()
+      const report = store.gcDeadBranches()
+      expect(report.trees).toBe(1)
+      expect(report.eventsDeleted).toBe(2)
+      expect((db.prepare(`SELECT COUNT(*) as n FROM events WHERE tree_id = 's1'`).get() as { n: number }).n).toBe(0)
+    })
+  })
+
+  // ============================================================================
+  // initEventStore boot hygiene
+  // ============================================================================
+
+  describe('initEventStore boot hygiene', () => {
+    it('resets stale running sessions and rejects stale confirmations (path-scoped)', async () => {
+      const bootDb = new Database(':memory:')
+      bootDb.exec(SESSIONS_TABLE)
+      insertSession(bootDb, 'stale-1')
+      const warm = new EventStore(bootDb)
+      warm.append('stale-1', {
+        type: 'session.initialized',
+        data: { projectId: 'p', workdir: '/w', contextWindowId: 'w1' },
+      })
+      warm.append('stale-1', { type: 'running.changed', data: { isRunning: true } })
+      warm.append('stale-1', {
+        type: 'path.confirmation_pending',
+        data: { callId: 'c1', tool: 'read_file', paths: ['/etc/passwd'], workdir: '/w', reason: 'sensitive_file' },
+      })
+      warm.append('stale-1', { type: 'running.changed', data: { isRunning: true } })
+      // The store's DB cursor writes go through the app database — in fixtures
+      // we set the sessions-table cursor directly (the new store reads it).
+      const lastSeq = warm.getLatestSeq('stale-1')
+      bootDb
+        .prepare(`UPDATE sessions SET is_running = 1, cursor_event_id = ? WHERE id = 'stale-1'`)
+        .run(`evt_${lastSeq}`)
+
+      const booted = initEventStore(bootDb)
+      expect(booted).toBeInstanceOf(EventStore)
+
+      // is_running reset synchronously.
+      const running = (
+        bootDb.prepare(`SELECT is_running FROM sessions WHERE id = 'stale-1'`).get() as {
+          is_running: number
+        }
+      ).is_running
+      expect(running).toBe(0)
+
+      // Hygiene runs on setImmediate — flush the loop.
+      await new Promise((r) => setTimeout(r, 20))
+      expect(getStaleRunningSessionIds()).toEqual(['stale-1'])
+      const events = booted.getEvents('stale-1')
+      const lastRunning = [...events].reverse().find((e) => e.type === 'running.changed')!
+      expect((lastRunning.data as { isRunning: boolean }).isRunning).toBe(false)
+      const responded = events.find((e) => e.type === 'path.confirmation_responded')!
+      expect((responded.data as { callId: string; approved: boolean }).callId).toBe('c1')
+      expect((responded.data as { approved: boolean }).approved).toBe(false)
+      bootDb.close()
     })
   })
 })

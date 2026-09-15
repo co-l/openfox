@@ -627,9 +627,8 @@ export function storedEventToServerMessage(event: StoredEvent): ServerMessage | 
       // Avoid re-broadcasting to all clients via EventStore replay.
       return null
 
-    case 'turn.snapshot':
     case 'context.compacted':
-      // These are internal events, not sent to frontend in real-time
+      // Internal event, not sent to frontend in real-time
       return null
 
     default:

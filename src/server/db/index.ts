@@ -2,6 +2,13 @@ import Database from 'better-sqlite3'
 import type { Config } from '../config.js'
 import { logger } from '../utils/logger.js'
 
+/**
+ * Schema format version, stamped into PRAGMA user_version. The v3
+ * conversation-tree shape (tree_id/event_id/parent_id events + blobs table)
+ * is version 3. It is only ever updated here — at database init/migration.
+ */
+export const SCHEMA_VERSION = 3
+
 let db: Database.Database | null = null
 
 export function initDatabase(config: Config): Database.Database {
@@ -181,29 +188,75 @@ function runMigrations(db: Database.Database): void {
     db.exec(`ALTER TABLE sessions ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0`)
   }
 
-  // Create events table for EventStore (single source of truth)
-  // Note: EventStore creates this table with its own schema in initSchema()
-  // We just ensure the index exists for the event_type column
+  // Conversation-tree events table (v3). Events are tree nodes: (tree_id,
+  // event_id, parent_id). A session is (tree_id, cursor_event_id) in the
+  // sessions table. Trees are shared by forked sessions, so there is no FK to
+  // sessions — tree lifetime is managed by the EventStore (dead-branch GC).
+  //
+  // v3 intentionally does not carry over pre-v3 history: the old linear
+  // (session_id, seq) shape is structurally incompatible with the tree shape,
+  // so an old-shaped events table is dropped (and recreated) on upgrade.
+  const preEventColumns = db.prepare(`PRAGMA table_info(events)`).all() as { name: string }[]
+  const preEventsHaveTreeShape = preEventColumns.some((c) => c.name === 'event_id')
+  if (preEventColumns.length > 0 && !preEventsHaveTreeShape) {
+    logger.warn('Dropping legacy events table (pre-v3 linear schema). Old session history is not carried into v3.')
+    db.exec(`DROP TABLE events`)
+  }
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      session_id TEXT NOT NULL,
+      tree_id TEXT NOT NULL,
+      event_id TEXT NOT NULL,
+      parent_id TEXT,
       seq INTEGER NOT NULL,
       timestamp INTEGER NOT NULL,
       event_type TEXT NOT NULL,
       payload TEXT NOT NULL,
-      UNIQUE(session_id, seq),
-      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      UNIQUE(tree_id, event_id)
     )
   `)
 
   db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_events_session_seq ON events(session_id, seq)
+    CREATE INDEX IF NOT EXISTS idx_events_tree_seq ON events(tree_id, seq)
   `)
 
   db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_events_session_type ON events(session_id, event_type)
+    CREATE INDEX IF NOT EXISTS idx_events_tree_type ON events(tree_id, event_type)
   `)
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_events_tree_parent ON events(tree_id, parent_id)
+  `)
+
+  // Content-addressed blob store for externalized large payloads (tool
+  // results, oversized message content). Deduplicated by content hash.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS blobs (
+      content_hash TEXT PRIMARY KEY,
+      size INTEGER NOT NULL,
+      content TEXT NOT NULL
+    )
+  `)
+
+  // Pre-v3 soft-delete machinery — structurally incompatible with trees
+  // (sibling branches share prefixes; deleted seq ranges are not addressable).
+  db.exec(`DROP TABLE IF EXISTS tombstones`)
+
+  // Migration: conversation-tree columns on sessions (tree_id defaults to the
+  // session's own id — every session owns its tree; forks reference a shared
+  // tree). cursor_event_id is the session's active path endpoint.
+  if (!columnNames.includes('tree_id')) {
+    logger.info('Migrating sessions table: adding tree_id column')
+    db.exec(`ALTER TABLE sessions ADD COLUMN tree_id TEXT`)
+  }
+  if (!columnNames.includes('cursor_event_id')) {
+    logger.info('Migrating sessions table: adding cursor_event_id column')
+    db.exec(`ALTER TABLE sessions ADD COLUMN cursor_event_id TEXT`)
+  }
+  // Backfill: sessions created before the column existed (or after an events
+  // table drop) own their own (now empty) tree.
+  db.exec(`UPDATE sessions SET tree_id = id WHERE tree_id IS NULL`)
 
   // Migration: Add per-session provider/model columns
   if (!columnNames.includes('provider_id')) {
@@ -245,35 +298,12 @@ function runMigrations(db: Database.Database): void {
     db.exec(`ALTER TABLE sessions ADD COLUMN provider_pinned_effort TEXT`)
   }
 
-  // Migration: Add message_count column for efficient sidebar message counts
+  // Migration: Add message_count column for efficient sidebar message counts.
+  // Maintained by the EventStore (count of `message` nodes on the session's
+  // active path); no backfill — pre-v3 history is not carried over.
   if (!columnNames.includes('message_count')) {
     logger.info('Migrating sessions table: adding message_count column')
     db.exec(`ALTER TABLE sessions ADD COLUMN message_count INTEGER NOT NULL DEFAULT 0`)
-
-    // Backfill message_count from snapshots OR message.start events
-    logger.info('Backfilling message counts')
-    const backfillResult = db
-      .prepare(
-        `
-      UPDATE sessions 
-      SET message_count = (
-        SELECT COALESCE(
-          -- First try: get count from latest snapshot
-          (SELECT json_array_length(json_extract(
-            (SELECT payload FROM events WHERE session_id = sessions.id AND event_type = 'turn.snapshot' ORDER BY seq DESC LIMIT 1),
-            '$.messages'
-          ))),
-          -- Fallback: count message.start events for user/assistant roles
-          (SELECT COUNT(*) FROM events e 
-           WHERE e.session_id = sessions.id 
-           AND e.event_type = 'message.start'
-           AND json_extract(e.payload, '$.role') IN ('user', 'assistant'))
-        )
-      )
-    `,
-      )
-      .run()
-    logger.info('Backfilled message counts', { count: backfillResult.changes })
   }
 
   // Migration: Add cached prompt columns for persistent prefix cache across restarts
@@ -456,6 +486,17 @@ function runMigrations(db: Database.Database): void {
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     )
   `)
+
+  // Stamp the schema format version last — it reflects the full post-migration
+  // shape. Upgrades forward (old DBs have user_version 0); a DB stamped with a
+  // NEWER version is never downgraded — it is left untouched so the mismatch
+  // is visible (and logged) instead of silently rewritten.
+  const currentVersion = (db.prepare(`PRAGMA user_version`).get() as { user_version: number }).user_version
+  if (currentVersion < SCHEMA_VERSION) {
+    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`)
+  } else if (currentVersion > SCHEMA_VERSION) {
+    logger.warn(`Database schema version ${currentVersion} is newer than the supported version ${SCHEMA_VERSION}`)
+  }
 
   logger.info('Database migrations completed')
 }

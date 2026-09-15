@@ -4,7 +4,7 @@ import type { SessionManager } from '../session/index.js'
 /**
  * GET /api/sessions/:id/stats — full session stats (headline + per-response
  * and per-call progression) for the StatsModal's on-demand detail load.
- * Cheap: extracted from snapshot messages + later message.done events, no
+ * Cheap: extracted from the merged `message` nodes on the active path, no
  * message rebuild. The always-on session payload only carries the lean
  * summary; this endpoint is hit once when the user asks to see the full
  * response log.
@@ -14,7 +14,7 @@ export async function handleGetSessionStats(
   req: Request,
   res: Response,
 ): Promise<void> {
-  const { getEventStore, combineEventsWithSnapshot } = await import('../events/index.js')
+  const { getEventStore } = await import('../events/index.js')
   const { buildSessionStatsMessages } = await import('../events/folding.js')
   const { computeSessionStats } = await import('../../shared/stats.js')
 
@@ -26,8 +26,7 @@ export async function handleGetSessionStats(
   }
 
   const eventStore = getEventStore()
-  const { snapshot, events: eventsSinceSnapshot } = eventStore.getEventsSinceSnapshot(sessionId)
-  const events = combineEventsWithSnapshot(sessionId, snapshot, eventsSinceSnapshot)
+  const events = eventStore.getEvents(sessionId)
   const stats = computeSessionStats(buildSessionStatsMessages(events))
 
   res.json({ stats })

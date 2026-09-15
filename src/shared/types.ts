@@ -853,6 +853,10 @@ export interface Config {
   }
   database: {
     path: string
+    /** Externalize serialized tool results larger than this many bytes (default 256 KB). */
+    blobExternalizeThreshold?: number
+    /** Externalize serialized message payloads larger than this many bytes (default 1 MB). */
+    messageExternalizeThreshold?: number
   }
   logging?: {
     level: 'debug' | 'info' | 'warn' | 'error'

@@ -1,31 +1,64 @@
 /**
- * EventStore - Single source of truth for session events
+ * EventStore — Conversation-Tree event storage
  *
- * Responsibilities:
- * - Persist events to SQLite with per-session sequence numbers
- * - Provide event retrieval and replay
- * - Manage live subscriptions with async iterators
- * - Handle snapshots for efficient session loading
+ * Sessions are stored as TREES of events. Every persisted event is a node
+ * (tree_id, event_id, parent_id) inside a tree owned by one or more
+ * sessions. A session is (tree_id, cursor_event_id) — its active
+ * conversation path. Forks are O(1): a new session row pointing at an
+ * existing tree with a different cursor.
  *
- * Design:
- * - All events are append-only and immutable
- * - Sequence numbers are per-session (1, 2, 3...)
- * - Subscribers receive events in real-time via async iterators
- * - Snapshots enable efficient replay (skip to snapshot, replay from there)
+ * Write path (append):
+ * - Streaming chunks (message.delta / message.thinking / tool.output /
+ *   tool.preparing) and queue events are EPHEMERAL: forwarded to live WS
+ *   subscribers but never persisted. Chunks merge into an in-memory message
+ *   buffer.
+ * - user/system message.start is persisted immediately as a single `message`
+ *   node (content is known up front).
+ * - Assistant messages persist once, at message.done, as a single `message`
+ *   node (merged content/thinking/tool calls — WITHOUT results).
+ * - tool.result persists as its own node; payloads above the threshold are
+ *   externalized to the content-addressed blobs table and hydrated on read.
+ * - All other events (lifecycle, context, chat.*, …) persist as nodes.
+ * - turn.snapshot is ignored (removed in v3 — trees need no snapshots).
+ *
+ * Every persisted node becomes the session's new cursor (parent = previous
+ * cursor). Branching only happens at message boundaries, which correspond
+ * to previously served LLM request boundaries — prefix caches stay coherent.
+ *
+ * Reads (getEvents) return the session's active path (root → cursor),
+ * hydrated. Paths are immutable, so path results are permanently cacheable
+ * (bounded LRU).
+ *
+ * No snapshots, no tombstones, no seq-range GC: structurally incompatible
+ * with shared trees and unnecessary in this design. Dead branches are
+ * reclaimed by gcDeadBranches (no session cursor references the subtree).
  */
 
 import type Database from 'better-sqlite3'
-import { existsSync, statSync, unlinkSync } from 'node:fs'
-import type { TurnEvent, StoredEvent, SessionSnapshot, SnapshotMessage } from './types.js'
+import type { Attachment } from '../../shared/types.js'
+import type { TurnEvent, StoredEvent, ExternalizedContent } from './types.js'
+import {
+  createMessageBuffer,
+  applyBufferEvent,
+  finalizeBuffer,
+  mergeBufferToMessageEvent,
+  buildUserMessageEvent,
+  bufferToInflightMessage,
+  injectedToInflightMessage,
+  resolvePath,
+  getTipsOutsidePath,
+  getDeadEventIds,
+  externalizeText,
+  externalizeToolResult,
+  isExternalized,
+  BLOB_EXTERNALIZE_THRESHOLD,
+  MESSAGE_EXTERNALIZE_THRESHOLD,
+  type MessageBuffer,
+  type TreeEventRow,
+  type MessageBufferStart,
+} from './tree.js'
+import { foldPendingConfirmations } from './fold-state.js'
 import { logger } from '../utils/logger.js'
-import { foldSessionState, buildSnapshot, trimSnapshotStreamingOutput } from './folding.js'
-import { SETTINGS_KEYS } from '../db/settings.js'
-
-// Rollback backups (.pre-de-dup.bak) are held for 10 days after creation, then
-// auto-pruned on the next migration invocation (startup auto-run or manual
-// script). Long enough to recover from a bad migration, short enough that a
-// 1GB+ copy is not left on disk forever.
-const SNAPSHOT_BACKUP_RETENTION_MS = 10 * 24 * 60 * 60 * 1000
 
 // ============================================================================
 // Types
@@ -34,24 +67,27 @@ const SNAPSHOT_BACKUP_RETENTION_MS = 10 * 24 * 60 * 60 * 1000
 interface Subscriber {
   sessionId: string
   callback: (event: StoredEvent) => void
-  close: () => void // Function to close the iterator
+  close: () => void
   closed: boolean
 }
 
 interface GlobalSubscriber {
-  wsId: number // Unique ID for this subscription
+  wsId: number
   callback: (event: StoredEvent) => void
   close: () => void
   closed: boolean
 }
 
-interface EventRow {
-  id: number
-  session_id: string
-  seq: number
-  timestamp: number
-  event_type: string
-  payload: string
+/** Raw row as stored in the events table (payload un-parsed). */
+interface CachedTreeRow extends TreeEventRow {
+  payloadBytes: number
+  /** Lazily parsed payload (shared with path caches until invalidated). */
+  parsedData?: unknown
+}
+
+interface PathCacheEntry {
+  events: StoredEvent[]
+  bytes: number
 }
 
 // ============================================================================
@@ -137,34 +173,53 @@ function createSubscriber(
 // EventStore Implementation
 // ============================================================================
 
+export interface EventStoreOptions {
+  /** Externalize serialized tool results larger than this many bytes (default 256 KB). */
+  blobExternalizeThreshold?: number
+  /** Externalize serialized message payloads larger than this many bytes (default 1 MB). */
+  messageExternalizeThreshold?: number
+}
+
 export class EventStore {
   private db: Database.Database
+  private blobExternalizeThreshold: number
+  private messageExternalizeThreshold: number
   private subscribers: Map<string, Set<Subscriber>> = new Map()
   private globalSubscribers: Map<number, GlobalSubscriber> = new Map()
   private globalSubscriberIdCounter = 0
-  // Parsed latest-snapshot cache per session. Snapshots can be tens of MB of
-  // JSON; re-parsing them on every session load (REST, WS, sidebar list) costs
-  // hundreds of ms. Invalidated on every write path (append, delete, cleanup).
-  // This is a pragmatic stopgap: the real fix is shrinking the 47MB snapshots
-  // themselves (compaction refactor, out of scope) — the cache hides the cost
-  // without removing it.
-  private snapshotCache: Map<string, { stored: StoredEvent; bytes: number }> = new Map()
-  private snapshotCacheBytes = 0
-  private static readonly SNAPSHOT_CACHE_MAX_ENTRIES = 16
-  private static readonly SNAPSHOT_CACHE_MAX_BYTES = 128 * 1024 * 1024
-  // Recent user prompts per session (sidebar list). Computed once from the
-  // snapshot + message.start events, then served from memory. Bounded — small
-  // arrays, but a long-lived server must not accumulate one per listed
-  // session; entries are also dropped when their session is written to.
+
+  // In-flight message buffers (chunks are not persisted — merged at done).
+  private buffers: Map<string, Map<string, MessageBuffer>> = new Map()
+
+  // Session cursors. The sessions table is authoritative (durable); the map
+  // mirrors it in-process and serves as fallback for test fixtures without a
+  // sessions table.
+  private cursors: Map<string, string | null> = new Map()
+
+  // Sessions deleted while a turn was still in flight: appends for them become
+  // no-ops (no persist, no notify). Without this, a turn aborted after
+  // deletion would recreate an orphan tree via the getTreeId fallback and
+  // re-broadcast chat events to clients that already got session.deleted.
+  private deletedSessions: Set<string> = new Set()
+
+  // Tree row cache: treeId → eventId → raw row. Grows incrementally on
+  // append; invalidated on payload update and GC.
+  private treeRows: Map<string, Map<string, CachedTreeRow>> = new Map()
+
+  // Path cache: treeId → cursorId → hydrated path. Paths are immutable, so
+  // entries stay valid forever; bounded LRU keeps memory under control.
+  private pathsCache: Map<string, Map<string, PathCacheEntry>> = new Map()
+  private pathsCacheBytes = 0
+  private static readonly PATHS_CACHE_MAX_BYTES = 256 * 1024 * 1024
+
+  // Recent user prompts per session (sidebar list) — memoized per session.
   private promptsCache: Map<string, Array<{ id: string; content: string; timestamp: string }>> = new Map()
   private static readonly PROMPTS_CACHE_MAX_ENTRIES = 64
-  // Row cap for the message.start query feeding the prompts cache. Kept above
-  // any realistic caller limit so the cached result is not clipped to whatever
-  // limit the first caller happened to request.
-  private static readonly PROMPTS_QUERY_LIMIT = 100
 
-  constructor(db: Database.Database) {
+  constructor(db: Database.Database, options?: EventStoreOptions) {
     this.db = db
+    this.blobExternalizeThreshold = options?.blobExternalizeThreshold ?? BLOB_EXTERNALIZE_THRESHOLD
+    this.messageExternalizeThreshold = options?.messageExternalizeThreshold ?? MESSAGE_EXTERNALIZE_THRESHOLD
     this.initSchema()
   }
 
@@ -173,49 +228,127 @@ export class EventStore {
   // --------------------------------------------------------------------------
 
   private initSchema(): void {
+    // Defensive mirror of the db/index.ts migration (tests may create the
+    // store on a bare in-memory database). Legacy linear-shaped events
+    // tables are dropped — v3 does not carry over pre-v3 history.
+    try {
+      const cols = this.db.prepare(`PRAGMA table_info(events)`).all() as { name: string }[]
+      if (cols.length > 0 && !cols.some((c) => c.name === 'event_id')) {
+        this.db.exec(`DROP TABLE events`)
+      }
+    } catch {
+      // No events table yet — fine.
+    }
+
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        session_id TEXT NOT NULL,
+        tree_id TEXT NOT NULL,
+        event_id TEXT NOT NULL,
+        parent_id TEXT,
         seq INTEGER NOT NULL,
         timestamp INTEGER NOT NULL,
         event_type TEXT NOT NULL,
         payload TEXT NOT NULL,
-        UNIQUE(session_id, seq)
+        UNIQUE(tree_id, event_id)
       )
     `)
 
     this.db.exec(`
-      CREATE INDEX IF NOT EXISTS idx_events_session_seq 
-      ON events(session_id, seq)
+      CREATE INDEX IF NOT EXISTS idx_events_tree_seq ON events(tree_id, seq)
+    `)
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_events_tree_type ON events(tree_id, event_type)
+    `)
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_events_tree_parent ON events(tree_id, parent_id)
     `)
 
     this.db.exec(`
-      CREATE INDEX IF NOT EXISTS idx_events_session_type 
-      ON events(session_id, event_type)
-    `)
-
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS tombstones (
-        session_id TEXT NOT NULL,
-        seq INTEGER NOT NULL,
-        timestamp INTEGER NOT NULL,
-        UNIQUE(session_id, seq)
+      CREATE TABLE IF NOT EXISTS blobs (
+        content_hash TEXT PRIMARY KEY,
+        size INTEGER NOT NULL,
+        content TEXT NOT NULL
       )
     `)
 
-    this.db.exec(`
-      CREATE INDEX IF NOT EXISTS idx_tombstones_session_seq 
-      ON tombstones(session_id, seq)
-    `)
+    this.db.exec(`DROP TABLE IF EXISTS tombstones`)
   }
 
   // --------------------------------------------------------------------------
-  // Append
+  // Tree / cursor resolution
   // --------------------------------------------------------------------------
 
   /**
-   * Append a single event to a session
+   * The tree a session writes into. Resolved from the sessions table
+   * (tree_id); falls back to the session's own id (new sessions own their
+   * tree; fixtures without a sessions table behave the same).
+   */
+  getTreeId(sessionId: string): string {
+    const row = this.tryGetDbRow(`SELECT tree_id FROM sessions WHERE id = ?`, sessionId) as
+      { tree_id: string | null } | undefined
+    return row?.tree_id ?? sessionId
+  }
+
+  /** The session's active path endpoint (tree node id), or null at root. */
+  getCursorEventId(sessionId: string): string | null {
+    const row = this.tryGetDbRow(`SELECT cursor_event_id FROM sessions WHERE id = ?`, sessionId) as
+      { cursor_event_id: string | null } | undefined
+    if (row && row.cursor_event_id) return row.cursor_event_id
+    return this.cursors.get(sessionId) ?? null
+  }
+
+  // The sessions-table writes go through THIS store's database (not the app
+  // singleton) so test fixtures with their own database behave identically.
+  private updateDbCursor(sessionId: string, cursorEventId: string | null): void {
+    try {
+      this.db.prepare(`UPDATE sessions SET cursor_event_id = ? WHERE id = ?`).run(cursorEventId, sessionId)
+    } catch {
+      // No sessions table (test fixture) — the in-process cursor map covers it.
+    }
+  }
+
+  private setSessionMessageCountSafe(sessionId: string, count: number): void {
+    try {
+      this.db.prepare(`UPDATE sessions SET message_count = ? WHERE id = ?`).run(count, sessionId)
+    } catch {
+      // No sessions table (test fixture).
+    }
+  }
+
+  private bumpMessageCountSafe(sessionId: string, delta: number): void {
+    try {
+      this.db.prepare(`UPDATE sessions SET message_count = message_count + ? WHERE id = ?`).run(delta, sessionId)
+    } catch {
+      // No sessions table (test fixture).
+    }
+  }
+
+  private tryGetDbRow(sql: string, ...params: unknown[]): unknown {
+    try {
+      return this.db.prepare(sql).get(...params)
+    } catch {
+      return undefined
+    }
+  }
+
+  private tryGetDbRows(sql: string, ...params: unknown[]): unknown[] {
+    try {
+      return this.db.prepare(sql).all(...params)
+    } catch {
+      return []
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // Append (the single write path)
+  // --------------------------------------------------------------------------
+
+  /**
+   * Ingest one event. Persists durable events as tree nodes (advancing the
+   * session's cursor), merges streaming chunks into the in-flight message
+   * buffer, and notifies live subscribers. Ephemeral events (chunks, queue)
+   * are notified but never persisted.
    */
   append(sessionId: string, event: TurnEvent): StoredEvent {
     if (!sessionId || typeof sessionId !== 'string') {
@@ -225,258 +358,817 @@ export class EventStore {
       throw new Error('Invalid event: must have a type property')
     }
     if (!event.data || typeof event.data !== 'object') {
-      throw new Error('Invalid event: must have data object')
+      throw new Error('Invalid event: must have a data object')
     }
 
+    if (this.deletedSessions.has(sessionId)) {
+      return this.ephemeral(sessionId, Date.now(), event)
+    }
+
+    const treeId = this.getTreeId(sessionId)
     const timestamp = Date.now()
-    const seq = this.getNextSeq(sessionId)
-    const payload = JSON.stringify(event.data)
+
+    switch (event.type) {
+      // Message lifecycle
+      case 'message.start': {
+        const data = event.data
+        if (data.role === 'assistant') {
+          // Buffer the in-flight message; persisted at message.done.
+          this.ensureBuffer(sessionId, data.messageId, data)
+          const stored = this.ephemeral(sessionId, timestamp, event)
+          this.notify(sessionId, stored)
+          return stored
+        }
+        // User/system content is known up front. While an assistant turn is
+        // in flight, buffer the message so it persists AFTER the merged
+        // assistant node at completion — preserving the v1 live order in
+        // which an injected message (e.g. a system-reminder during tool
+        // execution) follows the turn it interrupted.
+        const merged = buildUserMessageEvent(event)
+        const inFlight = this.getInFlightBuffer(sessionId)
+        if (inFlight) {
+          inFlight.injected.push({ message: merged, timestamp })
+          const stored = this.ephemeral(sessionId, timestamp, event)
+          this.notify(sessionId, stored)
+          return stored
+        }
+        return this.persistNode(sessionId, treeId, merged, data.messageId, timestamp, event)
+      }
+
+      case 'message.delta':
+      case 'message.thinking':
+      case 'tool.call':
+      case 'tool.preparing': {
+        const messageId = (event.data as { messageId: string }).messageId
+        const buffer = this.getBuffer(sessionId, messageId)
+        if (buffer) applyBufferEvent(buffer, event)
+        const stored = this.ephemeral(sessionId, timestamp, event)
+        this.notify(sessionId, stored)
+        return stored
+      }
+
+      case 'message.done': {
+        const buffer = this.takeBuffer(sessionId, event.data.messageId)
+        if (buffer) {
+          finalizeBuffer(buffer, event)
+          const merged = mergeBufferToMessageEvent(buffer, event.data.messageId)
+          // Node timestamp = the message START time (v1 parity: UI and stats
+          // timestamps). persistNode already forwarded the original done event.
+          this.persistNode(sessionId, treeId, merged, event.data.messageId, buffer.startedAt, event)
+          // Persist messages injected during the turn after the merged
+          // assistant message (v1 live order). Already live-notified on
+          // arrival, so no re-notify.
+          for (const inj of buffer.injected) {
+            this.persistNode(
+              sessionId,
+              treeId,
+              inj.message,
+              inj.message.data.messageId,
+              inj.timestamp,
+              inj.message,
+              undefined,
+              false,
+            )
+          }
+          // Persist stashed tool results after the merged message (and any
+          // injected messages), so path order is message → results (matching
+          // what the fold and context builder expect for KV parity). They
+          // were already live-notified on arrival, so no re-notify.
+          for (const tr of buffer.toolResults) {
+            const resultEvent: TurnEvent = {
+              type: 'tool.result',
+              data: { messageId: event.data.messageId, toolCallId: tr.toolCallId, result: tr.result },
+            }
+            this.persistNode(
+              sessionId,
+              treeId,
+              resultEvent,
+              `tr_${tr.toolCallId}`,
+              tr.timestamp,
+              resultEvent,
+              undefined,
+              false,
+            )
+          }
+          return this.ephemeral(sessionId, timestamp, event)
+        }
+        // No buffer (user/system messages persist on start): still notify the
+        // done so the live client view finalizes, exactly like the v1 raw done.
+        const stored = this.ephemeral(sessionId, timestamp, event)
+        this.notify(sessionId, stored)
+        return stored
+      }
+
+      // Runtime queue state — owned by the session manager's in-memory queue.
+      case 'queue.added':
+      case 'queue.drained':
+      case 'queue.cancelled': {
+        const stored = this.ephemeral(sessionId, timestamp, event)
+        this.notify(sessionId, stored)
+        return stored
+      }
+
+      // Tool results: buffered while their message is in flight (persisted
+      // as children of the merged message at message.done); persisted
+      // immediately otherwise (externalized when large).
+      case 'tool.result': {
+        const data = event.data
+        const buffer = this.getBuffer(sessionId, data.messageId)
+        if (buffer) {
+          const existing = buffer.toolResults.find((r) => r.toolCallId === data.toolCallId)
+          if (existing) {
+            existing.result = data.result
+          } else {
+            buffer.toolResults.push({ toolCallId: data.toolCallId, result: data.result, timestamp })
+          }
+          const stored = this.ephemeral(sessionId, timestamp, event)
+          this.notify(sessionId, stored)
+          return stored
+        }
+        return this.persistNode(sessionId, treeId, event, `tr_${data.toolCallId}`, timestamp, event)
+      }
+
+      // Everything else persists as a tree node.
+      default: {
+        return this.persistNode(sessionId, treeId, event, undefined, timestamp, event)
+      }
+    }
+  }
+
+  private ephemeral(sessionId: string, timestamp: number, event: TurnEvent): StoredEvent {
+    return { seq: 0, timestamp, sessionId, type: event.type, data: event.data }
+  }
+
+  /**
+   * Persist one event as a tree node: parent = the session's current cursor
+   * (or an explicit parent for sibling nodes), then advance the cursor.
+   * Externalizes oversized payloads to blobs. Notifies subscribers with the
+   * ORIGINAL event (WS protocol parity) and returns the stored record.
+   */
+  private persistNode(
+    sessionId: string,
+    treeId: string,
+    event: TurnEvent,
+    explicitEventId: string | undefined,
+    timestamp: number,
+    notifyEvent: TurnEvent,
+    explicitParent?: string | null,
+    notify?: boolean,
+  ): StoredEvent {
+    const parentCursor = explicitParent !== undefined ? explicitParent : this.getCursorEventId(sessionId)
+    const seq = this.nextSeq(treeId)
+    const eventId = explicitEventId ?? `evt_${seq}`
+
+    // Externalize oversized payloads (persisted form may carry blob refs;
+    // reads hydrate them back to the byte-identical content).
+    let payloadData: unknown = event.data
+    if (event.type === 'tool.result') {
+      const data = event.data as { result: Parameters<typeof externalizeToolResult>[0] }
+      if (!isExternalized(data.result)) {
+        const ref = externalizeToolResult(data.result, this.blobExternalizeThreshold)
+        if (ref) {
+          this.storeBlob(ref.blobRef, JSON.stringify(data.result))
+          payloadData = { ...data, result: ref }
+        }
+      }
+    } else if (event.type === 'message') {
+      const data = event.data as { content: string }
+      if (typeof data.content === 'string' && !isExternalized(data.content)) {
+        if (JSON.stringify(data).length > this.messageExternalizeThreshold) {
+          // The payload is over budget — externalize unconditionally (0
+          // threshold); small content with oversized side-fields stays inline.
+          const ref = externalizeText(data.content, 0)
+          if (ref) {
+            this.storeBlob(ref.blobRef, data.content)
+            payloadData = { ...data, content: ref }
+          }
+        }
+      }
+    }
+
+    const payload = JSON.stringify(payloadData)
 
     this.db
       .prepare(
-        `INSERT INTO events (session_id, seq, timestamp, event_type, payload)
-         VALUES (?, ?, ?, ?, ?)`,
+        `INSERT INTO events (tree_id, event_id, parent_id, seq, timestamp, event_type, payload)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(sessionId, seq, timestamp, event.type, payload)
+      .run(treeId, eventId, parentCursor, seq, timestamp, event.type, payload)
 
-    this.invalidateSessionCache(sessionId)
+    this.cacheRow(treeId, {
+      eventId,
+      parentId: parentCursor,
+      seq,
+      timestamp,
+      event_type: event.type,
+      payload,
+      payloadBytes: payload.length,
+    })
 
-    const stored: StoredEvent = {
+    // Advance the session's cursor to the new node.
+    this.cursors.set(sessionId, eventId)
+    this.updateDbCursor(sessionId, eventId)
+
+    // Sidebar counts: only the appending session's path gains a message —
+    // fork sessions sharing the tree keep their own (unchanged) paths.
+    // Sibling appends (resend) carry an explicit parent and recompute the
+    // count absolutely by the caller.
+    if (event.type === 'message' && explicitParent === undefined) {
+      this.bumpMessageCountSafe(sessionId, 1)
+    }
+
+    this.promptsCache.delete(sessionId)
+
+    // Live view: forward the original event (start/done/… mappings in the
+    // WS protocol), not the merged node shape. Pass notify=false for nodes
+    // whose original event was already live-forwarded (buffered tool
+    // results re-persisted at message completion).
+    if (notify !== false) {
+      const notifyStored: StoredEvent = {
+        seq,
+        timestamp,
+        sessionId,
+        type: notifyEvent.type,
+        data: notifyEvent.data,
+        eventId,
+        parentId: parentCursor,
+      }
+      this.notify(sessionId, notifyStored)
+    }
+
+    return {
       seq,
       timestamp,
       sessionId,
       type: event.type,
-      data: event.data,
+      // The persisted payload may carry blob refs (externalization) —
+      // consumers always read hydrated events via getEvents.
+      data: payloadData as TurnEvent['data'],
+      eventId,
+      parentId: parentCursor,
     }
-
-    this.notifySubscribers(sessionId, stored)
-
-    return stored
   }
 
-  /**
-   * Append multiple events atomically
-   */
-  appendBatch(sessionId: string, events: TurnEvent[]): StoredEvent[] {
-    if (events.length === 0) return []
-
-    const timestamp = Date.now()
-    let seq = this.getNextSeq(sessionId)
-    const results: StoredEvent[] = []
-
-    const insert = this.db.prepare(
-      `INSERT INTO events (session_id, seq, timestamp, event_type, payload)
-       VALUES (?, ?, ?, ?, ?)`,
-    )
-
-    const transaction = this.db.transaction(() => {
-      for (const event of events) {
-        const payload = JSON.stringify(event.data)
-        insert.run(sessionId, seq, timestamp, event.type, payload)
-
-        const stored: StoredEvent = {
-          seq,
-          timestamp,
-          sessionId,
-          type: event.type,
-          data: event.data,
-        }
-        results.push(stored)
-        seq++
-      }
-    })
-
-    transaction()
-
-    this.invalidateSessionCache(sessionId)
-
-    // Notify after transaction commits
-    for (const stored of results) {
-      this.notifySubscribers(sessionId, stored)
+  private nextSeq(treeId: string): number {
+    let maxSeq: number | undefined
+    for (const row of this.treeRows.get(treeId)?.values() ?? []) {
+      if (row.seq > (maxSeq ?? 0)) maxSeq = row.seq
     }
-
-    return results
-  }
-
-  /**
-   * Import events verbatim (used by session import).
-   * Preserves original seq and timestamp; rewrites the sessionId.
-   * Intended for a fresh session (no existing events for the target id).
-   */
-  importEvents(sessionId: string, events: StoredEvent[]): StoredEvent[] {
-    if (events.length === 0) return []
-
-    const insert = this.db.prepare(
-      `INSERT INTO events (session_id, seq, timestamp, event_type, payload)
-       VALUES (?, ?, ?, ?, ?)`,
-    )
-
-    const transaction = this.db.transaction(() => {
-      for (const event of events) {
-        insert.run(sessionId, event.seq, event.timestamp, event.type, JSON.stringify(event.data))
-      }
-    })
-    transaction()
-
-    this.invalidateSessionCache(sessionId)
-
-    const stored: StoredEvent[] = events.map((event) => ({ ...event, sessionId }))
-    for (const event of stored) {
-      this.notifySubscribers(sessionId, event)
+    if (maxSeq === undefined) {
+      const row = this.db.prepare(`SELECT MAX(seq) as max_seq FROM events WHERE tree_id = ?`).get(treeId) as
+        { max_seq: number | null } | undefined
+      maxSeq = row?.max_seq ?? 0
     }
-    return stored
-  }
-
-  private getNextSeq(sessionId: string): number {
-    const row = this.db.prepare(`SELECT MAX(seq) as max_seq FROM events WHERE session_id = ?`).get(sessionId) as
-      { max_seq: number | null } | undefined
-
-    return (row?.max_seq ?? 0) + 1
+    return maxSeq + 1
   }
 
   // --------------------------------------------------------------------------
-  // Retrieval
+  // Message buffers
+  // --------------------------------------------------------------------------
+
+  private ensureBuffer(sessionId: string, messageId: string, start: MessageBufferStart): void {
+    let map = this.buffers.get(sessionId)
+    if (!map) {
+      map = new Map()
+      this.buffers.set(sessionId, map)
+    }
+    if (!map.has(messageId)) {
+      map.set(messageId, createMessageBuffer(start))
+    }
+  }
+
+  private getBuffer(sessionId: string, messageId: string): MessageBuffer | undefined {
+    return this.buffers.get(sessionId)?.get(messageId)
+  }
+
+  /** The session's currently streaming buffer (if any). */
+  private getInFlightBuffer(sessionId: string): MessageBuffer | undefined {
+    const map = this.buffers.get(sessionId)
+    if (!map) return undefined
+    for (const buffer of map.values()) {
+      if (buffer.isStreaming) return buffer
+    }
+    return undefined
+  }
+
+  private takeBuffer(sessionId: string, messageId: string): MessageBuffer | undefined {
+    const map = this.buffers.get(sessionId)
+    if (!map) return undefined
+    const buffer = map.get(messageId)
+    map.delete(messageId)
+    if (map.size === 0) this.buffers.delete(sessionId)
+    return buffer
+  }
+
+  /** In-flight (streaming) messages for state sync / reconnect parity. */
+  getInflightMessages(sessionId: string): ReturnType<typeof bufferToInflightMessage>[] {
+    const map = this.buffers.get(sessionId)
+    if (!map) return []
+    const result: ReturnType<typeof bufferToInflightMessage>[] = []
+    for (const [messageId, buffer] of map) {
+      if (!buffer.isStreaming) continue
+      result.push(bufferToInflightMessage(buffer, messageId))
+      // Injected messages (buffered during the turn) are complete — include
+      // them so a reconnecting client's view matches the live one.
+      for (const inj of buffer.injected) {
+        result.push(injectedToInflightMessage(inj.message, inj.timestamp))
+      }
+    }
+    return result
+  }
+
+  // --------------------------------------------------------------------------
+  // Retrieval (active paths)
   // --------------------------------------------------------------------------
 
   /**
-   * Get all events for a session, optionally starting from a specific seq
+   * All events on the session's active path (root → cursor), hydrated.
+   * With fromSeq: only path events with seq >= fromSeq (reconnect replay).
    */
   getEvents(sessionId: string, fromSeq?: number): StoredEvent[] {
-    const query =
-      fromSeq !== undefined
-        ? `SELECT e.* FROM events e
-           LEFT JOIN tombstones t ON e.session_id = t.session_id AND e.seq = t.seq
-           WHERE e.session_id = ? AND e.seq >= ? AND t.seq IS NULL
-           ORDER BY e.seq`
-        : `SELECT e.* FROM events e
-           LEFT JOIN tombstones t ON e.session_id = t.session_id AND e.seq = t.seq
-           WHERE e.session_id = ? AND t.seq IS NULL
-           ORDER BY e.seq`
+    const events = this.getPath(sessionId)
+    if (fromSeq !== undefined) {
+      return events.filter((e) => e.seq >= fromSeq)
+    }
+    return events
+  }
 
-    const rows =
-      fromSeq !== undefined
-        ? (this.db.prepare(query).all(sessionId, fromSeq) as EventRow[])
-        : (this.db.prepare(query).all(sessionId) as EventRow[])
-
-    return rows.map((row) => this.rowToStoredEvent(row))
+  /** The session's active path (root → cursor) as hydrated StoredEvents. */
+  getPath(sessionId: string): StoredEvent[] {
+    const treeId = this.getTreeId(sessionId)
+    const cursor = this.getCursorEventId(sessionId)
+    if (!cursor) return []
+    return this.buildPath(treeId, cursor)
   }
 
   /**
-   * Soft-delete (tombstone) events by sequence number.
-   * Tombstoned events are hidden from getEvents but remain in the database.
-   *
-   * @param sessionId - The session ID
-   * @param seqs - Array of sequence numbers to tombstone
-   * @returns The number of events tombstoned
+   * Resolve a tree path root→cursor. Reuses the deepest cached prefix and
+   * only parses new suffix nodes. Cached results are immutable — evicted
+   * only by the byte budget.
    */
-  tombstoneEvents(sessionId: string, seqs: number[]): number {
-    if (seqs.length === 0) return 0
+  private buildPath(treeId: string, cursorId: string): StoredEvent[] {
+    const cached = this.pathsCache.get(treeId)?.get(cursorId)
+    if (cached) return cached.events
 
-    const timestamp = Date.now()
-    const insert = this.db.prepare(
-      `INSERT OR IGNORE INTO tombstones (session_id, seq, timestamp)
-       VALUES (?, ?, ?)`,
-    )
+    const rows = this.ensureTreeRows(treeId)
 
-    let count = 0
-    const transaction = this.db.transaction(() => {
-      for (const seq of seqs) {
-        const result = insert.run(sessionId, seq, timestamp)
-        count += result.changes as number
+    // Chain from cursor to root.
+    const chain: CachedTreeRow[] = []
+    let current: CachedTreeRow | undefined = rows.get(cursorId)
+    if (!current) return [] // dangling cursor (GC raced) — empty path
+    const seen = new Set<string>()
+    while (current) {
+      if (seen.has(current.eventId)) break // cycle guard (corrupt data)
+      seen.add(current.eventId)
+      chain.push(current)
+      current = current.parentId ? rows.get(current.parentId) : undefined
+    }
+    chain.reverse() // root-first
+
+    // Deepest cached prefix (cache entries are full paths — self-contained).
+    let base: StoredEvent[] = []
+    let startIdx = 0
+    for (let i = 0; i < chain.length; i++) {
+      const prefix = this.pathsCache.get(treeId)?.get(chain[i]!.eventId)
+      if (prefix) {
+        base = prefix.events
+        startIdx = i + 1
+        break
       }
-    })
-
-    transaction()
-    return count
-  }
-
-  /**
-   * Update the payload of an existing event in-place.
-   * Used to persist enriched data (e.g., vision fallback descriptions) back to the store.
-   */
-  updateEventPayload(sessionId: string, seq: number, data: unknown): void {
-    this.db
-      .prepare(`UPDATE events SET payload = ? WHERE session_id = ? AND seq = ?`)
-      .run(JSON.stringify(data), sessionId, seq)
-    this.invalidateSessionCache(sessionId)
-  }
-
-  /**
-   * Get the latest sequence number for a session
-   */
-  getLatestSeq(sessionId: string): number | undefined {
-    const row = this.db.prepare(`SELECT MAX(seq) as max_seq FROM events WHERE session_id = ?`).get(sessionId) as
-      { max_seq: number | null } | undefined
-
-    return row?.max_seq ?? undefined
-  }
-
-  /**
-   * Get the latest snapshot event for a session
-   */
-  getLatestSnapshot(sessionId: string): StoredEvent<Extract<TurnEvent, { type: 'turn.snapshot' }>> | undefined {
-    const cached = this.snapshotCache.get(sessionId)
-    if (cached) {
-      return cached.stored as StoredEvent<Extract<TurnEvent, { type: 'turn.snapshot' }>>
     }
 
-    const row = this.db
+    const suffix = chain.slice(startIdx).map((row) => this.rowToHydratedEvent(treeId, row))
+    const events = base.length + suffix.length === 0 ? [] : [...base, ...suffix]
+
+    this.cachePath(treeId, cursorId, events, chain)
+    return events
+  }
+
+  private cachePath(treeId: string, cursorId: string, events: StoredEvent[], chain: CachedTreeRow[]): void {
+    const bytes = chain.reduce((sum, row) => sum + row.payloadBytes, 0)
+    const byTree = this.pathsCache.get(treeId) ?? new Map<string, PathCacheEntry>()
+    const existing = byTree.get(cursorId)
+    if (existing) this.pathsCacheBytes -= existing.bytes
+    byTree.set(cursorId, { events, bytes })
+    this.pathsCache.set(treeId, byTree)
+    this.pathsCacheBytes += bytes
+
+    // Evict oldest entries when over budget.
+    while (this.pathsCacheBytes > EventStore.PATHS_CACHE_MAX_BYTES) {
+      let evicted = false
+      for (const [t, byCursor] of this.pathsCache) {
+        const oldest = byCursor.keys().next().value
+        if (oldest === undefined) continue
+        const entry = byCursor.get(oldest)
+        if (entry) this.pathsCacheBytes -= entry.bytes
+        byCursor.delete(oldest)
+        if (byCursor.size === 0) {
+          this.pathsCache.delete(t)
+          this.treeRows.delete(t) // rows were only needed to build evicted paths
+        }
+        evicted = true
+        break
+      }
+      if (!evicted) break
+    }
+  }
+
+  private ensureTreeRows(treeId: string): Map<string, CachedTreeRow> {
+    const existing = this.treeRows.get(treeId)
+    if (existing) return existing
+
+    const rows = new Map<string, CachedTreeRow>()
+    const raw = this.db
       .prepare(
-        `SELECT * FROM events 
-         WHERE session_id = ? AND event_type = 'turn.snapshot' 
-         ORDER BY seq DESC LIMIT 1`,
+        `SELECT event_id, parent_id, seq, timestamp, event_type, payload, length(payload) as payload_bytes
+         FROM events WHERE tree_id = ?`,
       )
-      .get(sessionId) as EventRow | undefined
+      .all(treeId) as Array<{
+      event_id: string
+      parent_id: string | null
+      seq: number
+      timestamp: number
+      event_type: string
+      payload: string
+      payload_bytes: number
+    }>
 
-    if (!row) return undefined
-
-    const stored = this.rowToStoredEvent(row) as StoredEvent<Extract<TurnEvent, { type: 'turn.snapshot' }>>
-    this.cacheSnapshot(sessionId, stored, row.payload.length)
-    return stored
+    for (const row of raw) {
+      rows.set(row.event_id, {
+        eventId: row.event_id,
+        parentId: row.parent_id,
+        seq: row.seq,
+        timestamp: row.timestamp,
+        event_type: row.event_type,
+        payload: row.payload,
+        payloadBytes: row.payload_bytes,
+      })
+    }
+    this.treeRows.set(treeId, rows)
+    return rows
   }
 
-  private cacheSnapshot(sessionId: string, stored: StoredEvent, bytes: number): void {
-    const existing = this.snapshotCache.get(sessionId)
-    if (existing) {
-      this.snapshotCacheBytes -= existing.bytes
+  private cacheRow(treeId: string, row: CachedTreeRow): void {
+    let rows = this.treeRows.get(treeId)
+    if (!rows) {
+      rows = new Map()
+      this.treeRows.set(treeId, rows)
     }
-    this.snapshotCache.set(sessionId, { stored, bytes })
-    this.snapshotCacheBytes += bytes
+    rows.set(row.eventId, row)
+  }
 
-    while (
-      this.snapshotCache.size > EventStore.SNAPSHOT_CACHE_MAX_ENTRIES ||
-      this.snapshotCacheBytes > EventStore.SNAPSHOT_CACHE_MAX_BYTES
-    ) {
-      const oldestKey = this.snapshotCache.keys().next().value
-      if (oldestKey === undefined || oldestKey === sessionId) break
-      const oldest = this.snapshotCache.get(oldestKey)
-      if (oldest) {
-        this.snapshotCacheBytes -= oldest.bytes
+  private invalidateTree(treeId: string): void {
+    const byCursor = this.pathsCache.get(treeId)
+    if (byCursor) {
+      for (const entry of byCursor.values()) {
+        this.pathsCacheBytes -= entry.bytes
       }
-      this.snapshotCache.delete(oldestKey)
+      this.pathsCache.delete(treeId)
+    }
+    this.treeRows.delete(treeId)
+  }
+
+  /**
+   * Row → hydrated StoredEvent. Blob-referenced payloads (externalized tool
+   * results / message content) are resolved transparently; the hydrated
+   * data object is cached on the row for reuse.
+   */
+  private rowToHydratedEvent(treeId: string, row: CachedTreeRow): StoredEvent {
+    if (row.parsedData === undefined) {
+      try {
+        row.parsedData = JSON.parse(row.payload)
+      } catch {
+        row.parsedData = {}
+      }
+    }
+    let data: unknown = row.parsedData
+
+    if (row.event_type === 'tool.result') {
+      const d = data as { result?: unknown }
+      if (isExternalized(d.result)) {
+        const blob = this.loadBlob(d.result.blobRef)
+        data = {
+          ...d,
+          result: blob !== null ? (safeJsonParse(blob) ?? { success: false, error: 'Blob content unavailable' }) : null,
+        }
+      }
+    } else if (row.event_type === 'message') {
+      const d = data as { content?: unknown }
+      if (isExternalized(d.content)) {
+        const blob = this.loadBlob(d.content.blobRef)
+        data = { ...d, content: blob ?? (d.content as ExternalizedContent).preview }
+      }
+    }
+
+    return {
+      seq: row.seq,
+      timestamp: row.timestamp,
+      sessionId: treeId,
+      type: row.event_type as TurnEvent['type'],
+      data: data as TurnEvent['data'],
+      eventId: row.eventId,
+      parentId: row.parentId,
     }
   }
 
-  private invalidateSessionCache(sessionId: string): void {
-    const entry = this.snapshotCache.get(sessionId)
-    if (entry) {
-      this.snapshotCacheBytes -= entry.bytes
-      this.snapshotCache.delete(sessionId)
+  // --------------------------------------------------------------------------
+  // Blobs
+  // --------------------------------------------------------------------------
+
+  private storeBlob(contentHash: string, content: string): void {
+    this.db
+      .prepare(`INSERT OR IGNORE INTO blobs (content_hash, size, content) VALUES (?, ?, ?)`)
+      .run(contentHash, Buffer.byteLength(content, 'utf8'), content)
+  }
+
+  private loadBlob(contentHash: string): string | null {
+    const row = this.db.prepare(`SELECT content FROM blobs WHERE content_hash = ?`).get(contentHash) as
+      { content: string } | undefined
+    return row?.content ?? null
+  }
+
+  /**
+   * Delete blobs no longer referenced by ANY event row. Candidate refs are
+   * harvested from payloads that mention a blobRef; only unreferenced ones
+   * (from the given deleted set) are removed.
+   */
+  private deleteUnreferencedBlobs(deletedRefs: string[]): number {
+    if (deletedRefs.length === 0) return 0
+    const candidates = this.db.prepare(`SELECT payload FROM events WHERE payload LIKE '%"blobRef"%'`).all() as {
+      payload: string
+    }[]
+    const referenced = new Set<string>()
+    for (const { payload } of candidates) {
+      for (const ref of extractBlobRefs(payload)) {
+        referenced.add(ref)
+      }
     }
+    let deleted = 0
+    const del = this.db.prepare(`DELETE FROM blobs WHERE content_hash = ?`)
+    for (const ref of deletedRefs) {
+      if (referenced.has(ref)) continue
+      deleted += del.run(ref).changes
+    }
+    return deleted
+  }
+
+  // --------------------------------------------------------------------------
+  // Cursor operations (branch / rewind / resend / fork)
+  // --------------------------------------------------------------------------
+
+  /**
+   * Move the session's cursor to an existing message node (branch switch /
+   * rewind). Only message boundaries are legal branch points.
+   */
+  setCursor(sessionId: string, eventId: string): void {
+    const treeId = this.getTreeId(sessionId)
+    const row = this.ensureTreeRows(treeId).get(eventId)
+    if (!row) {
+      throw new Error(`Event ${eventId} not found in conversation tree`)
+    }
+    if (row.event_type !== 'message') {
+      throw new Error('Can only switch conversation branches at message boundaries')
+    }
+    this.cursors.set(sessionId, eventId)
+    this.updateDbCursor(sessionId, eventId)
+    const count = this.getPath(sessionId).filter((e) => e.type === 'message').length
+    this.setSessionMessageCountSafe(sessionId, count)
     this.promptsCache.delete(sessionId)
   }
 
-  private clearSnapshotCache(): void {
-    this.snapshotCache.clear()
-    this.snapshotCacheBytes = 0
-    this.promptsCache.clear()
+  /**
+   * Restore the cursor to an exact imported node. Unlike setCursor (branch
+   * switch), the node may be of any type — append always advances the cursor,
+   * so a source session's cursor may point past the last message.
+   */
+  restoreCursor(sessionId: string, eventId: string): void {
+    const treeId = this.getTreeId(sessionId)
+    const row = this.ensureTreeRows(treeId).get(eventId)
+    if (!row) {
+      throw new Error(`Event ${eventId} not found in conversation tree`)
+    }
+    this.cursors.set(sessionId, eventId)
+    this.updateDbCursor(sessionId, eventId)
+    const count = this.getPath(sessionId).filter((e) => e.type === 'message').length
+    this.setSessionMessageCountSafe(sessionId, count)
+    this.promptsCache.delete(sessionId)
+  }
+
+  /** Find a `message` node by its message id (== event id) in a tree. */
+  findMessageEvent(treeId: string, messageId: string): CachedTreeRow | undefined {
+    const row = this.ensureTreeRows(treeId).get(messageId)
+    if (!row || row.event_type !== 'message') return undefined
+    return row
   }
 
   /**
-   * Get the most recent real user prompts for a session, cached in memory.
-   * Extracts them from the latest snapshot (when present) plus recent
-   * message.start events. Parsing a multi-MB snapshot on every sidebar list
-   * call dominated the list endpoint, so the result is memoized per session.
+   * Edit & resend: persist a SIBLING message node (same parent, fresh id,
+   * new/edited content) and move the session's cursor to it. Non-destructive
+   * — the original branch stays switchable.
+   */
+  resendMessage(
+    sessionId: string,
+    messageId: string,
+    options: { content?: string; attachments?: Attachment[] } = {},
+  ): string {
+    const treeId = this.getTreeId(sessionId)
+    const row = this.findMessageEvent(treeId, messageId)
+    if (!row) {
+      throw new Error(`Message ${messageId} not found`)
+    }
+    let data = this.parseRowData(row) as Extract<TurnEvent, { type: 'message' }>['data'] | undefined
+    if (!data) throw new Error(`Message ${messageId} has no payload`)
+    if (data.role !== 'user' || data.isSystemGenerated || data.isCompactionSummary) {
+      throw new Error('Only plain user messages can be resent')
+    }
+    // Externalized content must be hydrated before it can be resent.
+    if (isExternalized(data.content)) {
+      const blob = this.loadBlob(data.content.blobRef)
+      data = { ...data, content: blob ?? data.content.preview }
+    }
+
+    const siblingId = crypto.randomUUID()
+    const content = options.content ?? data.content
+    const attachments = options.attachments ?? (data.attachments as Attachment[] | undefined)
+    const siblingData: Extract<TurnEvent, { type: 'message' }>['data'] = {
+      messageId: siblingId,
+      role: 'user',
+      content,
+      ...(data.contextWindowId !== undefined ? { contextWindowId: data.contextWindowId } : {}),
+      ...(attachments !== undefined ? { attachments } : {}),
+      ...(data.messageKind !== undefined ? { messageKind: data.messageKind } : {}),
+      ...(data.metadata !== undefined ? { metadata: data.metadata } : {}),
+    }
+
+    // The sibling is a CHILD OF THE ORIGINAL MESSAGE (same parent) — not of
+    // the current cursor, which may sit deep in an abandoned descendant.
+    this.persistNode(
+      sessionId,
+      treeId,
+      { type: 'message', data: siblingData },
+      siblingId,
+      Date.now(),
+      {
+        type: 'message.start',
+        data: {
+          messageId: siblingId,
+          role: 'user',
+          content,
+          ...(data.contextWindowId !== undefined ? { contextWindowId: data.contextWindowId } : {}),
+          ...(attachments !== undefined ? { attachments } : {}),
+          ...(data.messageKind !== undefined ? { messageKind: data.messageKind } : {}),
+          ...(data.metadata !== undefined ? { metadata: data.metadata } : {}),
+        },
+      },
+      row.parentId,
+    )
+
+    // persistNode already advanced the cursor to the sibling; recompute the
+    // message count for the (moved) path.
+    const count = this.getPath(sessionId).filter((e) => e.type === 'message').length
+    this.setSessionMessageCountSafe(sessionId, count)
+
+    return siblingId
+  }
+
+  /**
+   * Branch tips for the branch switcher: leaves outside the session's active
+   * path, each normalized up to its nearest message ancestor (branch
+   * switching only accepts message boundaries, and lifecycle nodes trail
+   * behind replies). Duplicate boundaries are collapsed.
+   */
+  getBranchTips(
+    sessionId: string,
+  ): Array<{ eventId: string; timestamp: number; type: string; preview?: string; role?: string }> {
+    const treeId = this.getTreeId(sessionId)
+    const rows = this.ensureTreeRows(treeId) as unknown as Map<string, TreeEventRow>
+    const cursor = this.getCursorEventId(sessionId)
+    const path = cursor ? resolvePath(rows, cursor) : []
+    const onPath = new Set(path.map((row) => row.eventId))
+    const leaves = getTipsOutsidePath(rows, path)
+
+    const tips: Array<{ eventId: string; timestamp: number; type: string; preview?: string; role?: string }> = []
+    const seen = new Set<string>()
+    for (const leaf of leaves) {
+      // Walk up to the nearest message boundary outside the active path.
+      let current: TreeEventRow | undefined = leaf
+      while (current && current.event_type !== 'message' && !onPath.has(current.eventId)) {
+        current = current.parentId ? rows.get(current.parentId) : undefined
+      }
+      if (!current || current.event_type !== 'message' || onPath.has(current.eventId)) continue
+      if (seen.has(current.eventId)) continue
+      seen.add(current.eventId)
+      const boundary = current
+
+      const out: { eventId: string; timestamp: number; type: string; preview?: string; role?: string } = {
+        eventId: boundary.eventId,
+        timestamp: boundary.timestamp,
+        type: boundary.event_type,
+      }
+      const d = this.parseRowData(boundary as unknown as CachedTreeRow) as { content?: string; role?: string } | null
+      if (d) {
+        const content = isExternalized(d.content) ? (d.content as ExternalizedContent).preview : d.content
+        if (content) out.preview = content.slice(0, 120)
+        if (d.role) out.role = d.role
+      }
+      tips.push(out)
+    }
+    return tips
+  }
+
+  /** Full tree structure for the conversation-tree endpoint. */
+  getConversationTree(sessionId: string): {
+    treeId: string
+    cursor: string | null
+    tips: string[]
+    nodes: Array<{
+      eventId: string
+      parentId: string | null
+      seq: number
+      timestamp: number
+      type: string
+      messageId?: string
+      role?: string
+      preview?: string
+    }>
+  } {
+    const treeId = this.getTreeId(sessionId)
+    const rows = this.ensureTreeRows(treeId)
+    const cursor = this.getCursorEventId(sessionId)
+    const path = cursor ? resolvePath(rows as unknown as Map<string, TreeEventRow>, cursor) : []
+    const tips = getTipsOutsidePath(rows as unknown as Map<string, TreeEventRow>, path)
+
+    const nodes: Array<{
+      eventId: string
+      parentId: string | null
+      seq: number
+      timestamp: number
+      type: string
+      messageId?: string
+      role?: string
+      preview?: string
+    }> = []
+    for (const row of rows.values()) {
+      const node: (typeof nodes)[number] = {
+        eventId: row.eventId,
+        parentId: row.parentId,
+        seq: row.seq,
+        timestamp: row.timestamp,
+        type: row.event_type,
+      }
+      if (row.event_type === 'message') {
+        node.messageId = row.eventId
+        const d = this.parseRowData(row as unknown as CachedTreeRow) as { content?: string; role?: string } | null
+        if (d) {
+          const content = isExternalized(d.content) ? (d.content as ExternalizedContent).preview : d.content
+          if (content) node.preview = content.slice(0, 120)
+          if (d.role) node.role = d.role
+        }
+      }
+      nodes.push(node)
+    }
+
+    return {
+      treeId,
+      cursor,
+      tips: tips.map((t) => t.eventId),
+      nodes,
+    }
+  }
+
+  private parseRowData(row: CachedTreeRow): unknown {
+    if (row.parsedData === undefined) {
+      try {
+        row.parsedData = JSON.parse(row.payload)
+      } catch {
+        row.parsedData = {}
+      }
+    }
+    return row.parsedData
+  }
+
+  // --------------------------------------------------------------------------
+  // Misc retrieval
+  // --------------------------------------------------------------------------
+
+  /** Latest (max) sequence number in the session's tree. */
+  getLatestSeq(sessionId: string): number | undefined {
+    const treeId = this.getTreeId(sessionId)
+    let maxSeq: number | undefined
+    for (const row of this.treeRows.get(treeId)?.values() ?? []) {
+      if (row.seq > (maxSeq ?? 0)) maxSeq = row.seq
+    }
+    if (maxSeq === undefined) {
+      const row = this.db.prepare(`SELECT MAX(seq) as max_seq FROM events WHERE tree_id = ?`).get(treeId) as
+        { max_seq: number | null } | undefined
+      maxSeq = row?.max_seq ?? undefined
+    }
+    return maxSeq
+  }
+
+  /**
+   * The most recent real user prompts on the session's active path,
+   * memoized per session (sidebar list).
    */
   getRecentUserPrompts(sessionId: string, limit: number): Array<{ id: string; content: string; timestamp: string }> {
     const cached = this.promptsCache.get(sessionId)
@@ -491,54 +1183,23 @@ export class EventStore {
       subAgentType?: string
     }) => msg.role === 'user' && !msg.isSystemGenerated && !msg.messageKind && !msg.subAgentType
 
+    const events = this.getEvents(sessionId)
     const promptMap = new Map<string, { id: string; content: string; timestamp: string }>()
-
-    const snapshotEvent = this.getLatestSnapshot(sessionId)
-    if (snapshotEvent) {
-      const snapshot = snapshotEvent.data as {
-        messages: Array<{
-          id: string
-          role: string
-          content: string
-          timestamp: number
-          isSystemGenerated?: boolean
-          messageKind?: string
-          subAgentType?: string
-        }>
+    for (const event of events) {
+      if (event.type !== 'message') continue
+      const msg = event.data as {
+        messageId: string
+        role: string
+        content: string
+        isSystemGenerated?: boolean
+        messageKind?: string
+        subAgentType?: string
       }
-      for (const msg of snapshot.messages) {
-        if (isRealUserMessage(msg)) {
-          promptMap.set(msg.id, {
-            id: msg.id,
-            content: msg.content,
-            timestamp: new Date(msg.timestamp).toISOString(),
-          })
-        }
-      }
-    }
-
-    const rows = this.db
-      .prepare(
-        `
-        SELECT payload, timestamp
-        FROM events
-        WHERE session_id = ? AND event_type = 'message.start'
-          AND json_extract(payload, '$.role') = 'user'
-          AND json_extract(payload, '$.isSystemGenerated') IS NULL
-          AND json_extract(payload, '$.messageKind') IS NULL
-          AND json_extract(payload, '$.subAgentType') IS NULL
-        ORDER BY timestamp DESC
-        LIMIT ?
-      `,
-      )
-      .all(sessionId, EventStore.PROMPTS_QUERY_LIMIT) as { payload: string; timestamp: number }[]
-
-    for (const row of rows) {
-      const message = JSON.parse(row.payload) as { messageId: string; content: string }
-      promptMap.set(message.messageId, {
-        id: message.messageId,
-        content: message.content,
-        timestamp: new Date(row.timestamp).toISOString(),
+      if (!isRealUserMessage(msg)) continue
+      promptMap.set(msg.messageId, {
+        id: msg.messageId,
+        content: msg.content,
+        timestamp: new Date(event.timestamp).toISOString(),
       })
     }
 
@@ -553,111 +1214,19 @@ export class EventStore {
     return prompts.slice(0, limit)
   }
 
-  /**
-   * Get the latest snapshot and all events since it
-   * This is the primary method for loading a session efficiently
-   */
-  getEventsSinceSnapshot(sessionId: string): { snapshot: SessionSnapshot | undefined; events: StoredEvent[] } {
-    const snapshotEvent = this.getLatestSnapshot(sessionId)
-
-    if (!snapshotEvent) {
-      // No snapshot, return all events
-      return {
-        snapshot: undefined,
-        events: this.getEvents(sessionId),
-      }
-    }
-
-    // Get events AFTER the snapshot (seq > snapshotEvent.seq)
-    const events = this.getEvents(sessionId, snapshotEvent.seq + 1)
-
-    return {
-      snapshot: snapshotEvent.data,
-      events,
-    }
-  }
-
-  /**
-   * Get ALL events for a session, including synthetic events reconstructed
-   * from the latest snapshot's messages. This provides a unified view of the
-   * full event history even after cleanupOldEvents has deleted raw events.
-   *
-   * Synthetic events have seq=0 and are reconstructed as message.start +
-   * message.done pairs from snapshot messages. Real events since the snapshot
-   * keep their original seq numbers.
-   */
-  getAllEvents(sessionId: string): StoredEvent[] {
-    const { snapshot, events } = this.getEventsSinceSnapshot(sessionId)
-
-    if (!snapshot) {
-      return events
-    }
-
-    // Reconstruct synthetic events from snapshot messages
-    const syntheticEvents: StoredEvent[] = []
-    for (const msg of snapshot.messages) {
-      syntheticEvents.push({
-        seq: 0,
-        timestamp: msg.timestamp,
-        sessionId,
-        type: 'message.start',
-        data: {
-          messageId: msg.id,
-          role: msg.role as 'user' | 'assistant' | 'system',
-          content: msg.content,
-          ...(msg.contextWindowId !== undefined && { contextWindowId: msg.contextWindowId }),
-          ...(msg.isSystemGenerated !== undefined && { isSystemGenerated: msg.isSystemGenerated }),
-          ...(msg.messageKind !== undefined && { messageKind: msg.messageKind }),
-          ...(msg.metadata !== undefined && { metadata: msg.metadata }),
-          ...(msg.subAgentId !== undefined && { subAgentId: msg.subAgentId }),
-          ...(msg.subAgentType !== undefined && { subAgentType: msg.subAgentType }),
-          ...(msg.isCompactionSummary !== undefined && { isCompactionSummary: msg.isCompactionSummary }),
-          ...(msg.attachments !== undefined && { attachments: msg.attachments }),
-        },
-      })
-      syntheticEvents.push({
-        seq: 0,
-        timestamp: msg.timestamp,
-        sessionId,
-        type: 'message.done',
-        data: { messageId: msg.id },
-      })
-    }
-
-    // Combine synthetic + real events, sorted by timestamp then seq
-    return [...syntheticEvents, ...events].sort((a, b) => {
-      const tsDiff = a.timestamp - b.timestamp
-      if (tsDiff !== 0) return tsDiff
-      return a.seq - b.seq
-    })
-  }
-
-  private rowToStoredEvent(row: EventRow): StoredEvent {
-    return {
-      seq: row.seq,
-      timestamp: row.timestamp,
-      sessionId: row.session_id,
-      type: row.event_type as TurnEvent['type'],
-      data: JSON.parse(row.payload),
-    }
-  }
-
   // --------------------------------------------------------------------------
   // Subscriptions
   // --------------------------------------------------------------------------
 
   /**
-   * Subscribe to events for a session
-   * Optionally replay events from a specific seq
-   *
-   * Returns an async iterator that yields events and an unsubscribe function
+   * Subscribe to events for a session. Optional fromSeq replays path events
+   * with seq >= fromSeq first (reconnect catch-up).
    */
   subscribe(
     sessionId: string,
     fromSeq?: number,
   ): { iterator: AsyncIterableIterator<StoredEvent>; unsubscribe: () => void } {
     const state = createIteratorState()
-
     const subscriber = createSubscriber(state, { sessionId }) as Subscriber
 
     let sessionSubs = this.subscribers.get(sessionId)
@@ -668,8 +1237,7 @@ export class EventStore {
     sessionSubs.add(subscriber)
 
     if (fromSeq !== undefined) {
-      const replayEvents = this.getEvents(sessionId, fromSeq)
-      state.queue.push(...replayEvents)
+      state.queue.push(...this.getEvents(sessionId, fromSeq))
     }
 
     const unsubscribe = () => {
@@ -681,8 +1249,7 @@ export class EventStore {
     return { iterator: createEventIterator(state, subscriber), unsubscribe }
   }
 
-  private notifySubscribers(sessionId: string, event: StoredEvent): void {
-    // Notify session-specific subscribers
+  private notify(sessionId: string, event: StoredEvent): void {
     const sessionSubs = this.subscribers.get(sessionId)
     if (sessionSubs) {
       const subscribersCopy = Array.from(sessionSubs)
@@ -693,7 +1260,6 @@ export class EventStore {
       }
     }
 
-    // Notify global subscribers (receives ALL events)
     const globalSubscribersCopy = Array.from(this.globalSubscribers.values())
     for (const subscriber of globalSubscribersCopy) {
       if (!subscriber.closed) {
@@ -703,18 +1269,14 @@ export class EventStore {
   }
 
   /**
-   * Subscribe to ALL events across ALL sessions.
-   * Unlike subscribe() which is session-specific, this receives every event.
-   * Used by WebSocket clients to receive real-time updates for all sessions.
-   *
-   * Returns an async iterator that yields events and an unsubscribe function
+   * Subscribe to ALL events across ALL sessions (every append on every tree,
+   * including ephemeral chunk events). Used by WebSocket clients.
    */
   subscribeAll(): { iterator: AsyncIterableIterator<StoredEvent>; unsubscribe: () => void } {
     const state = createIteratorState()
     const wsId = ++this.globalSubscriberIdCounter
 
     const subscriber = createSubscriber(state, { wsId }) as GlobalSubscriber
-
     this.globalSubscribers.set(wsId, subscriber)
 
     const unsubscribe = () => {
@@ -727,485 +1289,196 @@ export class EventStore {
   }
 
   // --------------------------------------------------------------------------
-  // Cleanup
+  // In-place payload update (enrichment, e.g. vision descriptions)
   // --------------------------------------------------------------------------
 
   /**
-   * Delete all events for a session
+   * Update the payload of an existing node in place (by event id).
+   * Invalidates the tree's caches — the payload is part of path contents.
+   */
+  updateEventPayload(sessionId: string, eventId: string, data: unknown): void {
+    const treeId = this.getTreeId(sessionId)
+    const row = this.ensureTreeRows(treeId).get(eventId)
+    if (!row) {
+      throw new Error(`Event ${eventId} not found in conversation tree`)
+    }
+    const payload = JSON.stringify(data)
+    this.db.prepare(`UPDATE events SET payload = ? WHERE tree_id = ? AND event_id = ?`).run(payload, treeId, eventId)
+    this.invalidateTree(treeId)
+    this.promptsCache.delete(sessionId)
+  }
+
+  // --------------------------------------------------------------------------
+  // Import / deletion / garbage collection
+  // --------------------------------------------------------------------------
+
+  /**
+   * Import v2 tree events (each carries eventId/parentId) into the session's
+   * tree. Intended for a fresh session (the import target owns its tree).
+   * Pre-v3 (linear) exports are not importable in v3.
+   */
+  importEvents(sessionId: string, events: StoredEvent[]): StoredEvent[] {
+    if (events.length === 0) return []
+
+    const treeId = this.getTreeId(sessionId)
+    for (const event of events) {
+      if (typeof event.eventId !== 'string' || event.eventId.length === 0) {
+        throw new Error(
+          'Import requires v2 conversation-tree events (eventId is missing) — pre-v3 exports are not supported',
+        )
+      }
+    }
+
+    const insert = this.db.prepare(
+      `INSERT INTO events (tree_id, event_id, parent_id, seq, timestamp, event_type, payload)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(tree_id, event_id) DO NOTHING`,
+    )
+
+    const stored: StoredEvent[] = []
+    const transaction = this.db.transaction(() => {
+      for (const event of events) {
+        insert.run(
+          treeId,
+          event.eventId,
+          event.parentId ?? null,
+          event.seq,
+          event.timestamp,
+          event.type,
+          JSON.stringify(event.data),
+        )
+        stored.push({ ...event, sessionId })
+      }
+    })
+    transaction()
+
+    for (const event of stored) {
+      this.notify(sessionId, event)
+    }
+
+    this.invalidateTree(treeId)
+    this.cursors.delete(sessionId) // caller sets the imported cursor explicitly
+    this.promptsCache.delete(sessionId)
+    return stored
+  }
+
+  /**
+   * Delete a session's store footprint: in-flight buffers, cursor, and — when
+   * no other session shares the tree — the whole tree plus unreferenced
+   * blobs. Shared trees are kept (the GC reclaims dead branches later).
    */
   deleteSession(sessionId: string): void {
-    this.db.prepare(`DELETE FROM events WHERE session_id = ?`).run(sessionId)
-    this.invalidateSessionCache(sessionId)
+    this.deletedSessions.add(sessionId)
+    const treeId = this.getTreeId(sessionId)
+    this.buffers.delete(sessionId)
+    this.cursors.delete(sessionId)
+
+    const others = (this.tryGetDbRows(`SELECT id FROM sessions WHERE tree_id = ?`, treeId) as { id: string }[]).filter(
+      (s) => s.id !== sessionId,
+    )
+
+    if (others.length === 0) {
+      const rows = this.ensureTreeRows(treeId)
+      const refs = collectBlobRefsFromRows(rows)
+      const result = this.db.prepare(`DELETE FROM events WHERE tree_id = ?`).run(treeId)
+      if (result.changes > 0) {
+        const blobsDeleted = this.deleteUnreferencedBlobs(refs)
+        logger.debug('Deleted conversation tree', { treeId, events: result.changes, blobsDeleted })
+      }
+      this.invalidateTree(treeId)
+    }
+
+    this.promptsCache.delete(sessionId)
 
     // Close all subscribers for this session
     const sessionSubs = this.subscribers.get(sessionId)
     if (sessionSubs) {
       for (const subscriber of sessionSubs) {
         subscriber.closed = true
-        subscriber.close() // Resolve any pending next() calls
+        subscriber.close()
       }
       this.subscribers.delete(sessionId)
     }
   }
 
   /**
-   * Delete all events up to (and including) a given sequence number.
-   * This is used to clean up events that are now contained in a snapshot.
+   * Reclaim dead branches: event subtrees referenced by no session cursor,
+   * plus blobs they exclusively referenced.
    *
-   * @param sessionId - The session ID
-   * @param upToSeq - The sequence number to delete up to (inclusive)
-   * @returns The number of events deleted
+   * @param maxAgeMs - When set, a tree is only reclaimed if its newest dead
+   *   node is older than this (grace period for abandoned-but-switchable
+   *   branches). Omit to reclaim immediately.
    */
-  deleteEventsUpToSeq(sessionId: string, upToSeq: number): number {
-    const result = this.db.prepare(`DELETE FROM events WHERE session_id = ? AND seq <= ?`).run(sessionId, upToSeq)
-    this.invalidateSessionCache(sessionId)
+  gcDeadBranches(maxAgeMs?: number): { trees: number; eventsDeleted: number; blobsDeleted: number } {
+    const report = { trees: 0, eventsDeleted: 0, blobsDeleted: 0 }
 
-    return result.changes as number
-  }
+    const treeIds = (this.tryGetDbRows(`SELECT DISTINCT tree_id FROM events`) as { tree_id: string }[]).map(
+      (r) => r.tree_id,
+    )
 
-  /**
-   * Delete all events after a given sequence number (exclusive).
-   * Retains session.initialized (seq 1) and any events at/below fromSeq.
-   * Used when truncating session history.
-   *
-   * @param sessionId - The session ID
-   * @param fromSeq - Events with seq > fromSeq will be deleted
-   * @returns The number of events deleted
-   */
-  deleteEventsAfterSeq(sessionId: string, fromSeq: number): number {
-    const result = this.db.prepare(`DELETE FROM events WHERE session_id = ? AND seq > ?`).run(sessionId, fromSeq)
-    this.invalidateSessionCache(sessionId)
+    for (const treeId of treeIds) {
+      const sessions = this.tryGetDbRows(`SELECT id FROM sessions WHERE tree_id = ?`, treeId) as { id: string }[]
+      if (sessions.length === 0) {
+        // Orphaned tree (owning session deleted without cleanup) — reclaim in full.
+        const rows = this.ensureTreeRows(treeId)
+        const refs = collectBlobRefsFromRows(rows)
+        const result = this.db.prepare(`DELETE FROM events WHERE tree_id = ?`).run(treeId)
+        report.eventsDeleted += result.changes
+        report.blobsDeleted += this.deleteUnreferencedBlobs(refs)
+        this.invalidateTree(treeId)
+        report.trees++
+        continue
+      }
 
-    return result.changes as number
-  }
+      const aliveCursors = sessions
+        .map((s) => this.getCursorEventId(s.id))
+        .filter((c): c is string => typeof c === 'string' && c.length > 0)
 
-  /**
-   * Clean up old events, keeping only:
-   * - session.initialized event (seq 1)
-   * - All snapshot events
-   * - State-changing events (criteria.set, criterion.updated, mode.changed, phase.changed, context.state, etc.)
-   * - Events after the latest snapshot (current window)
-   *
-   * This is the recommended cleanup method that preserves all snapshots and state.
-   *
-   * @param sessionId - The session ID
-   * @returns The number of events deleted
-   */
-  cleanupOldEvents(sessionId: string): number {
-    // Get the latest snapshot sequence
-    const latestSnapshotSeq = this.getLatestSnapshotSeq(sessionId)
+      const rows = this.ensureTreeRows(treeId)
+      const dead = getDeadEventIds(rows as unknown as Map<string, TreeEventRow>, aliveCursors)
+      if (dead.size === 0) continue
 
-    if (latestSnapshotSeq === 0) {
-      // No snapshots yet, nothing to clean up
-      return 0
-    }
+      if (maxAgeMs !== undefined) {
+        let newest = 0
+        for (const id of dead) {
+          const row = rows.get(id)
+          if (row && row.timestamp > newest) newest = row.timestamp
+        }
+        if (newest === 0 || Date.now() - newest < maxAgeMs) continue
+      }
 
-    // Delete all events before the latest snapshot, except:
-    // - seq 1 (session.initialized)
-    // - State-changing events that define session state
-    // Old snapshots are also deleted — the latest snapshot is always a
-    // superset of all previous ones (messages are cumulative).
-    const result = this.db
-      .prepare(
-        `
-        DELETE FROM events
-        WHERE session_id = ? AND seq > 1 AND seq < ?
-        AND event_type NOT IN (
-          'criteria.set',
-          'criterion.updated',
-          'mode.changed',
-          'phase.changed',
-          'todo.updated',
-          'context.state',
-          'metadata.set'
+      const refs = collectBlobRefsFromDeadRows(rows, dead)
+      let deleted = 0
+      const deadIds = [...dead]
+      for (let i = 0; i < deadIds.length; i += 1000) {
+        const chunk = deadIds.slice(i, i + 1000)
+        // All-anonymous placeholders (mixing ? and ?NNN breaks better-sqlite3).
+        const delById = this.db.prepare(
+          `DELETE FROM events WHERE tree_id = ? AND event_id IN (${chunk.map(() => '?').join(',')})`,
         )
-      `,
-      )
-      .run(sessionId, latestSnapshotSeq)
-
-    this.invalidateSessionCache(sessionId)
-
-    return result.changes as number
-  }
-
-  /**
-   * One-time storage optimization: delete old snapshots across all sessions.
-   * Safe to run multiple times (idempotent).
-   */
-  optimizeStorage(): { deletedSnapshots: number } {
-    const deleteResult = this.db
-      .prepare(
-        `
-        DELETE FROM events
-        WHERE event_type = 'turn.snapshot'
-        AND id NOT IN (
-          SELECT e1.id FROM events e1
-          WHERE e1.event_type = 'turn.snapshot'
-          AND e1.seq = (
-            SELECT MAX(e2.seq) FROM events e2
-            WHERE e2.session_id = e1.session_id
-            AND e2.event_type = 'turn.snapshot'
-          )
-        )
-      `,
-      )
-      .run()
-
-    this.clearSnapshotCache()
-
-    return { deletedSnapshots: deleteResult.changes as number }
-  }
-
-  /**
-   * Get the latest snapshot sequence number for a session
-   * @returns The sequence number of the latest snapshot, or 0 if none
-   */
-  getLatestSnapshotSeq(sessionId: string): number {
-    const row = this.db
-      .prepare(
-        `
-        SELECT seq FROM events 
-        WHERE session_id = ? AND event_type = 'turn.snapshot' 
-        ORDER BY seq DESC LIMIT 1
-      `,
-      )
-      .get(sessionId) as { seq: number } | undefined
-
-    return row?.seq ?? 0
-  }
-
-  /**
-   * Consolidate orphaned events into a new snapshot and delete raw events.
-   * Uses transaction to ensure atomicity.
-   * @returns Object with snapshotSeq and deletedCount, or null if no events to consolidate
-   */
-  consolidateSession(sessionId: string): { snapshotSeq: number; deletedCount: number } | null {
-    const transaction = this.db.transaction(() => {
-      const events = this.getEvents(sessionId)
-      if (events.length === 0) return null
-
-      const latestSnapshot = [...events].reverse().find((e) => e.type === 'turn.snapshot')
-      const eventsAfterSnapshot = events.filter((e) => e.seq > (latestSnapshot?.seq ?? 0))
-
-      if (eventsAfterSnapshot.length === 0) return null
-
-      const initEvent = events.find((e) => e.type === 'session.initialized')
-      const initialWindowId =
-        initEvent && typeof initEvent.data === 'object' && 'contextWindowId' in initEvent.data
-          ? (initEvent.data as { contextWindowId: string }).contextWindowId
-          : 'legacy-window-1'
-
-      const latestSeq = events[events.length - 1]!.seq
-
-      const snapshotMessages =
-        latestSnapshot?.data && typeof latestSnapshot.data === 'object' && 'messages' in latestSnapshot.data
-          ? (latestSnapshot.data as { messages: SnapshotMessage[] }).messages
-          : []
-
-      const foldedState = foldSessionState(events, initialWindowId, 200000, snapshotMessages)
-      const newSnapshot = buildSnapshot(foldedState, latestSeq)
-
-      const deleteResult = this.db
-        .prepare(
-          `
-        DELETE FROM events 
-        WHERE session_id = ? AND seq <= ?
-        AND event_type != 'session.initialized'
-      `,
-        )
-        .run(sessionId, latestSeq)
-
-      const snapshotEvent = this.append(sessionId, {
-        type: 'turn.snapshot',
-        data: newSnapshot,
-      })
-
-      return {
-        snapshotSeq: snapshotEvent.seq,
-        deletedCount: deleteResult.changes as number,
+        deleted += delById.run(treeId, ...chunk).changes
       }
-    })
-
-    try {
-      return transaction()
-    } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error))
-      // FK errors mean the session was deleted - nothing to consolidate
-      const errnoError = error as NodeJS.ErrnoException
-      const isFkError = errnoError.code === 'SQLITE_CONSTRAINT_FOREIGNKEY'
-      if (isFkError || err.message.includes('FOREIGN KEY constraint failed')) {
-        logger.debug('Session no longer exists during consolidation', { sessionId })
-        return null
-      }
-      logger.error('Failed to consolidate session', { sessionId, error: err.message, stack: err.stack })
-      return null
+      report.eventsDeleted += deleted
+      report.blobsDeleted += this.deleteUnreferencedBlobs(refs)
+      this.invalidateTree(treeId)
+      report.trees++
     }
+
+    if (report.eventsDeleted > 0 || report.blobsDeleted > 0) {
+      logger.info('Dead-branch GC', report)
+    }
+    return report
   }
 
-  /**
-   * Find session IDs that have orphaned events (events after latest snapshot)
-   * and are not currently running.
-   */
-  findOrphanedSessions(): string[] {
-    const cutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString()
-    logger.debug('Looking for orphaned sessions', { cutoff })
+  // --------------------------------------------------------------------------
+  // Maintenance
+  // --------------------------------------------------------------------------
 
-    const sessions = this.db
-      .prepare(
-        `
-      SELECT id, is_running 
-      FROM sessions 
-      WHERE is_running = 0 AND updated_at < ?
-    `,
-      )
-      .all(cutoff) as Array<{ id: string; is_running: number }>
-
-    logger.debug('Idle sessions found', { count: sessions.length })
-
-    const orphaned: string[] = []
-
-    for (const session of sessions) {
-      const hasSnapshot = this.db
-        .prepare(
-          `
-        SELECT 1 FROM events WHERE session_id = ? AND event_type = 'turn.snapshot' LIMIT 1
-      `,
-        )
-        .get(session.id)
-
-      if (hasSnapshot) {
-        const latestSnapshotSeq = this.getLatestSnapshotSeq(session.id)
-        const eventsAfter = this.db
-          .prepare(
-            `
-          SELECT 1 FROM events WHERE session_id = ? AND seq > ? LIMIT 1
-        `,
-          )
-          .get(session.id, latestSnapshotSeq)
-
-        if (eventsAfter) {
-          orphaned.push(session.id)
-        }
-      }
-    }
-
-    logger.info('Orphaned sessions found', { count: orphaned.length, ids: orphaned })
-    return orphaned
-  }
-
-  /**
-   * Remove an expired rollback backup (`<db>.pre-de-dup.bak`) once it has aged
-   * past the retention window. Best-effort: failures are logged at debug level
-   * and never abort the caller (startup or manual migration).
-   */
-  private pruneExpiredRollbackBackup(): void {
-    const dbName = this.db.name
-    if (!dbName || dbName === ':memory:') return
-
-    const backupPath = `${dbName}.pre-de-dup.bak`
-    try {
-      if (!existsSync(backupPath)) return
-      const ageMs = Date.now() - statSync(backupPath).mtimeMs
-      if (ageMs <= SNAPSHOT_BACKUP_RETENTION_MS) return
-      unlinkSync(backupPath)
-      logger.info('Pruned expired rollback backup', {
-        backupPath,
-        ageDays: Math.round(ageMs / (24 * 60 * 60 * 1000)),
-      })
-    } catch (error) {
-      logger.debug('Could not prune expired rollback backup', {
-        backupPath,
-        error: error instanceof Error ? error.message : String(error),
-      })
-    }
-  }
-
-  /**
-   * Rewrite every persisted snapshot with the snapshot streaming
-   * de-duplication applied (see trimSnapshotStreamingOutput). Every finished
-   * tool call's streaming output is dropped — it is never read again once the
-   * call has a result; only pending (in-flight) calls keep their stream.
-   *
-   * Safe by construction: before the first rewrite it creates a rollback copy
-   * of the database (`<db>.pre-de-dup.bak`, only once) — the migration refuses
-   * to rewrite if that backup cannot be created. Expired rollback backups are
-   * auto-pruned (10-day retention) at the start of every invocation. Idempotent:
-   * after a successful run the maintenance flag is set and subsequent runs are
-   * a no-op. Returns a report used for the audit trail.
-   */
-  async migrateSnapshotStreams(): Promise<{
-    skipped: boolean
-    backupPath: string | null
-    scanned: number
-    rewritten: number
-    droppedStreams: number
-    bytesBefore: number
-    bytesAfter: number
-    kept: { pending: number; samples: Array<{ sessionId: string; tool: string }> }
-  }> {
-    // Self-maintenance first: expired rollback backups are cleaned up on every
-    // invocation, including runs skipped by the flag below.
-    this.pruneExpiredRollbackBackup()
-
-    const flag = this.getMaintenanceFlag()
-    if (flag === 'true') {
-      return {
-        skipped: true,
-        backupPath: null,
-        scanned: 0,
-        rewritten: 0,
-        droppedStreams: 0,
-        bytesBefore: 0,
-        bytesAfter: 0,
-        kept: { pending: 0, samples: [] },
-      }
-    }
-
-    // Rollback guarantee: a consistent snapshot of the DB must exist before
-    // any in-place rewrite. In-memory databases (tests) are skipped.
-    const dbName = this.db.name
-    let backupPath: string | null = null
-    if (dbName && dbName !== ':memory:') {
-      backupPath = `${dbName}.pre-de-dup.bak`
-      try {
-        if (!existsSync(backupPath)) {
-          logger.info('Creating rollback backup before snapshot stream de-dup', { backupPath })
-          await this.db.backup(backupPath)
-        }
-      } catch (error) {
-        logger.error('Aborting snapshot stream de-dup: could not create rollback backup', {
-          backupPath,
-          error: error instanceof Error ? error.message : String(error),
-        })
-        return {
-          skipped: true,
-          backupPath: null,
-          scanned: 0,
-          rewritten: 0,
-          droppedStreams: 0,
-          bytesBefore: 0,
-          bytesAfter: 0,
-          kept: { pending: 0, samples: [] },
-        }
-      }
-    }
-
-    const rows = this.db
-      .prepare(`SELECT id, session_id, payload FROM events WHERE event_type = 'turn.snapshot'`)
-      .all() as Array<{ id: number; session_id: string; payload: string }>
-
-    const update = this.db.prepare(`UPDATE events SET payload = ? WHERE id = ?`)
-
-    const kept: {
-      pending: number
-      samples: Array<{ sessionId: string; tool: string }>
-    } = { pending: 0, samples: [] }
-
-    let rewritten = 0
-    let droppedStreams = 0
-    let bytesBefore = 0
-    let bytesAfter = 0
-
-    this.db.transaction(() => {
-      for (const row of rows) {
-        bytesBefore += Buffer.byteLength(row.payload)
-        let parsed: SessionSnapshot
-        try {
-          parsed = JSON.parse(row.payload) as SessionSnapshot
-        } catch {
-          bytesAfter += Buffer.byteLength(row.payload)
-          continue
-        }
-
-        // Audit: every retained stream is a pending (in-flight) call — finished
-        // calls always drop their stream, which is dead weight in the snapshot.
-        let snapshotDropped = 0
-        for (const message of parsed.messages ?? []) {
-          for (const tc of message.toolCalls ?? []) {
-            if (!tc.streamingOutput || tc.streamingOutput.length === 0) continue
-            if (tc.result === undefined) {
-              kept.pending++
-              if (kept.samples.length < 20) {
-                kept.samples.push({ sessionId: row.session_id, tool: tc.name })
-              }
-            } else {
-              snapshotDropped++
-            }
-          }
-        }
-
-        if (snapshotDropped === 0) {
-          bytesAfter += Buffer.byteLength(row.payload)
-          continue
-        }
-
-        const { messages, droppedStreams: dropped } = trimSnapshotStreamingOutput(parsed.messages ?? [])
-        if (dropped === 0) {
-          bytesAfter += Buffer.byteLength(row.payload)
-          continue
-        }
-
-        const next = { ...parsed, messages }
-        const nextPayload = JSON.stringify(next)
-        update.run(nextPayload, row.id)
-        rewritten++
-        droppedStreams += dropped
-        bytesAfter += Buffer.byteLength(nextPayload)
-      }
-    })()
-
-    this.setSettingViaDb(SETTINGS_KEYS.MAINTENANCE_SNAPSHOT_STREAMS_MIGRATED, 'true')
-    logger.info('Snapshot stream migration complete', {
-      scanned: rows.length,
-      rewritten,
-      droppedStreams,
-      keptPending: kept.pending,
-      bytesSaved: bytesBefore - bytesAfter,
-    })
-
-    return {
-      skipped: false,
-      backupPath,
-      scanned: rows.length,
-      rewritten,
-      droppedStreams,
-      bytesBefore,
-      bytesAfter,
-      kept,
-    }
-  }
-
-  /**
-   * Read a maintenance flag from the settings table, tolerating databases
-   * without that table (e.g. minimal test fixtures).
-   */
-  private getMaintenanceFlag(): string | null {
-    try {
-      const row = this.db
-        .prepare(`SELECT value FROM settings WHERE key = ?`)
-        .get(SETTINGS_KEYS.MAINTENANCE_SNAPSHOT_STREAMS_MIGRATED) as { value: string } | undefined
-      return row?.value ?? null
-    } catch {
-      return null
-    }
-  }
-
-  /**
-   * Upsert a maintenance flag, tolerating databases without the settings table.
-   */
-  private setSettingViaDb(key: string, value: string): void {
-    try {
-      const now = new Date().toISOString()
-      this.db
-        .prepare(
-          `INSERT INTO settings (key, value, updated_at)
-           VALUES (?, ?, ?)
-           ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-        )
-        .run(key, value, now)
-    } catch {
-      // Settings table may not exist in minimal test fixtures
-    }
+  /** All session ids in the sessions table (empty on fixtures without one). */
+  listSessionIds(): string[] {
+    return this.tryGetDbRows(`SELECT id FROM sessions`)
+      .map((r) => (r as { id: string }).id)
+      .filter((id) => typeof id === 'string')
   }
 
   /**
@@ -1224,8 +1497,58 @@ export class EventStore {
   }
 }
 
+function safeJsonParse(text: string): unknown {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return null
+  }
+}
+
+function extractBlobRefs(payload: string): string[] {
+  const refs: string[] = []
+  if (!payload.includes('"blobRef"')) return refs
+  const parsed = safeJsonParse(payload)
+  if (parsed && typeof parsed === 'object') {
+    collectRefsFromValue(parsed, refs)
+  }
+  return refs
+}
+
+function collectRefsFromValue(value: unknown, out: string[]): void {
+  if (!value || typeof value !== 'object') return
+  if (Array.isArray(value)) {
+    for (const item of value) collectRefsFromValue(item, out)
+    return
+  }
+  const obj = value as Record<string, unknown>
+  if (isExternalized(obj)) {
+    out.push(obj.blobRef)
+    return
+  }
+  for (const v of Object.values(obj)) collectRefsFromValue(v, out)
+}
+
+function collectBlobRefsFromRows(rows: Map<string, CachedTreeRow>): string[] {
+  const refs = new Set<string>()
+  for (const row of rows.values()) {
+    for (const ref of extractBlobRefs(row.payload)) refs.add(ref)
+  }
+  return [...refs]
+}
+
+function collectBlobRefsFromDeadRows(rows: Map<string, CachedTreeRow>, dead: Set<string>): string[] {
+  const refs = new Set<string>()
+  for (const id of dead) {
+    const row = rows.get(id)
+    if (!row) continue
+    for (const ref of extractBlobRefs(row.payload)) refs.add(ref)
+  }
+  return [...refs]
+}
+
 // ============================================================================
-// Singleton instance (will be initialized with the main database)
+// Singleton instance (initialized with the main database)
 // ============================================================================
 
 let eventStoreInstance: EventStore | null = null
@@ -1238,79 +1561,44 @@ export function getStaleRunningSessionIds(): string[] {
   return staleRunningSessionIds
 }
 
-export function initEventStore(db: Database.Database): EventStore {
-  eventStoreInstance = new EventStore(db)
+export function initEventStore(db: Database.Database, options?: EventStoreOptions): EventStore {
+  eventStoreInstance = new EventStore(db, options)
 
   // Reset stale running states from previous server runs.
-  // Sessions cannot actually be running when server starts - any session
-  // that shows as running was interrupted (crash, restart, etc.).
+  // Sessions cannot actually be running when the server starts.
   try {
     db.prepare(`UPDATE sessions SET is_running = 0`).run()
   } catch {
     // Column may not exist in test fixtures without full schema
   }
-  resetStaleRunningSessions(eventStoreInstance, db)
-  rejectStaleConfirmations(eventStoreInstance, db)
 
-  // Optimize storage: remove old snapshots.
-  // Idempotent — fast no-op on already-optimized databases.
-  const result = eventStoreInstance.optimizeStorage()
-  if (result.deletedSnapshots > 0) {
-    logger.info('Storage optimized', result)
-  }
-
-  // Snapshot stream de-dup, asynchronously (don't block startup). Automatic
-  // and safe: the migration itself creates a rollback backup before its first
-  // rewrite and is idempotent afterwards (settings-flag guarded). Only legacy
-  // snapshots are touched — future snapshots are already lean via the
-  // write-side choke point.
-  setImmediate(() => {
-    void (async () => {
-      try {
-        const report = await eventStoreInstance!.migrateSnapshotStreams()
-        if (!report.skipped) {
-          logger.info('Snapshot stream de-dup (auto)', {
-            rewritten: report.rewritten,
-            droppedStreams: report.droppedStreams,
-            bytesSaved: report.bytesBefore - report.bytesAfter,
-            backupPath: report.backupPath,
-          })
-        }
-      } catch (error) {
-        logger.warn('Snapshot stream de-dup failed at startup', {
-          error: error instanceof Error ? error.message : String(error),
-        })
-      }
-    })()
-  })
-
-  // Consolidate orphaned sessions asynchronously (don't block startup)
+  // Path-scoped hygiene (stale running flags, stale confirmations) walks each
+  // session's active path — background it so a large database never blocks
+  // startup.
   setImmediate(() => {
     try {
-      logger.info('Starting orphaned session consolidation')
-      const orphanedSessions = eventStoreInstance!.findOrphanedSessions()
-      if (orphanedSessions.length > 0) {
-        logger.info('Found orphaned sessions to consolidate', { count: orphanedSessions.length })
-        let consolidated = 0
-        for (const sessionId of orphanedSessions) {
-          const result = eventStoreInstance!.consolidateSession(sessionId)
-          if (result) {
-            consolidated++
-            logger.debug('Consolidated session', { sessionId, deletedCount: result.deletedCount })
-          }
-        }
-        logger.info('Sessions consolidated', { consolidated, total: orphanedSessions.length })
-      } else {
-        logger.info('No orphaned sessions to consolidate')
-      }
-    } catch {
-      // Ignore errors during startup consolidation - this is best-effort
+      resetStaleRunningSessions(eventStoreInstance!)
+      rejectStaleConfirmations(eventStoreInstance!)
+    } catch (error) {
+      logger.warn('Post-boot session hygiene failed', {
+        error: error instanceof Error ? error.message : String(error),
+      })
     }
   })
 
-  // Collapse the WAL into the main database in the background. A large WAL
-  // (e.g. after a bulk write) forces cold reads to walk it; truncating it
-  // after startup keeps first queries fast. No-op when the WAL is empty.
+  // Dead-branch GC at startup: reclaim abandoned branches (7-day grace so
+  // freshly abandoned branches stay switchable) and orphaned trees.
+  setImmediate(() => {
+    try {
+      eventStoreInstance!.gcDeadBranches(7 * 24 * 60 * 60 * 1000)
+    } catch (error) {
+      logger.debug('Dead-branch GC failed at startup', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  })
+
+  // Collapse the WAL into the main database in the background.
   setImmediate(() => {
     try {
       eventStoreInstance!.checkpointWal()
@@ -1325,39 +1613,27 @@ export function initEventStore(db: Database.Database): EventStore {
 }
 
 /**
- * Find sessions that would fold to isRunning=true and emit running.changed=false
- * to clean up stale running states from server crashes/restarts.
+ * Find sessions whose active path folds to isRunning=true (crashed mid-turn)
+ * and emit running.changed=false.
  */
-function resetStaleRunningSessions(eventStore: EventStore, db: Database.Database): void {
-  // Get all session IDs
-  const sessions = db.prepare(`SELECT id FROM sessions`).all() as { id: string }[]
-
+function resetStaleRunningSessions(eventStore: EventStore): void {
+  const sessions = eventStore.listSessionIds()
   let resetCount = 0
   staleRunningSessionIds = []
 
-  for (const { id: sessionId } of sessions) {
-    // Get the last running.changed event for this session
-    const lastRunningEvent = db
-      .prepare(
-        `
-      SELECT payload FROM events 
-      WHERE session_id = ? AND event_type = 'running.changed'
-      ORDER BY seq DESC LIMIT 1
-    `,
-      )
-      .get(sessionId) as { payload: string } | undefined
-
-    if (lastRunningEvent) {
-      const data = JSON.parse(lastRunningEvent.payload) as { isRunning: boolean }
-      if (data.isRunning === true) {
-        // This session was left in running state - emit false to reset
-        eventStore.append(sessionId, {
-          type: 'running.changed',
-          data: { isRunning: false },
-        })
-        resetCount++
-        staleRunningSessionIds.push(sessionId)
-      }
+  for (const sessionId of sessions) {
+    const events = eventStore.getEvents(sessionId)
+    let wasRunning = false
+    for (let i = events.length - 1; i >= 0; i--) {
+      const event = events[i]!
+      if (event.type !== 'running.changed') continue
+      wasRunning = (event.data as { isRunning: boolean }).isRunning
+      break
+    }
+    if (wasRunning) {
+      eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: false } })
+      resetCount++
+      staleRunningSessionIds.push(sessionId)
     }
   }
 
@@ -1366,45 +1642,20 @@ function resetStaleRunningSessions(eventStore: EventStore, db: Database.Database
   }
 }
 
-/**
- * Reject any unresponded path confirmations that survived a server restart.
- * The agent that created them is gone, so they can never be resolved.
- */
-function rejectStaleConfirmations(eventStore: EventStore, db: Database.Database): void {
-  const sessions = db.prepare(`SELECT id FROM sessions`).all() as { id: string }[]
-
+/** Reject unresponded path confirmations from a previous server run. */
+function rejectStaleConfirmations(eventStore: EventStore): void {
+  const sessions = eventStore.listSessionIds()
   let rejectedCount = 0
 
-  for (const { id: sessionId } of sessions) {
-    // Find all path.confirmation_pending events without a matching path.confirmation_responded
-    // Using raw SQL aggregation since getEvents wouldn't be efficient for all sessions
-    const pendingRows = db
-      .prepare(
-        `
-      SELECT e1.seq, e1.payload FROM events e1
-      WHERE e1.session_id = ? 
-        AND e1.event_type = 'path.confirmation_pending'
-        AND NOT EXISTS (
-          SELECT 1 FROM events e2
-          WHERE e2.session_id = e1.session_id
-            AND e2.event_type = 'path.confirmation_responded'
-            AND json_extract(e2.payload, '$.callId') = json_extract(e1.payload, '$.callId')
-        )
-    `,
-      )
-      .all(sessionId) as Array<{ seq: number; payload: string }>
-
-    for (const row of pendingRows) {
-      try {
-        const data = JSON.parse(row.payload) as { callId: string }
-        eventStore.append(sessionId, {
-          type: 'path.confirmation_responded',
-          data: { callId: data.callId, approved: false, alwaysAllow: false },
-        })
-        rejectedCount++
-      } catch {
-        // Malformed payload — skip
-      }
+  for (const sessionId of sessions) {
+    const events = eventStore.getEvents(sessionId)
+    const pending = foldPendingConfirmations(events)
+    for (const pendingConfirmation of pending) {
+      eventStore.append(sessionId, {
+        type: 'path.confirmation_responded',
+        data: { callId: pendingConfirmation.callId, approved: false, alwaysAllow: false },
+      })
+      rejectedCount++
     }
   }
 

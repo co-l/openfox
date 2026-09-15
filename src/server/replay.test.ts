@@ -1,14 +1,21 @@
+/**
+ * POST /api/sessions/:id/replay — edit & resend (v3 conversation tree).
+ *
+ * The route delegates to sessionManager.resendMessage, which persists a
+ * SIBLING message node (same parent, fresh id), moves the cursor to it, and
+ * queues the turn with the existing id. The original branch stays
+ * switchable (non-destructive). This file covers the route wiring: body
+ * validation, error mapping, and response shape.
+ */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import express from 'express'
 import { createServer, type Server } from 'node:http'
-import Database from 'better-sqlite3'
-import { EventStore, initEventStore, getEventStore } from './events/store.js'
 import type { SessionManager } from './session/manager.js'
 
 function mountReplayRoute(
   app: express.Express,
   deps: {
-    sessionManager: Pick<SessionManager, 'getSession' | 'queueMessage'>
+    sessionManager: Pick<SessionManager, 'getSession' | 'resendMessage' | 'queueMessage' | 'getQueueState'>
   },
 ) {
   app.use(express.json())
@@ -31,34 +38,23 @@ function mountReplayRoute(
       return res.status(400).json({ error: 'attachments must be an array if provided' })
     }
 
-    const { getEventStore } = await import('./events/index.js')
-    const { buildMessagesFromStoredEvents } = await import('./events/folding.js')
-    const eventStore = getEventStore()
-    const events = eventStore.getEvents(sessionId)
-    const { messages } = buildMessagesFromStoredEvents(events)
-
-    const msgIndex = messages.findIndex((m) => m.id === messageId)
-    if (msgIndex === -1) {
-      return res.status(400).json({ error: 'Message not found' })
+    // resendMessage persists the sibling AND queues the turn (with the
+    // existing id, so the processor does not re-add the message).
+    let siblingId: string
+    try {
+      siblingId = deps.sessionManager.resendMessage(sessionId, messageId, {
+        ...(content !== undefined ? { content } : {}),
+        ...(attachments !== undefined ? { attachments } : {}),
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (message.includes('not found')) {
+        return res.status(404).json({ error: message })
+      }
+      return res.status(400).json({ error: message })
     }
 
-    const msg = messages[msgIndex]!
-    if (msg.role !== 'user' || msg.isSystemGenerated) {
-      return res.status(400).json({ error: 'Can only replay user messages' })
-    }
-
-    const { truncateSessionMessages } = await import('./events/index.js')
-    truncateSessionMessages(sessionId, msgIndex - 1)
-
-    deps.sessionManager.queueMessage(
-      sessionId,
-      'asap',
-      content ?? msg.content,
-      attachments ?? msg.attachments,
-      msg.messageKind,
-    )
-
-    res.json({ success: true })
+    res.json({ success: true, messageId: siblingId, queueState: deps.sessionManager.getQueueState(sessionId) })
   })
 }
 
@@ -72,33 +68,31 @@ async function closeServer(srv: Server): Promise<void> {
   return new Promise((resolve) => srv.close(() => resolve()))
 }
 
-describe('Replay endpoint', () => {
-  let db: Database.Database
-  let eventStore: EventStore
+describe('Replay endpoint (edit & resend)', () => {
   let app: express.Express
   let server: Server
   let port: number
   let sessionManager: {
     getSession: ReturnType<typeof vi.fn>
+    resendMessage: ReturnType<typeof vi.fn>
     queueMessage: ReturnType<typeof vi.fn>
+    getQueueState: ReturnType<typeof vi.fn>
   }
-  let append: (event: import('./events/types.js').TurnEvent) => void
 
   beforeEach(async () => {
-    db = new Database(':memory:')
-    db.exec(`CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, is_running INTEGER DEFAULT 0)`)
-    initEventStore(db)
-    eventStore = getEventStore()
-    append = (event) => eventStore.append('session-1', event)
-
     sessionManager = {
       getSession: vi.fn(),
+      resendMessage: vi.fn(() => 'sib-1'),
       queueMessage: vi.fn(),
+      getQueueState: vi.fn(() => [{ id: 'q-1', content: 'resent message' }]),
     }
 
     app = express()
     mountReplayRoute(app, {
-      sessionManager: sessionManager as unknown as Pick<SessionManager, 'getSession' | 'queueMessage'>,
+      sessionManager: sessionManager as unknown as Pick<
+        SessionManager,
+        'getSession' | 'resendMessage' | 'queueMessage' | 'getQueueState'
+      >,
     })
 
     server = createServer(app)
@@ -108,292 +102,140 @@ describe('Replay endpoint', () => {
 
   afterEach(async () => {
     await closeServer(server)
-    db.close()
   })
 
   function url(path: string): string {
     return `http://127.0.0.1:${port}${path}`
   }
 
+  function post(body: Record<string, unknown>): Promise<{ status: number; body: unknown }> {
+    return fetchJson(url('/api/sessions/session-1/replay'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  }
+
   it('returns 404 if session not found', async () => {
     sessionManager.getSession.mockReturnValue(null)
 
-    const { status } = await fetchJson(url('/api/sessions/nonexistent/replay'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messageId: 'msg-1' }),
-    })
+    const { status } = await post({ messageId: 'msg-1' })
     expect(status).toBe(404)
+    expect(sessionManager.resendMessage).not.toHaveBeenCalled()
   })
 
   it('returns 400 if messageId is missing', async () => {
-    sessionManager.getSession.mockReturnValue({ id: 'session-1', messages: [] })
+    sessionManager.getSession.mockReturnValue({ id: 'session-1' })
 
-    const { status, body } = await fetchJson(url('/api/sessions/session-1/replay'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    })
+    const { status, body } = await post({})
     expect(status).toBe(400)
     expect(body).toEqual({ error: 'messageId is required' })
   })
 
   it('returns 400 if messageId is not a string', async () => {
-    sessionManager.getSession.mockReturnValue({ id: 'session-1', messages: [] })
+    sessionManager.getSession.mockReturnValue({ id: 'session-1' })
 
-    const { status, body } = await fetchJson(url('/api/sessions/session-1/replay'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messageId: 123 }),
-    })
+    const { status, body } = await post({ messageId: 123 })
     expect(status).toBe(400)
     expect(body).toEqual({ error: 'messageId is required' })
   })
 
-  it('returns 400 if message not found', async () => {
-    sessionManager.getSession.mockReturnValue({ id: 'session-1', messages: [] })
+  it('returns 400 for an empty-string edit', async () => {
+    sessionManager.getSession.mockReturnValue({ id: 'session-1' })
 
-    const { status, body } = await fetchJson(url('/api/sessions/session-1/replay'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messageId: 'nonexistent' }),
-    })
+    const { status, body } = await post({ messageId: 'user-1', content: '   ' })
     expect(status).toBe(400)
-    expect(body).toEqual({ error: 'Message not found' })
-  })
-
-  it('returns 400 if message is an assistant message', async () => {
-    sessionManager.getSession.mockReturnValue({ id: 'session-1', messages: [] })
-
-    // Initialize session and add an assistant message
-    append({ type: 'session.initialized', data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' } })
-    append({
-      type: 'message.start',
-      data: { messageId: 'assistant-1', role: 'assistant', content: 'Hello!' },
-    })
-    append({ type: 'message.done', data: { messageId: 'assistant-1' } })
-
-    const { status, body } = await fetchJson(url('/api/sessions/session-1/replay'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messageId: 'assistant-1' }),
-    })
-    expect(status).toBe(400)
-    expect(body).toEqual({ error: 'Can only replay user messages' })
-  })
-
-  it('returns 400 if message is system-generated', async () => {
-    sessionManager.getSession.mockReturnValue({ id: 'session-1', messages: [] })
-
-    append({ type: 'session.initialized', data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' } })
-    append({
-      type: 'message.start',
-      data: { messageId: 'sys-1', role: 'user', content: 'auto prompt', isSystemGenerated: true },
-    })
-    append({ type: 'message.done', data: { messageId: 'sys-1' } })
-
-    const { status, body } = await fetchJson(url('/api/sessions/session-1/replay'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messageId: 'sys-1' }),
-    })
-    expect(status).toBe(400)
-    expect(body).toEqual({ error: 'Can only replay user messages' })
-  })
-
-  it('successfully replays a user message', async () => {
-    sessionManager.getSession.mockReturnValue({ id: 'session-1', messages: [] })
-    sessionManager.queueMessage.mockReturnValue({ queueId: 'q-1' })
-
-    // Initialize session and add messages
-    append({ type: 'session.initialized', data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' } })
-    append({
-      type: 'message.start',
-      data: { messageId: 'user-1', role: 'user', content: 'First message' },
-    })
-    append({ type: 'message.done', data: { messageId: 'user-1' } })
-    append({
-      type: 'message.start',
-      data: { messageId: 'assistant-1', role: 'assistant', content: 'First response' },
-    })
-    append({ type: 'message.done', data: { messageId: 'assistant-1' } })
-    append({
-      type: 'message.start',
-      data: { messageId: 'user-2', role: 'user', content: 'Second message' },
-    })
-    append({ type: 'message.done', data: { messageId: 'user-2' } })
-
-    const { status, body } = await fetchJson(url('/api/sessions/session-1/replay'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messageId: 'user-2' }),
-    })
-    expect(status).toBe(200)
-    expect(body).toEqual({ success: true })
-    expect(sessionManager.queueMessage).toHaveBeenCalledWith(
-      'session-1',
-      'asap',
-      'Second message',
-      undefined,
-      undefined,
-    )
-  })
-
-  it('handles multi-window sessions correctly', async () => {
-    sessionManager.getSession.mockReturnValue({ id: 'session-1', messages: [] })
-    sessionManager.queueMessage.mockReturnValue({ queueId: 'q-1' })
-
-    // Window 1 messages
-    append({ type: 'session.initialized', data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' } })
-    append({
-      type: 'message.start',
-      data: { messageId: 'w1-user-1', role: 'user', content: 'Window 1 message', contextWindowId: 'window-1' },
-    })
-    append({ type: 'message.done', data: { messageId: 'w1-user-1' } })
-
-    // Compaction creates window 2
-    append({
-      type: 'context.compacted',
-      data: {
-        closedWindowId: 'window-1',
-        newWindowId: 'window-2',
-        beforeTokens: 1000,
-        afterTokens: 100,
-        summary: 'compacted',
-      },
-    })
-
-    // Window 2 messages
-    append({
-      type: 'message.start',
-      data: { messageId: 'w2-user-1', role: 'user', content: 'Window 2 message', contextWindowId: 'window-2' },
-    })
-    append({ type: 'message.done', data: { messageId: 'w2-user-1' } })
-    append({
-      type: 'message.start',
-      data: {
-        messageId: 'w2-assistant-1',
-        role: 'assistant',
-        content: 'Window 2 response',
-        contextWindowId: 'window-2',
-      },
-    })
-    append({ type: 'message.done', data: { messageId: 'w2-assistant-1' } })
-
-    const { status, body } = await fetchJson(url('/api/sessions/session-1/replay'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messageId: 'w2-user-1' }),
-    })
-    expect(status).toBe(200)
-    expect(body).toEqual({ success: true })
-    expect(sessionManager.queueMessage).toHaveBeenCalledWith(
-      'session-1',
-      'asap',
-      'Window 2 message',
-      undefined,
-      undefined,
-    )
-  })
-
-  it('handles replaying the first message (index 0)', async () => {
-    sessionManager.getSession.mockReturnValue({ id: 'session-1', messages: [] })
-    sessionManager.queueMessage.mockReturnValue({ queueId: 'q-1' })
-
-    append({ type: 'session.initialized', data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' } })
-    append({
-      type: 'message.start',
-      data: { messageId: 'first-msg', role: 'user', content: 'First ever message' },
-    })
-    append({ type: 'message.done', data: { messageId: 'first-msg' } })
-    append({
-      type: 'message.start',
-      data: { messageId: 'resp-1', role: 'assistant', content: 'Response' },
-    })
-    append({ type: 'message.done', data: { messageId: 'resp-1' } })
-
-    const { status, body } = await fetchJson(url('/api/sessions/session-1/replay'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messageId: 'first-msg' }),
-    })
-    expect(status).toBe(200)
-    expect(body).toEqual({ success: true })
-    // Should truncate everything (msgIndex - 1 = -1, keeps 0 messages) and re-queue
-    expect(sessionManager.queueMessage).toHaveBeenCalledWith(
-      'session-1',
-      'asap',
-      'First ever message',
-      undefined,
-      undefined,
-    )
-  })
-
-  it('keeps original attachments when replaying without an attachments payload', async () => {
-    sessionManager.getSession.mockReturnValue({ id: 'session-1', messages: [] })
-    sessionManager.queueMessage.mockReturnValue({ queueId: 'q-1' })
-
-    append({ type: 'session.initialized', data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' } })
-    append({
-      type: 'message.start',
-      data: {
-        messageId: 'user-att',
-        role: 'user',
-        content: 'Analyze this file',
-        attachments: [{ id: 'a1', filename: 'report.pdf', mimeType: 'application/pdf', size: 2048, data: 'pdf-data' }],
-      },
-    })
-    append({ type: 'message.done', data: { messageId: 'user-att' } })
-
-    const { status } = await fetchJson(url('/api/sessions/session-1/replay'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messageId: 'user-att' }),
-    })
-    expect(status).toBe(200)
-    expect(sessionManager.queueMessage).toHaveBeenCalledWith(
-      'session-1',
-      'asap',
-      'Analyze this file',
-      [{ id: 'a1', filename: 'report.pdf', mimeType: 'application/pdf', size: 2048, data: 'pdf-data' }],
-      undefined,
-    )
-  })
-
-  it('replaces attachments with an empty array when an edited replay removes them', async () => {
-    sessionManager.getSession.mockReturnValue({ id: 'session-1', messages: [] })
-    sessionManager.queueMessage.mockReturnValue({ queueId: 'q-1' })
-
-    append({ type: 'session.initialized', data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' } })
-    append({
-      type: 'message.start',
-      data: {
-        messageId: 'user-att',
-        role: 'user',
-        content: 'Analyze this file',
-        attachments: [{ id: 'a1', filename: 'report.pdf', mimeType: 'application/pdf', size: 2048, data: 'pdf-data' }],
-      },
-    })
-    append({ type: 'message.done', data: { messageId: 'user-att' } })
-
-    const { status } = await fetchJson(url('/api/sessions/session-1/replay'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messageId: 'user-att', content: 'No attachment now', attachments: [] }),
-    })
-    expect(status).toBe(200)
-    expect(sessionManager.queueMessage).toHaveBeenCalledWith('session-1', 'asap', 'No attachment now', [], undefined)
+    expect(body).toEqual({ error: 'content must be a non-empty string if provided' })
   })
 
   it('returns 400 if attachments is not an array', async () => {
-    sessionManager.getSession.mockReturnValue({ id: 'session-1', messages: [] })
+    sessionManager.getSession.mockReturnValue({ id: 'session-1' })
 
-    const { status, body } = await fetchJson(url('/api/sessions/session-1/replay'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messageId: 'msg-1', attachments: 'not-an-array' }),
-    })
+    const { status, body } = await post({ messageId: 'msg-1', attachments: 'not-an-array' })
     expect(status).toBe(400)
     expect(body).toEqual({ error: 'attachments must be an array if provided' })
+  })
+
+  it('maps a not-found message to 404', async () => {
+    sessionManager.getSession.mockReturnValue({ id: 'session-1' })
+    sessionManager.resendMessage.mockImplementation((_id: string, messageId: string) => {
+      throw new Error(`Message ${messageId} not found`)
+    })
+
+    const { status, body } = await post({ messageId: 'nonexistent' })
+    expect(status).toBe(404)
+    expect(body).toEqual({ error: 'Message nonexistent not found' })
+  })
+
+  it('maps assistant messages to 400 (only plain user messages can be resent)', async () => {
+    sessionManager.getSession.mockReturnValue({ id: 'session-1' })
+    sessionManager.resendMessage.mockImplementation((_id: string, messageId: string) => {
+      if (messageId === 'assistant-1') throw new Error('Only plain user messages can be resent')
+      return 'sib-1'
+    })
+
+    const { status, body } = await post({ messageId: 'assistant-1' })
+    expect(status).toBe(400)
+    expect(body).toEqual({ error: 'Only plain user messages can be resent' })
+  })
+
+  it('maps system-generated messages to 400', async () => {
+    sessionManager.getSession.mockReturnValue({ id: 'session-1' })
+    sessionManager.resendMessage.mockImplementation((_id: string, messageId: string) => {
+      if (messageId === 'sys-1') throw new Error('Only plain user messages can be resent')
+      return 'sib-1'
+    })
+
+    const { status, body } = await post({ messageId: 'sys-1' })
+    expect(status).toBe(400)
+    expect(body).toEqual({ error: 'Only plain user messages can be resent' })
+  })
+
+  it('resends without edits (sibling keeps the original content) and reports the queue', async () => {
+    sessionManager.getSession.mockReturnValue({ id: 'session-1' })
+    sessionManager.resendMessage.mockReturnValue('sib-2')
+
+    const { status, body } = await post({ messageId: 'user-2' })
+    expect(status).toBe(200)
+    expect(body).toEqual({
+      success: true,
+      messageId: 'sib-2',
+      queueState: [{ id: 'q-1', content: 'resent message' }],
+    })
+    expect(sessionManager.resendMessage).toHaveBeenCalledWith('session-1', 'user-2', {})
+  })
+
+  it('passes an edited content to the resend', async () => {
+    sessionManager.getSession.mockReturnValue({ id: 'session-1' })
+
+    const { status } = await post({ messageId: 'user-1', content: 'Edited question' })
+    expect(status).toBe(200)
+    expect(sessionManager.resendMessage).toHaveBeenCalledWith('session-1', 'user-1', {
+      content: 'Edited question',
+    })
+  })
+
+  it('passes an explicit empty attachments array (removes the original ones)', async () => {
+    sessionManager.getSession.mockReturnValue({ id: 'session-1' })
+
+    const { status } = await post({ messageId: 'user-att', content: 'No attachment now', attachments: [] })
+    expect(status).toBe(200)
+    expect(sessionManager.resendMessage).toHaveBeenCalledWith('session-1', 'user-att', {
+      content: 'No attachment now',
+      attachments: [],
+    })
+  })
+
+  it('resends the first message of the session', async () => {
+    sessionManager.getSession.mockReturnValue({ id: 'session-1' })
+    sessionManager.resendMessage.mockReturnValue('sib-first')
+
+    const { status, body } = await post({ messageId: 'first-msg' })
+    expect(status).toBe(200)
+    expect(body).toEqual({
+      success: true,
+      messageId: 'sib-first',
+      queueState: [{ id: 'q-1', content: 'resent message' }],
+    })
   })
 })

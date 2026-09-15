@@ -4,7 +4,14 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { loadConfig } from '../config.js'
-import { closeDatabase, initDatabase } from './index.js'
+import { SCHEMA_VERSION, closeDatabase, initDatabase } from './index.js'
+
+function readUserVersion(dbPath: string): number {
+  const db = new Database(dbPath)
+  const version = (db.prepare(`PRAGMA user_version`).get() as { user_version: number }).user_version
+  db.close()
+  return version
+}
 
 function createOldSchemaDatabase(dbPath: string): void {
   const db = new Database(dbPath)
@@ -319,5 +326,90 @@ describe('db migrations', () => {
     expect(columnNames).toContain('sub_group')
 
     db.close()
+  })
+
+  it('stamps PRAGMA user_version with the schema version on a fresh database', () => {
+    const config = loadConfig()
+    config.database.path = dbPath
+    initDatabase(config)
+
+    expect(readUserVersion(dbPath)).toBe(SCHEMA_VERSION)
+  })
+
+  it('upgrades a pre-v3 database: drops linear events, backfills sessions, stamps the version', () => {
+    createOldSchemaDatabase(dbPath)
+    // Seed legacy data: linear events + the soft-delete table
+    const legacy = new Database(dbPath)
+    legacy
+      .prepare(`INSERT INTO events (session_id, seq, timestamp, event_type, payload) VALUES (?, ?, ?, ?, ?)`)
+      .run('test-session', 1, 1700000000000, 'session.initialized', '{}')
+    legacy.exec(
+      `CREATE TABLE IF NOT EXISTS tombstones (
+        id INTEGER PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        seq INTEGER NOT NULL
+      )`,
+    )
+    legacy.prepare(`INSERT INTO tombstones (session_id, seq) VALUES (?, ?)`).run('test-session', 1)
+    legacy.close()
+
+    const config = loadConfig()
+    config.database.path = dbPath
+    initDatabase(config)
+
+    expect(readUserVersion(dbPath)).toBe(SCHEMA_VERSION)
+
+    const db = new Database(dbPath)
+    // Events table recreated in tree shape; legacy rows are not carried over
+    const eventCols = (db.prepare(`PRAGMA table_info(events)`).all() as { name: string }[]).map((c) => c.name)
+    expect(eventCols).toContain('event_id')
+    expect(eventCols).toContain('parent_id')
+    expect((db.prepare(`SELECT COUNT(*) AS n FROM events`).get() as { n: number }).n).toBe(0)
+    // Soft-delete machinery is gone, blob store exists
+    const tables = (db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table'`).all() as { name: string }[]).map(
+      (t) => t.name,
+    )
+    expect(tables).not.toContain('tombstones')
+    expect(tables).toContain('blobs')
+    // The sessions row survived and was backfilled to own its (empty) tree
+    const session = db.prepare(`SELECT tree_id, cursor_event_id FROM sessions WHERE id = ?`).get('test-session') as {
+      tree_id: string | null
+      cursor_event_id: string | null
+    }
+    expect(session.tree_id).toBe('test-session')
+    expect(session.cursor_event_id).toBeNull()
+    db.close()
+  })
+
+  it('keeps the stamped version across restarts (idempotent migrations)', () => {
+    createOldSchemaDatabase(dbPath)
+
+    const config = loadConfig()
+    config.database.path = dbPath
+    initDatabase(config)
+    closeDatabase()
+
+    const config2 = loadConfig()
+    config2.database.path = dbPath
+    initDatabase(config2)
+
+    expect(readUserVersion(dbPath)).toBe(SCHEMA_VERSION)
+  })
+
+  it('never downgrades a database stamped with a newer schema version', () => {
+    const config = loadConfig()
+    config.database.path = dbPath
+    initDatabase(config)
+
+    const fresh = new Database(dbPath)
+    fresh.exec(`PRAGMA user_version = ${SCHEMA_VERSION + 6}`)
+    fresh.close()
+    closeDatabase()
+
+    const config2 = loadConfig()
+    config2.database.path = dbPath
+    initDatabase(config2)
+
+    expect(readUserVersion(dbPath)).toBe(SCHEMA_VERSION + 6)
   })
 })

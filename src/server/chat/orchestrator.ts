@@ -5,18 +5,15 @@
  * 1. Consuming pure generators that yield TurnEvents
  * 2. Appending events to EventStore
  * 3. Executing tools and yielding tool events
- * 4. Creating snapshots at end of turn
  *
  * This is the ONE place where events get appended to the store.
  */
 
-import type { MessageStats, StatsIdentity, ToolCall, ToolResult } from '../../shared/types.js'
+import type { StatsIdentity, ToolCall, ToolResult } from '../../shared/types.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { LLMClientWithModel } from '../llm/client.js'
-import type { SessionSnapshot } from '../events/types.js'
 import type { AgentDefinition } from '../agents/types.js'
 import { getEventStore, getCurrentContextWindowId, getCurrentWindowMessageOptions } from '../events/index.js'
-import { buildSnapshotFromSessionState } from '../events/folding.js'
 import type { SessionManager } from '../session/index.js'
 import { getToolRegistryForAgent, PathAccessDeniedError } from '../tools/index.js'
 import { buildAgentReminder, buildAgentSmallReminder, buildTopLevelSystemPrompt } from './prompts.js'
@@ -160,12 +157,12 @@ function resolveStatsIdentity(options: OrchestratorOptions): StatsIdentity {
 
 /**
  * Run a chat turn in the current mode.
- * Appends all events to EventStore and creates a snapshot at end of turn.
+ * Appends all events to EventStore (the store merges message streams into
+ * tree nodes and persists them).
  */
 export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
   const { sessionManager, sessionId } = options
   const eventStore = getEventStore()
-  const statsIdentity = resolveStatsIdentity(options)
 
   const session = sessionManager.requireSession(sessionId)
   const mode = session.mode
@@ -192,15 +189,6 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
     // (kickoff injection, step_done tracking) are handled by the workflow executor
     // which calls runAgentTurn directly — not through runChatTurn.
     await runAgentTurn(options, turnMetrics, mode, append)
-
-    // Create end-of-turn snapshot
-    const snapshot = buildSnapshot(sessionManager, sessionId, turnMetrics.buildStats(statsIdentity, mode))
-    const snapshotEvent = eventStore.append(sessionId, { type: 'turn.snapshot', data: snapshot })
-
-    const deletedCount = eventStore.cleanupOldEvents(sessionId)
-    if (deletedCount > 0) {
-      logger.debug('Cleaned up old events after snapshot', { sessionId, deletedCount, snapshotSeq: snapshotEvent.seq })
-    }
   } catch (error) {
     if (error instanceof PathAccessDeniedError) {
       const errorMsgId = crypto.randomUUID()
@@ -250,12 +238,6 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
     }
 
     if (error instanceof Error && error.message === 'Aborted') {
-      try {
-        const snapshot = buildSnapshot(sessionManager, sessionId, turnMetrics.buildStats(statsIdentity, mode))
-        eventStore.append(sessionId, { type: 'turn.snapshot', data: snapshot })
-      } catch {
-        // Session may have been deleted during abort — skip cleanup
-      }
       return
     }
 
@@ -313,20 +295,20 @@ function injectAgentReminder(sessionId: string, agentDef: AgentDefinition): void
   const eventStore = getEventStore()
   const currentWindowId = getCurrentContextWindowId(sessionId)
 
-  // Scan from end for latest agent message in current window.
-  // getAllEvents returns both real events and synthetic events reconstructed
-  // from the snapshot, so we always have the full history regardless of cleanup.
+  // Scan from end for the latest agent message on the active path.
   let latestAgentName: string | undefined
-  const events = eventStore.getAllEvents(sessionId)
+  const events = eventStore.getEvents(sessionId)
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i]!
-    if (event.type === 'message.start') {
+    if (event.type === 'message') {
       const data = event.data as {
+        role?: string
         isSystemGenerated?: boolean
         metadata?: { type?: string; name?: string }
         contextWindowId?: string
       }
       if (
+        data.role === 'user' &&
         data.isSystemGenerated &&
         data.metadata?.type === 'agent' &&
         (data.contextWindowId === currentWindowId || (!currentWindowId && !data.contextWindowId))
@@ -428,6 +410,17 @@ export async function runAgentTurn(
     )
   }
 
+  // A session can be deleted while its turn is still in flight. Event writes
+  // are already no-ops at the store level (deletedSessions); gate direct WS
+  // broadcasts the same way so no message is ever sent for a deleted session.
+  const baseOnMessage = options.onMessage
+  const onMessage = baseOnMessage
+    ? (msg: ServerMessage) => {
+        if (!options.sessionManager.getSession(options.sessionId)) return
+        baseOnMessage(msg)
+      }
+    : undefined
+
   return runTopLevelAgentLoop(
     {
       mode: agentId,
@@ -440,7 +433,7 @@ export async function runAgentTurn(
       statsIdentity,
       providerManager: options.sessionManager.getProviderManager(),
       signal: options.signal,
-      onMessage: options.onMessage,
+      onMessage,
       assembleRequest: async (input) => {
         const cached = options.sessionManager.getCachedPrompt(options.sessionId)
         if (cached) {
@@ -505,26 +498,4 @@ export async function runAgentTurn(
     },
     turnMetrics,
   )
-}
-
-// ============================================================================
-// Shared Helpers
-// ============================================================================
-
-/**
- * Build a snapshot of current session state.
- */
-function buildSnapshot(sessionManager: SessionManager, sessionId: string, _lastStats?: MessageStats): SessionSnapshot {
-  const eventStore = getEventStore()
-  const session = sessionManager.requireSession(sessionId)
-  const events = eventStore.getEvents(sessionId)
-  const latestSeq = eventStore.getLatestSeq(sessionId) ?? 0
-  const cachedPrompt = sessionManager.getCachedPrompt(sessionId)
-
-  return buildSnapshotFromSessionState({
-    session,
-    events,
-    latestSeq,
-    ...(cachedPrompt ? { cachedSystemPrompt: cachedPrompt.systemPrompt, dynamicContextHash: cachedPrompt.hash } : {}),
-  })
 }

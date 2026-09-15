@@ -151,31 +151,43 @@ export class QueueProcessor {
     const nextAsap = queue.find((m) => m.mode === 'asap') ?? queue[0]
     if (nextAsap) {
       sessionManager.cancelQueuedMessage(sessionId, nextAsap.queueId)
-      const userMessage = sessionManager.addMessage(sessionId, {
-        role: 'user',
-        content: nextAsap.content,
-        ...(nextAsap.attachments ? { attachments: nextAsap.attachments } : {}),
-      })
-      broadcastForSession(sessionId, createChatMessageMessage(userMessage))
-      logger.debug('Added queued message to session', {
-        sessionId,
-        queueId: nextAsap.queueId,
-        messageId: userMessage.id,
-      })
+      if (nextAsap.existingMessageId) {
+        // Resend: the user message was already persisted (sibling node) —
+        // the client has it; just run the turn.
+        logger.debug('Resend queued message already in tree', {
+          sessionId,
+          queueId: nextAsap.queueId,
+          messageId: nextAsap.existingMessageId,
+        })
+      } else {
+        const userMessage = sessionManager.addMessage(sessionId, {
+          role: 'user',
+          content: nextAsap.content,
+          ...(nextAsap.attachments ? { attachments: nextAsap.attachments } : {}),
+        })
+        broadcastForSession(sessionId, createChatMessageMessage(userMessage))
+        logger.debug('Added queued message to session', {
+          sessionId,
+          queueId: nextAsap.queueId,
+          messageId: userMessage.id,
+        })
 
-      generateSessionNameForSession(
-        sessionId,
-        nextAsap.content,
-        {
-          sessionManager,
-          providerManager: this.deps.providerManager,
-          broadcastForSession,
-          eventStore: getEventStore(),
-          getLLMClient: this.deps.getLLMClient,
-          ...(this.deps.getLLMClientForProvider ? { getLLMClientForProvider: this.deps.getLLMClientForProvider } : {}),
-        },
-        controller.signal,
-      )
+        generateSessionNameForSession(
+          sessionId,
+          nextAsap.content,
+          {
+            sessionManager,
+            providerManager: this.deps.providerManager,
+            broadcastForSession,
+            eventStore: getEventStore(),
+            getLLMClient: this.deps.getLLMClient,
+            ...(this.deps.getLLMClientForProvider
+              ? { getLLMClientForProvider: this.deps.getLLMClientForProvider }
+              : {}),
+          },
+          controller.signal,
+        )
+      }
     }
 
     this.runTurn(sessionId, controller)

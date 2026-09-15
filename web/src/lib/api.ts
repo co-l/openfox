@@ -20,12 +20,48 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
   return fetch(appUrl(url), { ...options, headers })
 }
 
-export async function truncateSession(sessionId: string, messageIndex: number): Promise<boolean> {
+export interface ConversationTreeTip {
+  eventId: string
+  timestamp: number
+  type: string
+  preview?: string
+  role?: string
+}
+
+export interface ConversationTreeNode {
+  eventId: string
+  parentId: string | null
+  seq: number
+  timestamp: number
+  type: string
+  messageId?: string
+  role?: string
+  preview?: string
+}
+
+export interface ConversationTree {
+  treeId: string
+  cursor: string | null
+  tips: ConversationTreeTip[]
+  nodes: ConversationTreeNode[]
+}
+
+export async function getConversationTree(sessionId: string): Promise<ConversationTree | null> {
   try {
-    const res = await authFetch(`/api/sessions/${sessionId}/truncate`, {
+    const res = await authFetch(`/api/sessions/${sessionId}/conversation-tree`)
+    if (!res.ok) return null
+    return (await res.json()) as ConversationTree
+  } catch {
+    return null
+  }
+}
+
+export async function switchConversationBranch(sessionId: string, messageId: string): Promise<boolean> {
+  try {
+    const res = await authFetch(`/api/sessions/${sessionId}/conversation-branch`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messageIndex }),
+      body: JSON.stringify({ messageId }),
     })
     return res.ok
   } catch {

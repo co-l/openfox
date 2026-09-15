@@ -1,30 +1,10 @@
 import type { Message, Attachment, StatsSource } from '../../shared/types.js'
-import type { StoredEvent, TurnEvent, SessionSnapshot, SnapshotMessage } from './types.js'
+import type { StoredEvent, TurnEvent, FoldedMessage } from './types.js'
 import { applyEvents } from './apply-events.js'
 import stripAnsi from 'strip-ansi'
 import type { ContextMessage, ContextMessageBuildOptions, EventLike, MessageWithId } from './fold-types.js'
 
-function cloneMessage(message: Message): Message {
-  return {
-    ...message,
-    ...(message.attachments ? { attachments: [...message.attachments] } : {}),
-    ...(message.toolCalls
-      ? {
-          toolCalls: message.toolCalls.map((toolCall) => ({
-            ...toolCall,
-            ...(toolCall.streamingOutput ? { streamingOutput: [...toolCall.streamingOutput] } : {}),
-            ...(toolCall.result ? { result: { ...toolCall.result } } : {}),
-          })),
-        }
-      : {}),
-    ...(message.segments ? { segments: [...message.segments] } : {}),
-    ...(message.preparingToolCalls && message.preparingToolCalls.length > 0
-      ? { preparingToolCalls: [...message.preparingToolCalls] }
-      : {}),
-  }
-}
-
-export function spreadOptionalMessageFields(message: SnapshotMessage) {
+export function spreadOptionalMessageFields(message: FoldedMessage) {
   return {
     ...(message.thinkingContent !== undefined && { thinkingContent: message.thinkingContent }),
     ...(message.toolCalls !== undefined && { toolCalls: message.toolCalls }),
@@ -46,164 +26,40 @@ export function spreadOptionalMessageFields(message: SnapshotMessage) {
   }
 }
 
-function snapshotMessageToMessage(message: SnapshotMessage): Message {
-  return cloneMessage({
-    id: message.id,
-    role: message.role,
-    content: message.content,
-    timestamp: new Date(message.timestamp).toISOString(),
-    ...spreadOptionalMessageFields(message),
-  })
-}
-
-/**
- * Reconstruct snapshot messages as synthetic events so they can be folded
- * through the exact same `buildContextMessagesFromStoredEvents` machinery as
- * live events. A snapshot is a compressed event log — consumers must never
- * re-implement the fold (that was the source of the tool-result parity bug).
- *
- * Synthetic events carry full tool results (including metadata) so the
- * canonical fold applies identically whether a message came from raw events
- * or from a snapshot replay.
- */
-export function snapshotMessagesToEvents(messages: SnapshotMessage[], sessionId = ''): StoredEvent[] {
-  const events: StoredEvent[] = []
-  let syntheticSeq = -1
-  const nextSeq = (): number => syntheticSeq--
-
-  for (const message of messages) {
-    events.push({
-      seq: nextSeq(),
-      timestamp: message.timestamp,
-      sessionId,
-      type: 'message.start',
-      data: {
-        messageId: message.id,
-        role: message.role as 'user' | 'assistant' | 'system',
-        // Only the fields the context fold consumes (window/subagent filtering,
-        // content, attachments) are carried — the rest are UI-only concerns.
-        ...(message.content !== undefined && { content: message.content }),
-        ...(message.contextWindowId !== undefined && { contextWindowId: message.contextWindowId }),
-        ...(message.subAgentId !== undefined && { subAgentId: message.subAgentId }),
-        ...(message.subAgentType !== undefined && { subAgentType: message.subAgentType }),
-        ...(message.attachments !== undefined && { attachments: message.attachments }),
-      },
-    })
-
-    if (message.thinkingContent) {
-      events.push({
-        seq: nextSeq(),
-        timestamp: message.timestamp,
-        sessionId: '',
-        type: 'message.thinking',
-        data: { messageId: message.id, content: message.thinkingContent },
-      })
-    }
-
-    for (const toolCall of message.toolCalls ?? []) {
-      events.push({
-        seq: nextSeq(),
-        timestamp: message.timestamp,
-        sessionId: '',
-        type: 'tool.call',
-        data: {
-          messageId: message.id,
-          toolCall: { id: toolCall.id, name: toolCall.name, arguments: toolCall.arguments },
-        },
-      })
-    }
-
-    for (const toolCall of message.toolCalls ?? []) {
-      if (!toolCall.result) continue
-      events.push({
-        seq: nextSeq(),
-        timestamp: message.timestamp,
-        sessionId: '',
-        type: 'tool.result',
-        data: { messageId: message.id, toolCallId: toolCall.id, result: toolCall.result },
-      })
-    }
-
-    events.push({
-      seq: nextSeq(),
-      timestamp: message.timestamp,
-      sessionId: '',
-      type: 'message.done',
-      data: { messageId: message.id },
-    })
-  }
-
-  return events
-}
-
 function applyStoredMessageEvents(initialMessages: Message[], events: StoredEvent[]): Message[] {
   return applyEvents(initialMessages as unknown as Message[], events, { timestampAsNumber: false }) as Message[]
 }
 
-export function applyTurnEventsToSnapshotMessages(
-  initialMessages: SnapshotMessage[],
-  events: EventLike[],
-): SnapshotMessage[] {
-  const messages = applyEvents(initialMessages as unknown as Message[], events as unknown as StoredEvent[], {
+/**
+ * Fold events into fully-resolved state messages (the session.state currency).
+ */
+export function foldTurnEventsToMessages(events: EventLike[]): FoldedMessage[] {
+  const messages = applyEvents([], events as unknown as StoredEvent[], {
     timestampAsNumber: true,
-  }) as unknown as SnapshotMessage[]
+  }) as unknown as FoldedMessage[]
   return messages.map((msg) => ({ ...msg, isStreaming: msg.isStreaming ?? true }))
 }
 
 /**
  * Extract compact per-response stats (id + timestamp + MessageStats) for the
- * WHOLE session, across every context window, without rebuilding messages.
- *
- * Source of truth is the latest snapshot's messages — they retain per-message
- * stats even after compaction and after cleanupOldEvents purged the raw
- * chat.done/message.done events (verified: a compacted session with 132
- * stat-bearing responses had 0 raw stat events left). message.done events
- * after the snapshot are appended (and may overwrite a snapshot entry when a
- * message finished after the snapshot was taken). Sessions with no snapshot
- * yet fall back to walking raw message.done events.
+ * whole session, across every context window, without rebuilding messages.
+ * In the v3 tree, `message` nodes carry their merged stats — the node
+ * timestamp is the message START time (the buffer's start), matching the
+ * v1 snapshot/stats semantics exactly.
  */
 export function buildSessionStatsMessages(events: StoredEvent[]): StatsSource[] {
   const statsById = new Map<string, StatsSource>()
-  const snapshotEvent = [...events].reverse().find((event) => event.type === 'turn.snapshot')
-  const snapshotSeq = snapshotEvent?.seq ?? 0
-
-  if (snapshotEvent) {
-    const snapshot = snapshotEvent.data as SessionSnapshot
-    for (const msg of snapshot.messages) {
-      if (msg.stats) {
-        statsById.set(msg.id, {
-          id: msg.id,
-          timestamp: new Date(msg.timestamp).toISOString(),
-          stats: msg.stats,
-        })
-      }
-    }
-  }
-
-  const startTimestamps = new Map<string, number>()
   for (const event of events) {
-    if (event.seq <= snapshotSeq) continue
-    switch (event.type) {
-      case 'message.start': {
-        const data = event.data as Extract<TurnEvent, { type: 'message.start' }>['data']
-        startTimestamps.set(data.messageId, event.timestamp)
-        break
-      }
-      case 'message.done': {
-        const data = event.data as Extract<TurnEvent, { type: 'message.done' }>['data']
-        if (data.stats) {
-          const timestamp = startTimestamps.get(data.messageId) ?? event.timestamp
-          statsById.set(data.messageId, {
-            id: data.messageId,
-            timestamp: new Date(timestamp).toISOString(),
-            stats: data.stats,
-          })
-        }
-        break
-      }
+    if (event.type !== 'message') continue
+    const data = event.data as Extract<TurnEvent, { type: 'message' }>['data']
+    if (data.stats) {
+      statsById.set(data.messageId, {
+        id: data.messageId,
+        timestamp: new Date(event.timestamp).toISOString(),
+        stats: data.stats,
+      })
     }
   }
-
   return Array.from(statsById.values())
 }
 
@@ -211,47 +67,11 @@ export function buildMessagesFromStoredEvents(
   events: StoredEvent[],
   maxVisibleItems?: number,
 ): { messages: Message[]; hiddenCount: number } {
-  // hiddenCount counts "user-facing messages" (distinct message.start IDs),
+  // hiddenCount counts "user-facing messages" (distinct message ids),
   // not all rendered items. This is intentional: tool results and other
   // expanded items are treated as belonging to their parent message, so
   // truncation that removes a message also removes its children without
   // inflating the hidden count.
-  const snapshotEvent = [...events].reverse().find((event) => event.type === 'turn.snapshot')
-  if (snapshotEvent) {
-    const snapshot = snapshotEvent.data as SessionSnapshot
-    const laterEvents = events.filter((event) => event.seq > snapshotEvent.seq)
-
-    // Count distinct messages from later events (message.start events, not all event types)
-    const laterMessageCount = new Set(
-      laterEvents.filter((e) => e.type === 'message.start').map((e) => (e.data as { messageId: string }).messageId),
-    ).size
-
-    // Total original messages before any truncation
-    const totalOriginal = snapshot.messages.length + laterMessageCount
-
-    // Apply maxVisibleItems: slice snapshot messages BEFORE deep-clone
-    let preSlice: SnapshotMessage[]
-    if (maxVisibleItems !== undefined && maxVisibleItems > 0 && snapshot.messages.length > maxVisibleItems) {
-      preSlice = snapshot.messages.slice(-maxVisibleItems)
-    } else {
-      preSlice = snapshot.messages
-    }
-
-    const snapshotMessages = preSlice.map(snapshotMessageToMessage)
-    const messages = applyStoredMessageEvents(snapshotMessages, laterEvents)
-
-    // If we need to further truncate after applying later events
-    if (maxVisibleItems !== undefined && maxVisibleItems > 0 && messages.length > maxVisibleItems) {
-      return { messages: messages.slice(-maxVisibleItems), hiddenCount: totalOriginal - maxVisibleItems }
-    }
-
-    // Compute hiddenCount from any pre-clone slicing
-    const hiddenCount =
-      maxVisibleItems !== undefined && maxVisibleItems > 0 && totalOriginal > maxVisibleItems
-        ? totalOriginal - maxVisibleItems
-        : 0
-    return { messages, hiddenCount }
-  }
   const messages = applyStoredMessageEvents([], events)
   if (maxVisibleItems !== undefined && maxVisibleItems > 0 && messages.length > maxVisibleItems) {
     return { messages: messages.slice(-maxVisibleItems), hiddenCount: messages.length - maxVisibleItems }
@@ -271,8 +91,14 @@ export function buildContextMessagesFromStoredEvents(
 
   for (const event of events) {
     switch (event.type) {
+      // Merged message (v3 tree persistence unit). Produces the exact
+      // ContextMessage the v1 chunk sequence (start + thinking + deltas +
+      // tool.calls) folded to: same filters, same fields, tool calls without
+      // results (results arrive as separate tool.result events). This is what
+      // keeps single-chain requests byte-identical to the v1 encoding.
+      case 'message':
       case 'message.start': {
-        const data = event.data as Extract<TurnEvent, { type: 'message.start' }>['data']
+        const data = event.data as Extract<TurnEvent, { type: 'message' }>['data']
         if (
           data.role !== 'system' &&
           (windowId === undefined || data.contextWindowId === windowId) &&
@@ -283,6 +109,10 @@ export function buildContextMessagesFromStoredEvents(
             id: data.messageId,
             role: data.role as 'user' | 'assistant',
             content: data.content ?? '',
+            ...(data.thinkingContent ? { thinkingContent: data.thinkingContent } : {}),
+            ...(data.toolCalls && data.toolCalls.length > 0
+              ? { toolCalls: data.toolCalls.map((tc) => ({ id: tc.id, name: tc.name, arguments: tc.arguments })) }
+              : {}),
             ...(data.attachments !== undefined && { attachments: data.attachments }),
           }
           messageMap.set(data.messageId, message)
@@ -469,48 +299,14 @@ export function reorderToolMessages(messages: MessageWithId[]): void {
   }
 }
 
+/**
+ * Canonical entry point for LLM context building: fold the event history
+ * (the session's active path) into ContextMessage[].
+ */
 export function buildContextMessagesFromEventHistory(
   events: StoredEvent[],
   windowId?: string,
   options?: ContextMessageBuildOptions,
 ): ContextMessage[] {
-  const snapshotEvent = [...events].reverse().find((event) => event.type === 'turn.snapshot')
-  if (!snapshotEvent) {
-    return buildContextMessagesFromStoredEvents(events, windowId, options)
-  }
-  const snapshot = snapshotEvent.data as SessionSnapshot
-
-  // The snapshot is a point-in-time capture of complete messages. Later events
-  // belong to subsequent turns and carry their own messageIds. Events targeting
-  // a messageId already covered by the snapshot (only conceivable after an
-  // abort-snapshot) are dropped, exactly as the pre-unification fold did — the
-  // snapshot content stays authoritative and synthetic events can never be
-  // double-appended by a later delta/thinking/tool.result.
-  const snapshotMessageIds = new Set(snapshot.messages.map((message) => message.id))
-  const laterEvents = events.filter(
-    (event) =>
-      event.seq > snapshotEvent.seq &&
-      !('messageId' in event.data && snapshotMessageIds.has((event.data as { messageId: string }).messageId)),
-  )
-
-  return buildContextMessagesFromStoredEvents(
-    [...snapshotMessagesToEvents(snapshot.messages, snapshotEvent.sessionId), ...laterEvents],
-    windowId,
-    options,
-  )
-}
-
-export function foldTurnEventsToSnapshotMessages(events: EventLike[]): SnapshotMessage[] {
-  return applyTurnEventsToSnapshotMessages([], events)
-}
-
-export function foldTurnEventsToSnapshotMessagesFromInitial(
-  events: EventLike[],
-  initialMessages: SnapshotMessage[],
-): SnapshotMessage[] {
-  return applyTurnEventsToSnapshotMessages(initialMessages, events)
-}
-
-export function buildContextMessagesFromMessages(messages: SnapshotMessage[], windowId: string): ContextMessage[] {
-  return buildContextMessagesFromStoredEvents(snapshotMessagesToEvents(messages), windowId)
+  return buildContextMessagesFromStoredEvents(events, windowId, options)
 }

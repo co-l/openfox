@@ -27,7 +27,13 @@ import { loadConfig } from '../config.js'
 import { closeDatabase, getDatabase, initDatabase } from '../db/index.js'
 import { createProject } from '../db/projects.js'
 import { getSession, updateSessionWorkdir } from '../db/sessions.js'
-import { initEventStore, getCurrentContextWindowId, emitContextCompacted, getEventStore } from '../events/index.js'
+import {
+  initEventStore,
+  getCurrentContextWindowId,
+  getContextMessages,
+  emitContextCompacted,
+  getEventStore,
+} from '../events/index.js'
 import * as eventModule from '../events/index.js'
 import { setAgentModelOverride } from '../agents/model-overrides.js'
 import { SessionManager } from './manager.js'
@@ -849,7 +855,7 @@ describe('SessionManager', () => {
       expect(forked.providerModel).toBe('model1')
     })
 
-    it('creates a snapshot in the forked session', () => {
+    it('shares the tree with the original session (no event copying)', () => {
       const original = manager.createSession(projectId)
 
       manager.addMessage(original.id, { role: 'user', content: 'Hello', tokenCount: 10 })
@@ -858,12 +864,16 @@ describe('SessionManager', () => {
       const forked = manager.forkSession(original.id, msg2.id)
 
       const eventStore = getEventStore()
-      const forkedEvents = eventStore.getEvents(forked.id)
+      expect(eventStore.getTreeId(forked.id)).toBe(eventStore.getTreeId(original.id))
+      expect(eventStore.getCursorEventId(forked.id)).toBe(msg2.id)
 
-      const snapshots = forkedEvents.filter((e) => e.type === 'turn.snapshot')
-      expect(snapshots).toHaveLength(1)
-      const snapshotMessages = (snapshots[0]!.data as { messages: unknown[] }).messages
-      expect(snapshotMessages).toHaveLength(2)
+      // The fork's active path is the shared prefix — the same nodes, not copies.
+      const forkedEvents = eventStore.getEvents(forked.id)
+      const originalEvents = eventStore.getEvents(original.id)
+      expect(forkedEvents.map((e) => e.eventId)).toEqual(originalEvents.map((e) => e.eventId))
+
+      // No snapshot events in the v3 tree.
+      expect(forkedEvents.some((e) => e.type === ('turn.snapshot' as string))).toBe(false)
     })
 
     it('works without a cached prompt on the original session', () => {
@@ -876,25 +886,18 @@ describe('SessionManager', () => {
       expect(manager.isWarmedUp(forked.id)).toBe(false)
     })
 
-    it('sets new contextWindowId on forked messages so LLM context building works', () => {
+    it('keeps the fork point context window so LLM context building works', () => {
       const original = manager.createSession(projectId)
       manager.addMessage(original.id, { role: 'user', content: 'Hello', tokenCount: 10 })
       const msg2 = manager.addMessage(original.id, { role: 'user', content: 'World', tokenCount: 10 })
 
       const forked = manager.forkSession(original.id, msg2.id)
 
-      const eventStore = getEventStore()
-      const forkedEvents = eventStore.getEvents(forked.id)
-      const snapshotEvent = forkedEvents.find((e) => e.type === 'turn.snapshot')
-      const snapshot = snapshotEvent!.data as {
-        currentContextWindowId: string
-        messages: Array<{ contextWindowId?: string }>
-      }
-
-      // All messages in the snapshot must have the new contextWindowId
-      for (const m of snapshot.messages) {
-        expect(m.contextWindowId).toBe(snapshot.currentContextWindowId)
-      }
+      // No window remap in the v3 tree: the fork inherits the source's
+      // context window at the fork point, and its LLM context is the shared
+      // path filtered by that window.
+      expect(getCurrentContextWindowId(forked.id)).toBe(getCurrentContextWindowId(original.id))
+      expect(getContextMessages(forked.id).map((m) => m.content)).toEqual(['Hello', 'World'])
     })
   })
 
