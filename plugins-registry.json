@@ -34,5 +34,11 @@
     "displayName": "OpenCode (Free Models)",
     "description": "OpenCode provider filtered to free models only (-free suffix), with automatic hourly model updates (1x/hour) and API key auth.",
     "githubUrl": "https://github.com/JamesDAdams/openfox-opencode-free"
+  },
+  {
+    "name": "openfox-opencode-go",
+    "displayName": "OpenCode Go",
+    "description": "OpenCode Go provider plugin for OpenFox.",
+    "githubUrl": "https://github.com/JamesDAdams/openfox-opencode-go"
   }
 ]
