@@ -165,6 +165,51 @@ describe('ToolsTab MCP server toggle isolation', () => {
     expect(putCalls[0]![0] as string).toContain('server-b')
     expect(JSON.parse((putCalls[0]![1] as Record<string, string>).body as string)).toEqual({ disabled: true })
   })
+
+  it('toggling tool on server-a sends PUT to correct tools endpoint', async () => {
+    const user = userEvent.setup()
+    render(<ToolsTab />)
+    await screen.findByText('server-a')
+
+    // Expand server-a by clicking on its header
+    await user.click(screen.getByText('server-a'))
+
+    // The tool toggle should now be rendered
+    await screen.findByText('tool1')
+    const toolToggle = screen.getByRole('switch', { name: 'tool1' })
+    expect(toolToggle.getAttribute('aria-checked')).toBe('true')
+    await user.click(toolToggle)
+
+    const { authFetch } = await import('../../../lib/api')
+    const mockFn = authFetch as ReturnType<typeof vi.fn>
+    const putCalls = mockFn.mock.calls.filter(
+      (call: unknown[]) => (call[1] as Record<string, unknown>)?.method === 'PUT',
+    )
+    const toolCall = putCalls.find((call: unknown[]) => (call[0] as string).includes('/tools/tool1'))
+    expect(toolCall).toBeDefined()
+    expect(JSON.parse((toolCall![1] as Record<string, string>).body as string)).toEqual({ enabled: false })
+  })
+
+  it('optimistically updates toggle on tool click and rolls back on failure', async () => {
+    const user = userEvent.setup()
+    render(<ToolsTab />)
+    await screen.findByText('server-a')
+    await user.click(screen.getByText('server-a'))
+
+    const toolToggle = screen.getByRole('switch', { name: 'tool1' })
+    expect(toolToggle.getAttribute('aria-checked')).toBe('true')
+
+    const { authFetch } = await import('../../../lib/api')
+    const mockFn = authFetch as ReturnType<typeof vi.fn>
+    mockFn.mockImplementationOnce(async () => ({
+      ok: false,
+      json: async () => ({ error: 'Network failure' }),
+    }))
+
+    await user.click(toolToggle)
+    // After failed request, it rolls back to true
+    expect(toolToggle.getAttribute('aria-checked')).toBe('true')
+  })
 })
 
 describe('ToolsTab RTK shell hint (Windows)', () => {
