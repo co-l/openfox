@@ -8,6 +8,7 @@ import { clearCache } from '../../lib/resourceCache'
 import { skillsResource } from '../../lib/resources'
 import { authFetch } from '../../lib/api'
 import { SkillsContent } from './SkillsModal'
+import { setLocale } from '@shared/i18n/index.js'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -68,6 +69,8 @@ describe('SkillsContent', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
     clearCache()
+    setLocale('en')
+    useSessionStore.setState({ currentSession: null })
     seedSkills()
     await skillsResource.refresh()
   })
@@ -87,7 +90,8 @@ describe('SkillsContent', () => {
 
   it('requires modal confirmation before deleting the full skill folder', async () => {
     render(<SkillsContent isOpen={false} />)
-    fireEvent.click(screen.getByTitle('Delete'))
+    const deleteBtn = screen.getByRole('button', { name: /delete/i })
+    fireEvent.click(deleteBtn)
 
     expect(screen.getByText('This skill files will be deleted.')).toBeTruthy()
     expect(screen.getByText('The full skill folder and all its contents will be removed.')).toBeTruthy()
@@ -115,5 +119,83 @@ describe('SkillsContent', () => {
     await waitFor(() => {
       expect(authFetch).toHaveBeenCalledWith('/api/skills?workdir=%2Foriginal%2Fproject')
     })
+  })
+
+  it('renders skills in subdirectories under collapsed-by-default collapsible sections and supports folder toggle', async () => {
+    const nestedSkill1: SkillInfo = {
+      id: 'nested-1',
+      name: 'Nested Skill 1',
+      description: 'Nested 1',
+      version: '1',
+      enabled: false,
+      group: 'dev-tools',
+      estimatedTokens: 120,
+      source: 'global-openfox',
+      path: '/tmp/skills/dev-tools/nested-1/SKILL.md',
+      legacy: false,
+      readOnly: false,
+      warnings: [],
+    }
+    const nestedSkill2: SkillInfo = {
+      id: 'nested-2',
+      name: 'Nested Skill 2',
+      description: 'Nested 2',
+      version: '1',
+      enabled: false,
+      group: 'dev-tools',
+      estimatedTokens: 80,
+      source: 'global-openfox',
+      path: '/tmp/skills/dev-tools/nested-2/SKILL.md',
+      legacy: false,
+      readOnly: false,
+      warnings: [],
+    }
+    vi.mocked(authFetch).mockImplementation(
+      async () =>
+        ({
+          ok: true,
+          json: async () => ({
+            defaults: [],
+            userItems: [{ ...skill, estimatedTokens: 50 }, nestedSkill1, nestedSkill2],
+            projectItems: [],
+            items: [{ ...skill, estimatedTokens: 50 }, nestedSkill1, nestedSkill2],
+            selectedDirectory: null,
+            diagnostics: [],
+          }),
+        }) as unknown as Response,
+    )
+    await skillsResource.refresh()
+
+    render(<SkillsContent isOpen={false} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('My Skill')).toBeTruthy()
+    })
+
+    // Regular skill is rendered directly with its tokens
+    expect(screen.getByText(/50\s+tokens/)).toBeTruthy()
+
+    // Subdirectory card header is rendered with name, skill count and total tokens
+    expect(screen.getByText('dev-tools')).toBeTruthy()
+    expect(screen.getByText('(2 skills)')).toBeTruthy()
+    expect(screen.getByText(/200\s+tokens/)).toBeTruthy()
+
+    // Nested skills are collapsed by default
+    expect(screen.queryByText('Nested Skill 1')).toBeNull()
+
+    // Expanding the group shows nested skills with their individual tokens
+    fireEvent.click(screen.getByText('dev-tools'))
+    expect(screen.getByText('Nested Skill 1')).toBeTruthy()
+    expect(screen.getByText(/120\s+tokens/)).toBeTruthy()
+    expect(screen.getByText('Nested Skill 2')).toBeTruthy()
+    expect(screen.getByText(/80\s+tokens/)).toBeTruthy()
+
+    // Folder-level toggle activates all skills in the folder
+    const folderToggle = screen.getByRole('switch', { name: 'Toggle all skills in dev-tools' })
+    expect(folderToggle.getAttribute('aria-checked')).toBe('false')
+
+    fireEvent.click(folderToggle)
+    expect(mockToggleSkill).toHaveBeenCalledWith('nested-1', undefined)
+    expect(mockToggleSkill).toHaveBeenCalledWith('nested-2', undefined)
   })
 })

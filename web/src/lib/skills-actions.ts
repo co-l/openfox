@@ -17,6 +17,8 @@ export interface SkillInfo {
   name: string
   description: string
   version: string
+  group?: string
+  estimatedTokens?: number
   enabled: boolean
   source: SkillSource
   path: string | null

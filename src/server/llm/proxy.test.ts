@@ -1,4 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { createServer, type Server } from 'http'
+import type { AddressInfo } from 'net'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { mockGetSetting } = vi.hoisted(() => ({
   mockGetSetting: vi.fn(),
@@ -39,6 +41,27 @@ vi.mock('undici', () => {
 import { __resetProxyCache } from './proxy.js'
 
 describe('global fetch override', () => {
+  let localServer: Server
+  let localUrl: string
+
+  beforeAll(async () => {
+    localServer = createServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/plain' })
+      res.end('local-native-response')
+    })
+    await new Promise<void>((resolve) => {
+      localServer.listen(0, '127.0.0.1', () => resolve())
+    })
+    const addr = localServer.address() as AddressInfo
+    localUrl = `http://127.0.0.1:${addr.port}`
+  })
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => {
+      localServer.close(() => resolve())
+    })
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     mockProxyAgentInstances.length = 0
@@ -48,7 +71,7 @@ describe('global fetch override', () => {
   it('calls native fetch when no proxy is configured', async () => {
     mockGetSetting.mockReturnValue(null)
 
-    const result = await fetch('http://example.com')
+    const result = await fetch(localUrl)
 
     expect(result).toBeInstanceOf(Response)
     expect(mockUndiciFetch).not.toHaveBeenCalled()
@@ -57,7 +80,7 @@ describe('global fetch override', () => {
   it('calls native fetch when proxy URL is empty string', async () => {
     mockGetSetting.mockReturnValue('')
 
-    const result = await fetch('http://example.com')
+    const result = await fetch(localUrl)
 
     expect(result).toBeInstanceOf(Response)
     expect(mockUndiciFetch).not.toHaveBeenCalled()
@@ -138,7 +161,7 @@ describe('global fetch override', () => {
     expect(oldAgent).toBeDefined()
 
     mockGetSetting.mockReturnValue(null)
-    await fetch('http://example.com')
+    await fetch(localUrl)
 
     expect(oldAgent!.destroy).toHaveBeenCalledTimes(1)
   })
@@ -150,7 +173,7 @@ describe('global fetch override', () => {
     expect(mockUndiciFetch).toHaveBeenCalledTimes(1)
 
     mockGetSetting.mockReturnValue(null)
-    const result = await fetch('http://example.com')
+    const result = await fetch(localUrl)
 
     expect(result).toBeInstanceOf(Response)
     expect(mockUndiciFetch).toHaveBeenCalledTimes(1)
