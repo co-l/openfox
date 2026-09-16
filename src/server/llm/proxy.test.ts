@@ -36,11 +36,18 @@ vi.mock('undici', () => {
   }
 })
 
+const { mockNativeFetch } = vi.hoisted(() => {
+  const fn = vi.fn().mockImplementation(() => Promise.resolve(new Response('native-ok')))
+  globalThis.fetch = fn
+  return { mockNativeFetch: fn }
+})
+
 import { __resetProxyCache } from './proxy.js'
 
 describe('global fetch override', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockNativeFetch.mockImplementation(() => Promise.resolve(new Response('native-ok')))
     mockProxyAgentInstances.length = 0
     __resetProxyCache()
   })
@@ -51,6 +58,7 @@ describe('global fetch override', () => {
     const result = await fetch('http://example.com')
 
     expect(result).toBeInstanceOf(Response)
+    expect(mockNativeFetch).toHaveBeenCalledWith('http://example.com', undefined)
     expect(mockUndiciFetch).not.toHaveBeenCalled()
   })
 
@@ -60,6 +68,7 @@ describe('global fetch override', () => {
     const result = await fetch('http://example.com')
 
     expect(result).toBeInstanceOf(Response)
+    expect(mockNativeFetch).toHaveBeenCalledWith('http://example.com', undefined)
     expect(mockUndiciFetch).not.toHaveBeenCalled()
   })
 

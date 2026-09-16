@@ -98,6 +98,37 @@ export interface ProviderPluginRuntime {
 }
 
 // ============================================================================
+// Plugin Settings Types
+// ============================================================================
+
+export type PluginSettingFieldType = 'text' | 'password' | 'number' | 'boolean' | 'select' | 'textarea'
+
+export interface PluginSettingOption {
+  label: string
+  value: string
+}
+
+export interface PluginSettingField {
+  key: string
+  label: string
+  type: PluginSettingFieldType
+  description?: string
+  defaultValue?: string | number | boolean
+  options?: PluginSettingOption[]
+  placeholder?: string
+  required?: boolean
+}
+
+export interface PluginSettingsSpec {
+  title?: string
+  description?: string
+  fields?: PluginSettingField[]
+  customUiUrl?: string
+  getSettings?: () => Promise<Record<string, unknown>> | Record<string, unknown>
+  saveSettings?: (values: Record<string, unknown>) => Promise<void> | void
+}
+
+// ============================================================================
 // Plugin Registry (passed to plugins during registration)
 // ============================================================================
 
@@ -105,6 +136,8 @@ export interface ProviderPluginRegistry {
   registerAuth(adapter: ProviderAuthAdapter): void
   registerTransport(adapter: ProviderTransportAdapter): void
   registerPreset(preset: ProviderPreset): void
+  registerSettings(spec: PluginSettingsSpec): void
+  registerSettingsForPlugin(packageName: string, spec: PluginSettingsSpec): void
   readonly runtime: ProviderPluginRuntime
 }
 
@@ -138,6 +171,8 @@ export interface ProviderPluginManifest {
   name: string
   /** Semver version string. */
   version: string
+  /** Whether the plugin provides a settings page / configuration. */
+  hasSettings?: boolean
   /** Auth adapters this plugin provides. */
   authAdapters: PluginAuthDescriptor[]
   /** Transport adapters this plugin provides. */

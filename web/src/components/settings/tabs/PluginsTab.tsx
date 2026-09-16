@@ -3,6 +3,8 @@ import { authFetch } from '../../../lib/api'
 import { useT } from '../../../hooks/useT'
 import { Button } from '../../shared/Button'
 import { ConfirmModal } from '../../shared/ConfirmModal'
+import { SettingsIcon } from '../../shared/icons/SettingsIcon'
+import { PluginSettingsModal } from '../PluginSettingsModal'
 
 const STORAGE_KEY = 'openfox_user_plugins'
 
@@ -107,12 +109,16 @@ function PluginCard({
   plugin,
   initiallyInstalled,
   installedVersion,
+  hasSettings = false,
+  onInstalled,
   onRemove,
   onOpenFolder,
 }: {
   plugin: PluginWithVersion
   initiallyInstalled: boolean
   installedVersion: string | null
+  hasSettings?: boolean
+  onInstalled?: (name: string, hasSettings: boolean) => void
   onRemove: (name: string) => void
   onOpenFolder: (name: string) => void
 }) {
@@ -123,6 +129,7 @@ function PluginCard({
   const [localVersion, setLocalVersion] = useState<string | null>(installedVersion)
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false)
   const [removing, setRemoving] = useState(false)
+  const [showSettingsModal, setShowSettingsModal] = useState(false)
 
   useEffect(() => {
     setLocalVersion(installedVersion)
@@ -138,6 +145,9 @@ function PluginCard({
     if (res.ok) {
       setInstallState('installed')
       if (plugin.latestVersion) setLocalVersion(plugin.latestVersion)
+      if (onInstalled) {
+        onInstalled(plugin.name, Boolean(data.hasSettings))
+      }
       if (!data.loaded)
         setErrorMsg(
           data.loadError ??
@@ -146,7 +156,7 @@ function PluginCard({
     } else {
       throw new Error(data.error ?? t({ en: 'Install failed', fr: 'Échec de l’installation' }))
     }
-  }, [plugin.githubUrl, plugin.name, t])
+  }, [plugin.githubUrl, plugin.name, plugin.latestVersion, onInstalled, t])
 
   const handleInstall = async () => {
     setInstallState('installing')
@@ -252,6 +262,17 @@ function PluginCard({
                 {t({ en: 'Update', fr: 'Mettre à jour' })}
               </Button>
             )}
+            {installState === 'installed' && hasSettings && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setShowSettingsModal(true)}
+                className="flex items-center gap-1"
+              >
+                <SettingsIcon className="w-3.5 h-3.5" />
+                {t({ en: 'Settings', fr: 'Paramètres' })}
+              </Button>
+            )}
             {installState === 'installed' && (
               <Button variant="danger" size="sm" onClick={handleRemove}>
                 {t({ en: 'Remove', fr: 'Supprimer' })}
@@ -282,6 +303,15 @@ function PluginCard({
         confirmVariant="danger"
         disabled={removing}
       />
+
+      {showSettingsModal && (
+        <PluginSettingsModal
+          isOpen={showSettingsModal}
+          onClose={() => setShowSettingsModal(false)}
+          pluginName={plugin.name}
+          pluginDisplayName={plugin.displayName}
+        />
+      )}
     </div>
   )
 }
@@ -291,6 +321,7 @@ export function PluginsTab() {
   const [registryPlugins, setRegistryPlugins] = useState<PluginWithVersion[]>([])
   const [userPlugins, setUserPlugins] = useState<PluginWithVersion[]>([])
   const [installedVersions, setInstalledVersions] = useState<Record<string, string | null>>({})
+  const [installedSettings, setInstalledSettings] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState('')
   const [duplicateWarning, setDuplicateWarning] = useState('')
@@ -312,11 +343,18 @@ export function PluginsTab() {
       .then(([registryData, installedData]) => {
         if (cancelled) return
         const versions: Record<string, string | null> = {}
-        const installedList = installedData.installed as { name: string; version: string | null }[]
+        const settingsMap: Record<string, boolean> = {}
+        const installedList = installedData.installed as {
+          name: string
+          version: string | null
+          hasSettings?: boolean
+        }[]
         for (const p of installedList) {
           versions[p.name] = p.version
+          settingsMap[p.name] = Boolean(p.hasSettings)
         }
         setInstalledVersions(versions)
+        setInstalledSettings(settingsMap)
 
         const items = (registryData.plugins as RegistryPlugin[]).map((p) => ({
           ...p,
@@ -428,6 +466,10 @@ export function PluginsTab() {
     [registryPlugins],
   )
 
+  const handleInstalled = useCallback((name: string, hasSettings: boolean) => {
+    setInstalledSettings((prev) => ({ ...prev, [name]: hasSettings }))
+  }, [])
+
   const seen = new Set<string>()
   const allPlugins = [...registryPlugins, ...userPlugins].filter((p) => {
     if (seen.has(p.name)) return false
@@ -473,6 +515,8 @@ export function PluginsTab() {
           plugin={plugin}
           initiallyInstalled={plugin.name in installedVersions}
           installedVersion={installedVersions[plugin.name] ?? null}
+          hasSettings={installedSettings[plugin.name] ?? false}
+          onInstalled={handleInstalled}
           onRemove={handleRemovePlugin}
           onOpenFolder={handleOpenFolder}
         />
