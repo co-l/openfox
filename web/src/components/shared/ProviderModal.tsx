@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { authFetch } from '../../lib/api'
 import type { Backend } from '../../stores/config'
 import type { ModelConfig as SharedModelConfig } from '@shared/types.js'
-import { ChevronDownIcon, EyeIcon, ReloadIcon, SettingsIcon } from './icons'
+import { ChevronDownIcon, EyeIcon, InfoIcon, ReloadIcon, SettingsIcon } from './icons'
 import { QueryParamsInput } from './QueryParamsInput'
 import { formatTokens } from '../../lib/format-stats'
 import { getLocale } from '@shared/i18n/index.js'
@@ -13,6 +13,8 @@ import { shouldAutofocus } from '../../lib/device'
 import { REASONING_EFFORT_VALUES } from '../../lib/model-value'
 import { isSmallContext } from '../../lib/context-warning'
 import { groupModeFamilies, MODE_SUFFIXES, splitModeSuffix } from '@shared/reasoning-effort.js'
+import { openSettings } from '../settings/GlobalSettingsModal'
+import { useProviders } from '../../hooks/useProviders'
 
 const COMMON_PORTS = [8080, 11434, 8000, 1234, 8888]
 
@@ -759,7 +761,8 @@ export function ProviderModal({
   const urlInputRef = useRef<HTMLInputElement>(null)
   const manualModelInputRef = useRef<HTMLInputElement>(null)
 
-  // Models that were already merged into mode chips (have a `modes` map).
+  const { providers } = useProviders()
+  const hasConfiguredProviders = providers.length > 0
   const mergedModeModels = useMemo(() => models.filter((m) => m.modes?.length), [models])
   // Families of suffixed variants still present in the list — only non-empty
   // after an Unmerge re-expands a merged model, so a Merge button appears then
@@ -1568,6 +1571,61 @@ export function ProviderModal({
                   )
                 })}
               </div>
+            </div>
+
+            {/* Informational banners */}
+            <div className="space-y-2">
+              <div
+                data-testid="provider-modal-plugins-banner"
+                className="flex items-center justify-between gap-3 p-3 rounded-lg border border-border bg-bg-secondary text-sm text-text-secondary"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <InfoIcon className="w-4 h-4 text-accent-primary flex-shrink-0" />
+                  <span className="leading-snug">
+                    {t({
+                      en: "Can't find your AI provider? Check OpenFox plugins to see if one is available.",
+                      fr: "Vous ne trouvez pas votre fournisseur d'IA ? Consultez les plugins OpenFox qui pourraient le proposer.",
+                    })}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleClose()
+                    openSettings('plugins')
+                  }}
+                  className="flex-shrink-0 px-3 py-1 rounded border border-border text-xs text-text-primary hover:border-accent-primary hover:text-accent-primary hover:bg-accent-primary/10 transition-colors"
+                >
+                  {t({ en: 'Plugins', fr: 'Plugins' })}
+                </button>
+              </div>
+
+              {!hasConfiguredProviders && (
+                <div
+                  data-testid="provider-modal-proxy-banner"
+                  className="flex items-center justify-between gap-3 p-3 rounded-lg border border-border bg-bg-secondary text-sm text-text-secondary"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <InfoIcon className="w-4 h-4 text-accent-primary flex-shrink-0" />
+                    <span className="leading-snug">
+                      {t({
+                        en: 'Behind a corporate proxy? Remember to configure it in settings.',
+                        fr: 'Vous utilisez un proxy d’entreprise ? Pensez à le configurer dans les paramètres.',
+                      })}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleClose()
+                      openSettings('advanced')
+                    }}
+                    className="flex-shrink-0 px-3 py-1 rounded border border-border text-xs text-text-primary hover:border-accent-primary hover:text-accent-primary hover:bg-accent-primary/10 transition-colors"
+                  >
+                    {t({ en: 'Configure proxy', fr: 'Configurer le proxy' })}
+                  </button>
+                </div>
+              )}
             </div>
 
             {!formAuthAdapter && (
