@@ -106,6 +106,9 @@ export async function loadProviderPlugins(options: {
           options.registry.registerPreset(preset)
           diagnostic.presets.push(preset.id)
         },
+        registerQuotaProvider(provider) {
+          options.registry.registerQuotaProvider(provider)
+        },
       }
       try {
         const module = (await import(pathToFileURL(join(packageDir, plugin)).href)) as {
