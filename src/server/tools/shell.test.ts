@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { hasBackgroundAmpersand, runCommandTool, detectGitMutation } from './shell.js'
+import { hasBackgroundAmpersand, runCommandTool, detectGitMutation, detectNpmUsage } from './shell.js'
 import type { ToolContext } from './types.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -283,5 +283,80 @@ describe('detectGitMutation', () => {
     expect(detectGitMutation('git diff')).toBeNull()
     expect(detectGitMutation('git --version')).toBeNull()
     expect(detectGitMutation('git branch --show-current')).toBeNull()
+  })
+})
+
+describe('detectNpmUsage', () => {
+  it('returns pnpm equivalent for npm install', () => {
+    expect(detectNpmUsage('npm install')).toBe('pnpm install')
+  })
+
+  it('returns pnpm equivalent for npm run test', () => {
+    expect(detectNpmUsage('npm run test')).toBe('pnpm run test')
+  })
+
+  it('returns pnpm dlx equivalent for npx', () => {
+    expect(detectNpmUsage('npx vite build')).toBe('pnpm dlx vite build')
+  })
+
+  it('handles npm in the middle of a command', () => {
+    expect(detectNpmUsage('cd web && npm install')).toBe('cd web && pnpm install')
+  })
+
+  it('handles multiple npm/npx occurrences', () => {
+    expect(detectNpmUsage('npm install && npx foo')).toBe('pnpm install && pnpm dlx foo')
+  })
+
+  it('does not match pnpm', () => {
+    expect(detectNpmUsage('pnpm install')).toBeNull()
+  })
+
+  it('does not match npm inside identifiers', () => {
+    expect(detectNpmUsage('npmjs.com')).toBeNull()
+  })
+
+  it('returns null for empty string', () => {
+    expect(detectNpmUsage('')).toBeNull()
+  })
+
+  it('returns null for commands without npm/npx', () => {
+    expect(detectNpmUsage('git status')).toBeNull()
+    expect(detectNpmUsage('echo hello')).toBeNull()
+  })
+})
+
+describe('runCommandTool npm guard', () => {
+  let tempDir: string
+  let context: ToolContext
+
+  const mockSessionManager = {
+    recordFileRead: vi.fn(),
+    getReadFiles: vi.fn().mockReturnValue({}),
+    updateFileHash: vi.fn(),
+  } as any
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'shell-npm-guard-test-'))
+    context = {
+      sessionManager: mockSessionManager,
+      workdir: tempDir,
+      sessionId: 'test-session',
+    }
+  })
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true })
+  })
+
+  it('rejects npm usage and suggests pnpm equivalent', async () => {
+    const result = await runCommandTool.execute({ command: 'npm install' }, context)
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('pnpm install')
+  })
+
+  it('rejects npx usage and suggests pnpm dlx equivalent', async () => {
+    const result = await runCommandTool.execute({ command: 'npx vite build' }, context)
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('pnpm dlx vite build')
   })
 })
