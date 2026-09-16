@@ -73,6 +73,15 @@ describe('db settings', () => {
       expect(getSetting(SETTINGS_KEYS.SEARCH_SEARXNG_URL)).toBe('http://localhost:4000')
     })
 
+    it('sets and gets TOOLS_USE_HEADROOM and TOOLS_HEADROOM_PROXY_URL', () => {
+      expect(getSetting(SETTINGS_KEYS.TOOLS_USE_HEADROOM)).toBeNull()
+      setSetting(SETTINGS_KEYS.TOOLS_USE_HEADROOM, 'true')
+      expect(getSetting(SETTINGS_KEYS.TOOLS_USE_HEADROOM)).toBe('true')
+
+      setSetting(SETTINGS_KEYS.TOOLS_HEADROOM_PROXY_URL, 'http://127.0.0.1:8787')
+      expect(getSetting(SETTINGS_KEYS.TOOLS_HEADROOM_PROXY_URL)).toBe('http://127.0.0.1:8787')
+    })
+
     it('sets and gets SEARCH_SEARXNG_API_KEY', () => {
       setSetting(SETTINGS_KEYS.SEARCH_SEARXNG_API_KEY, 'sx-secret')
       expect(getSetting(SETTINGS_KEYS.SEARCH_SEARXNG_API_KEY)).toBe('sx-secret')
