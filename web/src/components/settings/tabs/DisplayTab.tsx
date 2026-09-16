@@ -149,6 +149,21 @@ const COMPOSER_TOGGLES: ToggleDefinition[] = [
   },
 ]
 
+const SIDEBAR_TOGGLES: ToggleDefinition[] = [
+  {
+    key: SETTINGS_KEYS.DISPLAY_HIDE_SIDEBAR_VERSION,
+    label: {
+      en: 'Hide version and update in right sidebar',
+      fr: 'Masquer la version et les mises à jour dans la barre latérale droite',
+    },
+    description: {
+      en: 'Hide the OpenFox version and update check footer at the bottom of the right sidebar',
+      fr: 'Masquer la version d’OpenFox et la vérification des mises à jour en bas de la barre latérale droite',
+    },
+    defaultValue: 'false',
+  },
+]
+
 export function DisplayTab() {
   const t = useT()
   const applyLocale = useLocaleStore((state) => state.applyLocale)
@@ -167,6 +182,7 @@ export function DisplayTab() {
   const feedVirtualization = useSetting(SETTINGS_KEYS.DISPLAY_FEED_VIRTUALIZATION, 'false')
   const syntaxHighlighting = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_SYNTAX_HIGHLIGHTING, 'true')
   const fullscreenComposer = useSetting(SETTINGS_KEYS.DISPLAY_MOBILE_FULLSCREEN_COMPOSER, 'false')
+  const hideSidebarVersion = useSetting(SETTINGS_KEYS.DISPLAY_HIDE_SIDEBAR_VERSION, 'false')
   const maxVisibleItems = useSetting(SETTINGS_KEYS.DISPLAY_MAX_VISIBLE_ITEMS, '300')
   const storedLocale = useSetting(SETTINGS_KEYS.DISPLAY_LOCALE, 'automatic')
   const isLoading = showThinking.loading
@@ -184,7 +200,7 @@ export function DisplayTab() {
     void setSetting(SETTINGS_KEYS.DISPLAY_MAX_VISIBLE_ITEMS, String(clamped))
   }
 
-  const allToggles = [...FEED_TOGGLES, ...PERF_TOGGLES, ...COMPOSER_TOGGLES]
+  const allToggles = [...FEED_TOGGLES, ...SIDEBAR_TOGGLES, ...PERF_TOGGLES, ...COMPOSER_TOGGLES]
 
   const localValues: Record<string, string> = {
     [SETTINGS_KEYS.DISPLAY_SHOW_THINKING]: showThinking.value,
@@ -199,6 +215,7 @@ export function DisplayTab() {
     [SETTINGS_KEYS.DISPLAY_FEED_VIRTUALIZATION]: feedVirtualization.value,
     [SETTINGS_KEYS.DISPLAY_SHOW_SYNTAX_HIGHLIGHTING]: syntaxHighlighting.value,
     [SETTINGS_KEYS.DISPLAY_MOBILE_FULLSCREEN_COMPOSER]: fullscreenComposer.value,
+    [SETTINGS_KEYS.DISPLAY_HIDE_SIDEBAR_VERSION]: hideSidebarVersion.value,
   }
   const [local, setLocal] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(allToggles.map((toggle) => [toggle.key, localValues[toggle.key] === 'true'])),
@@ -242,6 +259,11 @@ export function DisplayTab() {
           {t({ en: 'Feed Display', fr: 'Affichage du fil' })}
         </h3>
         <ToggleList toggles={FEED_TOGGLES} local={local} onToggle={handleToggle} />
+      </div>
+
+      <div className="border-t border-border pt-4">
+        <h3 className="text-sm font-medium text-text-primary mb-4">{t({ en: 'Sidebar', fr: 'Barre latérale' })}</h3>
+        <ToggleList toggles={SIDEBAR_TOGGLES} local={local} onToggle={handleToggle} />
       </div>
 
       <div className="border-t border-border pt-4">
