@@ -1,4 +1,5 @@
 export { ArrowLeftIcon } from './ArrowLeftIcon'
+export { BellIcon } from './BellIcon'
 export { ArrowRightIcon } from './ArrowRightIcon'
 export { AttachIcon } from './AttachIcon'
 export { ArchiveIcon } from './ArchiveIcon'

@@ -60,7 +60,7 @@ function sendBrowserNotification(event: SoundEvent) {
   })
 }
 
-function playEvent(event: SoundEvent, agent?: AgentType) {
+export function playEvent(event: SoundEvent, agent?: AgentType) {
   const { settings } = useNotificationSettingsStore.getState()
 
   // Master sound toggle
@@ -77,6 +77,29 @@ function playEvent(event: SoundEvent, agent?: AgentType) {
   // Browser notification if enabled
   if (settings.browserNotificationEnabled && eventConfig.browserNotification) {
     sendBrowserNotification(event)
+  }
+}
+
+export function playAppNotification(notification: { title: string; body?: string }) {
+  const { settings } = useNotificationSettingsStore.getState()
+
+  if (settings.soundEnabled) {
+    const audio = getAudio('/sounds/notification.mp3')
+    audio.currentTime = 0
+    audio.play().catch(() => {})
+  }
+
+  if (
+    settings.browserNotificationEnabled &&
+    typeof Notification !== 'undefined' &&
+    notificationPermission === 'granted' &&
+    !document.hasFocus()
+  ) {
+    new Notification(notification.title, {
+      body: notification.body ?? '',
+      icon: appUrl('/fox.svg'),
+      tag: `openfox-notif-${Date.now()}`,
+    })
   }
 }
 

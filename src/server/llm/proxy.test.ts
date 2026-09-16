@@ -14,12 +14,15 @@ interface MockProxyAgentInstance {
   close: ReturnType<typeof vi.fn>
 }
 
-const { mockUndiciFetch, mockProxyAgentInstances, mockProxyAgentCtor } = vi.hoisted(() => {
+const { mockUndiciFetch, mockProxyAgentInstances, mockProxyAgentCtor, mockNativeFetch } = vi.hoisted(() => {
   const instances: MockProxyAgentInstance[] = []
+  const nativeFetch = vi.fn().mockResolvedValue(new Response('native'))
+  globalThis.fetch = nativeFetch
   return {
     mockUndiciFetch: vi.fn(),
     mockProxyAgentInstances: instances,
     mockProxyAgentCtor: vi.fn(),
+    mockNativeFetch: nativeFetch,
   }
 })
 
@@ -52,6 +55,7 @@ describe('global fetch override', () => {
 
     expect(result).toBeInstanceOf(Response)
     expect(mockUndiciFetch).not.toHaveBeenCalled()
+    expect(mockNativeFetch).toHaveBeenCalledWith('http://example.com', undefined)
   })
 
   it('calls native fetch when proxy URL is empty string', async () => {
