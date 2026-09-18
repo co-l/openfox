@@ -1,7 +1,7 @@
 import type { ToolCall, ToolResult } from '../../shared/types.js'
 import type { SessionManager } from '../session/index.js'
 import type { ToolContext, ToolRegistry } from '../tools/types.js'
-import type { TurnMetrics } from './stream-pure.js'
+import { TurnMetrics } from './stream-pure.js'
 import type { TurnEvent } from '../events/types.js'
 import type { RequestContextMessage } from './request-context.js'
 import type { LLMClientWithModel } from '../llm/client.js'
@@ -269,6 +269,41 @@ export async function executeTools(
     // Both checks are needed — they serve different concerns.
     if (toolCall.name === 'step_done' && toolResult.success) {
       stepDoneCalled = true
+    }
+
+    if (toolResult.success && toolResult.truncated && (toolResult.output?.length ?? 0) > 50000) {
+      try {
+        const agents = await loadAllAgentsDefault()
+        const agentDef = findAgentById('output_compactor', agents)
+        if (agentDef && ctx.llmClient && ctx.statsIdentity) {
+          const { getToolRegistryForAgent } = await import('../tools/index.js')
+          const { executeSubAgent } = await import('../sub-agents/manager.js')
+          const compactorResult = await executeSubAgent({
+            subAgentType: 'output_compactor',
+            prompt: toolResult.output ?? '',
+            sessionManager: ctx.sessionManager,
+            sessionId: ctx.sessionId,
+            llmClient: ctx.llmClient,
+            toolRegistry: getToolRegistryForAgent(agentDef),
+            turnMetrics: new TurnMetrics(),
+            providerManager: ctx.providerManager,
+            statsIdentity: ctx.statsIdentity,
+            ...(ctx.signal ? { signal: ctx.signal } : {}),
+            ...(ctx.onMessage ? { onMessage: ctx.onMessage } : {}),
+          })
+          const compacted = (compactorResult.content ?? '').trim()
+          if (compacted.length > 0) {
+            toolResult = { ...toolResult, output: '[COMPACTED]\n' + compacted, truncated: false }
+          } else {
+            logger.warn('Output compactor returned empty summary, keeping original truncated output', { tool: toolCall.name })
+          }
+        }
+      } catch (error) {
+        logger.warn('Output compaction failed, keeping original truncated output', {
+          error: error instanceof Error ? error.message : String(error),
+          tool: toolCall.name,
+        })
+      }
     }
 
     const rawContent = stripAnsi(
