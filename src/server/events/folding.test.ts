@@ -70,6 +70,75 @@ describe('apply-events.ts new handlers', () => {
     })
   })
 
+  describe('tool.call startedAt', () => {
+    it('attaches startedAt to pending tool calls from the tool.call event timestamp', () => {
+      const events: StoredEvent[] = [
+        { ...baseEvent, type: 'message.start', data: { messageId: 'm1', role: 'assistant' } },
+        {
+          ...baseEvent,
+          type: 'tool.call',
+          data: { messageId: 'm1', toolCall: { id: 'call-1', name: 'run_command', arguments: {} } },
+        },
+      ]
+
+      const { messages } = buildMessagesFromStoredEvents(events)
+      const tc = messages[0]!.toolCalls![0]!
+
+      expect(tc.startedAt).toBe(baseEvent.timestamp)
+    })
+
+    it('keeps an existing startedAt when the tool call already carries one', () => {
+      const events: StoredEvent[] = [
+        { ...baseEvent, type: 'message.start', data: { messageId: 'm1', role: 'assistant' } },
+        {
+          ...baseEvent,
+          type: 'tool.call',
+          data: {
+            messageId: 'm1',
+            toolCall: { id: 'call-1', name: 'run_command', arguments: {}, startedAt: 123456 },
+          },
+        },
+      ]
+
+      const { messages } = buildMessagesFromStoredEvents(events)
+      const tc = messages[0]!.toolCalls![0]!
+
+      expect(tc.startedAt).toBe(123456)
+    })
+
+    it('retains startedAt for a pending tool call across a snapshot round-trip', () => {
+      const events: StoredEvent[] = [
+        { ...baseEvent, type: 'session.initialized', data: { projectId: 'p', workdir: '/tmp', contextWindowId: 'w1' } },
+        { ...baseEvent, type: 'message.start', data: { messageId: 'm1', role: 'assistant' } },
+        {
+          ...baseEvent,
+          type: 'tool.call',
+          data: { messageId: 'm1', toolCall: { id: 'call-1', name: 'run_command', arguments: {} } },
+        },
+      ]
+
+      const snapshot = buildSnapshotFromSessionState({
+        session: {
+          mode: 'builder',
+          phase: 'build',
+          isRunning: true,
+          criteria: [],
+          executionState: { currentTokenCount: 0, compactionCount: 0 },
+        },
+        events,
+        latestSeq: 42,
+        snapshotAt: 999,
+        maxTokens: 200000,
+      })
+      const snapshotEvent: StoredEvent = { ...baseEvent, seq: 50, type: 'turn.snapshot', data: snapshot }
+
+      const { messages } = buildMessagesFromStoredEvents([snapshotEvent])
+      const tc = messages[0]!.toolCalls![0]!
+
+      expect(tc.startedAt).toBe(baseEvent.timestamp)
+    })
+  })
+
   describe('pattern.retry events', () => {
     it('populates formatRetries on assistant messages', () => {
       const events: StoredEvent[] = [
@@ -213,6 +282,7 @@ describe('event folding', () => {
             id: 'call-1',
             name: 'read_file',
             arguments: { path: 'src/index.ts' },
+            startedAt: baseEvent.timestamp,
             result: { success: true, output: 'ok', durationMs: 1, truncated: false },
           },
         ],

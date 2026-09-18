@@ -622,6 +622,53 @@ describe('maxTokens clamping', () => {
     expect(callArgs.modelSettings?.maxTokens).toBe(2952)
   })
 
+  it('does not clamp sub-agent maxTokens against the parent session context', async () => {
+    mockSessionManager = {
+      enterPauseGate: vi.fn().mockResolvedValue('released'),
+      requireSession: vi.fn().mockReturnValue({
+        workdir: '/test',
+        projectId: 'test-project',
+        executionState: null,
+        criteria: [],
+        isRunning: false,
+      }),
+      getEffectiveWorkdir: vi.fn().mockReturnValue('/test'),
+      getProjectWorkdir: vi.fn().mockReturnValue('/test'),
+      getContextState: vi.fn().mockReturnValue({
+        currentTokens: 300000,
+        maxTokens: 500000,
+        compactionCount: 0,
+        dangerZone: false,
+        canCompact: false,
+        dynamicContextChanged: false,
+      }),
+      getCurrentModelContext: vi.fn().mockReturnValue(200000),
+      getCurrentModelSettings: vi.fn().mockReturnValue({ maxTokens: 16384 }),
+      getSubAgentContextTokens: vi.fn().mockReturnValue(0),
+      setCurrentContextSize: vi.fn(),
+      getDynamicContextChanged: vi.fn().mockReturnValue(false),
+      setDynamicContextChanged: vi.fn(),
+      getCachedPrompt: vi.fn().mockReturnValue(undefined),
+      setCachedPrompt: vi.fn(),
+      getLspManager: vi.fn(),
+      drainAsapMessages: vi.fn().mockReturnValue([]),
+      getCurrentWindowMessages: vi.fn().mockReturnValue([]),
+      updateMessage: vi.fn(),
+    } as any
+
+    await runTopLevelAgentLoop(
+      makeConfig({ subAgentMetadata: { subAgentId: 'sub-1', subAgentType: 'explorer' } }),
+      mockTurnMetrics,
+    ).catch(() => {})
+
+    // Parent session is way over the sub-agent model's window (300k > 200k):
+    // the clamp must use the sub-agent's own (fresh) context, not the parent's.
+    const callArgs = (streamLLMPure as any).mock.calls[0]?.[0]
+    expect(callArgs).toBeDefined()
+    expect(callArgs.modelSettings?.maxTokens).not.toBe(256)
+    expect(callArgs.modelSettings?.maxTokens).toBe(16384)
+  })
+
   it('passes the sessionId to streamLLMPure for opencode session affinity', async () => {
     mockSessionManager = {
       enterPauseGate: vi.fn().mockResolvedValue('released'),

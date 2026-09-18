@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { matchRetryPatterns, validateRetryPatterns, type RetryPatternConfig } from './auto-patterns.js'
+import {
+  matchRetryPatterns,
+  sanitizeRetryPatterns,
+  validateRetryPatterns,
+  type RetryPatternConfig,
+} from './auto-patterns.js'
 
 describe('matchRetryPatterns', () => {
   const patterns: RetryPatternConfig[] = [
@@ -49,6 +54,26 @@ describe('matchRetryPatterns', () => {
       { field: 'content', pattern: 'error', action: 'retry', active: false },
     ]
     const result = matchRetryPatterns('an error occurred', undefined, inactivePatterns)
+    expect(result).toEqual([])
+  })
+
+  it('ignores empty patterns', () => {
+    const emptyPatterns: RetryPatternConfig[] = [{ field: 'content', pattern: '', action: 'retry', active: true }]
+    const result = matchRetryPatterns('any content', undefined, emptyPatterns)
+    expect(result).toEqual([])
+  })
+
+  it('ignores whitespace-only patterns', () => {
+    const wsPatterns: RetryPatternConfig[] = [{ field: 'both', pattern: '   ', action: 'retry', active: true }]
+    const result = matchRetryPatterns('any content', 'any thinking', wsPatterns)
+    expect(result).toEqual([])
+  })
+
+  it('ignores invalid regex patterns', () => {
+    const invalidPatterns: RetryPatternConfig[] = [
+      { field: 'content', pattern: '[invalid', action: 'retry', active: true },
+    ]
+    const result = matchRetryPatterns('an error occurred', undefined, invalidPatterns)
     expect(result).toEqual([])
   })
 
@@ -119,5 +144,34 @@ describe('validateRetryPatterns', () => {
     ] as unknown as RetryPatternConfig[]
     const errors = validateRetryPatterns(patterns)
     expect(errors).toHaveLength(2)
+  })
+})
+
+describe('sanitizeRetryPatterns', () => {
+  it('drops empty and whitespace-only patterns', () => {
+    const patterns: RetryPatternConfig[] = [
+      { field: 'content', pattern: '', action: 'retry', active: true },
+      { field: 'content', pattern: '   ', action: 'retry', active: true },
+      { field: 'content', pattern: 'error', action: 'retry', active: true },
+    ]
+    const result = sanitizeRetryPatterns(patterns)
+    expect(result).toHaveLength(1)
+    expect(result[0]!.pattern).toBe('error')
+  })
+
+  it('drops invalid regex patterns', () => {
+    const patterns: RetryPatternConfig[] = [
+      { field: 'content', pattern: '[invalid', action: 'retry', active: true },
+      { field: 'content', pattern: 'error', action: 'retry', active: true },
+    ]
+    const result = sanitizeRetryPatterns(patterns)
+    expect(result).toHaveLength(1)
+    expect(result[0]!.pattern).toBe('error')
+  })
+
+  it('keeps valid patterns untouched', () => {
+    const patterns: RetryPatternConfig[] = [{ field: 'content', pattern: 'error', action: 'retry', active: true }]
+    const result = sanitizeRetryPatterns(patterns)
+    expect(result).toEqual(patterns)
   })
 })

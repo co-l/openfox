@@ -157,6 +157,7 @@ export class SessionManager {
   // Sessions already warned about an unresolvable provider — getContextState runs on every
   // turn, and the warning is only worth one line per session.
   private unknownProviderWarned = new Set<string>()
+  private subAgentContextSizes = new Map<string, number>()
   private switchLocks = new Map<string, Promise<unknown>>()
   private workspaceCreationLocks = new Map<string, Promise<void>>()
   // Cooperative pause: in-memory only (a pause is only meaningful for a live,
@@ -1550,6 +1551,9 @@ export class SessionManager {
     // their context.state must never inherit the main session's count.
     const compactionCount = subAgentId ? 0 : (state?.contextState.compactionCount ?? 0)
     const dynamicContextChanged = this.getDynamicContextChanged(sessionId)
+    if (subAgentId) {
+      this.subAgentContextSizes.set(subAgentId, currentTokens)
+    }
 
     emitContextState(
       sessionId,
@@ -1563,6 +1567,11 @@ export class SessionManager {
     )
 
     logger.debug('Context state updated', { sessionId, promptTokens, maxTokens, subAgentId })
+  }
+
+  /** Tokens used by a sub-agent's own scoped context (fresh, never-compacted). */
+  getSubAgentContextTokens(subAgentId: string): number | undefined {
+    return this.subAgentContextSizes.get(subAgentId)
   }
 
   // ============================================================================

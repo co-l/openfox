@@ -3,7 +3,7 @@
     "id": "default",
     "name": "Build & Verify",
     "description": "Standard build-verify loop. Builder implements criteria, verifier checks them.",
-    "version": "1.3.1",
+    "version": "1.3.2",
     "color": "#3b82f6"
   },
   "entryStep": "work_location",
@@ -41,7 +41,7 @@
       "phase": "build",
       "agentId": "builder",
       "subGroup": "build",
-      "prompt": "Set up a fresh workspace for this task. This step is ONLY about workspace setup — do not start implementing the task or modifying files here.\n\n1. Use the `workspace` tool with action `switch` to create and switch to a new workspace (switching to a name that doesn't exist yet creates it automatically).\n2. Pick a proper name yourself — a short, descriptive lowercase slug derived from the task (hyphen-separated, e.g. `dark-theme`, `fix-auth-redirect`). If a workspace with that name already exists, choose a sensible variation.\n3. Do NOT ask the user for the name — decide based on the task and just do it.\n4. Do NOT begin implementing or testing anything here — the next step (\"Implement\") runs automatically right after this one and owns all coding.\n5. Confirm the switch worked, then call step_done() and stop.",
+      "prompt": "Set up a fresh workspace for this task. This step is ONLY about workspace setup — do not start implementing the task or modifying files here.\n\n1. Use the `workspace` tool with action `switch` to create and switch to a new workspace (switching to a name that doesn't exist yet creates it automatically).\n2. Pick a proper name yourself — a short, descriptive lowercase slug derived from the task (hyphen-separated, e.g. `dark-theme`, `fix-auth-redirect`). **Do not use an existing workspace** — always create a brand-new one (switching to a name that doesn't exist yet creates it automatically). If you suspect the name might collide with another parallel agent, append a short unique suffix (e.g. `dark-theme-4k2f`) so your workspace is guaranteed fresh.\n3. Do NOT ask the user for the name — decide based on the task and just do it.\n4. Do NOT begin implementing or testing anything here — the next step (\"Implement\") runs automatically right after this one and owns all coding.\n5. Confirm the switch worked, then call step_done() and stop.",
       "transitions": [
         {
           "when": {

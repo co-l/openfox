@@ -45,6 +45,7 @@ import { getRuntimeConfig } from '../runtime-config.js'
 import { getGlobalConfigDir } from '../../cli/paths.js'
 import { logger } from '../utils/logger.js'
 import type { RetryPatternConfig } from './auto-patterns.js'
+import { sanitizeRetryPatterns } from './auto-patterns.js'
 import { getConversationMessages, processEventsForConversation } from './conversation-history.js'
 
 // Re-export for runner orchestrator
@@ -57,7 +58,10 @@ export {
   createChatDoneEvent,
 }
 
-async function buildRetryPatterns(): Promise<{ retryPatterns: RetryPatternConfig[]; maxRetriesPerTurn: number }> {
+export async function buildRetryPatterns(): Promise<{
+  retryPatterns: RetryPatternConfig[]
+  maxRetriesPerTurn: number
+}> {
   const { getSetting, SETTINGS_KEYS } = await import('../db/settings.js')
   const raw = getSetting(SETTINGS_KEYS.RETRY_PATTERNS)
   if (!raw) {
@@ -67,9 +71,18 @@ async function buildRetryPatterns(): Promise<{ retryPatterns: RetryPatternConfig
       // User had the old setting — migrate to retry patterns
       const disabled = oldXmlProtection === 'true'
       return {
-        retryPatterns: disabled
-          ? []
-          : [{ field: 'both', pattern: '<(tool_call|function=|/tool_call|parameter=)', action: 'retry', active: true }],
+        retryPatterns: sanitizeRetryPatterns(
+          disabled
+            ? []
+            : [
+                {
+                  field: 'both',
+                  pattern: '<(tool_call|function=|/tool_call|parameter=)',
+                  action: 'retry',
+                  active: true,
+                },
+              ],
+        ),
         maxRetriesPerTurn: 10,
       }
     }
@@ -78,7 +91,7 @@ async function buildRetryPatterns(): Promise<{ retryPatterns: RetryPatternConfig
   try {
     const parsed = JSON.parse(raw)
     return {
-      retryPatterns: Array.isArray(parsed.patterns) ? parsed.patterns : [],
+      retryPatterns: sanitizeRetryPatterns(Array.isArray(parsed.patterns) ? parsed.patterns : []),
       maxRetriesPerTurn: typeof parsed.maxRetriesPerTurn === 'number' ? parsed.maxRetriesPerTurn : 10,
     }
   } catch {

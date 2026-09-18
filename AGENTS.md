@@ -104,6 +104,8 @@ Precommit hooks take >40s, so always use a 120s timeout when committing:
 git commit -m "message"   # timeout: 120000ms
 ```
 
+Never skip the hooks unless the user explicitly asks.
+
 ### Release
 
 **When asked to publish, read [docs/RELEASE.md](RELEASE.md) and follow the playbook.** It's the single source of truth: changelog generation, version bump, publish, and the merge to `main` (all release work happens on `develop`; `main` only ever receives a successful release).

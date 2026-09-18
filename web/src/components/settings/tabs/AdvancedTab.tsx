@@ -8,7 +8,7 @@ import { Toggle } from '../../shared/Toggle'
 import { SETTINGS_KEYS, setSetting } from '../../../lib/resources'
 import { useSetting } from '../../../hooks/useSetting'
 import { useTestButton } from '../../../hooks/useTestButton'
-import { RetryPatternsEditor, type RetryPatternsValue } from '../RetryPatternsEditor'
+import { RetryPatternsEditor, isValidRegex, type RetryPatternsValue } from '../RetryPatternsEditor'
 import { useConfig } from '../../../hooks/useConfig'
 import { useUpdateStore } from '../../../stores/update'
 import { AutoUpdateModal } from '../../AutoUpdateModal'
@@ -89,7 +89,8 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
 
   const handleRetryPatternsChange = useCallback((value: RetryPatternsValue) => {
     setRetryPatterns(value)
-    void setSetting(SETTINGS_KEYS.RETRY_PATTERNS, JSON.stringify(value))
+    const saved = { ...value, patterns: value.patterns.filter((p) => isValidRegex(p.pattern)) }
+    void setSetting(SETTINGS_KEYS.RETRY_PATTERNS, JSON.stringify(saved))
   }, [])
 
   const handleProxyUrlChange = (value: string) => {

@@ -22,6 +22,7 @@ export function matchRetryPatterns(
 
   for (const config of patterns) {
     if (!config.active) continue
+    if (!config.pattern || config.pattern.trim() === '') continue
 
     let regex: RegExp
     try {
@@ -63,4 +64,19 @@ export function validateRetryPatterns(patterns: RetryPatternConfig[]): string[] 
   }
 
   return errors
+}
+
+export function sanitizeRetryPatterns(patterns: RetryPatternConfig[]): RetryPatternConfig[] {
+  return patterns.filter(
+    (p) => p.pattern && p.pattern.trim() !== '' && isValidPattern(p.pattern) && VALID_FIELDS.includes(p.field),
+  )
+}
+
+function isValidPattern(pattern: string): boolean {
+  try {
+    new RegExp(pattern)
+    return true
+  } catch {
+    return false
+  }
 }
