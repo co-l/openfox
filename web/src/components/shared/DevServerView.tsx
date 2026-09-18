@@ -21,6 +21,11 @@ interface StatusData {
   state?: string
   url?: string
   error?: string
+  tailscalePreview?: {
+    status?: string
+    url?: string
+    error?: string
+  }
 }
 
 export const DevServerView = memo(function DevServerView({ result, action }: DevServerViewProps) {
@@ -74,6 +79,7 @@ function renderStatus(data: StatusData, t: TFunc) {
   const state = String(data.state ?? '')
   const url = String(data.url ?? '')
   const errorMsg = data.error ? String(data.error) : undefined
+  const preview = data.tailscalePreview
 
   const stateColor =
     state === 'running'
@@ -96,6 +102,24 @@ function renderStatus(data: StatusData, t: TFunc) {
           <a href={url} className="text-accent-primary hover:underline" target="_blank" rel="noopener noreferrer">
             {url}
           </a>
+        </div>
+      )}
+      {preview && preview.status === 'active' && preview.url && (
+        <div className="flex items-center gap-2">
+          <span className="text-text-muted">{t({ en: 'Tailnet:', fr: 'Tailnet :' })}</span>
+          <a
+            href={preview.url}
+            className="text-accent-primary hover:underline"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {preview.url}
+          </a>
+        </div>
+      )}
+      {preview && preview.status === 'error' && (
+        <div className="text-accent-error bg-accent-error/10 p-2 rounded text-[10px]">
+          {t({ en: 'Tailscale:', fr: 'Tailscale :' })} {preview.error ?? t({ en: 'preview failed', fr: 'échec de l’aperçu' })}
         </div>
       )}
       {errorMsg && <div className="text-accent-error bg-accent-error/10 p-2 rounded">{errorMsg}</div>}

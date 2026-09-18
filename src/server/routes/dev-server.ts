@@ -120,15 +120,21 @@ export function createDevServerRoutes(): Router {
   // POST /config — write .openfox/dev.json
   router.post('/config', async (req, res) => {
     const workdir = req.query['workdir'] as string
-    if (!workdir) return res.status(400).json({ error: serverT({ en: 'workdir required', fr: 'workdir requis' }) })
-    const { command, url, hotReload, disableInspect } = req.body
+if (!workdir) return res.status(400).json({ error: serverT({ en: 'workdir required', fr: 'workdir requis' }) })
+    const { command, url, hotReload, disableInspect, tailscaleExpose } = req.body
     if (!command || !url) {
       return res.status(400).json({
         error: serverT({ en: 'command and url are required', fr: 'command et url sont requis' }),
       })
     }
     try {
-      const config = { command, url, hotReload: hotReload ?? false, disableInspect: disableInspect ?? false }
+      const config = {
+        command,
+        url,
+        hotReload: hotReload ?? false,
+        disableInspect: disableInspect ?? false,
+        tailscaleExpose: tailscaleExpose === true,
+      }
       await devServerManager.saveConfig(workdir, config)
       res.json({ config })
     } catch (err) {

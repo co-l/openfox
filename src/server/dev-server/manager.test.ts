@@ -19,6 +19,17 @@ vi.mock('../utils/process-tree.js', () => ({
   terminateProcessTree: vi.fn(),
 }))
 
+vi.mock('./tailscale-preview.js', () => ({
+  tailscalePreviewManager: {
+    start: vi.fn(),
+    stop: vi.fn(),
+    stopAll: vi.fn(),
+    isActive: vi.fn(),
+    getActiveUrl: vi.fn(),
+  },
+  isTailscaleAvailable: vi.fn(),
+}))
+
 vi.mock('../runtime-config.js', () => ({
   getRuntimeConfig: vi.fn(() => ({ mode: 'development' })),
 }))
@@ -26,6 +37,7 @@ vi.mock('../runtime-config.js', () => ({
 import { spawn } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { devServerManager } from './manager.js'
+import { tailscalePreviewManager, isTailscaleAvailable } from './tailscale-preview.js'
 
 function makeMockProc(stdout = '', stderr = '', exitCode = 0) {
   const listeners: Record<string, (arg: unknown) => void> = {}
@@ -154,6 +166,7 @@ describe('loadConfig with workspace fallback', () => {
       url: 'http://localhost:5173',
       hotReload: false,
       disableInspect: false,
+      tailscaleExpose: false,
     })
   })
 
@@ -168,6 +181,7 @@ describe('loadConfig with workspace fallback', () => {
       url: 'http://localhost:5173',
       hotReload: false,
       disableInspect: false,
+      tailscaleExpose: false,
     })
     expect(readFile).toHaveBeenCalledTimes(2)
   })
@@ -193,6 +207,48 @@ describe('loadConfig with workspace fallback', () => {
     const config = await devServerManager.loadConfig('/some/project')
     expect(config).toBeNull()
     expect(readFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('reads tailscaleExpose=true when present in config', async () => {
+    vi.mocked(readFile).mockResolvedValue(
+      JSON.stringify({
+        command: 'npm run dev',
+        url: 'http://localhost:5173',
+        tailscaleExpose: true,
+      }),
+    )
+    const config = await devServerManager.loadConfig('/some/project')
+    expect(config?.tailscaleExpose).toBe(true)
+  })
+
+  it('reads tailscaleExpose=false when explicitly set', async () => {
+    vi.mocked(readFile).mockResolvedValue(
+      JSON.stringify({
+        command: 'npm run dev',
+        url: 'http://localhost:5173',
+        tailscaleExpose: false,
+      }),
+    )
+    const config = await devServerManager.loadConfig('/some/project')
+    expect(config?.tailscaleExpose).toBe(false)
+  })
+
+  it('defaults tailscaleExpose to false when absent', async () => {
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify({ command: 'npm run dev', url: 'http://localhost:5173' }))
+    const config = await devServerManager.loadConfig('/some/project')
+    expect(config?.tailscaleExpose).toBe(false)
+  })
+
+  it('coerces non-boolean tailscaleExpose values to false (strict opt-in)', async () => {
+    vi.mocked(readFile).mockResolvedValue(
+      JSON.stringify({
+        command: 'npm run dev',
+        url: 'http://localhost:5173',
+        tailscaleExpose: 'yes',
+      }),
+    )
+    const config = await devServerManager.loadConfig('/some/project')
+    expect(config?.tailscaleExpose).toBe(false)
   })
 })
 
@@ -241,6 +297,85 @@ describe('start with port probing and substitution', () => {
 
     expect(status.state).toBe('running')
     expect(status.url).toBe('http://localhost:3099')
+  })
+
+  it('does NOT auto-launch preview when tailscaleExpose is absent (default OFF)', async () => {
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify({ command: 'npm run dev', url: 'http://localhost:3200' }))
+    vi.mocked(spawn).mockReturnValue(makeMockProc('server started') as any)
+
+    await devServerManager.start('/tmp/project-no-tailscale')
+
+    expect(tailscalePreviewManager.start).not.toHaveBeenCalled()
+  })
+
+  it('does NOT auto-launch preview when tailscaleExpose is explicitly false', async () => {
+    vi.mocked(readFile).mockResolvedValue(
+      JSON.stringify({
+        command: 'npm run dev',
+        url: 'http://localhost:3201',
+        tailscaleExpose: false,
+      }),
+    )
+    vi.mocked(spawn).mockReturnValue(makeMockProc('server started') as any)
+
+    await devServerManager.start('/tmp/project-tailscale-off')
+
+    expect(tailscalePreviewManager.start).not.toHaveBeenCalled()
+  })
+
+  it('auto-launches preview fire-and-forget when tailscaleExpose is true', async () => {
+    vi.mocked(readFile).mockResolvedValue(
+      JSON.stringify({
+        command: 'npm run dev',
+        url: 'http://localhost:3202',
+        tailscaleExpose: true,
+      }),
+    )
+    vi.mocked(spawn).mockReturnValue(makeMockProc('server started') as any)
+    vi.mocked(isTailscaleAvailable).mockResolvedValue({
+      available: true,
+      nodeName: 'laptop.tailnet.ts.net',
+    })
+    vi.mocked(tailscalePreviewManager.start).mockResolvedValue({
+      url: 'https://laptop.tailnet.ts.net:8443/',
+      remotePort: 8443,
+    })
+
+    const status = await devServerManager.start('/tmp/project-tailscale-on')
+
+    // start() returns immediately at state=running; preview launches async
+    expect(status.state).toBe('running')
+    // The fire-and-forget promise resolves on the next microtask tick
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(tailscalePreviewManager.start).toHaveBeenCalledTimes(1)
+    expect(tailscalePreviewManager.start).toHaveBeenCalledWith('/tmp/project-tailscale-on', expect.any(Number))
+  })
+
+  it('start() does not reject when preview auto-launch fails (caught internally)', async () => {
+    vi.mocked(readFile).mockResolvedValue(
+      JSON.stringify({
+        command: 'npm run dev',
+        url: 'http://localhost:3203',
+        tailscaleExpose: true,
+      }),
+    )
+    vi.mocked(spawn).mockReturnValue(makeMockProc('server started') as any)
+    vi.mocked(isTailscaleAvailable).mockResolvedValue({
+      available: true,
+      nodeName: 'laptop.tailnet.ts.net',
+    })
+    // Preview throws after a microtask — start() must still resolve with state=running
+    vi.mocked(tailscalePreviewManager.start).mockImplementation(async () => {
+      await new Promise((resolve) => setImmediate(resolve))
+      throw new Error('Access denied: serve config denied')
+    })
+
+    const status = await devServerManager.start('/tmp/project-tailscale-throws')
+    expect(status.state).toBe('running')
+
+    // Let the fire-and-forget resolve and confirm no unhandled rejection
+    await new Promise((resolve) => setImmediate(resolve))
+    await new Promise((resolve) => setImmediate(resolve))
   })
 })
 
@@ -338,5 +473,148 @@ describe('insertMarker', () => {
     const logsB = devServerManager.getLogs(workdirB)
     expect(logsA).toHaveLength(2)
     expect(logsB).toHaveLength(0)
+  })
+})
+
+describe('tailscalePreview integration', () => {
+  beforeEach(() => {
+    vi.mocked(readFile).mockReset()
+    vi.mocked(spawn).mockReset()
+    vi.mocked(tailscalePreviewManager.start).mockReset()
+    vi.mocked(tailscalePreviewManager.stop).mockReset()
+    vi.mocked(tailscalePreviewManager.stopAll).mockReset()
+    // Default: Tailscale is available. Individual tests can override.
+    vi.mocked(isTailscaleAvailable).mockResolvedValue({ available: true, nodeName: 'laptop.ts.net' })
+  })
+
+  it('initial status includes a default tailscalePreview of status idle', async () => {
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify({ command: 'npm run dev', url: 'http://localhost:3110' }))
+    vi.mocked(spawn).mockReturnValue(makeMockProc('') as any)
+    await devServerManager.start('/tmp/preview-init')
+    const status = devServerManager.getStatus('/tmp/preview-init')
+    expect(status.tailscalePreview).toEqual({ status: 'idle' })
+  })
+
+  it('startTailscalePreview rejects when dev server is not running', async () => {
+    const status = await devServerManager.startTailscalePreview('/tmp/no-server')
+    expect(status.tailscalePreview.status).toBe('error')
+    expect(status.tailscalePreview.error).toMatch(/not running/i)
+  })
+
+  it('startTailscalePreview is idempotent when a preview is already active', async () => {
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify({ command: 'npm run dev', url: 'http://localhost:3111' }))
+    vi.mocked(spawn).mockReturnValue(makeMockProc('') as any)
+    await devServerManager.start('/tmp/preview-already')
+
+    vi.mocked(tailscalePreviewManager.start).mockResolvedValue({
+      url: 'https://x.ts.net:8443/',
+      remotePort: 8443,
+    })
+
+    const first = await devServerManager.startTailscalePreview('/tmp/preview-already')
+    expect(first.tailscalePreview).toEqual({ status: 'active', url: 'https://x.ts.net:8443/' })
+
+    // Second call should be a no-op: returns the current active URL, no overwrite.
+    const second = await devServerManager.startTailscalePreview('/tmp/preview-already')
+    expect(second.tailscalePreview).toEqual({ status: 'active', url: 'https://x.ts.net:8443/' })
+    // Only one underlying start should have happened.
+    expect(tailscalePreviewManager.start).toHaveBeenCalledTimes(1)
+  })
+
+  it('startTailscalePreview transitions to active when preview manager succeeds', async () => {
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify({ command: 'npm run dev', url: 'http://localhost:3112' }))
+    vi.mocked(spawn).mockReturnValue(makeMockProc('') as any)
+    await devServerManager.start('/tmp/preview-success')
+
+    vi.mocked(tailscalePreviewManager.start).mockResolvedValue({
+      url: 'https://laptop.ts.net:8443/',
+      remotePort: 8443,
+    })
+
+    const status = await devServerManager.startTailscalePreview('/tmp/preview-success')
+    expect(status.tailscalePreview).toEqual({ status: 'active', url: 'https://laptop.ts.net:8443/' })
+  })
+
+  it('startTailscalePreview records error when preview manager throws', async () => {
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify({ command: 'npm run dev', url: 'http://localhost:3113' }))
+    vi.mocked(spawn).mockReturnValue(makeMockProc('') as any)
+    await devServerManager.start('/tmp/preview-fail')
+
+    vi.mocked(tailscalePreviewManager.start).mockRejectedValue(new Error('Access denied: serve config denied'))
+
+    const status = await devServerManager.startTailscalePreview('/tmp/preview-fail')
+    expect(status.tailscalePreview.status).toBe('error')
+    expect(status.tailscalePreview.error).toContain('Access denied')
+  })
+
+  it('startTailscalePreview surfaces a clear error when Tailscale is not available', async () => {
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify({ command: 'npm run dev', url: 'http://localhost:3113a' }))
+    vi.mocked(spawn).mockReturnValue(makeMockProc('') as any)
+    await devServerManager.start('/tmp/preview-unavailable')
+
+    vi.mocked(isTailscaleAvailable).mockResolvedValueOnce({
+      available: false,
+      reason: 'spawn tailscale ENOENT',
+    })
+
+    const status = await devServerManager.startTailscalePreview('/tmp/preview-unavailable')
+    expect(status.tailscalePreview.status).toBe('error')
+    expect(status.tailscalePreview.error).toContain('ENOENT')
+    expect(tailscalePreviewManager.start).not.toHaveBeenCalled()
+  })
+
+  it('stopTailscalePreview returns to idle and calls preview manager stop', async () => {
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify({ command: 'npm run dev', url: 'http://localhost:3114' }))
+    vi.mocked(spawn).mockReturnValue(makeMockProc('') as any)
+    await devServerManager.start('/tmp/preview-stop')
+
+    vi.mocked(tailscalePreviewManager.start).mockResolvedValue({
+      url: 'https://laptop.ts.net:8443/',
+      remotePort: 8443,
+    })
+    vi.mocked(tailscalePreviewManager.stop).mockResolvedValue(undefined)
+
+    await devServerManager.startTailscalePreview('/tmp/preview-stop')
+    const status = await devServerManager.stopTailscalePreview('/tmp/preview-stop')
+    expect(status.tailscalePreview).toEqual({ status: 'idle' })
+    expect(tailscalePreviewManager.stop).toHaveBeenCalledWith('/tmp/preview-stop')
+  })
+
+  it('stop() on the dev server also tears down the active Tailscale preview', async () => {
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify({ command: 'npm run dev', url: 'http://localhost:3115' }))
+    vi.mocked(spawn).mockReturnValue(makeMockProc('') as any)
+    await devServerManager.start('/tmp/preview-coupled')
+
+    vi.mocked(tailscalePreviewManager.start).mockResolvedValue({
+      url: 'https://laptop.ts.net:8443/',
+      remotePort: 8443,
+    })
+    vi.mocked(tailscalePreviewManager.stop).mockResolvedValue(undefined)
+
+    await devServerManager.startTailscalePreview('/tmp/preview-coupled')
+    await devServerManager.stop('/tmp/preview-coupled')
+    expect(tailscalePreviewManager.stop).toHaveBeenCalledWith('/tmp/preview-coupled')
+    const status = devServerManager.getStatus('/tmp/preview-coupled')
+    expect(status.tailscalePreview).toEqual({ status: 'idle' })
+  })
+
+  it('stopAll() tears down every Tailscale preview', async () => {
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify({ command: 'npm run dev', url: 'http://localhost:3116' }))
+    vi.mocked(spawn).mockReturnValue(makeMockProc('') as any)
+    await devServerManager.start('/tmp/preview-stopall-a')
+    await devServerManager.start('/tmp/preview-stopall-b')
+
+    vi.mocked(tailscalePreviewManager.start).mockResolvedValue({
+      url: 'https://x.ts.net:8443/',
+      remotePort: 8443,
+    })
+    vi.mocked(tailscalePreviewManager.stopAll).mockResolvedValue(undefined)
+    vi.mocked(tailscalePreviewManager.stop).mockResolvedValue(undefined)
+
+    await devServerManager.startTailscalePreview('/tmp/preview-stopall-a')
+    await devServerManager.startTailscalePreview('/tmp/preview-stopall-b')
+
+    await devServerManager.stopAll()
+    expect(tailscalePreviewManager.stopAll).toHaveBeenCalled()
   })
 })
