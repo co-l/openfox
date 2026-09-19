@@ -4,8 +4,11 @@ import { AssistantMessage } from './AssistantMessage'
 import { ChatMessage } from './ChatMessage'
 import { useT } from '../../hooks/useT'
 import { useAgents } from '../../hooks/useAgents'
+import { useConfig } from '../../hooks/useConfig'
 import { getAgentColor } from '../../lib/agents-actions'
+import { resolveSubAgentModelLabel } from '../../lib/model-value'
 import { useSessionStore } from '../../stores/session'
+import { useScopedContext } from '../../stores/session/session-scope'
 import { useDisplaySettings } from '../../hooks/useDisplaySettings'
 import { formatTokens } from '../../lib/format-stats'
 import { useAutoScroll } from '../../hooks/useAutoScroll'
@@ -73,13 +76,29 @@ export const SubAgentContainer = memo(function SubAgentContainer({
   const containerRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<OverlayScrollbarsComponentRef<'div'>>(null)
   const [expanded, setExpanded] = useState(false)
-  const { agents } = useAgents()
+  const { currentSession } = useScopedContext()
+  const { agents, modelOverrides } = useAgents(currentSession?.workdir)
+  const { config } = useConfig()
   const contextState = useSessionStore((state) => state.subAgentContextStates[subAgentId])
   const { showThinking, showVerboseToolOutput } = useDisplaySettings()
 
   const getViewport = useViewport(scrollRef)
 
   const { isAutoScrollActive, setAutoScroll, handleScrollbarGesture } = useAutoScroll(scrollRef, null, getViewport)
+
+  const agentInfo = agents.find((a) => a.id === subAgentType)
+  const label = agentInfo?.name ?? (LABELS[subAgentType] ? t(LABELS[subAgentType]) : subAgentType)
+  const color = getAgentColor(agents, subAgentType)
+  const hStyle = headerStyle(color)
+
+  const modelLabel = resolveSubAgentModelLabel({
+    messages,
+    subAgentType,
+    modelOverrides,
+    sessionProviderModel: currentSession?.providerModel,
+    sessionReasoningEffort: currentSession?.providerReasoningEffort,
+    defaultModelSelection: config?.defaultModelSelection,
+  })
 
   const handleToggleExpand = useCallback(() => {
     const willExpand = !expanded
@@ -92,11 +111,6 @@ export const SubAgentContainer = memo(function SubAgentContainer({
     }
   }, [expanded])
 
-  const agentInfo = agents.find((a) => a.id === subAgentType)
-  const label = agentInfo?.name ?? (LABELS[subAgentType] ? t(LABELS[subAgentType]) : subAgentType)
-  const color = getAgentColor(agents, subAgentType)
-  const hStyle = headerStyle(color)
-
   const displayMessages = messages.filter((m) => m.role !== 'tool')
 
   return (
@@ -108,6 +122,14 @@ export const SubAgentContainer = memo(function SubAgentContainer({
       >
         <div className="order-1 flex items-center gap-2 min-w-0 flex-1 basis-0 @sm:basis-auto @sm:flex-none">
           <span className="text-xs font-medium truncate">{label}</span>
+          {modelLabel && (
+            <span
+              data-testid="subagent-model-badge"
+              className="text-[10px] px-1.5 py-0.5 rounded bg-bg-tertiary text-text-secondary font-mono truncate"
+            >
+              {modelLabel}
+            </span>
+          )}
         </div>
         {contextState && (
           <div
