@@ -3,6 +3,11 @@ import type { Config, LlmBackend } from '../shared/types.js'
 
 const backendSchema = z.enum(['vllm', 'sglang', 'ollama', 'llamacpp', 'unknown']).default('unknown')
 
+const digestRoundSchema = z.coerce
+  .number()
+  .int()
+  .refine((v) => v === -1 || v >= 0, { message: 'digestRound must be -1 (all) or a non-negative integer' })
+
 const envSchema = z.object({
   // New env var name, with fallback to old name for backward compatibility
   OPENFOX_LLM_URL: z.string().url().optional(),
@@ -23,6 +28,7 @@ const envSchema = z.object({
   OPENFOX_DEV: z.coerce.boolean().default(false),
   OPENFOX_DISABLE_AUTO_SESSION_TITLE: z.coerce.boolean().optional(),
   OPENFOX_DEFAULT_AGENT: z.string().optional(),
+  OPENFOX_DIGEST_ROUND: digestRoundSchema.optional(),
 })
 
 export function loadConfig(): Config {
@@ -51,6 +57,7 @@ export function loadConfig(): Config {
       maxTokens: env.OPENFOX_MAX_CONTEXT,
       compactionThreshold: 0.85,
       compactionTarget: 0.6,
+      ...(env.OPENFOX_DIGEST_ROUND !== undefined ? { digestRound: env.OPENFOX_DIGEST_ROUND } : {}),
     },
     agent: {
       maxIterations: 10,

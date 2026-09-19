@@ -4,6 +4,7 @@ import { readFile, writeFile, mkdir, access } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { Mode } from './main.js'
 import { getGlobalConfigPath } from './paths.js'
+import { logger } from '../server/utils/logger.js'
 import type { Provider, ModelConfig } from '../shared/types.js'
 
 export async function configFileExists(mode: Mode): Promise<boolean> {
@@ -138,6 +139,15 @@ const llmConfigSchema = z.object({
   idleTimeout: z.number().optional(),
 })
 
+const digestRoundSchema = z.coerce
+  .number()
+  .int()
+  .refine((v) => v === -1 || v >= 0, { message: 'digestRound must be -1 (all) or a non-negative integer' })
+
+const contextSchema = z.object({
+  digestRound: digestRoundSchema.optional(),
+})
+
 const defaultVisionFallback: z.output<typeof visionFallbackSchema> = {
   enabled: false,
   url: 'http://localhost:11434',
@@ -159,6 +169,7 @@ const configSchema = z
     database: databaseSchema.default({ path: '' }),
     workspace: workspaceSchema.default(() => ({ workdir: process.cwd() })),
     llm: llmConfigSchema.optional(),
+    context: contextSchema.optional(),
     visionFallback: visionFallbackSchema.optional(),
     disableAutoSessionTitle: z.boolean().optional(),
     defaultAgent: z.string().optional(),
@@ -174,6 +185,7 @@ const configSchema = z
     database: data.database ?? { path: '' },
     workspace: data.workspace ?? { workdir: process.cwd() },
     llm: data.llm,
+    context: data.context,
     visionFallback: data.visionFallback ?? defaultVisionFallback,
     ...(data.disableAutoSessionTitle !== undefined ? { disableAutoSessionTitle: data.disableAutoSessionTitle } : {}),
     ...(data.defaultAgent !== undefined ? { defaultAgent: data.defaultAgent } : {}),
@@ -196,11 +208,26 @@ export type GlobalConfig = z.infer<typeof configSchema>
 export async function loadGlobalConfig(mode: Mode, configPathOverride?: string): Promise<GlobalConfig> {
   const configPath = configPathOverride ?? getGlobalConfigPath(mode)
 
+  let parsed: unknown
   try {
     const content = await readFile(configPath, 'utf-8')
-    const parsed = JSON.parse(content)
+    parsed = JSON.parse(content)
     return configSchema.parse(parsed)
-  } catch {
+  } catch (error) {
+    // A typo in the optional `context` block (e.g. digestRound: -2) must not
+    // drop the rest of an otherwise valid config (providers, LLM, auth):
+    // strip the invalid block and keep everything else.
+    if (error instanceof z.ZodError && typeof parsed === 'object' && parsed !== null) {
+      const contextIssues = error.issues.filter((issue) => issue.path[0] === 'context')
+      if (contextIssues.length > 0 && contextIssues.length === error.issues.length) {
+        logger.warn('Ignoring invalid context config block in global config', {
+          issues: contextIssues.map((issue) => issue.message),
+        })
+        const rest = { ...(parsed as Record<string, unknown>) }
+        delete rest['context']
+        return configSchema.parse(rest)
+      }
+    }
     return configSchema.parse({})
   }
 }
@@ -276,6 +303,7 @@ export async function saveGlobalConfig(
     database: config.database ?? { path: '' },
     workspace: config.workspace ?? { workdir: process.cwd() },
     llm: config.llm,
+    context: config.context,
     visionFallback: config.visionFallback ?? defaultVisionFallback,
     ...(config.disableAutoSessionTitle !== undefined
       ? { disableAutoSessionTitle: config.disableAutoSessionTitle }
@@ -326,6 +354,7 @@ export function setDefaultModelSelection(
     database: config.database ?? { path: '' },
     workspace: config.workspace ?? { workdir: process.cwd() },
     llm: config.llm,
+    context: config.context,
     visionFallback: config.visionFallback ?? defaultVisionFallback,
     ...(config.defaultAgent !== undefined ? { defaultAgent: config.defaultAgent } : {}),
   }
@@ -358,6 +387,7 @@ export function addProvider(config: Partial<GlobalConfig>, provider: Omit<Provid
     database: config.database ?? { path: '' },
     workspace: config.workspace ?? { workdir: process.cwd() },
     llm: config.llm,
+    context: config.context,
     visionFallback: config.visionFallback ?? defaultVisionFallback,
     ...(config.defaultAgent !== undefined ? { defaultAgent: config.defaultAgent } : {}),
   }
@@ -408,6 +438,7 @@ export function removeProvider(config: Partial<GlobalConfig>, providerId: string
     database: config.database ?? { path: '' },
     workspace: config.workspace ?? { workdir: process.cwd() },
     llm: config.llm,
+    context: config.context,
     visionFallback: config.visionFallback ?? defaultVisionFallback,
     ...(config.defaultAgent !== undefined ? { defaultAgent: config.defaultAgent } : {}),
   }
@@ -448,6 +479,7 @@ export function activateProvider(config: Partial<GlobalConfig>, providerId: stri
       database: config.database ?? { path: '' },
       workspace: config.workspace ?? { workdir: process.cwd() },
       llm: config.llm,
+      context: config.context,
       visionFallback: config.visionFallback ?? defaultVisionFallback,
     }
   }
@@ -463,6 +495,7 @@ export function activateProvider(config: Partial<GlobalConfig>, providerId: stri
     database: config.database ?? { path: '' },
     workspace: config.workspace ?? { workdir: process.cwd() },
     llm: config.llm,
+    context: config.context,
     visionFallback: config.visionFallback ?? defaultVisionFallback,
     ...(config.defaultAgent !== undefined ? { defaultAgent: config.defaultAgent } : {}),
   }

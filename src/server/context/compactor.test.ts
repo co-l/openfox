@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest'
-import { shouldCompact } from './compactor.js'
+import { describe, expect, it, vi } from 'vitest'
+import { appendCompactionPrompt, shouldCompact } from './compactor.js'
+import { COMPACTION_PROMPT } from '../chat/prompts.js'
+
+vi.mock('../events/index.js', () => ({
+  getCurrentWindowMessageOptions: () => undefined,
+}))
 
 describe('context compactor helpers', () => {
   it('decides when compaction should happen', () => {
@@ -42,5 +47,34 @@ describe('context compactor helpers', () => {
     // 200K model, threshold 0.5: well below ceiling → normal behavior
     expect(shouldCompact(101_000, 200_000, 0.5)).toBe(true)
     expect(shouldCompact(99_000, 200_000, 0.5)).toBe(false)
+  })
+})
+
+describe('appendCompactionPrompt', () => {
+  it('emits the full COMPACTION_PROMPT (including the anti-imitation guard) as an auto-prompt message', () => {
+    const events: any[] = []
+    appendCompactionPrompt('test-session', (e) => events.push(e))
+
+    expect(events).toHaveLength(2)
+    expect(events[0]?.type).toBe('message.start')
+    const start = events[0]!.data as Record<string, unknown>
+    expect(start['role']).toBe('user')
+    expect(start['content']).toBe(COMPACTION_PROMPT)
+    expect(String(start['content'])).toContain('do not reproduce, continue, or imitate')
+    expect(start['isSystemGenerated']).toBe(true)
+    expect(start['messageKind']).toBe('auto-prompt')
+    expect(start['metadata']).toEqual({ type: 'compaction', name: 'Compaction', color: '#64748b' })
+    expect(events[1]).toEqual({ type: 'message.done', data: { messageId: start['messageId'] } })
+  })
+
+  it('never leaks digest scaffolding into the compaction prompt itself', () => {
+    const events: any[] = []
+    appendCompactionPrompt('test-session', (e) => events.push(e))
+
+    const content = events[0]!.data.content as string
+    // The guard may reference the digest format, but the prompt itself must not
+    // be digest scaffolding: no concrete round headers, no seed pointer line.
+    expect(content).not.toMatch(/## Round \d+ — summarized/)
+    expect(content).not.toContain('compaction summary of Round')
   })
 })

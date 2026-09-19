@@ -364,6 +364,95 @@ describe('config', () => {
     })
   })
 
+  describe('context digestRound', () => {
+    it('parses a valid digestRound from the config file', async () => {
+      await writeFile(
+        join(TEST_DIR, 'production', 'config.json'),
+        JSON.stringify({
+          providers: [],
+          context: { digestRound: 2 },
+        }),
+      )
+      const loaded = await loadGlobalConfig('production')
+      expect(loaded.context?.digestRound).toBe(2)
+    })
+
+    it('accepts -1 (all prior summaries)', async () => {
+      await writeFile(
+        join(TEST_DIR, 'production', 'config.json'),
+        JSON.stringify({
+          providers: [],
+          context: { digestRound: -1 },
+        }),
+      )
+      const loaded = await loadGlobalConfig('production')
+      expect(loaded.context?.digestRound).toBe(-1)
+    })
+
+    const keptProvider = {
+      id: 'test-123',
+      name: 'Kept Provider',
+      url: 'http://localhost:8000/v1',
+      backend: 'vllm' as const,
+      models: [],
+      isActive: true,
+      createdAt: new Date().toISOString(),
+    }
+
+    it('ignores an out-of-range digestRound without dropping the rest of the config', async () => {
+      await writeFile(
+        join(TEST_DIR, 'production', 'config.json'),
+        JSON.stringify({
+          providers: [keptProvider],
+          context: { digestRound: -2 },
+        }),
+      )
+      const loaded = await loadGlobalConfig('production')
+      expect(loaded.context).toBeUndefined()
+      expect(loaded.providers).toHaveLength(1)
+      expect(loaded.providers[0]?.name).toBe('Kept Provider')
+    })
+
+    it('ignores a non-integer digestRound without dropping the rest of the config', async () => {
+      await writeFile(
+        join(TEST_DIR, 'production', 'config.json'),
+        JSON.stringify({
+          providers: [keptProvider],
+          context: { digestRound: 1.5 },
+        }),
+      )
+      const loaded = await loadGlobalConfig('production')
+      expect(loaded.context).toBeUndefined()
+      expect(loaded.providers).toHaveLength(1)
+      expect(loaded.providers[0]?.name).toBe('Kept Provider')
+    })
+
+    it('still falls back to defaults when a non-context field is invalid', async () => {
+      await writeFile(
+        join(TEST_DIR, 'production', 'config.json'),
+        JSON.stringify({
+          providers: 'not-an-array',
+          context: { digestRound: -1 },
+        }),
+      )
+      const loaded = await loadGlobalConfig('production')
+      expect(loaded.providers).toEqual([])
+      expect(loaded.context).toBeUndefined()
+    })
+
+    it('preserves context.digestRound through a save/load cycle', async () => {
+      await saveGlobalConfig('production', { providers: [], context: { digestRound: -1 } })
+      const loaded = await loadGlobalConfig('production')
+      expect(loaded.context?.digestRound).toBe(-1)
+    })
+
+    it('omits context from a saved file when it was never set', async () => {
+      await saveGlobalConfig('production', { providers: [] })
+      const loaded = await loadGlobalConfig('production')
+      expect(loaded.context).toBeUndefined()
+    })
+  })
+
   it('preserves provider auth fields when loading config', async () => {
     const configPath = join(TEST_DIR, 'production', 'config.json')
     await mkdir(join(TEST_DIR, 'production'), { recursive: true })
