@@ -45,6 +45,8 @@ export async function runServe(options: ServeOptions): Promise<void> {
   // The active provider's reasoning echo field: explicit config first, then the
   // URL-derived default (e.g. reasoning_content for the DeepSeek API).
   const envThinkingField = env.llm.thinkingField
+  // Cumulative compaction summaries: env (OPENFOX_DIGEST_ROUND) wins over the global config file
+  const digestRound = env.context.digestRound ?? globalConfig.context?.digestRound
   const providerThinkingField =
     activeProvider?.thinkingField ?? detectProviderDefaultsFromUrl(activeProvider?.url ?? '')?.thinkingField
 
@@ -103,6 +105,12 @@ export async function runServe(options: ServeOptions): Promise<void> {
     ...((env.disableAutoSessionTitle ?? globalConfig.disableAutoSessionTitle) !== undefined
       ? { disableAutoSessionTitle: env.disableAutoSessionTitle ?? globalConfig.disableAutoSessionTitle }
       : {}),
+    context: {
+      maxTokens: env.context.maxTokens,
+      compactionThreshold: env.context.compactionThreshold,
+      compactionTarget: env.context.compactionTarget,
+      ...(digestRound !== undefined ? { digestRound } : {}),
+    },
   }
 
   await createServer(merged)

@@ -116,17 +116,17 @@ This is the single source of truth. All session state derives from events.
 
 ### Context Management
 
-| Event Type          | Description                                                                                         |
-| ------------------- | --------------------------------------------------------------------------------------------------- |
-| `context.state`     | Token tracking. Contains: currentTokens, maxTokens, compactionCount, dangerZone, canCompact         |
-| `context.compacted` | Context window compacted. Contains: closedWindowId, newWindowId, beforeTokens, afterTokens, summary |
-| `file.read`         | File read for cache tracking. Contains: path, tokenCount, contextWindowId                           |
+| Event Type          | Description                                                                                                                                                            |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `context.state`     | Token tracking. Contains: currentTokens, maxTokens, compactionCount, dangerZone, canCompact                                                                            |
+| `context.compacted` | Context window compacted. Contains: closedWindowId, newWindowId, beforeTokens, afterTokens, summary, digestRound (0 = no digest injected, -1 = all, k = most recent k) |
+| `file.read`         | File read for cache tracking. Contains: path, tokenCount, contextWindowId                                                                                              |
 
 ### Snapshots (Critical!)
 
-| Event Type      | Description                                                                                                                                                                    |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `turn.snapshot` | Full state at end of turn. Contains everything: mode, phase, isRunning, messages[], criteria[], todos[], contextState, currentContextWindowId, readFiles, lastModeWithReminder |
+| Event Type      | Description                                                                                                                                                                                                   |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `turn.snapshot` | Full state at end of turn. Contains everything: mode, phase, isRunning, messages[], criteria[], todos[], contextState, contextWindows[], currentContextWindowId, digestRound, readFiles, lastModeWithReminder |
 
 > **This is the most important event type.** Snapshots capture the complete session state at a point in time.
 
@@ -389,6 +389,8 @@ Messages in a `turn.snapshot` have this structure:
 - `promptContext` - What was sent to the LLM (system prompt, injected files, etc.)
 - `contextWindowId` - Groups messages into context windows (resets on compaction)
 - `subAgentType` - Identifies sub-agent execution context
+- `isCompactionSummary` - Marks a window's seed summary (1:1 with `context.compacted`)
+- `metadata` - Auto-prompt messages may carry `type: 'compaction-digest'` with `round` and `entries: [{ round, windowId, messageId, summarizedAt }]` — the cumulative digest of prior compaction rounds (emitted only when `digestRound` is non-zero)
 
 ## CLI Shortcuts
 

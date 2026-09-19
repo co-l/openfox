@@ -48,6 +48,7 @@ import { loadAllAgentsDefault, getSubAgents } from '../agents/registry.js'
 import { createRetryLimiter, type RetryLimiter } from './retry-limiter.js'
 import { drainQueue } from './drain-queue.js'
 import { COMPACTION_PROMPT, CONTINUE_PROMPT, CONTINUE_AFTER_STREAM_ERROR_PROMPT } from './prompts.js'
+import { buildCompactionDigest } from './compaction-digest.js'
 import { logger } from '../utils/logger.js'
 import { emitPluginHook } from '../plugins/hook-emitter.js'
 import type { LLMRetryPolicy } from '../runner/types.js'
@@ -185,6 +186,10 @@ export interface TopLevelLoopConfig {
   /** Build conversation messages for the LLM, with image processing applied.
    *  Called each iteration to get fresh context. */
   getConversationMessages: () => Promise<RequestContextMessage[]>
+  /** Read the session's stored events (all windows). Used by the compaction
+   *  tail to project the cumulative digest. Wired by the orchestrator so the
+   *  loop itself never touches the EventStore. */
+  getEvents?: (() => import('../events/types.js').StoredEvent[]) | undefined
   /** When true, the loop starts in compacting mode (used for manual compaction).
    *  After compaction completes, the loop breaks instead of continuing. */
   initialCompacting?: boolean
@@ -797,10 +802,42 @@ ${COMPACTION_PROMPT}`,
       const newWindowId = crypto.randomUUID()
       const tokenCountAtClose = result.usage.promptTokens
 
+      // Decision log: every compaction stamps the digest decision (0 = off,
+      // -1 = all, k = most recent k) so replay is deterministic. The digest
+      // message itself is only emitted for non-0 decisions with prior rounds.
+      const digestRound = getRuntimeConfig().context.digestRound ?? 0
+      const digest =
+        !config.subAgentMetadata && config.getEvents
+          ? buildCompactionDigest(config.getEvents(), digestRound, closedWindowId)
+          : null
+
       append({
         type: 'context.compacted',
-        data: { closedWindowId, newWindowId, beforeTokens: tokenCountAtClose, afterTokens: 0, summary },
+        data: { closedWindowId, newWindowId, beforeTokens: tokenCountAtClose, afterTokens: 0, summary, digestRound },
       })
+
+      if (digest) {
+        const digestMsgId = crypto.randomUUID()
+        append({
+          type: 'message.start',
+          data: {
+            messageId: digestMsgId,
+            role: 'user',
+            content: digest.content,
+            contextWindowId: newWindowId,
+            isSystemGenerated: true,
+            messageKind: 'auto-prompt',
+            metadata: {
+              type: 'compaction-digest',
+              name: 'Compaction digest',
+              color: '#8b5cf6',
+              round: digestRound,
+              entries: digest.entries,
+            },
+          },
+        })
+        append({ type: 'message.done', data: { messageId: digestMsgId } })
+      }
 
       append({
         type: 'message.start',

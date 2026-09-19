@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { StoredEvent, SnapshotMessage } from './types.js'
+import type { StoredEvent, SnapshotMessage, SessionSnapshot } from './types.js'
 import type { MessageStats } from '../../shared/types.js'
 import type { ChoiceOption } from '../../shared/protocol.js'
 import {
@@ -3285,5 +3285,141 @@ describe('buildSessionStatsMessages', () => {
 
     expect(result).toHaveLength(1)
     expect(result[0]!.stats!.totalTime).toBe(99)
+  })
+})
+
+// ============================================================================
+// digestRound + contextWindows snapshot persistence
+// ============================================================================
+
+describe('digestRound + contextWindows snapshot persistence', () => {
+  function compacted(closed: string, next: string, seq: number, summary: string, digestRound: number) {
+    return {
+      ...baseEvent,
+      seq,
+      type: 'context.compacted' as const,
+      data: {
+        closedWindowId: closed,
+        newWindowId: next,
+        beforeTokens: 100 * seq,
+        afterTokens: 0,
+        summary,
+        digestRound,
+      },
+    }
+  }
+
+  const initEvent = {
+    ...baseEvent,
+    type: 'session.initialized' as const,
+    data: { projectId: 'p', workdir: '/w', contextWindowId: 'w1' },
+  }
+
+  const minimalSnapshot = (currentWindow: string, digestRound: number, compactionCount: number): SessionSnapshot =>
+    ({
+      mode: 'builder',
+      phase: 'plan',
+      isRunning: false,
+      messages: [],
+      criteria: [],
+      metadataEntries: {},
+      contextState: {
+        currentTokens: 1,
+        maxTokens: 200000,
+        compactionCount,
+        dangerZone: false,
+        canCompact: false,
+        dynamicContextChanged: false,
+      },
+      currentContextWindowId: currentWindow,
+      todos: [],
+      snapshotSeq: 4,
+      snapshotAt: 9999,
+      ...(digestRound !== undefined && { digestRound }),
+    }) as SessionSnapshot
+
+  it('foldContextState: digestRound is latest-wins across compacted events and snapshots', () => {
+    const events = [
+      initEvent,
+      compacted('w1', 'w2', 2, 's1', 0),
+      compacted('w2', 'w3', 3, 's2', 2),
+      {
+        ...baseEvent,
+        seq: 4,
+        type: 'turn.snapshot' as const,
+        data: minimalSnapshot('w3', 2, 2),
+      },
+      compacted('w3', 'w4', 5, 's3', -1),
+    ]
+    const result = foldContextState(events as StoredEvent[], 'w1')
+    expect(result.currentContextWindowId).toBe('w4')
+    expect(result.compactionCount).toBe(3)
+    expect(result.digestRound).toBe(-1)
+  })
+
+  it('foldContextState: snapshot digestRound survives when later events lack the field (legacy)', () => {
+    const events = [
+      initEvent,
+      {
+        ...baseEvent,
+        seq: 4,
+        type: 'turn.snapshot' as const,
+        data: minimalSnapshot('w2', -1, 1),
+      },
+      {
+        ...baseEvent,
+        seq: 5,
+        type: 'context.compacted' as const,
+        data: { closedWindowId: 'w2', newWindowId: 'w3', beforeTokens: 100, afterTokens: 0, summary: 's2' },
+      },
+    ]
+    const result = foldContextState(events as StoredEvent[], 'w1')
+    expect(result.currentContextWindowId).toBe('w3')
+    expect(result.digestRound).toBe(-1)
+  })
+
+  it('buildSnapshotFromSessionState includes digestRound and contextWindows', () => {
+    const events = [initEvent, compacted('w1', 'w2', 2, 's1', 2), compacted('w2', 'w3', 3, 's2', -1)]
+    const snapshot = buildSnapshotFromSessionState({
+      session: {
+        mode: 'builder',
+        phase: 'plan',
+        isRunning: false,
+        criteria: [],
+        executionState: { currentTokenCount: 10, compactionCount: 2 },
+      },
+      events: events as StoredEvent[],
+      latestSeq: 3,
+      snapshotAt: 999,
+      maxTokens: 200000,
+    })
+    expect(snapshot.digestRound).toBe(-1)
+    expect(snapshot.contextWindows).toHaveLength(2)
+    expect(snapshot.contextWindows?.[0]).toMatchObject({ newWindowId: 'w2', summary: 's1', digestRound: 2 })
+    expect(snapshot.contextWindows?.[1]).toMatchObject({ newWindowId: 'w3', summary: 's2', digestRound: -1 })
+  })
+
+  it('buildSnapshotFromSessionState omits digestRound/contextWindows when no compaction happened', () => {
+    const snapshot = buildSnapshotFromSessionState({
+      session: {
+        mode: 'builder',
+        phase: 'plan',
+        isRunning: false,
+        criteria: [],
+        executionState: null,
+      },
+      events: [initEvent] as StoredEvent[],
+      latestSeq: 1,
+      snapshotAt: 999,
+      maxTokens: 200000,
+    })
+    expect(snapshot.digestRound).toBeUndefined()
+    expect(snapshot.contextWindows).toBeUndefined()
+  })
+
+  it('foldSessionState surfaces digestRound latest-wins', () => {
+    const events = [initEvent, compacted('w1', 'w2', 2, 's1', 5), compacted('w2', 'w3', 3, 's2', -1)]
+    const folded = foldSessionState(events as StoredEvent[], 'w1', 200000)
+    expect(folded.digestRound).toBe(-1)
   })
 })

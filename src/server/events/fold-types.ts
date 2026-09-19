@@ -66,5 +66,6 @@ export interface FoldedSessionState {
   taskStats?: TaskStats
   messageStats?: MessageStatsEntry[]
   contextWindows?: CompactionRecord[]
+  digestRound?: number
   waitingWorkflow?: WorkflowWaitingPayload
 }

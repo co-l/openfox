@@ -5,6 +5,7 @@ import {
   buildSubAgentSystemPrompt,
   buildAgentReminder,
   buildSubAgentsSection,
+  COMPACTION_PROMPT,
 } from './prompts.js'
 import type { AgentDefinition } from '../agents/types.js'
 
@@ -295,5 +296,20 @@ describe('caveman thinking option (llm.cavemanThinking)', () => {
     expect(prompt).toContain('## THINKING STYLE')
     expect(prompt).toContain('caveman style')
     expect(prompt).toContain('Same meaning, far fewer tokens.')
+  })
+})
+
+describe('COMPACTION_PROMPT anti-imitation guard', () => {
+  it('keeps the original 8-point summary contract', () => {
+    expect(COMPACTION_PROMPT).toContain('Summarize the conversation history concisely, preserving:')
+    expect(COMPACTION_PROMPT).toContain('1. What was done and what is currently being worked on')
+    expect(COMPACTION_PROMPT).toContain("8. The user's current question, prompt, or active request")
+  })
+
+  it('tells the model the digest is scaffolding, not conversation', () => {
+    expect(COMPACTION_PROMPT).toContain('compaction digest')
+    expect(COMPACTION_PROMPT).toContain('## Round N — summarized')
+    expect(COMPACTION_PROMPT).toContain('scaffolding describing PREVIOUS rounds')
+    expect(COMPACTION_PROMPT).toContain('do not reproduce, continue, or imitate')
   })
 })
