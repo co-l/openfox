@@ -51,7 +51,11 @@ export const SETTINGS_KEYS = {
   PROXY_URL: 'network.proxyUrl',
   DEFAULT_AGENT: 'agent.defaultAgent',
   AGENT_MODEL_OVERRIDES: 'agent.modelOverrides',
+  END_OF_SESSION_COMMAND: 'session.endOfSessionCommand',
 } as const
+
+/** Default command run when the user asks to close a session (empty disables the routine). */
+export const DEFAULT_END_OF_SESSION_COMMAND = 'end-of-session'
 
 export const SETTINGS_DEFAULTS: Record<string, string> = {
   [SETTINGS_KEYS.LANGUAGE]: 'automatic',
@@ -100,6 +104,7 @@ export const SETTINGS_DEFAULTS: Record<string, string> = {
   [SETTINGS_KEYS.CONFIRM_ON_WORKSPACE_ACTIONS]: 'false',
   [SETTINGS_KEYS.FEATURES_PER_SESSION_MCP]: 'false',
   [SETTINGS_KEYS.MAINTENANCE_SNAPSHOT_STREAMS_MIGRATED]: 'false',
+  [SETTINGS_KEYS.END_OF_SESSION_COMMAND]: DEFAULT_END_OF_SESSION_COMMAND,
 }
 
 export type SettingsKey = (typeof SETTINGS_KEYS)[keyof typeof SETTINGS_KEYS]

@@ -10,7 +10,8 @@ export {
   type SessionPoolContext,
   type SessionPoolOptions,
 } from './session-pool.js'
-export { createTestServer, type TestServerHandle } from './server-factory.js'
+export { createTestServer, getFreePort, type TestServerHandle } from './server-factory.js'
+export { isBlockedFetchPort } from '../../test-port-guard.js'
 export {
   createCollectedEvents,
   collectUntil,

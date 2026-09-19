@@ -32,7 +32,7 @@ export default defineConfig({
     // full-suite load on slower machines.
     testTimeout: 15_000,
     exclude: ['e2e/**', 'node_modules/**'],
-    setupFiles: ['vitest-localstorage-mock', './web/src/test-setup.ts'],
+    setupFiles: ['vitest-localstorage-mock', './web/src/test-setup.ts', './test-port-guard.ts'],
     env: {
       NODE_OPTIONS: '--localstorage-file=/tmp/openfox-test-localstorage.json',
     },

@@ -63,9 +63,10 @@ function startRouter(options: OpenFoxMcpRouterOptions): Promise<Started> {
   const app = express()
   app.use(express.json())
   app.use('/mcp', createOpenFoxMcpRouter(options))
-  const server = app.listen(0)
   return new Promise((resolve, reject) => {
-    server.on('listening', () => {
+    // listen callback, not an on('listening') listener: the port guard may
+    // close a blocked bind and retry before the address is trustworthy.
+    const server = app.listen(0, () => {
       const port = (server.address() as AddressInfo).port
       resolve({
         url: `http://127.0.0.1:${port}/mcp`,

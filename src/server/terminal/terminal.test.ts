@@ -4,6 +4,11 @@ import { terminalManager } from './manager.js'
 describe('TerminalManager', () => {
   afterEach(async () => {
     await terminalManager.killAll()
+    // node-pty fires onExit on a later event-loop turn than kill(); drain it
+    // here so the "session exited" log lands while the worker still accepts
+    // console output - a log arriving during teardown makes vitest abort the
+    // whole run with an EnvironmentTeardownError.
+    await new Promise((resolve) => setTimeout(resolve, 50))
   })
 
   describe('create', () => {

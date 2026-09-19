@@ -336,6 +336,13 @@ function runMigrations(db: Database.Database): void {
     db.exec(`ALTER TABLE sessions ADD COLUMN branch TEXT`)
   }
 
+  // Migration: Add closing_at column - set when the end-of-session routine was
+  // requested (two-phase delete), cleared when the user cancels the closing.
+  if (!columnNames.includes('closing_at')) {
+    logger.info('Migrating sessions table: adding closing_at column')
+    db.exec(`ALTER TABLE sessions ADD COLUMN closing_at TEXT`)
+  }
+
   // Create workflow_executions table for first-class workflow state management
   db.exec(`
     CREATE TABLE IF NOT EXISTS workflow_executions (

@@ -96,6 +96,8 @@ OPENFOX_TEST_VERBOSE=true npx vitest run
 
 **Important:** Run both commands without piping to `tail` or `grep` — they're already token-efficient and return errors properly. Grepping hides failure context and leads to wasteful re-runs.
 
+**Test-server ports:** WHATWG fetch refuses a blocklist of ports (up to 10080), so a random `listen(0)` port can fail every request with `TypeError: fetch failed` / `bad port`. `test-port-guard.ts` (loaded via `setupFiles` in both vitest configs) retries blocked `listen(0)` binds; read the address from the listen _callback_, never an `on('listening')` listener, and avoid fixed binds inside the blocklist range.
+
 ### Git Commands
 
 Precommit hooks take >40s, so always use a 120s timeout when committing:
