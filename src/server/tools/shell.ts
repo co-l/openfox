@@ -79,6 +79,15 @@ export function hasBackgroundAmpersand(command: string): boolean {
   return processed.includes('&')
 }
 
+/**
+ * Detect npm/npx usage and return the pnpm equivalent command.
+ * Returns null when the command has no npm/npx usage.
+ */
+export function detectNpmUsage(command: string): string | null {
+  if (!/\b(npm|npx)\b/.test(command)) return null
+  return command.replace(/\bnpm\b/g, 'pnpm').replace(/\bnpx\b/g, 'pnpm dlx')
+}
+
 interface RunCommandArgs {
   command: string
   cwd?: string
@@ -122,6 +131,19 @@ export const runCommandTool = createTool<RunCommandArgs>(
           en: 'Use background_process tool (action: "start") for background/long-running commands instead of \'&\'. See the tool description for details.',
           fr: 'Utilisez l’outil background_process (action : « start ») pour les commandes d’arrière-plan ou de longue durée au lieu de « & ». Consultez la description de l’outil pour plus de détails.',
         }),
+      )
+    }
+
+    const pnpmEquivalent = detectNpmUsage(args.command)
+    if (pnpmEquivalent) {
+      return helpers.error(
+        serverT(
+          {
+            en: 'npm/npx is not allowed. Use pnpm instead: {{cmd}}',
+            fr: 'npm/npx est interdit. Utilisez pnpm à la place : {{cmd}}',
+          },
+          { cmd: pnpmEquivalent },
+        ),
       )
     }
 
