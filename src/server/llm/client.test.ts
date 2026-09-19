@@ -126,7 +126,7 @@ describe('llm client', () => {
       thinkingContent: 'Reasoning here',
       toolCalls: [{ id: 'call-1', name: 'glob', arguments: { pattern: '*.ts' } }],
       finishReason: 'tool_calls',
-      usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+      usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15, reported: true },
     })
   })
 
@@ -159,7 +159,7 @@ describe('llm client', () => {
       content: 'Final answer',
       thinkingContent: 'My reasoning process',
       finishReason: 'stop',
-      usage: { promptTokens: 4, completionTokens: 2, totalTokens: 6 },
+      usage: { promptTokens: 4, completionTokens: 2, totalTokens: 6, reported: true },
     })
   })
 
@@ -248,7 +248,7 @@ describe('llm client', () => {
       content: 'Final content',
       thinkingContent: 'reasoning process',
       finishReason: 'stop',
-      usage: { promptTokens: 6, completionTokens: 2, totalTokens: 8 },
+      usage: { promptTokens: 6, completionTokens: 2, totalTokens: 8, reported: true },
     })
   })
 
@@ -402,7 +402,7 @@ describe('llm client', () => {
           thinkingContent: 'think',
           toolCalls: [{ id: 'call-1', name: 'glob', arguments: { pattern: '*.ts' } }],
           finishReason: 'tool_calls',
-          usage: { promptTokens: 11, completionTokens: 6, totalTokens: 17 },
+          usage: { promptTokens: 11, completionTokens: 6, totalTokens: 17, reported: true },
         },
       },
     ])
@@ -517,7 +517,7 @@ describe('llm client', () => {
           content: 'final answer',
           thinkingContent: 'step by step',
           finishReason: 'stop',
-          usage: { promptTokens: 3, completionTokens: 2, totalTokens: 5 },
+          usage: { promptTokens: 3, completionTokens: 2, totalTokens: 5, reported: true },
         },
       },
     ])
@@ -567,7 +567,7 @@ describe('llm client', () => {
           content: '',
           thinkingContent: 'reasoning process',
           finishReason: 'tool_calls',
-          usage: { promptTokens: 9, completionTokens: 3, totalTokens: 12 },
+          usage: { promptTokens: 9, completionTokens: 3, totalTokens: 12, reported: true },
           toolCalls: [
             {
               id: 'call-1',
@@ -843,7 +843,7 @@ describe('llm client', () => {
           content: 'final answer',
           thinkingContent: 'step by step',
           finishReason: 'stop',
-          usage: { promptTokens: 5, completionTokens: 3, totalTokens: 8 },
+          usage: { promptTokens: 5, completionTokens: 3, totalTokens: 8, reported: true },
         },
       },
     ])
@@ -928,7 +928,7 @@ describe('llm client', () => {
           content: 'Hello there! How are you?',
           thinkingContent: 'Let me think...',
           finishReason: 'stop',
-          usage: { promptTokens: 10, completionTokens: 8, totalTokens: 18 },
+          usage: { promptTokens: 10, completionTokens: 8, totalTokens: 18, reported: true },
         },
       },
     ])
@@ -983,7 +983,7 @@ describe('llm client', () => {
           id: 'resp-1',
           content: 'Just text',
           finishReason: 'stop',
-          usage: { promptTokens: 5, completionTokens: 2, totalTokens: 7 },
+          usage: { promptTokens: 5, completionTokens: 2, totalTokens: 7, reported: true },
         },
       },
     ])
