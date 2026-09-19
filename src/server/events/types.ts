@@ -25,6 +25,7 @@ import type {
   Attachment,
   PreparingToolCall,
   WorkflowExecutionStatus,
+  DigestEntry,
   EditContextRegion,
 } from '../../shared/types.js'
 import type { WorkflowWaitingPayload } from '../../shared/protocol.js'
@@ -77,7 +78,14 @@ export type TurnEvent =
         isCompactionSummary?: boolean // True if this is the summary message after compaction
         tokenCount?: number // Known upfront for user messages
         attachments?: Attachment[] // Optional image attachments
-        metadata?: { type: string; name: string; color: string; kind?: 'definition' | 'reminder' } // For auto-prompt messages
+        metadata?: {
+          type: string
+          name: string
+          color: string
+          kind?: 'definition' | 'reminder'
+          round?: number // compaction-digest only: 0 = off, -1 = all, k = most recent k
+          entries?: DigestEntry[] // compaction-digest only: machine-readable twin of the content headers
+        } // For auto-prompt messages
       }
     }
   | {
@@ -277,6 +285,7 @@ export type TurnEvent =
         summary: string
         subAgentId?: string // Present when compaction is for a sub-agent scope
         subAgentType?: string // Present when compaction is for a sub-agent scope
+        digestRound?: number // Decision stamped at compaction: 0 = off, -1 = all, k = most recent k
       }
     }
   | {
@@ -449,6 +458,7 @@ export interface SessionSnapshot {
   messageStats?: MessageStatsEntry[]
   pendingConfirmations?: PendingPathConfirmation[]
   contextWindows?: CompactionRecord[]
+  digestRound?: number // Latest-wins digest decision (survives purge via snapshot)
   waitingWorkflow?: WorkflowWaitingPayload
 }
 
@@ -519,6 +529,7 @@ export interface CompactionRecord {
   beforeTokens: number
   afterTokens: number
   summary: string
+  digestRound?: number
   timestamp: number
 }
 
@@ -549,7 +560,14 @@ export interface SnapshotMessage {
   contextWindowId?: string
   isCompactionSummary?: boolean
   attachments?: Attachment[] // Optional image attachments
-  metadata?: { type: string; name: string; color: string; kind?: 'definition' | 'reminder' } // For auto-prompt messages
+  metadata?: {
+    type: string
+    name: string
+    color: string
+    kind?: 'definition' | 'reminder'
+    round?: number
+    entries?: DigestEntry[]
+  } // For auto-prompt messages
 }
 
 export interface ToolCallWithResult extends ToolCall {

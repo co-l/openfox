@@ -481,6 +481,14 @@ export interface Attachment {
   pdfContent?: string // Enriched PDF content (text + image descriptions) for non-vision models
 }
 
+/** One round of the cumulative compaction digest (machine-readable twin of a content header) */
+export interface DigestEntry {
+  round: number
+  windowId: string
+  messageId: string
+  summarizedAt: string
+}
+
 export interface Message {
   id: string
   role: MessageRole
@@ -514,6 +522,8 @@ export interface Message {
     kind?: 'definition' | 'reminder'
     branchName?: string
     workspaceName?: string
+    round?: number // compaction-digest only: 0 = off, -1 = all, k = most recent k
+    entries?: DigestEntry[] // compaction-digest only: machine-readable twin of the content headers
   } // For auto-prompt messages
 }
 
@@ -942,6 +952,7 @@ export interface Config {
     maxTokens: number
     compactionThreshold: number
     compactionTarget: number
+    digestRound?: number // Cumulative compaction summaries: 0 = off (default), -1 = all, k = most recent k
   }
   agent: {
     maxIterations: number

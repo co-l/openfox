@@ -74,12 +74,14 @@ interface ContextFoldResult {
   compactionCount: number
   readFiles: ReadFileEntry[]
   latestContextState: ContextState | null
+  digestRound?: number
 }
 
 export function foldContextState(events: EventLike[], initialWindowId: string): ContextFoldResult {
   let currentContextWindowId = initialWindowId
   let compactionCount = 0
   let latestContextState: ContextState | null = null
+  let digestRound: number | undefined
   const readFilesMap = new Map<string, ReadFileEntry>()
 
   for (const event of events) {
@@ -94,6 +96,7 @@ export function foldContextState(events: EventLike[], initialWindowId: string): 
         currentContextWindowId = data.currentContextWindowId
         compactionCount = data.contextState.compactionCount
         latestContextState = data.contextState
+        if (data.digestRound !== undefined) digestRound = data.digestRound
         readFilesMap.clear()
         if (data.readFiles) {
           for (const entry of data.readFiles) {
@@ -116,6 +119,7 @@ export function foldContextState(events: EventLike[], initialWindowId: string): 
         if (data.subAgentId) break
         currentContextWindowId = data.newWindowId
         compactionCount++
+        if (data.digestRound !== undefined) digestRound = data.digestRound
         readFilesMap.clear()
         latestContextState = null
         break
@@ -135,6 +139,7 @@ export function foldContextState(events: EventLike[], initialWindowId: string): 
     compactionCount,
     readFiles: Array.from(readFilesMap.values()),
     latestContextState,
+    ...(digestRound !== undefined && { digestRound }),
   }
 }
 
@@ -403,6 +408,7 @@ export function foldSessionState(
     // snapshots can rely on them for cumulative persistence.
     contextWindows,
     formatRetries,
+    ...(contextResult.digestRound !== undefined && { digestRound: contextResult.digestRound }),
   }
 }
 
@@ -490,6 +496,14 @@ export function trimSnapshotStreamingOutput(messages: SnapshotMessage[]): {
   return { messages: trimmedMessages, droppedStreams, keptStreams }
 }
 
+function optionalCompactionSnapshotFields(state: FoldedSessionState): Partial<SessionSnapshot> {
+  return {
+    contextWindows: state.contextWindows ?? [],
+    ...(state.digestRound !== undefined && { digestRound: state.digestRound }),
+    ...(state.waitingWorkflow !== undefined && { waitingWorkflow: state.waitingWorkflow }),
+  }
+}
+
 export function buildSnapshot(
   foldedState: FoldedSessionState,
   latestSeq: number,
@@ -525,8 +539,7 @@ export function buildSnapshot(
     ...(foldedState.taskStats !== undefined && { taskStats: foldedState.taskStats }),
     ...(foldedState.messageStats !== undefined && { messageStats: foldedState.messageStats }),
     ...(foldedState.pendingConfirmations !== undefined && { pendingConfirmations: foldedState.pendingConfirmations }),
-    contextWindows: foldedState.contextWindows ?? [],
-    ...(foldedState.waitingWorkflow !== undefined && { waitingWorkflow: foldedState.waitingWorkflow }),
+    ...optionalCompactionSnapshotFields(foldedState),
   }
 }
 
@@ -606,6 +619,6 @@ export function buildSnapshotFromSessionState(input: {
       : foldedState.dynamicContextHash !== undefined
         ? { dynamicContextHash: foldedState.dynamicContextHash }
         : {}),
-    ...(foldedState.waitingWorkflow !== undefined && { waitingWorkflow: foldedState.waitingWorkflow }),
+    ...optionalCompactionSnapshotFields(foldedState),
   }
 }

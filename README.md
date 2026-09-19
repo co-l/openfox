@@ -139,6 +139,7 @@ _Vision Fallback — Image processing configuration_
 | `OPENFOX_BASE_PATH`                  | `/`                        | Web app base path for subpath deployments (e.g. `/openfox/`)    |
 | `OPENFOX_MODEL_NAME`                 | `''`                       | Override default model name                                     |
 | `OPENFOX_MAX_CONTEXT`                | `200000`                   | Max context window in tokens                                    |
+| `OPENFOX_DIGEST_ROUND`               | `0`                        | Cumulative compaction digest: `0` off, `-1` all, `k` recent     |
 | `OPENFOX_LLM_TIMEOUT`                | `300000`                   | LLM request timeout in ms                                       |
 | `OPENFOX_LLM_IDLE_TIMEOUT`           | `300000`                   | LLM stream idle timeout in ms                                   |
 | `OPENFOX_PORT`                       | `10369`                    | Server listen port                                              |

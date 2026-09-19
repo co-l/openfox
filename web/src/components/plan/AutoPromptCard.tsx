@@ -31,6 +31,7 @@ export function AutoPromptCard({ message }: AutoPromptCardProps) {
         : t({ en: 'definition injected', fr: 'définition injectée' }),
     workflow: t({ en: 'instructions', fr: 'instructions' }),
     compaction: t({ en: 'prompt injected', fr: 'invite injectée' }),
+    'compaction-digest': t({ en: 'history digest', fr: 'résumé cumulé' }),
     subagent: t({ en: 'instructions', fr: 'instructions' }),
     workspace: `${metadata?.workspaceName ?? ''} · ${metadata?.branchName ?? ''}`,
     branch: `🌿 ${metadata?.branchName ?? ''}`,
