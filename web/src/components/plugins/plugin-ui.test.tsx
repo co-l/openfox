@@ -533,6 +533,24 @@ describe('PluginZone and DeclarativeRenderer', () => {
     expect(invokePluginRpc).toHaveBeenCalledWith('demo-plugin', 'pluginAction', {}, {})
   })
 
+  it('renders ghost button text label when no icon is provided', () => {
+    const { container } = render(
+      <DeclarativeRenderer
+        node={{
+          type: 'button',
+          label: { en: 'Cancel Action', fr: 'Annuler action' },
+          variant: 'ghost',
+          onActivate: { kind: 'rpc', method: 'cancel' },
+        }}
+        context={{ pluginId: 'demo-plugin' }}
+      />,
+    )
+    const btn = container.querySelector('button')
+    expect(btn).toBeTruthy()
+    expect(btn?.textContent).toBe('Cancel Action')
+    expect(container.querySelector('svg')).toBeNull()
+  })
+
   it('renders a custom SVG path icon provided directly by a plugin', () => {
     const customSvgPath = 'M3 13.5V11a9 9 0 0118 0v2.5M3 13.5h2.5M21 13.5h-2.5'
     const { container } = render(

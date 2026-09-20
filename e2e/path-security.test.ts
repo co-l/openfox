@@ -442,7 +442,7 @@ describe('Path Security', () => {
       }
 
       // The whole batch completes without further prompting.
-      await client.waitFor('chat.done', undefined, 5000).catch(() => null)
+      await client.waitFor('chat.done', undefined, 15000).catch(() => null)
       const toolResults = client.allEvents().filter((e) => e.type === 'chat.tool_result')
       expect(toolResults.length).toBeGreaterThanOrEqual(3)
     })

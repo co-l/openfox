@@ -139,6 +139,7 @@ export function DeclarativeRenderer({ node, values = {}, context = {} }: Declara
       const Icon = node.icon ? pluginIcon(node.icon) : null
       const labelText = localize(node.label)
       const isGhost = node.variant === 'ghost'
+      const showLabel = !isGhost || !Icon
       return (
         <button
           type="button"
@@ -147,14 +148,14 @@ export function DeclarativeRenderer({ node, values = {}, context = {} }: Declara
           onClick={() => void activatePluginAction(context.pluginId, node.onActivate, context)}
           className={`transition-colors ${
             isGhost
-              ? BUTTON_VARIANT_CLASSES.ghost
+              ? `${BUTTON_VARIANT_CLASSES.ghost} ${!Icon ? 'px-2.5 py-1.5 text-sm' : ''}`
               : `inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium ${
                   BUTTON_VARIANT_CLASSES[node.variant ?? 'default']
                 }`
           }`}
         >
           {Icon && <Icon className="w-4 h-4" />}
-          {!isGhost && labelText && <span>{labelText}</span>}
+          {showLabel && labelText && <span>{labelText}</span>}
         </button>
       )
     }
