@@ -374,9 +374,11 @@ execution state change, including `status` and `currentStepId`),
 Dev-server lifecycle hooks are workdir-scoped rather than session-scoped. Their
 `data` contains the resolved `workdir` and `url`; `devserver.started` also includes
 the resolved `command` and `port`, while `devserver.stopped` includes a `reason`
-(`stop`, `exit`, or `error`) plus exit/error details when available. The current
-hook payload contract keeps `sessionId` as a required field, so these lifecycle
-events emit it as an empty string.
+(`stop`, `exit`, or `error`) plus exit/error details when available. When OpenFox
+can resolve the owning project, the normal top-level `projectId` is included so
+plugins can read project-scoped settings. The current hook payload contract keeps
+`sessionId` as a required field, so these lifecycle events emit it as an empty
+string.
 
 Hooks are **observational**: they cannot block or alter the agent loop. Each
 handler runs with a 5 s timeout; a throwing or slow handler is logged and
