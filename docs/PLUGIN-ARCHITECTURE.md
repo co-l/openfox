@@ -209,9 +209,10 @@ and maps them to hook events via `EVENT_HOOK_MAP` (host.ts):
 | `workflow.execution_changed` | `workflow.execution.changed`                  |                                 |
 | `task.completed`             | `task.completed`                              |                                 |
 
-`llm.completed` is the one exception: it is emitted directly from the agent
-loop (`agent-loop.ts`, after each completion attempt) through the same
-`setPluginHookEmitter` bridge, not from the event-store subscription.
+`llm.completed` is emitted directly from the agent loop (`agent-loop.ts`, after
+each completion attempt). `devserver.started` and `devserver.stopped` are emitted
+directly by `DevServerManager` because they are process-lifecycle events rather
+than EventStore events. All three use the same `setPluginHookEmitter` bridge.
 
 Hooks are strictly observational — the agent loop never awaits hook results to
 decide anything.
