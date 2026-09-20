@@ -10,10 +10,11 @@ const PROGRESS_COLORS: Record<string, string> = {
   danger: 'bg-accent-error',
 }
 
-const BUTTON_VARIANT_CLASSES: Record<'default' | 'primary' | 'danger', string> = {
+const BUTTON_VARIANT_CLASSES: Record<'default' | 'primary' | 'danger' | 'ghost', string> = {
   default: 'bg-bg-tertiary text-text-primary hover:bg-bg-primary',
   primary: 'bg-accent-primary text-white hover:bg-accent-primary/80',
   danger: 'bg-accent-error text-white hover:bg-accent-error/80',
+  ghost: 'p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary',
 }
 
 const GAP_CLASSES: Record<'none' | 'xs' | 'sm' | 'md' | 'lg', string> = {
@@ -136,16 +137,24 @@ export function DeclarativeRenderer({ node, values = {}, context = {} }: Declara
 
     case 'button': {
       const Icon = node.icon ? pluginIcon(node.icon) : null
+      const labelText = localize(node.label)
+      const isGhost = node.variant === 'ghost'
       return (
         <button
           type="button"
+          title={labelText || undefined}
+          aria-label={labelText || undefined}
           onClick={() => void activatePluginAction(context.pluginId, node.onActivate, context)}
-          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-            BUTTON_VARIANT_CLASSES[node.variant ?? 'default']
+          className={`transition-colors ${
+            isGhost
+              ? BUTTON_VARIANT_CLASSES.ghost
+              : `inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium ${
+                  BUTTON_VARIANT_CLASSES[node.variant ?? 'default']
+                }`
           }`}
         >
           {Icon && <Icon className="w-4 h-4" />}
-          <span>{localize(node.label)}</span>
+          {!isGhost && labelText && <span>{labelText}</span>}
         </button>
       )
     }

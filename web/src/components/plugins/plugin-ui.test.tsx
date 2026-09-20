@@ -508,6 +508,30 @@ describe('PluginZone and DeclarativeRenderer', () => {
     await userEvent.setup().click(btn)
     expect(invokePluginRpc).toHaveBeenCalledWith('demo-plugin', 'testAction', {}, {})
   })
+
+  it('renders a ghost button matching native header buttons with icon and tooltip', async () => {
+    invokePluginRpc.mockResolvedValue('ok')
+    const { container } = render(
+      <DeclarativeRenderer
+        node={{
+          type: 'button',
+          label: { en: 'Plugin Button', fr: 'Bouton Plugin' },
+          icon: 'puzzle',
+          variant: 'ghost',
+          onActivate: { kind: 'rpc', method: 'pluginAction' },
+        }}
+        context={{ pluginId: 'demo-plugin' }}
+      />,
+    )
+    const btn = container.querySelector('button')
+    expect(btn).toBeTruthy()
+    expect(btn?.className).toContain('p-2.5 rounded hover:bg-bg-tertiary')
+    expect(btn?.getAttribute('title')).toBe('Plugin Button')
+    expect(btn?.getAttribute('aria-label')).toBe('Plugin Button')
+    expect(btn?.textContent).toBe('') // icon only, no inner label span
+    await userEvent.setup().click(btn!)
+    expect(invokePluginRpc).toHaveBeenCalledWith('demo-plugin', 'pluginAction', {}, {})
+  })
 })
 
 describe('EMPTY_PLUGIN_CONTRIBUTIONS', () => {

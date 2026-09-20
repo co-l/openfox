@@ -76,7 +76,7 @@ export interface PluginUiAction {
   slot: PluginSlotName
   label: LocalizedString
   icon?: string
-  variant?: 'default' | 'primary' | 'danger'
+  variant?: 'default' | 'primary' | 'danger' | 'ghost'
   tooltip?: LocalizedString
   visibleWhen?: PluginVisibilityCondition
   onActivate: PluginActivation
@@ -103,7 +103,7 @@ export type DeclarativeNode =
   | {
       type: 'button'
       label: LocalizedString
-      variant?: 'default' | 'primary' | 'danger'
+      variant?: 'default' | 'primary' | 'danger' | 'ghost'
       icon?: string
       onActivate: PluginActivation
     }

@@ -9,6 +9,7 @@ const VARIANT_CLASSES: Record<NonNullable<PluginUiAction['variant']>, string> = 
   default: 'text-text-secondary hover:text-text-primary hover:bg-bg-primary',
   primary: 'text-accent-primary hover:bg-accent-primary/10',
   danger: 'text-accent-error hover:bg-accent-error/10',
+  ghost: 'text-text-muted hover:text-text-primary hover:bg-bg-tertiary',
 }
 
 export function PluginActionButton({ action, context }: { action: PluginUiAction; context: PluginActionContext }) {
