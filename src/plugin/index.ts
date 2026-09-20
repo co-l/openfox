@@ -175,6 +175,8 @@ export type PluginHookEvent =
   | 'tool.completed'
   | 'llm.completed'
   | 'criterion.updated'
+  | 'devserver.started'
+  | 'devserver.stopped'
 
 export interface PluginHookPayload {
   event: PluginHookEvent

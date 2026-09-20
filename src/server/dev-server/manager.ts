@@ -8,6 +8,8 @@ import { spawnShell } from '../utils/shell.js'
 import type { DevServerConfig, DevServerState, DevServerStatus } from '../../shared/dev-server.js'
 import { startInspectProxy } from './inspect-proxy.js'
 import type { SessionManager } from '../session/manager.js'
+import { emitPluginHook } from '../plugins/hook-emitter.js'
+import { getProjectByWorkdir } from '../db/projects.js'
 
 const MAX_LOG_LINES = 2000
 const MAX_LOG_BYTES = 100_000
@@ -65,6 +67,7 @@ interface DevServerInstance {
   exited: boolean
   inspectProxyPort: number | null
   proxyCleanup: (() => void) | null
+  lifecycleStopHookEmitted: boolean
 }
 
 function createInstance(): DevServerInstance {
@@ -81,6 +84,7 @@ function createInstance(): DevServerInstance {
     exited: true,
     inspectProxyPort: null,
     proxyCleanup: null,
+    lifecycleStopHookEmitted: true,
   }
 }
 
@@ -135,6 +139,48 @@ class DevServerManager {
     for (const listener of this.stateListeners) {
       listener(resolved, state, errorMessage, url, inspectProxyPort)
     }
+  }
+
+  private resolveProjectId(workdir: string): string | undefined {
+    const resolved = this.resolveWorkdir(workdir)
+
+    try {
+      const project = getProjectByWorkdir(resolved)
+      if (project) return project.id
+    } catch {
+      // The database may not be initialized in isolated usages/tests.
+    }
+
+    if (!this._sessionManager) return undefined
+    const session = this._sessionManager.listSessions().find((candidate) => {
+      try {
+        return this.resolveWorkdir(this._sessionManager!.getEffectiveWorkdir(candidate.id)) === resolved
+      } catch {
+        return false
+      }
+    })
+    return session?.projectId
+  }
+
+  private emitDevServerStopped(
+    workdir: string,
+    instance: DevServerInstance,
+    reason: 'stop' | 'exit' | 'error',
+    extra: Record<string, unknown> = {},
+  ): void {
+    if (instance.lifecycleStopHookEmitted) return
+    instance.lifecycleStopHookEmitted = true
+    const projectId = this.resolveProjectId(workdir)
+    emitPluginHook('devserver.stopped', {
+      sessionId: '',
+      ...(projectId ? { projectId } : {}),
+      data: {
+        workdir: this.resolveWorkdir(workdir),
+        url: instance.resolvedUrl ?? instance.config?.url ?? null,
+        reason,
+        ...extra,
+      },
+    })
   }
 
   /** Probe whether a TCP port is in use */
@@ -259,6 +305,7 @@ class DevServerManager {
     instance.totalLogBytes = 0
     instance.errorMessage = undefined
     instance.exited = false
+    instance.lifecycleStopHookEmitted = false
 
     // Start inspect proxy if not disabled
     if (!config.disableInspect && resolvedUrl && this._sessionManager) {
@@ -324,6 +371,7 @@ class DevServerManager {
         instance.errorMessage = undefined
         this.emitStateChange(workdir, 'off', undefined)
       }
+      this.emitDevServerStopped(workdir, instance, code && code !== 0 ? 'error' : 'exit', { exitCode: code })
     })
 
     proc.on('error', (err) => {
@@ -332,12 +380,24 @@ class DevServerManager {
       instance.state = 'error'
       instance.errorMessage = err.message
       this.emitStateChange(workdir, 'error', err.message)
+      this.emitDevServerStopped(workdir, instance, 'error', { error: err.message })
     })
 
     instance.state = 'running'
     instance.errorMessage = undefined
     this.emitStateChange(workdir, 'running', undefined)
     logger.info('Dev server started', { workdir, command: resolvedCommand, port: assignedPort })
+    const projectId = this.resolveProjectId(workdir)
+    emitPluginHook('devserver.started', {
+      sessionId: '',
+      ...(projectId ? { projectId } : {}),
+      data: {
+        workdir: resolved,
+        url: resolvedUrl,
+        command: resolvedCommand,
+        port: assignedPort,
+      },
+    })
 
     return this.getStatus(workdir)
   }
@@ -346,6 +406,7 @@ class DevServerManager {
     const instance = this.getInstance(workdir)
 
     if (instance.process && !instance.exited) {
+      this.emitDevServerStopped(workdir, instance, 'stop')
       await terminateProcessTree(instance.process, { exited: () => instance.exited })
       instance.process = null
       instance.exited = true
