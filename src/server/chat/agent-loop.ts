@@ -202,6 +202,7 @@ export interface TopLevelLoopConfig {
 
 const MAX_TRUNCATION_RETRIES = 3
 const MAX_CONTEXT_LENGTH_RETRIES = 3
+const MAX_COMPACTION_REJECTION_RETRIES = 3
 const OUTPUT_RESERVE_TOKENS = 2048
 
 export async function runTopLevelAgentLoop(
@@ -217,6 +218,7 @@ export async function runTopLevelAgentLoop(
   const retryLimiter: RetryLimiter = createRetryLimiter(config.maxRetriesPerTurn ?? 10)
   let truncationRetryCount = 0
   let contextRetryCount = 0
+  let compactionRejectionCount = 0
   let pendingToolResultTokens = 0
   let returnValueContent: string | undefined
   let returnValueResult: string | undefined
@@ -288,6 +290,17 @@ export async function runTopLevelAgentLoop(
 
     const toolRegistry = config.getToolRegistry()
     const currentWindowMessageOptions = getCurrentWindowMessageOptions(sessionId)
+    // Sub-agent-tagged variant for any message injected into the conversation
+    // (corrections, compaction prompts, nudges). Without this tag such
+    // messages are attributed to the top-level scope, so a sub-agent's own
+    // conversation (built strictly by subAgentId) never sees them — see the
+    // appendCompactionPrompt docstring for the failure mode this causes.
+    const injectedMessageOptions = {
+      ...(currentWindowMessageOptions ?? {}),
+      ...(config.subAgentMetadata
+        ? { subAgentId: config.subAgentMetadata.subAgentId, subAgentType: config.subAgentMetadata.subAgentType }
+        : {}),
+    }
 
     // ---- LLM round with automatic failure retry ----
     // Case 1: a request fails before any content → retry the same request with
@@ -324,7 +337,7 @@ export async function runTopLevelAgentLoop(
           : CONTINUE_PROMPT
         append(
           createMessageStartEvent(continueMsgId, 'user', continueContent, {
-            ...(currentWindowMessageOptions ?? {}),
+            ...injectedMessageOptions,
             isSystemGenerated: true,
             messageKind: 'correction',
           }),
@@ -354,14 +367,7 @@ export async function runTopLevelAgentLoop(
       const ensureAssistantMessage = () => {
         if (assistantMessageStarted) return
         assistantMessageStarted = true
-        append(
-          createMessageStartEvent(assistantMsgId, 'assistant', undefined, {
-            ...(currentWindowMessageOptions ?? {}),
-            ...(config.subAgentMetadata
-              ? { subAgentId: config.subAgentMetadata.subAgentId, subAgentType: config.subAgentMetadata.subAgentType }
-              : {}),
-          }),
-        )
+        append(createMessageStartEvent(assistantMsgId, 'assistant', undefined, injectedMessageOptions))
       }
 
       const contextState = sessionManager.getContextState(sessionId)
@@ -407,6 +413,12 @@ export async function runTopLevelAgentLoop(
         subAgentAliases,
         ...(config.retryPatterns ? { retryPatterns: config.retryPatterns } : {}),
         ...(modelSettings && { modelSettings }),
+        // Compaction is extraction/summarization, not multi-step reasoning —
+        // and it runs precisely when the window is nearly full, so its output
+        // budget is already tight. Letting it burn that budget on the
+        // session's normal (possibly high) reasoning effort is how a
+        // compaction call ends up with no tokens left for the actual summary.
+        ...(compacting ? { reasoningEffort: 'low' as const } : {}),
       })
 
       const attemptResult = await consumeStreamGenerator(streamGen, (event) => {
@@ -439,7 +451,7 @@ export async function runTopLevelAgentLoop(
         const continueMsgId = crypto.randomUUID()
         append(
           createMessageStartEvent(continueMsgId, 'user', CONTINUE_AFTER_STREAM_ERROR_PROMPT, {
-            ...(currentWindowMessageOptions ?? {}),
+            ...injectedMessageOptions,
             isSystemGenerated: true,
             messageKind: 'correction',
           }),
@@ -531,7 +543,7 @@ export async function runTopLevelAgentLoop(
       const matchMessage = `Pattern "${result.patternMatch.pattern}" matched — auto-retry #${retryLimiter.count()}`
       append(
         createMessageStartEvent(matchMsgId, 'user', matchMessage, {
-          ...(currentWindowMessageOptions ?? {}),
+          ...injectedMessageOptions,
           isSystemGenerated: true,
           messageKind: 'correction',
         }),
@@ -566,12 +578,24 @@ export async function runTopLevelAgentLoop(
     if (!config.subAgentMetadata) {
       emitLiveTurnStats(turnMetrics, statsIdentity, mode, config.onMessage)
     }
-    sessionManager.setCurrentContextSize(
-      sessionId,
-      result.usage.promptTokens,
-      result.usage.completionTokens,
-      config.subAgentMetadata?.subAgentId,
-    )
+    // A stream that ends without ever sending a usage chunk (seen with some
+    // OpenAI-compatible backends, e.g. on a request the server rejects before
+    // streaming any usage) reports zero tokens here. That zero is not a real
+    // measurement — applying it would stomp the last known-good context size
+    // and can suppress compaction right when it's needed most.
+    if (result.usage.reported !== false) {
+      sessionManager.setCurrentContextSize(
+        sessionId,
+        result.usage.promptTokens,
+        result.usage.completionTokens,
+        config.subAgentMetadata?.subAgentId,
+      )
+    } else {
+      logger.warn('LLM stream completed without usage metrics; keeping last known context size', {
+        sessionId,
+        subAgentId: config.subAgentMetadata?.subAgentId,
+      })
+    }
     pendingToolResultTokens = 0
     currentMaxTokensOverride = undefined
 
@@ -595,8 +619,9 @@ export async function runTopLevelAgentLoop(
             runtimeConfig.context.compactionThreshold,
         )
       ) {
-        appendCompactionPrompt(sessionId, append)
+        appendCompactionPrompt(sessionId, append, config.subAgentMetadata)
         compacting = true
+        compactionRejectionCount = 0
         continue
       }
     }
@@ -632,7 +657,7 @@ export async function runTopLevelAgentLoop(
             'user',
             'Continue your previous response exactly where you left off.',
             {
-              ...(currentWindowMessageOptions ?? {}),
+              ...injectedMessageOptions,
               isSystemGenerated: true,
             },
           ),
@@ -656,6 +681,36 @@ export async function runTopLevelAgentLoop(
 
     if (result.toolCalls.length > 0) {
       if (compacting) {
+        append(
+          createMessageDoneEvent(assistantMsgId, {
+            segments: result.segments,
+          }),
+        )
+
+        if (compactionRejectionCount >= MAX_COMPACTION_REJECTION_RETRIES) {
+          append({
+            type: 'chat.error',
+            data: {
+              error: serverT(
+                {
+                  en: 'Model kept attempting tool calls during compaction after {{count}} corrections; giving up on compaction and continuing with full context',
+                  fr: 'Le modèle a continué à tenter des appels d’outils pendant la compaction après {{count}} corrections ; abandon de la compaction, poursuite avec le contexte complet',
+                },
+                { count: compactionRejectionCount },
+              ),
+              recoverable: true,
+            },
+          })
+          logger.warn('Compaction rejection retry limit exceeded, aborting compaction', {
+            sessionId,
+            attempts: compactionRejectionCount,
+          })
+          compacting = false
+          if (config.initialCompacting) break
+          continue
+        }
+
+        compactionRejectionCount += 1
         const rejectionMsgId = crypto.randomUUID()
         append(
           createMessageStartEvent(
@@ -665,7 +720,7 @@ export async function runTopLevelAgentLoop(
 
 ${COMPACTION_PROMPT}`,
             {
-              ...(currentWindowMessageOptions ?? {}),
+              ...injectedMessageOptions,
               isSystemGenerated: true,
               messageKind: 'correction',
             },
@@ -760,24 +815,74 @@ ${COMPACTION_PROMPT}`,
         void drainQueue(sessionManager, sessionId, append, onMessage)
       }
 
+      // Proactive compaction check using a PROJECTED token count (current +
+      // the tool results just added, before they've gone into a prompt).
+      // The regular check below only runs after the *next* LLM call reports
+      // its real promptTokens — but a single tool batch (e.g. a few large
+      // file reads) can jump the context from comfortably under threshold to
+      // dangerously over it in one hop. Waiting for that call to confirm the
+      // overshoot means compaction finally triggers with the window already
+      // nearly full and almost no output budget left for its own summary
+      // (see the finishReason:'length' rejection above). Catching the
+      // overshoot here, before that oversized call ever goes out, is what
+      // keeps compaction's own headroom guarantee meaningful in practice.
+      if (!compacting) {
+        const contextState = sessionManager.getContextState(sessionId)
+        const { shouldCompact, appendCompactionPrompt } = await import('../context/compactor.js')
+        const projectedTokens = config.subAgentMetadata
+          ? (sessionManager.getSubAgentContextTokens?.(config.subAgentMetadata.subAgentId) ?? 0) +
+            pendingToolResultTokens
+          : contextState.currentTokens + pendingToolResultTokens
+        const compactionWindow = config.subAgentMetadata
+          ? sessionManager.getCurrentModelContext(sessionId, config.mode)
+          : contextState.maxTokens
+        if (
+          shouldCompact(
+            projectedTokens,
+            compactionWindow,
+            sessionManager.getModelCompactionThreshold(sessionId, config.mode) ??
+              runtimeConfig.context.compactionThreshold,
+          )
+        ) {
+          appendCompactionPrompt(sessionId, append, config.subAgentMetadata)
+          compacting = true
+          compactionRejectionCount = 0
+          retryLimiter.reset()
+          continue
+        }
+      }
+
       retryLimiter.reset()
       continue
     }
 
     if (compacting) {
-      const summary = result.content?.trim() || result.thinkingContent?.trim() || ''
+      // Raw thinkingContent is never accepted as the summary: it's unstructured
+      // chain-of-thought, not the requested output, and using it silently
+      // produces a garbled continuation that loses track of prior progress.
+      // A `finishReason === 'length'` truncation is rejected the same way —
+      // a summary cut off mid-sentence is missing whatever came after
+      // (frequently the "next steps" section, since COMPACTION_PROMPT asks
+      // for that last), which is just as harmful as no summary at all.
+      const truncated = result.finishReason === 'length'
+      const summary = !truncated ? (result.content?.trim() ?? '') : ''
       if (!summary) {
         append({
           type: 'chat.error',
           data: {
-            error: serverT({
-              en: 'Compaction produced empty summary, continuing with full context',
-              fr: 'La compaction a produit un résumé vide, poursuite avec le contexte complet',
-            }),
+            error: truncated
+              ? serverT({
+                  en: 'Compaction summary was truncated (ran out of output budget), continuing with full context',
+                  fr: 'Le résumé de compaction a été tronqué (budget de sortie épuisé), poursuite avec le contexte complet',
+                })
+              : serverT({
+                  en: 'Compaction produced empty summary, continuing with full context',
+                  fr: 'La compaction a produit un résumé vide, poursuite avec le contexte complet',
+                }),
             recoverable: true,
           },
         })
-        logger.warn('Compaction produced empty summary, continuing', { sessionId })
+        logger.warn('Compaction produced unusable summary, continuing', { sessionId, truncated })
         compacting = false
         if (config.initialCompacting) break
         continue
@@ -839,12 +944,9 @@ ${COMPACTION_PROMPT}`,
             'user',
             'You must call return_value with a summary of your findings before finishing. Call return_value now.',
             {
-              ...(currentWindowMessageOptions ?? {}),
+              ...injectedMessageOptions,
               isSystemGenerated: true,
               messageKind: 'correction',
-              ...(config.subAgentMetadata
-                ? { subAgentId: config.subAgentMetadata.subAgentId, subAgentType: config.subAgentMetadata.subAgentType }
-                : {}),
             },
           ),
         )

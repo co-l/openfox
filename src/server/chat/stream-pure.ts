@@ -70,7 +70,7 @@ export interface PureStreamResult {
   thinkingContent?: string
   toolCalls: ToolCall[]
   segments: MessageSegment[]
-  usage: { promptTokens: number; completionTokens: number }
+  usage: { promptTokens: number; completionTokens: number; reported?: boolean }
   timing: StreamTiming
   aborted: boolean
   modelParams?: ModelParams
@@ -131,7 +131,7 @@ function createEmptyStreamResult(
     content: '',
     toolCalls: [],
     segments: [],
-    usage: { promptTokens: 0, completionTokens: 0 },
+    usage: { promptTokens: 0, completionTokens: 0, reported: false },
     timing: { ttft: 0, completionTime: 0, tps: 0, prefillTps: 0 },
     aborted,
     modelParams,
@@ -407,6 +407,7 @@ export async function* streamLLMPure(options: PureStreamOptions): AsyncGenerator
     usage: {
       promptTokens: result.response.usage.promptTokens,
       completionTokens: result.response.usage.completionTokens,
+      ...(result.response.usage.reported !== undefined ? { reported: result.response.usage.reported } : {}),
     },
     timing: result.timing,
     aborted,

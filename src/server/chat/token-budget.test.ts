@@ -46,6 +46,18 @@ describe('isContextLengthError', () => {
     expect(isContextLengthError('Prompt is too long (12345 tokens > 8192 tokens)')).toBe(true)
   })
 
+  it('detects llama.cpp/llama-server "exceeds the available context size" wording', () => {
+    // Exact wording from llama-server: HTTP 400, no "length"/"window"/"too long"
+    // anywhere in it — this previously fell through every branch and was
+    // retried forever by the generic backoff loop instead of being reduced.
+    expect(
+      isContextLengthError(
+        'LLMError: HTTP 400: {"error":{"code":400,"message":"request (80255 tokens) exceeds the available ' +
+          'context size (80128 tokens), try increasing it","type":"exceed_context_size_error"}}',
+      ),
+    ).toBe(true)
+  })
+
   it('does not match generic token errors without context framing', () => {
     expect(isContextLengthError('too many tokens')).toBe(false)
     expect(isContextLengthError('maximum output tokens exceeded')).toBe(false)

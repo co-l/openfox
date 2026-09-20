@@ -264,7 +264,7 @@ describe('stream-pure', () => {
     // caller owns failure UX, so no chat.error is emitted.
     expect(events).toEqual([])
     expect(result.error).toBe('boom')
-    expect(result.usage).toEqual({ promptTokens: 0, completionTokens: 0 })
+    expect(result.usage).toEqual({ promptTokens: 0, completionTokens: 0, reported: false })
   })
 
   it('streams partial content live when the stream fails mid-flight (case 2)', async () => {

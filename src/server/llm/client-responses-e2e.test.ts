@@ -174,7 +174,7 @@ describe('createLLMClient end-to-end against a Responses API mock', () => {
     expect(response.content).toBe('Final answer')
     expect(response.toolCalls).toEqual([{ id: 'call-9', name: 'glob', arguments: { pattern: '*.ts' } }])
     expect(response.finishReason).toBe('tool_calls')
-    expect(response.usage).toEqual({ promptTokens: 10, completionTokens: 5, totalTokens: 15 })
+    expect(response.usage).toEqual({ promptTokens: 10, completionTokens: 5, totalTokens: 15, reported: true })
     void client
     void requests
   })

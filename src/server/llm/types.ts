@@ -64,6 +64,10 @@ export interface LLMCompletionResponse {
     promptTokens: number
     completionTokens: number
     totalTokens: number
+    /** False when the provider's stream ended without ever sending a usage chunk — the
+     *  token counts above are not real measurements and must not overwrite known-good
+     *  context-size state. Undefined for non-streaming calls, which always report usage. */
+    reported?: boolean
   }
   /** Raw API response body, only set when returnRaw was requested */
   raw?: string

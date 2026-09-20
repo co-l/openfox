@@ -244,6 +244,7 @@ export function createLLMClient(
             promptTokens: httpResponse.usage?.prompt_tokens ?? 0,
             completionTokens: httpResponse.usage?.completion_tokens ?? 0,
             totalTokens: httpResponse.usage?.total_tokens ?? 0,
+            reported: httpResponse.usage != null,
           },
           ...(httpResponse.raw ? { raw: httpResponse.raw } : {}),
         }
@@ -312,7 +313,7 @@ export function createLLMClient(
         let fullThinking = ''
         const toolCalls: Map<number, { id: string; name: string; arguments: string }> = new Map()
         let finishReason: LLMCompletionResponse['finishReason'] = 'stop'
-        let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
+        let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0, reported: false }
         let responseId = ''
 
         // Clear timer immediately if external abort fires (e.g. pattern match)
@@ -351,6 +352,7 @@ export function createLLMClient(
                 promptTokens: chunk.usage.prompt_tokens ?? usage.promptTokens,
                 completionTokens: chunk.usage.completion_tokens ?? usage.completionTokens,
                 totalTokens: chunk.usage.total_tokens ?? usage.totalTokens,
+                reported: true,
               }
             }
 

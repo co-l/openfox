@@ -13,7 +13,12 @@ export function estimateToolResultTokens(toolMessages: Array<Pick<RequestContext
   )
 }
 
-const CONTEXT_LENGTH_ERROR_PATTERN = /context\s*length|context_length|context window|prompt (?:is )?too long/i
+// "context size" catches llama.cpp/llama-server's own wording (e.g. "request
+// (80255 tokens) exceeds the available context size (80128 tokens)"), which
+// otherwise falls through every other branch here and gets retried forever
+// by the generic backoff loop — the request never gets smaller on its own.
+const CONTEXT_LENGTH_ERROR_PATTERN =
+  /context\s*length|context_length|context window|context size|prompt (?:is )?too long/i
 
 export function isContextLengthError(message: string | undefined): boolean {
   if (!message) return false

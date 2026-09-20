@@ -1,5 +1,31 @@
-import { describe, expect, it } from 'vitest'
-import { shouldCompact } from './compactor.js'
+import { describe, expect, it, vi } from 'vitest'
+import { appendCompactionPrompt, shouldCompact } from './compactor.js'
+import type { TurnEvent } from '../events/types.js'
+
+vi.mock('../events/store.js', () => ({
+  getEventStore: vi.fn().mockReturnValue({ getEvents: vi.fn().mockReturnValue([]) }),
+}))
+
+describe('appendCompactionPrompt', () => {
+  it('tags the prompt with the sub-agent when compacting a sub-agent context', () => {
+    const events: TurnEvent[] = []
+    appendCompactionPrompt('session-1', (e) => events.push(e), {
+      subAgentId: 'sub-1',
+      subAgentType: 'explorer',
+    })
+
+    const start = events.find((e) => e.type === 'message.start')
+    expect(start?.data).toMatchObject({ subAgentId: 'sub-1', subAgentType: 'explorer' })
+  })
+
+  it('omits the sub-agent tag for top-level compaction', () => {
+    const events: TurnEvent[] = []
+    appendCompactionPrompt('session-1', (e) => events.push(e))
+
+    const start = events.find((e) => e.type === 'message.start')
+    expect(start?.data).not.toHaveProperty('subAgentId')
+  })
+})
 
 describe('context compactor helpers', () => {
   it('decides when compaction should happen', () => {
@@ -31,16 +57,28 @@ describe('context compactor helpers', () => {
   })
 
   it('caps threshold for small models to preserve headroom', () => {
-    // 8K model: ceiling = min(3K, 6.8K) = 3K → 37.5%
-    // At 3.5K tokens with threshold 0.9: clamped to 0.375 → 3.5K > 3K → true
-    expect(shouldCompact(3_500, 8_000, 0.9)).toBe(true)
-    // At 2.5K tokens with threshold 0.9: clamped to 0.375 → 2.5K < 3K → false
-    expect(shouldCompact(2_500, 8_000, 0.9)).toBe(false)
+    // 8K model: headroom is capped at 30% of the window (2.4K), not the full
+    // 15K fixed headroom — otherwise the fixed headroom alone would exceed
+    // the whole window. ceiling = (8K - 2.4K) / 8K = 70%
+    // At 5.7K tokens with threshold 0.9: clamped to 0.7 → 5.7K > 5.6K → true
+    expect(shouldCompact(5_700, 8_000, 0.9)).toBe(true)
+    // At 5.5K tokens with threshold 0.9: clamped to 0.7 → 5.5K < 5.6K → false
+    expect(shouldCompact(5_500, 8_000, 0.9)).toBe(false)
   })
 
   it('does not affect normal thresholds below the ceiling', () => {
     // 200K model, threshold 0.5: well below ceiling → normal behavior
     expect(shouldCompact(101_000, 200_000, 0.5)).toBe(true)
     expect(shouldCompact(99_000, 200_000, 0.5)).toBe(false)
+  })
+
+  it('pulls the trigger point earlier than the default threshold for a ~80K window', () => {
+    // 80128-token window (llama.cpp ctx-size 80000 config), default threshold 0.85:
+    // headroom = min(15K, 80128*0.3=24K) = 15K → ceiling = (80128-15000)/80128 ≈ 0.8128
+    // effective threshold = min(0.85, 0.8128, 0.95) = 0.8128, below the configured 0.85 —
+    // this is what guarantees real output budget for the compaction call itself
+    // (see the comment on COMPACTION_HEADROOM_TOKENS).
+    expect(shouldCompact(65_200, 80_128, 0.85)).toBe(true)
+    expect(shouldCompact(65_000, 80_128, 0.85)).toBe(false)
   })
 })
