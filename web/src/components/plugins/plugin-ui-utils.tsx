@@ -36,13 +36,51 @@ const ICON_EXPORTS: Record<string, string> = {
 type IconComponent = ComponentType<{ className?: string }>
 
 /**
- * Resolve a whitelisted icon name lazily so tests that partially mock
- * `shared/icons` only need the icons they actually render.
+ * Resolve an icon name or raw SVG path dynamically for plugins.
+ * Supports:
+ * - Raw SVG path strings starting with "M" or "m"
+ * - Known alias names from ICON_EXPORTS
+ * - Any exported icon component from shared/icons (case-insensitive / with or without "Icon" suffix)
  */
 export function pluginIcon(name: string | undefined): IconComponent {
+  if (!name) return exportsIcon('PuzzleIcon') ?? MissingIcon
+
+  // 1. Raw SVG path support
+  if (name.startsWith('M') || name.startsWith('m') || name.includes('M') || name.includes('m')) {
+    const isSvgPath = /^[Mm]\s*[\d.-]/.test(name.trim())
+    if (isSvgPath) {
+      return function DynamicSvgIcon({ className = 'w-4 h-4' }: { className?: string }) {
+        return (
+          <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={name} />
+          </svg>
+        )
+      }
+    }
+  }
+
+  // 2. Lookup in ICON_EXPORTS
+  const exportName = ICON_EXPORTS[name.toLowerCase()]
+  if (exportName && exportsIcon(exportName)) {
+    return exportsIcon(exportName)!
+  }
+
+  // 3. Dynamic lookup from shared/icons
+  const pascalName = name.charAt(0).toUpperCase() + name.slice(1)
+  const candidateWithIcon = pascalName.endsWith('Icon') ? pascalName : `${pascalName}Icon`
+  if (exportsIcon(candidateWithIcon)) {
+    return exportsIcon(candidateWithIcon)!
+  }
+  if (exportsIcon(pascalName)) {
+    return exportsIcon(pascalName)!
+  }
+
+  return exportsIcon('PuzzleIcon') ?? MissingIcon
+}
+
+function exportsIcon(name: string): IconComponent | undefined {
   const exports = iconsModule as unknown as Record<string, IconComponent | undefined>
-  const exportName = name ? ICON_EXPORTS[name] : undefined
-  return (exportName ? exports[exportName] : undefined) ?? exports['PuzzleIcon'] ?? MissingIcon
+  return exports[name]
 }
 
 function MissingIcon({ className }: { className?: string }) {

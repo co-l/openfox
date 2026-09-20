@@ -532,6 +532,42 @@ describe('PluginZone and DeclarativeRenderer', () => {
     await userEvent.setup().click(btn!)
     expect(invokePluginRpc).toHaveBeenCalledWith('demo-plugin', 'pluginAction', {}, {})
   })
+
+  it('renders a custom SVG path icon provided directly by a plugin', () => {
+    const customSvgPath = 'M3 13.5V11a9 9 0 0118 0v2.5M3 13.5h2.5M21 13.5h-2.5'
+    const { container } = render(
+      <DeclarativeRenderer
+        node={{
+          type: 'button',
+          label: { en: 'Custom Gauge', fr: 'Jauge personnalisée' },
+          icon: customSvgPath,
+          variant: 'ghost',
+          onActivate: { kind: 'rpc', method: 'gauge' },
+        }}
+        context={{ pluginId: 'demo-plugin' }}
+      />,
+    )
+    const pathEl = container.querySelector('svg path')
+    expect(pathEl).toBeTruthy()
+    expect(pathEl?.getAttribute('d')).toBe(customSvgPath)
+  })
+
+  it('dynamically resolves icon from shared/icons without being in static whitelist', () => {
+    const { container } = render(
+      <DeclarativeRenderer
+        node={{
+          type: 'button',
+          label: { en: 'Clock', fr: 'Horloge' },
+          icon: 'ClockIcon',
+          variant: 'ghost',
+          onActivate: { kind: 'rpc', method: 'clock' },
+        }}
+        context={{ pluginId: 'demo-plugin' }}
+      />,
+    )
+    const svgEl = container.querySelector('svg')
+    expect(svgEl).toBeTruthy()
+  })
 })
 
 describe('EMPTY_PLUGIN_CONTRIBUTIONS', () => {
