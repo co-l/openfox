@@ -1,6 +1,6 @@
 {
-  "command": "OPENFOX_PORT=${PORT} npm run dev",
-  "url": "http://localhost:${PORT}",
+  "command": "OPENFOX_PORT=11371 npm run dev",
+  "url": "http://localhost:11371",
   "hotReload": true,
   "disableInspect": false
 }

@@ -45,14 +45,27 @@ type IconComponent = ComponentType<{ className?: string }>
 export function pluginIcon(name: string | undefined): IconComponent {
   if (!name) return exportsIcon('PuzzleIcon') ?? MissingIcon
 
-  // 1. Raw SVG path support (starts with M/m SVG command)
-  if (name && /^[Mm]\s*[\d.-]/.test(name.trim())) {
-    return function DynamicSvgIcon({ className = 'w-4 h-4' }: { className?: string }) {
-      return (
-        <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={name} />
-        </svg>
-      )
+  // 1. Raw SVG markup or path support
+  if (name) {
+    const trimmed = name.trim()
+    if (trimmed.startsWith('<svg')) {
+      return function RawSvgIcon({ className = 'w-4 h-4' }: { className?: string }) {
+        return (
+          <span
+            className={`inline-flex items-center justify-center [&>svg]:w-full [&>svg]:h-full ${className}`}
+            dangerouslySetInnerHTML={{ __html: trimmed }}
+          />
+        )
+      }
+    }
+    if (/^[Mm]\s*[\d.-]/.test(trimmed)) {
+      return function DynamicSvgIcon({ className = 'w-4 h-4' }: { className?: string }) {
+        return (
+          <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={trimmed} />
+          </svg>
+        )
+      }
     }
   }
 
