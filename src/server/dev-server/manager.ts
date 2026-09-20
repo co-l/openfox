@@ -9,6 +9,7 @@ import type { DevServerConfig, DevServerState, DevServerStatus } from '../../sha
 import { startInspectProxy } from './inspect-proxy.js'
 import type { SessionManager } from '../session/manager.js'
 import { emitPluginHook } from '../plugins/hook-emitter.js'
+import { getProjectByWorkdir } from '../db/projects.js'
 
 const MAX_LOG_LINES = 2000
 const MAX_LOG_BYTES = 100_000
@@ -140,6 +141,27 @@ class DevServerManager {
     }
   }
 
+  private resolveProjectId(workdir: string): string | undefined {
+    const resolved = this.resolveWorkdir(workdir)
+
+    try {
+      const project = getProjectByWorkdir(resolved)
+      if (project) return project.id
+    } catch {
+      // The database may not be initialized in isolated usages/tests.
+    }
+
+    if (!this._sessionManager) return undefined
+    const session = this._sessionManager.listSessions().find((candidate) => {
+      try {
+        return this.resolveWorkdir(this._sessionManager!.getEffectiveWorkdir(candidate.id)) === resolved
+      } catch {
+        return false
+      }
+    })
+    return session?.projectId
+  }
+
   private emitDevServerStopped(
     workdir: string,
     instance: DevServerInstance,
@@ -148,8 +170,10 @@ class DevServerManager {
   ): void {
     if (instance.lifecycleStopHookEmitted) return
     instance.lifecycleStopHookEmitted = true
+    const projectId = this.resolveProjectId(workdir)
     emitPluginHook('devserver.stopped', {
       sessionId: '',
+      ...(projectId ? { projectId } : {}),
       data: {
         workdir: this.resolveWorkdir(workdir),
         url: instance.resolvedUrl ?? instance.config?.url ?? null,
@@ -363,8 +387,10 @@ class DevServerManager {
     instance.errorMessage = undefined
     this.emitStateChange(workdir, 'running', undefined)
     logger.info('Dev server started', { workdir, command: resolvedCommand, port: assignedPort })
+    const projectId = this.resolveProjectId(workdir)
     emitPluginHook('devserver.started', {
       sessionId: '',
+      ...(projectId ? { projectId } : {}),
       data: {
         workdir: resolved,
         url: resolvedUrl,
