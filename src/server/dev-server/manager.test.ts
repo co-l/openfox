@@ -23,6 +23,10 @@ vi.mock('../runtime-config.js', () => ({
   getRuntimeConfig: vi.fn(() => ({ mode: 'development' })),
 }))
 
+vi.mock('../db/projects.js', () => ({
+  getProjectByWorkdir: vi.fn(() => null),
+}))
+
 vi.mock('../plugins/hook-emitter.js', () => ({
   emitPluginHook: vi.fn(),
 }))
@@ -31,6 +35,7 @@ import { spawn } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { devServerManager } from './manager.js'
 import { emitPluginHook } from '../plugins/hook-emitter.js'
+import { getProjectByWorkdir } from '../db/projects.js'
 
 function makeMockProc(stdout = '', stderr = '', exitCode: number | null | undefined = 0) {
   const listeners: Record<string, (arg: unknown) => void> = {}
@@ -254,6 +259,8 @@ describe('plugin dev-server lifecycle hooks', () => {
     vi.mocked(readFile).mockReset()
     vi.mocked(spawn).mockReset()
     vi.mocked(emitPluginHook).mockReset()
+    vi.mocked(getProjectByWorkdir).mockReset()
+    vi.mocked(getProjectByWorkdir).mockReturnValue(null)
   })
 
   it('emits devserver.started with the resolved workdir, URL, command and port', async () => {
@@ -279,6 +286,23 @@ describe('plugin dev-server lifecycle hooks', () => {
     )
 
     await devServerManager.stop('/tmp/plugin-hook-start')
+  })
+
+  it('includes projectId when the workdir belongs to a known project', async () => {
+    vi.mocked(getProjectByWorkdir).mockReturnValue({ id: 'project-123' } as any)
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify({ command: 'npm run dev', url: 'http://localhost:3299' }))
+    vi.mocked(spawn).mockReturnValue(makeMockProc('', '', undefined) as any)
+
+    await devServerManager.start('/tmp/plugin-hook-project')
+
+    expect(emitPluginHook).toHaveBeenCalledWith(
+      'devserver.started',
+      expect.objectContaining({
+        projectId: 'project-123',
+      }),
+    )
+
+    await devServerManager.stop('/tmp/plugin-hook-project')
   })
 
   it('emits devserver.stopped only once for an explicit stop', async () => {
