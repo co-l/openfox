@@ -204,8 +204,9 @@ export interface PendingQuestionPayload {
 
 export interface SessionStatePayload {
   session: Session
-  messages: Message[] // All messages for this session
-  hiddenCount?: number // Number of older items not included due to maxVisibleItems
+  messages: Message[] // Complete history or a recent page
+  hiddenCount?: number // Number of older messages omitted from this payload
+  history?: 'recent' // A paginated suffix; clients may retain a contiguous loaded prefix
   sessionStats?: import('./types.js').SessionStatsSummary // Lean, exact headline stats for the whole session
   pendingConfirmations: PendingPathConfirmationPayload[]
   pendingQuestions?: PendingQuestionPayload[]

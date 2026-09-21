@@ -1,3 +1,4 @@
+import { paginateMessages } from '../session/message-pagination.js'
 import type {
   ClientMessage,
   ServerMessage,
@@ -130,9 +131,11 @@ export function createSessionStateMessage(
   hiddenCount?: number,
   activeWorkflowExecution?: import('../../shared/types.js').WorkflowExecution | null,
   sessionStats?: import('../../shared/types.js').SessionStatsSummary | null,
+  history?: 'recent',
 ): ServerMessage<SessionStatePayload> {
   // Enrich messages so toolCalls have their results attached
-  const enrichedMessages = enrichMessagesWithToolResults(messages)
+  const page = history === 'recent' ? paginateMessages(messages) : { messages, hiddenCount }
+  const enrichedMessages = enrichMessagesWithToolResults(page.messages)
   return createServerMessage(
     'session.state',
     {
@@ -141,7 +144,8 @@ export function createSessionStateMessage(
       pendingConfirmations,
       ...(pendingQuestions ? { pendingQuestions } : {}),
       ...(gitStatus ? { gitStatus } : {}),
-      ...(hiddenCount !== undefined ? { hiddenCount } : {}),
+      ...(page.hiddenCount !== undefined ? { hiddenCount: page.hiddenCount } : {}),
+      ...(history ? { history } : {}),
       ...(activeWorkflowExecution !== undefined && activeWorkflowExecution !== null ? { activeWorkflowExecution } : {}),
       ...(sessionStats !== undefined && sessionStats !== null ? { sessionStats } : {}),
     },

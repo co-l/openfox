@@ -368,11 +368,25 @@ export function handleServerMessage(
           }
           return next
         })
+        // Retain only a contiguous prefix whose absolute position still matches.
+        // Disjoint/rebased histories and complete snapshots replace the old window.
+        let hiddenCount = payload.hiddenCount ?? 0
+        let historyMessages = messages
+        if (payload.history === 'recent' && hiddenCount > 0 && messages[0]) {
+          const overlap = prior.messages.findIndex((m) => m.id === messages[0]!.id)
+          if (overlap > 0 && prior.hiddenCount + overlap === hiddenCount) {
+            historyMessages = [...prior.messages.slice(0, overlap), ...messages]
+            hiddenCount -= overlap
+          }
+          const bounded = trimPaneMessages(historyMessages, getMaxVisibleItems())
+          hiddenCount += historyMessages.length - bounded.length
+          historyMessages = bounded
+        }
         const nextPane: SessionPane = {
           ...prior,
           session: payload.session,
-          messages,
-          hiddenCount: payload.hiddenCount ?? 0,
+          messages: historyMessages,
+          hiddenCount,
           sessionStats:
             (payload.sessionStats as import('@shared/types.js').SessionStatsSummary | null | undefined) ?? null,
           currentTodos: [],

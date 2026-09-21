@@ -101,13 +101,13 @@ describe('ChatFeedItems stable keys', () => {
 
 vi.mock('../../lib/api', () => ({ authFetch: vi.fn() }))
 
-describe('ChatFeedItems default (virtualization off)', () => {
+describe('ChatFeedItems paginated-history virtualization', () => {
   beforeEach(() => {
     clearCache()
   })
 
-  it('mounts every item with no placeholders or sentinel by default', () => {
-    const items = Array.from({ length: 70 }, (_, i) => msg(`m${i}`, 'user', `Content ${i}`))
+  it('preserves the full feed when virtualization is disabled', () => {
+    const items = Array.from({ length: 20 }, (_, i) => msg(`m${i}`, 'user', `Content ${i}`))
 
     const container = document.createElement('div')
     document.body.appendChild(container)
@@ -116,11 +116,27 @@ describe('ChatFeedItems default (virtualization off)', () => {
     flushSync(() => root.render(<ChatFeedItems displayItems={items} />))
 
     expect(container.querySelector('[data-message-id="m0"]')).toBeTruthy()
-    expect(container.querySelector('[data-message-id="m69"]')).toBeTruthy()
-    expect(container.querySelectorAll('.feed-item')).toHaveLength(70)
+    expect(container.querySelector('[data-message-id="m19"]')).toBeTruthy()
+    expect(container.querySelectorAll('.feed-item')).toHaveLength(20)
     expect(container.querySelector('[data-placeholder]')).toBeNull()
     expect(container.querySelector('[data-testid="feed-sentinel"]')).toBeNull()
     expect(container.querySelector('[data-testid="feed-unmounted-hint"]')).toBeNull()
+  })
+
+  it('mounts only four recent items for paginated history', () => {
+    const items = Array.from({ length: 20 }, (_, i) => msg(`m${i}`, 'user', `Content ${i}`))
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    flushSync(() => root.render(<ChatFeedItems displayItems={items} paginatedHistory />))
+
+    expect(container.querySelector('[data-message-id="m15"]')).toBeNull()
+    expect(container.querySelector('[data-message-id="m16"]')).toBeTruthy()
+    expect(container.querySelector('[data-message-id="m19"]')).toBeTruthy()
+    expect(container.querySelectorAll('.feed-item')).toHaveLength(4)
+    expect(container.querySelectorAll('[data-placeholder]')).toHaveLength(16)
   })
 })
 
@@ -141,6 +157,26 @@ describe('ChatFeedItems containment styling', () => {
       expect(wrapper.style.getPropertyValue('content-visibility')).toBe('')
       expect(wrapper.style.getPropertyValue('contain-intrinsic-size')).toBe('')
     }
+  })
+
+  it('keeps paginated live messages at natural height when experimental virtualization is off', () => {
+    clearCache()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const items = Array.from({ length: 8 }, (_, i) => msg(`m${i}`, 'assistant', `Response ${i}`))
+
+    flushSync(() => root.render(<ChatFeedItems displayItems={items} paginatedHistory />))
+
+    expect(container.querySelectorAll('[data-placeholder]')).toHaveLength(4)
+    const wrappers = container.querySelectorAll<HTMLElement>('[data-item-index]:not([data-placeholder])')
+    expect(wrappers).toHaveLength(4)
+    for (const wrapper of wrappers) {
+      expect(wrapper.style.getPropertyValue('content-visibility')).toBe('')
+      expect(wrapper.style.getPropertyValue('contain-intrinsic-size')).toBe('')
+    }
+    flushSync(() => root.unmount())
+    container.remove()
   })
 
   it('applies content-visibility containment to mounted items when virtualization is on', () => {
@@ -200,13 +236,38 @@ describe('ChatFeedItems progressive rendering', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root = createRoot(container)
+    const scrollListeners: Array<() => void> = []
+    const wheelListeners: Array<(event: WheelEvent) => void> = []
+    const viewport = {
+      scrollTop: 500,
+      addEventListener: (type: string, cb: (event: WheelEvent) => void) => {
+        if (type === 'scroll') scrollListeners.push(cb as () => void)
+        if (type === 'wheel') wheelListeners.push(cb)
+      },
+      removeEventListener: () => {},
+    }
+    const scrollContainerRef = {
+      current: {
+        osInstance: () => ({ elements: () => ({ viewport }) }),
+        getElement: () => null,
+      },
+    } as never
 
-    flushSync(() => root.render(<ChatFeedItems displayItems={items} />))
+    flushSync(() => root.render(<ChatFeedItems displayItems={items} scrollContainerRef={scrollContainerRef} />))
     expect(container.querySelectorAll('.feed-item')).toHaveLength(30)
     expect(container.querySelector('[data-testid="feed-sentinel"]')).toBeTruthy()
 
-    // Each reveal moves the window up by 20 items
+    // Intersection alone must not reveal history during initial bottom anchoring.
     act(() => {
+      MockIntersectionObserver.instances.at(-1)!.trigger()
+    })
+    expect(container.querySelectorAll('.feed-item')).toHaveLength(30)
+
+    // Once the viewport moves upward, each reveal moves the window by 20 items.
+    act(() => {
+      for (const cb of wheelListeners) cb({ deltaY: -100 } as WheelEvent)
+      viewport.scrollTop = 400
+      for (const cb of scrollListeners) cb()
       MockIntersectionObserver.instances.at(-1)!.trigger()
     })
     expect(container.querySelectorAll('.feed-item')).toHaveLength(50)
@@ -287,9 +348,13 @@ describe('ChatFeedItems progressive rendering', () => {
     const root = createRoot(container)
 
     const scrollListeners: Array<() => void> = []
+    const wheelListeners: Array<(event: WheelEvent) => void> = []
     const viewport = {
       scrollTop: 0,
-      addEventListener: (_: string, cb: () => void) => scrollListeners.push(cb),
+      addEventListener: (type: string, cb: (event: WheelEvent) => void) => {
+        if (type === 'scroll') scrollListeners.push(cb as () => void)
+        if (type === 'wheel') wheelListeners.push(cb)
+      },
       removeEventListener: () => {},
     }
     const scrollContainerRef = {
@@ -314,6 +379,8 @@ describe('ChatFeedItems progressive rendering', () => {
     })
     act(() => {
       viewport.scrollTop = 500
+      for (const cb of scrollListeners) cb()
+      viewport.scrollTop = 400
       for (const cb of scrollListeners) cb()
       MockIntersectionObserver.instances.at(-1)!.trigger()
       MockIntersectionObserver.instances.at(-1)!.trigger()
@@ -350,9 +417,13 @@ describe('ChatFeedItems progressive rendering', () => {
 
     // OS viewport mock: scrollTop > 4 means the user scrolled up
     const scrollListeners: Array<() => void> = []
+    const wheelListeners: Array<(event: WheelEvent) => void> = []
     const viewport = {
       scrollTop: 0,
-      addEventListener: (_: string, cb: () => void) => scrollListeners.push(cb),
+      addEventListener: (type: string, cb: (event: WheelEvent) => void) => {
+        if (type === 'scroll') scrollListeners.push(cb as () => void)
+        if (type === 'wheel') wheelListeners.push(cb)
+      },
       removeEventListener: () => {},
     }
     const scrollContainerRef = {
@@ -374,6 +445,8 @@ describe('ChatFeedItems progressive rendering', () => {
     // User scrolls up (fires the scroll listener) and reveals everything
     act(() => {
       viewport.scrollTop = 500
+      for (const cb of scrollListeners) cb()
+      viewport.scrollTop = 400
       for (const cb of scrollListeners) cb()
       MockIntersectionObserver.instances.at(-1)!.trigger()
       MockIntersectionObserver.instances.at(-1)!.trigger()

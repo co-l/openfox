@@ -29,7 +29,7 @@ describe('sessionPrefetch', () => {
 
     expect(fetch).toHaveBeenCalledTimes(1)
     const [url, init] = vi.mocked(fetch).mock.calls[0]!
-    expect(String(url)).toContain('/api/sessions/s1')
+    expect(String(url)).toContain('/api/sessions/s1?history=recent')
     expect((init!.headers as Record<string, string>)['x-session-token']).toBe('test-token')
 
     const result = await consumePrefetchedSession('s1')

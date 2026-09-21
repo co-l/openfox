@@ -29,7 +29,7 @@ export function prefetchSession(sessionId: string): void {
   if (pending.has(sessionId)) return
   const token = localStorage.getItem('openfox_token')
 
-  const promise: Promise<PrefetchResult> = fetch(appUrl(`/api/sessions/${sessionId}`), {
+  const promise: Promise<PrefetchResult> = fetch(appUrl(`/api/sessions/${sessionId}?history=recent`), {
     headers: token ? { 'x-session-token': token } : undefined,
   })
     .then(async (res): Promise<PrefetchResult> => {

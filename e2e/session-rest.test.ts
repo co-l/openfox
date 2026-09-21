@@ -154,6 +154,84 @@ describe('Session REST API', () => {
       const data: any = await response.json()
       expect(data.error).toBe('Session not found')
     })
+
+    it('loads recent history by complete turns and pages backwards without overlap', async () => {
+      const createRes = await fetch(`${server.url}/api/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, title: 'Paginated session' }),
+      })
+      const created: any = await createRes.json()
+      const sessionId = created.session.id as string
+      const { emitUserMessage, emitAssistantMessageStart, emitMessageDelta, emitMessageDone } =
+        await import('../src/server/events/session.js')
+
+      for (let turn = 1; turn <= 22; turn++) {
+        emitUserMessage(sessionId, `User ${turn}`)
+        const assistantId = emitAssistantMessageStart(sessionId)
+        emitMessageDelta(sessionId, assistantId, `Assistant ${turn}`)
+        emitMessageDone(sessionId, assistantId, {
+          stats: {
+            providerId: 'mock',
+            providerName: 'Mock',
+            backend: 'unknown',
+            model: 'mock-model',
+            mode: 'planner',
+            totalTime: 1,
+            toolTime: 0,
+            prefillTokens: 10,
+            prefillSpeed: 10,
+            generationTokens: 5,
+            generationSpeed: 5,
+          },
+        })
+      }
+
+      const recentRes = await fetch(`${server.url}/api/sessions/${sessionId}?history=recent`)
+      const recent: any = await recentRes.json()
+      expect(recent.messages).toHaveLength(20)
+      expect(recent.messages[0].content).toBe('User 13')
+      expect(recent.messages.at(-1).content).toBe('Assistant 22')
+      expect(recent.hiddenCount).toBe(24)
+      expect(recent.sessionStats.responseCount).toBe(22)
+      expect(recent.sessionStats.generationTokens).toBe(110)
+
+      const olderRes = await fetch(
+        `${server.url}/api/sessions/${sessionId}/messages?before=${encodeURIComponent(recent.messages[0].id)}`,
+      )
+      const older: any = await olderRes.json()
+      expect(older.messages).toHaveLength(20)
+      expect(older.messages[0].content).toBe('User 3')
+      expect(older.messages.at(-1).content).toBe('Assistant 12')
+      expect(older.hiddenCount).toBe(4)
+
+      const recentIds = new Set(recent.messages.map((entry: any) => entry.id))
+      expect(older.messages.some((entry: any) => recentIds.has(entry.id))).toBe(false)
+
+      const fullRes = await fetch(`${server.url}/api/sessions/${sessionId}?full=true`)
+      const full: any = await fullRes.json()
+      expect(full.messages).toHaveLength(44)
+      expect(full.hiddenCount).toBe(0)
+      expect(recent.sessionStats).toEqual(full.sessionStats)
+
+      const client = await createTestClient({ url: server.wsUrl })
+      try {
+        await client.send('session.load', { sessionId })
+        client.clearEvents()
+        await fetch(`${server.url}/api/sessions/${sessionId}/title`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: 'Renamed paginated session' }),
+        })
+        const update = await client.waitFor<any>('session.state')
+        expect(update.payload.history).toBe('recent')
+        expect(update.payload.messages).toEqual(recent.messages)
+        expect(update.payload.hiddenCount).toBe(recent.hiddenCount)
+        expect(update.payload.sessionStats).toEqual(recent.sessionStats)
+      } finally {
+        await client.close()
+      }
+    })
   })
 
   describe('DELETE /api/sessions/:id', () => {
