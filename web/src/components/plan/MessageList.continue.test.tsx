@@ -277,6 +277,16 @@ describe('MessageList paginated history', () => {
     expect(screen.getByRole('button', { name: 'Ouvrir l’historique complet dans un nouvel onglet' })).toBeDefined()
   })
 
+  it('protects a single oversized turn even when no server history is hidden', () => {
+    mockState.displayItems = Array.from({ length: 201 }, (_, i) => ({
+      type: 'message',
+      message: { id: `m-${i}`, role: i === 0 ? 'user' : 'assistant', content: 'long turn' },
+    }))
+    renderMessageList({ hiddenCount: 0 })
+    expect(screen.getByTestId('chat-feed').getAttribute('data-paginated-history')).toBe('true')
+    expect(screen.queryByRole('button', { name: /Load older history/ })).toBeNull()
+  })
+
   it('does not force virtualization when the full history is already present', () => {
     renderMessageList({ hiddenCount: 0 })
 

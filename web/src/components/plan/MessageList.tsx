@@ -21,6 +21,8 @@ import type { LLMRetryState } from '../../stores/session/types'
 import { prettyPrintError } from '../../lib/prettyPrintError'
 
 const EMPTY_CRITERIA: MetadataEntry[] = []
+// Whole turns can exceed the usual 30-item page even with no older history.
+const AUTOMATIC_HISTORY_THRESHOLD = 30
 
 function ErrorInfoButton({ onClick }: { onClick: () => void }) {
   const t = useT()
@@ -371,7 +373,7 @@ export const MessageList = memo(function MessageList({
               displayItems={displayItems}
               highlightedMessageId={highlightedMessageId}
               sessionId={sessionId}
-              paginatedHistory={hiddenCount > 0}
+              paginatedHistory={hiddenCount > 0 || displayItems.length > AUTOMATIC_HISTORY_THRESHOLD}
               scrollContainerRef={scrollContainerRef}
               showThinking={showThinking}
               showVerboseToolOutput={showVerboseToolOutput}

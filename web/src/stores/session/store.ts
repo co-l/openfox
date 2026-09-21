@@ -605,6 +605,8 @@ export const useSessionStore = create<SessionState>((set, get) => {
 
         set((state) =>
           updatePane(state, sessionId, (pane) => {
+            // A live snapshot may have replaced this window while the request was pending.
+            if (pane.messages[0]?.id !== beforeMessageId) return pane
             const existingIds = new Set(pane.messages.map((message) => message.id))
             const older = incoming.filter((message) => !existingIds.has(message.id))
             loadedCount = older.length

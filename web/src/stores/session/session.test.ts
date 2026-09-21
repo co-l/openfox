@@ -2661,6 +2661,45 @@ describe('loadOlderMessages', () => {
     expect(useSessionStore.getState().hiddenCount).toBe(0)
   })
 
+  it('ignores an older page if a live snapshot replaced its cursor while loading', async () => {
+    const useSessionStore = await loadSessionStore()
+    const currentSession = { id: 'session-1', projectId: 'project-1', criteria: [] } as any
+    const message = (id: string) => ({ id, role: 'user' as const, content: id, timestamp: '2026-09-21T00:00:00Z' })
+    useSessionStore.setState({
+      currentSession,
+      focusedSessionId: 'session-1',
+      messages: [message('message-3')],
+      hiddenCount: 2,
+    })
+    let resolvePage!: (value: any) => void
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePage = resolve
+        }),
+    )
+    const loading = useSessionStore.getState().loadOlderMessages('session-1')
+    useSessionStore.getState().handleServerMessage({
+      type: 'session.state',
+      sessionId: 'session-1',
+      payload: {
+        session: currentSession,
+        messages: [message('replacement')],
+        hiddenCount: 0,
+        history: 'recent',
+        pendingConfirmations: [],
+      },
+    } as any)
+    resolvePage({
+      ok: true,
+      json: async () => ({ messages: [message('message-1'), message('message-2')], hiddenCount: 0 }),
+    })
+
+    expect(await loading).toBe(0)
+    expect(useSessionStore.getState().messages.map((entry) => entry.id)).toEqual(['replacement'])
+    expect(useSessionStore.getState().hiddenCount).toBe(0)
+  })
+
   it('does not fetch when the current page has no older messages', async () => {
     const useSessionStore = await loadSessionStore()
     useSessionStore.setState({
@@ -2674,6 +2713,93 @@ describe('loadOlderMessages', () => {
 
     expect(loaded).toBe(0)
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('recent session.state history', () => {
+  const message = (id: number, content = `message ${id}`) => ({
+    id: `m-${id}`,
+    role: 'assistant' as const,
+    content,
+    timestamp: '2026-09-21T00:00:00.000Z',
+  })
+
+  it.each([
+    {
+      name: 'retains loaded pages on rename',
+      ids: [5, 6],
+      hidden: 8,
+      recent: true,
+      expected: [1, 2, 3, 4, 5, 6],
+      remaining: 4,
+    },
+    {
+      name: 'drops the removed suffix on truncation',
+      ids: [5],
+      hidden: 8,
+      recent: true,
+      expected: [1, 2, 3, 4, 5],
+      remaining: 4,
+    },
+    {
+      name: 'replaces a disjoint page after missed updates',
+      ids: [9, 10],
+      hidden: 12,
+      recent: true,
+      expected: [9, 10],
+      remaining: 12,
+    },
+    {
+      name: 'discards a prefix whose positions have changed',
+      ids: [5, 6],
+      hidden: 7,
+      recent: true,
+      expected: [5, 6],
+      remaining: 7,
+    },
+    { name: 'replaces a complete snapshot', ids: [5, 6], hidden: 0, recent: true, expected: [5, 6], remaining: 0 },
+    {
+      name: 'preserves legacy replacement semantics',
+      ids: [5, 6],
+      hidden: 8,
+      recent: false,
+      expected: [5, 6],
+      remaining: 8,
+    },
+    { name: 'clears an emptied history', ids: [], hidden: 0, recent: true, expected: [], remaining: 0 },
+  ])('$name', async ({ ids, hidden, recent, expected, remaining }) => {
+    const store = await loadSessionStore()
+    const session = {
+      id: 'session-1',
+      projectId: 'project-1',
+      mode: 'planner',
+      phase: 'plan',
+      metadata: {},
+      criteria: [],
+    } as any
+    store.setState({
+      currentSession: session,
+      focusedSessionId: session.id,
+      messages: [1, 2, 3, 4, 5, 6].map((id) => message(id)),
+      hiddenCount: 4,
+    })
+    store.getState().handleServerMessage({
+      type: 'session.state',
+      sessionId: session.id,
+      payload: {
+        session: { ...session, metadata: { title: 'Renamed' } },
+        messages: ids.map((id) => message(id, 'updated message content')),
+        hiddenCount: hidden,
+        ...(recent ? { history: 'recent' } : {}),
+        pendingConfirmations: [],
+      },
+    })
+    const state = store.getState()
+    expect(state.messages.map((m) => m.id)).toEqual(expected.map((id) => `m-${id}`))
+    expect(state.hiddenCount).toBe(remaining)
+    expect(state.currentSession?.metadata?.title).toBe('Renamed')
+    for (const id of ids)
+      expect(state.messages.find((m) => m.id === `m-${id}`)?.content).toBe('updated message content')
   })
 })
 

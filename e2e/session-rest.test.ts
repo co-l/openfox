@@ -213,6 +213,24 @@ describe('Session REST API', () => {
       expect(full.messages).toHaveLength(44)
       expect(full.hiddenCount).toBe(0)
       expect(recent.sessionStats).toEqual(full.sessionStats)
+
+      const client = await createTestClient({ url: server.wsUrl })
+      try {
+        await client.send('session.load', { sessionId })
+        client.clearEvents()
+        await fetch(`${server.url}/api/sessions/${sessionId}/title`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: 'Renamed paginated session' }),
+        })
+        const update = await client.waitFor<any>('session.state')
+        expect(update.payload.history).toBe('recent')
+        expect(update.payload.messages).toEqual(recent.messages)
+        expect(update.payload.hiddenCount).toBe(recent.hiddenCount)
+        expect(update.payload.sessionStats).toEqual(recent.sessionStats)
+      } finally {
+        await client.close()
+      }
     })
   })
 

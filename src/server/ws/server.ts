@@ -11,7 +11,6 @@ import type { Config } from '../config.js'
 import type { LLMClientWithModel } from '../llm/client.js'
 import type { SessionManager } from '../session/index.js'
 import { getEventStore, combineEventsWithSnapshot } from '../events/index.js'
-import { getMaxVisibleItems } from '../db/settings.js'
 
 import type { Message, Provider, ProviderBackend, StatsIdentity, Attachment } from '../../shared/types.js'
 import type { ProviderManager } from '../provider-manager.js'
@@ -683,8 +682,7 @@ export function createWebSocketServer(
       const { snapshot, events: eventsSinceSnapshot } = eventStore.getEventsSinceSnapshot(updatedSession.id)
       const events = combineEventsWithSnapshot(updatedSession.id, snapshot, eventsSinceSnapshot)
 
-      const maxVisible = getMaxVisibleItems()
-      const { messages, hiddenCount } = buildMessagesFromStoredEvents(events, maxVisible || undefined)
+      const { messages } = buildMessagesFromStoredEvents(events)
       const sessionStats = computeSessionStatsSummary(buildSessionStatsMessages(events))
       const pendingConfirmations = foldPendingConfirmations(events)
       const pendingQuestions = getPendingQuestionsForSession(updatedSession.id)
@@ -717,9 +715,10 @@ export function createWebSocketServer(
           pendingQuestions,
           undefined,
           undefined,
-          hiddenCount,
+          undefined,
           activeWorkflowExecution ?? undefined,
           sessionStats,
+          'recent',
         ),
       )
 

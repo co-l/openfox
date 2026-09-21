@@ -1015,6 +1015,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       session: toClientSession(session!),
       messages,
       hiddenCount,
+      ...(recentHistory ? { history: 'recent' } : {}),
       sessionStats,
       contextState,
       queueState,
@@ -1502,13 +1503,11 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const { buildMessagesFromStoredEvents, foldPendingConfirmations } = await import('./events/folding.js')
     const { createSessionStateMessage } = await import('./ws/protocol.js')
     const { getPendingQuestionsForSession } = await import('./tools/index.js')
-    const { getMaxVisibleItems } = await import('./db/settings.js')
     const eventStore = getEventStore()
     const { snapshot, events: eventsSinceSnapshot } = eventStore.getEventsSinceSnapshot(sessionId)
     const events = combineEvents(sessionId, snapshot, eventsSinceSnapshot)
 
-    const maxVisibleItems = getMaxVisibleItems()
-    const { messages, hiddenCount } = buildMessagesFromStoredEvents(events, maxVisibleItems || undefined)
+    const { messages } = buildMessagesFromStoredEvents(events)
     const pendingConfirmations = foldPendingConfirmations(events)
     const pendingQuestions = getPendingQuestionsForSession(sessionId)
     const session = sessionManager.getSession(sessionId)
@@ -1520,8 +1519,10 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         pendingQuestions,
         undefined,
         undefined,
-        hiddenCount,
+        undefined,
         sessionManager.getDisplayWorkflowExecution(sessionId) ?? undefined,
+        undefined,
+        'recent',
       )
       wssExports.broadcastForSession(sessionId, { ...stateMsg, sessionId })
     }
