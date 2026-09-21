@@ -25,6 +25,7 @@ import type {
   Attachment,
   PreparingToolCall,
   WorkflowExecutionStatus,
+  EditContextRegion,
 } from '../../shared/types.js'
 import type { WorkflowWaitingPayload } from '../../shared/protocol.js'
 
@@ -115,6 +116,7 @@ export type TurnEvent =
         index: number // Tool call index (for parallel calls)
         name: string // Tool name (available early in stream)
         arguments?: string // Partial arguments (streaming JSON fragments)
+        editContext?: EditContextRegion[] // Live edit context for streaming edit_file
       }
     }
   | {

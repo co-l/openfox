@@ -168,6 +168,12 @@ export async function loadProjectSkills(projectDir: string): Promise<SkillDefini
   return loadSkillsDirectory(getProjectSkillsDir(projectDir), 'project-openfox')
 }
 
+let pluginSkillsOverride: SkillDefinition[] = []
+
+export function setPluginSkills(skills: SkillDefinition[]): void {
+  pluginSkillsOverride = [...skills]
+}
+
 export async function loadAllSkills(
   configDir: string,
   projectDir?: string,
@@ -193,6 +199,7 @@ export async function loadAllSkillsWithDiagnostics(
     ...(projectDir
       ? [loadSkillsDirectory(join(projectDir, '.agents', 'skills'), 'project-shared'), loadProjectSkills(projectDir)]
       : []),
+    ...(pluginSkillsOverride.length > 0 ? [Promise.resolve(pluginSkillsOverride)] : []),
   ]
   const groups = await Promise.all(locations)
   const skillMap = new Map<string, SkillDefinition>()

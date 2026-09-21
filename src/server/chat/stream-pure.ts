@@ -26,6 +26,7 @@ import type { StreamTiming } from '../llm/streaming.js'
 import type { TurnEvent } from '../events/types.js'
 import type { RetryPatternConfig, RetryPatternMatch } from './auto-patterns.js'
 import { matchRetryPatterns } from './auto-patterns.js'
+import { randomUUID } from 'node:crypto'
 import { buildStreamRequest } from './stream-utils.js'
 import { computeAggregatedStats } from './stats.js'
 import { getModelProfile } from '../llm/profiles.js'
@@ -63,6 +64,12 @@ export interface PureStreamOptions {
    *  When a preparing event matches, the name is shown as "call_sub_agent"
    *  instead of the hallucinated name. */
   subAgentAliases?: Set<string>
+  /** Fast-fail preflight for path-based tools (write_file, edit_file).
+   *  Invoked once per tool call as soon as a complete top-level "path"
+   *  argument is available. Returning an error string aborts the stream
+   *  early: the result then carries a path-only tool call so the caller
+   *  surfaces the error without paying for the doomed payload tokens. */
+  preflight?: (path: string) => Promise<string | undefined>
 }
 
 export interface PureStreamResult {
@@ -142,6 +149,83 @@ function createEmptyStreamResult(
 }
 
 // ============================================================================
+// Preflight fast-fail helpers
+// ============================================================================
+
+/**
+ * Extract the complete top-level "path" string value from partial tool-call
+ * JSON arguments. Returns undefined until the value's closing quote has
+ * streamed in. Only top-level keys are matched (preceded by `{` or `,`), so a
+ * `"path"` lookalike inside a content string (always escaped `\"path\"` in
+ * valid JSON) can never false-trigger.
+ */
+export function extractTopLevelPathArg(rawArgs: string): string | undefined {
+  const match = /\{\s*"path"\s*:|,\s*"path"\s*:/.exec(rawArgs)
+  if (!match) return undefined
+
+  const colonIdx = rawArgs.indexOf(':', match.index)
+  let i = colonIdx + 1
+  while (i < rawArgs.length && /\s/.test(rawArgs[i]!)) i++
+  if (rawArgs[i] !== '"') return undefined
+  i++
+
+  let value = ''
+  let closed = false
+  while (i < rawArgs.length) {
+    const char = rawArgs[i]!
+    if (char === '\\') {
+      const next = rawArgs[i + 1]
+      if (next === undefined) return undefined
+      if (next === 'u') {
+        const hex = rawArgs.slice(i + 2, i + 6)
+        if (/^[0-9a-fA-F]{4}$/.test(hex)) {
+          value += String.fromCharCode(parseInt(hex, 16))
+          i += 6
+          continue
+        }
+      }
+      value += next
+      i += 2
+      continue
+    }
+    if (char === '"') {
+      closed = true
+      break
+    }
+    value += char
+    i++
+  }
+
+  if (!closed || value.length === 0) return undefined
+  return value
+}
+
+/**
+ * True when another tool call in the same response is a read_file for the same
+ * path (or its path is not known yet). That flow is legitimate — the sibling
+ * read registers before the batch executes — so fast-fail must not abort,
+ * otherwise the write/edit would deterministically fail and its path-only
+ * stand-in could crash at execution if the read wins the parallel race.
+ */
+function siblingReadsSamePath(
+  toolNames: Map<number, string>,
+  toolArgs: Map<number, string>,
+  currentIndex: number,
+  path: string,
+): boolean {
+  for (const [index, name] of toolNames) {
+    if (index === currentIndex) continue
+    if (name !== 'read_file') continue
+    const rawArgs = toolArgs.get(index)
+    if (rawArgs === undefined) return true
+    const siblingPath = extractTopLevelPathArg(rawArgs)
+    if (siblingPath === undefined) return true
+    if (siblingPath === path) return true
+  }
+  return false
+}
+
+// ============================================================================
 // Pure Streaming Generator
 // ============================================================================
 
@@ -209,9 +293,12 @@ export async function* streamLLMPure(options: PureStreamOptions): AsyncGenerator
 
   // Create abort controller for pattern-based abort
   const patternAbortController = new AbortController()
+  // Separate abort controller for preflight fast-fail (a rejected preflight
+  // must not look like a user abort — the caller turns it into a failed tool call)
+  const preflightAbortController = new AbortController()
   const combinedSignal = signal
-    ? AbortSignal.any([signal, patternAbortController.signal])
-    : patternAbortController.signal
+    ? AbortSignal.any([signal, patternAbortController.signal, preflightAbortController.signal])
+    : AbortSignal.any([patternAbortController.signal, preflightAbortController.signal])
 
   // Start streaming
   const stream = buildStreamRequest(llmClient, {
@@ -239,11 +326,15 @@ export async function* streamLLMPure(options: PureStreamOptions): AsyncGenerator
   let accumulatedContent = ''
   let accumulatedThinking = ''
   let patternMatch: RetryPatternMatch | undefined
+  // Preflight fast-fail state: indices already checked + the failure payload
+  const checkedPreflight = new Set<number>()
+  let preflightFailure: { index: number; toolName: string; toolCallId: string; path: string; error: string } | undefined
 
   const activePatterns = retryPatterns?.filter((p) => p.active) ?? []
 
   try {
     while (true) {
+      if (preflightFailure) break
       if (signal?.aborted) {
         aborted = true
         break
@@ -308,9 +399,16 @@ export async function* streamLLMPure(options: PureStreamOptions): AsyncGenerator
           } else if (seenToolIndices.has(value.index) && value.arguments) {
             // Only stream partial arguments for tools that display them live
             // (run_command shows the command text, return_value shows sub-agent
-            // output, session_metadata shows the item being added)
+            // output, session_metadata shows the item being added, write_file
+            // and edit_file show the file content/diff while it streams in)
             const name = toolNames.get(value.index)
-            if (name === 'run_command' || name === 'return_value' || name === 'session_metadata') {
+            if (
+              name === 'run_command' ||
+              name === 'return_value' ||
+              name === 'session_metadata' ||
+              name === 'write_file' ||
+              name === 'edit_file'
+            ) {
               const accumulatedArgs = toolArgs.get(value.index)
               if (accumulatedArgs) {
                 yield {
@@ -361,6 +459,45 @@ export async function* streamLLMPure(options: PureStreamOptions): AsyncGenerator
               }
             }
           }
+
+          // Fast-fail preflight: as soon as a complete top-level "path" is
+          // available for a path-based tool, ask the caller whether the write
+          // is legal. A rejection aborts the stream before the payload tokens
+          // are generated — the result carries a path-only tool call instead.
+          if (options.preflight && (fullName === 'write_file' || fullName === 'edit_file')) {
+            const path = extractTopLevelPathArg(toolArgs.get(value.index) ?? '')
+            if (path !== undefined && !checkedPreflight.has(value.index)) {
+              checkedPreflight.add(value.index)
+              // A throwing preflight must not break the turn — the tool's own
+              // validation at execution time remains the safety net.
+              let preflightError: string | undefined
+              try {
+                preflightError = await options.preflight(path)
+              } catch (error) {
+                logger.warn('Preflight check failed, falling back to tool-time validation', {
+                  tool: fullName,
+                  path,
+                  error: error instanceof Error ? error.message : String(error),
+                })
+              }
+              if (preflightError) {
+                // A sibling read of the same path in this response makes the
+                // flow legitimate — don't fail fast, let batch execution race.
+                if (siblingReadsSamePath(toolNames, toolArgs, value.index, path)) {
+                  break
+                }
+                preflightFailure = {
+                  index: value.index,
+                  toolName: fullName,
+                  toolCallId: toolIds.get(value.index) ?? randomUUID(),
+                  path,
+                  error: preflightError,
+                }
+                preflightAbortController.abort()
+                break
+              }
+            }
+          }
           break
         }
 
@@ -387,6 +524,49 @@ export async function* streamLLMPure(options: PureStreamOptions): AsyncGenerator
       aborted = true
     } else {
       throw error
+    }
+  }
+
+  // Preflight rejection takes precedence: the caller turns the path-only tool
+  // call into a failed tool result, so the LLM learns the error without having
+  // streamed the doomed payload. Sibling tool calls that already streamed
+  // complete arguments (e.g. a read_file preceding an edit_file in the same
+  // response) are preserved — only the rejected call is reduced to its path.
+  if (preflightFailure) {
+    const toolCalls: ToolCall[] = []
+    for (const [index, name] of toolNames) {
+      if (index === preflightFailure.index) continue
+      const rawArgs = toolArgs.get(index)
+      if (!rawArgs) continue
+      try {
+        const parsedArgs = JSON.parse(rawArgs)
+        if (parsedArgs && typeof parsedArgs === 'object' && !Array.isArray(parsedArgs)) {
+          toolCalls.push({
+            id: toolIds.get(index) ?? randomUUID(),
+            name,
+            arguments: parsedArgs as Record<string, unknown>,
+          })
+        }
+      } catch {
+        // Incomplete arguments — the call was cut mid-stream, drop it
+      }
+    }
+    toolCalls.push({
+      id: preflightFailure.toolCallId,
+      name: preflightFailure.toolName,
+      arguments: { path: preflightFailure.path },
+      preflightError: preflightFailure.error,
+    })
+
+    return {
+      content: accumulatedContent,
+      toolCalls,
+      segments: [],
+      usage: { promptTokens: 0, completionTokens: 0 },
+      timing: { ttft: 0, completionTime: 0, tps: 0, prefillTps: 0 },
+      aborted: false,
+      modelParams,
+      finishReason: 'stop',
     }
   }
 
@@ -771,7 +951,7 @@ export function createChatDoneEvent(
  */
 export async function consumeStreamGenerator(
   gen: AsyncGenerator<TurnEvent, PureStreamResult>,
-  onEvent: (event: TurnEvent) => void,
+  onEvent: (event: TurnEvent) => void | Promise<void>,
 ): Promise<PureStreamResult> {
   let result: IteratorResult<TurnEvent, PureStreamResult>
 
@@ -780,6 +960,6 @@ export async function consumeStreamGenerator(
     if (result.done) {
       return result.value
     }
-    onEvent(result.value)
+    await onEvent(result.value)
   }
 }

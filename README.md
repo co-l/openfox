@@ -84,9 +84,9 @@ openfox provider remove   # Remove provider
 
 ## Plugins
 
-OpenFox supports provider plugins loaded from the `plugins` directory inside its configuration folder. Plugins can add authentication methods, transports, provider presets, and model discovery without adding provider-specific code to the OpenFox core.
+OpenFox supports plugins loaded from the `plugins` directory inside its configuration folder. A plugin can contribute LLM providers (auth, transport, presets), model metadata, tools, slash commands, skills, workflow transitions, schema-driven settings, notifications, and declarative UI (header/message/composer actions, session badges, panels).
 
-You can install the plugin manually or directly from the UI.
+You can install a plugin from the UI by curated registry entry, GitHub URL, npm package name, or local path — then enable, disable, configure, or remove it without restarting OpenFox.
 
 Default plugin directories:
 
@@ -94,7 +94,7 @@ Default plugin directories:
 - Linux: `${XDG_CONFIG_HOME:-~/.config}/openfox/plugins`
 - Windows: `%APPDATA%\openfox\plugins`
 
-Restart OpenFox after installing or updating a plugin.
+Authoring guide: [docs/PLUGINS.md](docs/PLUGINS.md) — working reference plugin in [examples/hello-plugin](examples/hello-plugin).
 
 - To authenticate with a ChatGPT Plus or Pro account, you can install the [`openfox-chatgpt`](https://github.com/arthurlacoste/openfox-chatgpt) plugin.
 - To authenticate with a Github copilot account, you can install the [`openfox-github-copilot`](https://github.com/JamesDAdams/openfox-github-copilot) plugin.

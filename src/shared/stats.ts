@@ -1,9 +1,10 @@
 /**
- * Session stats computation - aggregates response-level MessageStats from
- * multiple assistant messages into SessionStats for benchmarking and trends.
+ * Session stats computation - aggregates response-level MessageStats
+ * across multiple assistant messages into SessionStats for benchmarking and trends.
  */
 
 import type {
+  AgentSessionStats,
   CallStatsDataPoint,
   MessageStats,
   ModelSessionStats,
@@ -29,15 +30,52 @@ function getStatsIdentity(stats: MessageStats): StatsIdentity {
     providerName: stats.providerName,
     backend: stats.backend,
     model: stats.model,
+    ...(stats.reasoningEffort ? { reasoningEffort: stats.reasoningEffort } : {}),
   }
 }
 
 function getModelGroupKey(identity: StatsIdentity): string {
-  return `${identity.providerId}::${identity.model}`
+  const effortSuffix = identity.reasoningEffort ? `::${identity.reasoningEffort}` : ''
+  return `${identity.providerId}::${identity.model}${effortSuffix}`
 }
 
 function getModelGroupLabel(identity: StatsIdentity): string {
-  return `${identity.providerName} > ${identity.model}`
+  const effortSuffix = identity.reasoningEffort ? `:${identity.reasoningEffort}` : ''
+  return `${identity.providerName} > ${identity.model}${effortSuffix}`
+}
+
+function getAgentId(msg: MessageWithStats): { agentId: string; isSubAgent: boolean } {
+  const source = msg as { subAgentType?: string; subAgentId?: string }
+  if (source.subAgentType) {
+    return { agentId: source.subAgentType, isSubAgent: true }
+  }
+  if (source.subAgentId) {
+    return { agentId: msg.stats.mode, isSubAgent: true }
+  }
+  return { agentId: msg.stats.mode, isSubAgent: false }
+}
+
+function buildAgentSessionStats(messagesWithStats: MessageWithStats[]): AgentSessionStats[] {
+  const agentBuckets = new Map<string, { isSubAgent: boolean; messages: MessageWithStats[] }>()
+  for (const msg of messagesWithStats) {
+    const { agentId, isSubAgent } = getAgentId(msg)
+    const existing = agentBuckets.get(agentId)
+    if (existing) {
+      existing.messages.push(msg)
+      if (isSubAgent) existing.isSubAgent = true
+    } else {
+      agentBuckets.set(agentId, { isSubAgent, messages: [msg] })
+    }
+  }
+
+  return Array.from(agentBuckets.entries()).map(([agentId, bucket]) => {
+    const groupStats = buildSessionStats(bucket.messages)
+    return {
+      agentId,
+      isSubAgent: bucket.isSubAgent,
+      ...groupStats,
+    }
+  })
 }
 
 interface Aggregation {
@@ -53,9 +91,9 @@ interface Aggregation {
 }
 
 /**
- * Sum per-response MessageStats, tracking the same accumulators the weighted
- * averages use. `totalPrefillSource` aggregates prefTokenIncrement (or the
- * full prompt) — the same token source the per-message prefill speed uses —
+ * Sum per-response MessageStats, tracking the same accumulators weighted
+ * averages use. `totalPrefillSource` aggregates prefTokenIncrement (or
+ * full prompt) — the same token source per-message prefill speed uses —
  * so cached prefill work is not counted as processed.
  */
 function aggregateMessages(messagesWithStats: MessageWithStats[]): Aggregation {
@@ -75,6 +113,9 @@ function aggregateMessages(messagesWithStats: MessageWithStats[]): Aggregation {
     prefillTokens += stats.prefillTokens
     generationTokens += stats.generationTokens
 
+    // prefillSpeed is computed from the non-cached token source
+    // (prefTokenIncrement when known, else full prompt), so aggregate on
+    // that same source: source / speed reconstructs the real prefill time (ttft).
     const prefillSource = stats.prefTokenIncrement ?? stats.prefillTokens
     const prefillTime = stats.prefillSpeed > 0 ? prefillSource / stats.prefillSpeed : 0
     const genTime = stats.generationSpeed > 0 ? stats.generationTokens / stats.generationSpeed : 0
@@ -98,23 +139,7 @@ function aggregateMessages(messagesWithStats: MessageWithStats[]): Aggregation {
   }
 }
 
-function summaryFields(
-  agg: Aggregation,
-): Pick<
-  SessionStatsSummary,
-  | 'totalTime'
-  | 'aiTime'
-  | 'toolTime'
-  | 'prefillTokens'
-  | 'generationTokens'
-  | 'avgPrefillSpeed'
-  | 'avgGenerationSpeed'
-  | 'responseCount'
-  | 'llmCallCount'
-  | 'totalPrefillSource'
-  | 'totalPrefillTime'
-  | 'totalGenTime'
-> {
+function summaryFields(agg: Aggregation): Omit<SessionStatsSummary, 'modelGroups'> {
   return {
     totalTime: roundTo1(agg.totalTime),
     aiTime: roundTo1(agg.totalTime - agg.toolTime),
@@ -146,9 +171,8 @@ function filterWithStats(messages: StatsSource[]): MessageWithStats[] {
     .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
 }
 
-function buildSessionStats(messagesWithStats: MessageWithStats[]): Omit<SessionStats, 'modelGroups'> {
+function buildSessionStats(messagesWithStats: MessageWithStats[]): Omit<SessionStats, 'modelGroups' | 'agentGroups'> {
   const agg = aggregateMessages(messagesWithStats)
-
   const dataPoints: StatsDataPoint[] = []
   const callDataPoints: CallStatsDataPoint[] = []
   let sessionCallIndex = 0
@@ -184,8 +208,8 @@ function buildSessionStats(messagesWithStats: MessageWithStats[]): Omit<SessionS
         model: call.model,
         mode: stats.mode,
         responseIndex: index + 1,
-        sessionCallIndex,
         callIndex: call.callIndex,
+        sessionCallIndex,
         promptTokens: call.promptTokens,
         completionTokens: call.completionTokens,
         ttft: call.ttft,
@@ -193,10 +217,10 @@ function buildSessionStats(messagesWithStats: MessageWithStats[]): Omit<SessionS
         prefillSpeed: call.prefillSpeed,
         generationSpeed: call.generationSpeed,
         totalTime: call.totalTime,
-        ...(call.temperature !== undefined && { temperature: call.temperature }),
-        ...(call.topP !== undefined && { topP: call.topP }),
-        ...(call.topK !== undefined && { topK: call.topK }),
-        ...(call.maxTokens !== undefined && { maxTokens: call.maxTokens }),
+        ...(call.temperature !== undefined ? { temperature: call.temperature } : {}),
+        ...(call.topP !== undefined ? { topP: call.topP } : {}),
+        ...(call.topK !== undefined ? { topK: call.topK } : {}),
+        ...(call.maxTokens !== undefined ? { maxTokens: call.maxTokens } : {}),
       })
     }
   }
@@ -212,14 +236,18 @@ function groupMessagesByModel(messagesWithStats: MessageWithStats[]): Map<string
   const modelBuckets = new Map<string, MessageWithStats[]>()
   for (const message of messagesWithStats) {
     const key = getModelGroupKey(getStatsIdentity(message.stats))
-    const existing = modelBuckets.get(key) ?? []
-    modelBuckets.set(key, [...existing, message])
+    const existing = modelBuckets.get(key)
+    if (existing) {
+      existing.push(message)
+    } else {
+      modelBuckets.set(key, [message])
+    }
   }
   return modelBuckets
 }
 
 /**
- * Compute the full aggregated session stats (headline + per-response and
+ * Compute full aggregated session stats (headline + per-response and
  * per-call progression data) from an array of messages.
  *
  * Returns null if no messages have stats.
@@ -230,26 +258,31 @@ export function computeSessionStats(messages: StatsSource[]): SessionStats | nul
     return null
   }
 
-  const modelGroups: ModelSessionStats[] = Array.from(groupMessagesByModel(messagesWithStats).entries()).map(
-    ([, groupMessages]) => {
-      const identity = getStatsIdentity(groupMessages[0]!.stats)
-      return {
-        ...identity,
-        key: getModelGroupKey(identity),
-        label: getModelGroupLabel(identity),
-        ...buildSessionStats(groupMessages),
-      }
-    },
-  )
+  const modelBuckets = groupMessagesByModel(messagesWithStats)
+  const modelGroups: ModelSessionStats[] = Array.from(modelBuckets.entries()).map(([key, groupMessages]) => {
+    const identity = getStatsIdentity(groupMessages[0]!.stats)
+    const groupStats = buildSessionStats(groupMessages)
+    const agentGroups = buildAgentSessionStats(groupMessages)
+    return {
+      ...identity,
+      key,
+      label: getModelGroupLabel(identity),
+      ...groupStats,
+      agentGroups,
+    }
+  })
+
+  const agentGroups = buildAgentSessionStats(messagesWithStats)
 
   return {
     ...buildSessionStats(messagesWithStats),
     modelGroups,
+    agentGroups,
   }
 }
 
 /**
- * Compute the lean session stats summary (headline aggregates only) from an
+ * Compute lean session stats summary (headline aggregates only) from an
  * array of messages. Exact across every context window when fed the full
  * history, yet small enough to ship on every session load.
  *
@@ -275,21 +308,17 @@ export function computeSessionStatsSummary(messages: StatsSource[]): SessionStat
 }
 
 /**
- * Merge the in-flight turn's cumulative stats into a server-computed summary
- * so the UI grows live and lands on the final numbers when the turn ends (the
- * live channel is cleared in the same frame the finished response lands in the
- * next summary). `base` may be null when no response has completed yet — the
- * summary is then built from the live response alone.
- *
- * Note: wire times are rounded to 0.1s (roundTo1), so the merged live view can
- * differ from the post-turn server summary by up to ~0.1s per time field.
+ * Merge an in-flight turn's cumulative stats into a server-computed summary
+ * so the UI grows live and lands on final numbers as the turn ends (the
+ * live channel is cleared in the same frame the finished response lands in
+ * the next summary). `base` may be null when no response has completed yet —
+ * the summary is then built from the live response alone.
  */
 export function mergeLiveStats(base: SessionStatsSummary | null, live: MessageStats): SessionStatsSummary {
   const prefillSource = live.prefTokenIncrement ?? live.prefillTokens
   const prefillTime = live.prefillSpeed > 0 ? prefillSource / live.prefillSpeed : 0
   const genTime = live.generationSpeed > 0 ? live.generationTokens / live.generationSpeed : 0
   const liveCalls = live.llmCalls?.length ?? 0
-
   const identity = getStatsIdentity(live)
   const key = getModelGroupKey(identity)
 
@@ -305,7 +334,7 @@ export function mergeLiveStats(base: SessionStatsSummary | null, live: MessageSt
     llmCallCount: (base?.llmCallCount ?? 0) + liveCalls,
   }
 
-  const modelGroups = (base?.modelGroups ?? []).map((group) => {
+  const modelGroups: ModelStatsSummary[] = (base?.modelGroups ?? []).map((group) => {
     if (group.key !== key) return group
     const groupAgg: Aggregation = {
       totalTime: group.totalTime + live.totalTime,
@@ -318,7 +347,10 @@ export function mergeLiveStats(base: SessionStatsSummary | null, live: MessageSt
       responseCount: group.responseCount + 1,
       llmCallCount: group.llmCallCount + liveCalls,
     }
-    return { ...group, ...summaryFields(groupAgg) }
+    return {
+      ...group,
+      ...summaryFields(groupAgg),
+    }
   })
 
   if (!modelGroups.some((group) => group.key === key)) {

@@ -367,6 +367,35 @@ describe('ws/protocol', () => {
       expect(parsed.payload.index).toBe(0)
       expect(parsed.payload.name).toBe('read_file')
     })
+
+    it('includes the live edit context when provided', () => {
+      const editContext = [
+        {
+          startLine: 3,
+          endLine: 3,
+          beforeContext: [{ lineNumber: 2, content: 'line two' }],
+          afterContext: [{ lineNumber: 4, content: 'line four' }],
+          oldContent: 'a',
+          newContent: 'b',
+          edits: [{ startLine: 3, endLine: 3, oldContent: 'a', newContent: 'b' }],
+        },
+      ]
+      const msg = createChatToolPreparingMessage('msg-1', 0, 'edit_file', '{"path":"a.ts"}', editContext)
+
+      expect(msg.payload).toMatchObject({
+        messageId: 'msg-1',
+        index: 0,
+        name: 'edit_file',
+        arguments: '{"path":"a.ts"}',
+        editContext,
+      })
+    })
+
+    it('omits editContext when empty', () => {
+      const msg = createChatToolPreparingMessage('msg-1', 0, 'edit_file', undefined, [])
+
+      expect(msg.payload).not.toHaveProperty('editContext')
+    })
   })
 
   describe('tool message ordering', () => {

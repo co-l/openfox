@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { join, dirname, basename } from 'node:path'
-import { createHash, privateDecrypt, createPublicKey } from 'node:crypto'
+import { createHash, privateDecrypt, createPublicKey, constants } from 'node:crypto'
 import { getRuntimeConfig } from './runtime-config.js'
 import type { Mode } from '../cli/main.js'
 
@@ -101,6 +101,31 @@ export function hashPassword(password: string): string {
   return createHash('sha256').update(password).digest('hex')
 }
 
+function decryptPassword(privateKey: string, encryptedPassword: string): Buffer | null {
+  const data = Buffer.from(encryptedPassword, 'base64')
+  try {
+    return privateDecrypt({ key: privateKey, padding: constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' }, data)
+  } catch {
+    try {
+      return privateDecrypt({ key: privateKey, padding: constants.RSA_PKCS1_PADDING }, data)
+    } catch {
+      try {
+        const raw = privateDecrypt({ key: privateKey, padding: constants.RSA_NO_PADDING }, data)
+        const start = raw[0] === 0 ? 2 : raw[0] === 2 ? 1 : -1
+        if (start === -1) return null
+        for (let i = start; i < raw.length; i++) {
+          if (raw[i] === 0) {
+            return raw.subarray(i + 1)
+          }
+        }
+        return null
+      } catch {
+        return null
+      }
+    }
+  }
+}
+
 export function requiresAuth(): boolean {
   return cachedAuth?.strategy === 'network'
 }
@@ -115,12 +140,8 @@ export async function verifyPassword(password: string): Promise<boolean> {
 
   const privateKey = await loadPrivateKey()
 
-  try {
-    const decrypted = privateDecrypt({ key: privateKey, padding: 1 }, Buffer.from(encryptedPassword, 'base64'))
-    return decrypted.toString() === password
-  } catch {
-    return false
-  }
+  const decrypted = decryptPassword(privateKey, encryptedPassword)
+  return decrypted?.toString() === password
 }
 
 export async function tokenFromPassword(password: string): Promise<string> {
@@ -148,15 +169,9 @@ export async function currentSessionToken(): Promise<string | null> {
 
   const privateKey = await loadPrivateKey()
 
-  try {
-    const password = privateDecrypt(
-      { key: privateKey, padding: 1 },
-      Buffer.from(auth.encryptedPassword, 'base64'),
-    ).toString()
-    return await tokenFromPassword(password)
-  } catch {
-    return null
-  }
+  const decrypted = decryptPassword(privateKey, auth.encryptedPassword)
+  if (!decrypted) return null
+  return await tokenFromPassword(decrypted.toString())
 }
 
 export async function isValidToken(token: string): Promise<boolean> {
@@ -164,24 +179,18 @@ export async function isValidToken(token: string): Promise<boolean> {
 
   const privateKey = await loadPrivateKey()
 
-  try {
-    const decrypted = privateDecrypt(
-      { key: privateKey, padding: 1 },
-      Buffer.from(cachedAuth.encryptedPassword, 'base64'),
-    )
-    const storedPassword = decrypted.toString()
-    const storedHash = hashPassword(storedPassword)
+  const decrypted = decryptPassword(privateKey, cachedAuth.encryptedPassword)
+  if (!decrypted) return false
+  const storedPassword = decrypted.toString()
+  const storedHash = hashPassword(storedPassword)
 
-    const verify = await import('node:crypto').then((c) => {
-      const v = c.createVerify('SHA256')
-      v.update(storedHash)
-      v.end()
-      return v
-    })
+  const verify = await import('node:crypto').then((c) => {
+    const v = c.createVerify('SHA256')
+    v.update(storedHash)
+    v.end()
+    return v
+  })
 
-    const publicKey = createPublicKey(privateKey).export({ type: 'spki', format: 'pem' })
-    return verify.verify(publicKey, token, 'base64')
-  } catch {
-    return false
-  }
+  const publicKey = createPublicKey(privateKey).export({ type: 'spki', format: 'pem' })
+  return verify.verify(publicKey, token, 'base64')
 }

@@ -437,6 +437,14 @@ export function CommandsModal({ isOpen, onClose, initialEditId, projectDir }: Co
         <div className="min-w-0 flex-1 mr-3">
           <div className="flex items-center gap-2">
             <span className="text-text-primary text-sm font-medium">{command.name}</span>
+            {command.pluginId ? (
+              <span
+                data-plugin-command
+                className="text-[10px] px-1.5 py-0.5 rounded border border-border bg-bg-secondary text-text-muted"
+              >
+                {t({ en: 'Plugin', fr: 'Plugin' })}
+              </span>
+            ) : null}
           </div>
         </div>
 

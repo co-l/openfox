@@ -1730,6 +1730,87 @@ describe('event folding', () => {
     })
   })
 
+  describe('context.compacted sub-agent filtering', () => {
+    it('does not rotate the parent window or bump compactionCount for a sub-agent compaction', () => {
+      const events: StoredEvent[] = [
+        {
+          ...baseEvent,
+          seq: 1,
+          type: 'session.initialized',
+          data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
+        },
+        {
+          ...baseEvent,
+          seq: 2,
+          type: 'message.start',
+          data: { messageId: 'm1', role: 'user', content: 'hi', contextWindowId: 'window-1' },
+        },
+        { ...baseEvent, seq: 3, type: 'message.done', data: { messageId: 'm1' } },
+        {
+          ...baseEvent,
+          seq: 4,
+          type: 'context.compacted',
+          data: {
+            closedWindowId: 'window-1',
+            newWindowId: 'window-2',
+            beforeTokens: 50000,
+            afterTokens: 0,
+            summary: 'sub-agent summary',
+            subAgentId: 'sub-1',
+            subAgentType: 'verifier',
+          },
+        },
+        {
+          ...baseEvent,
+          seq: 5,
+          type: 'message.start',
+          data: {
+            messageId: 'm-summary',
+            role: 'assistant',
+            content: 'sub-agent summary',
+            contextWindowId: 'window-1',
+            subAgentId: 'sub-1',
+            isCompactionSummary: true,
+          },
+        },
+        { ...baseEvent, seq: 6, type: 'message.done', data: { messageId: 'm-summary' } },
+      ]
+
+      const result = foldContextState(events, 'window-1')
+
+      expect(result.currentContextWindowId).toBe('window-1')
+      expect(result.compactionCount).toBe(0)
+    })
+
+    it('still rotates the window for top-level compaction (no subAgentId)', () => {
+      const events: StoredEvent[] = [
+        {
+          ...baseEvent,
+          seq: 1,
+          type: 'session.initialized',
+          data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
+        },
+        {
+          ...baseEvent,
+          seq: 2,
+          type: 'context.compacted',
+          data: {
+            closedWindowId: 'window-1',
+            newWindowId: 'window-2',
+            beforeTokens: 50000,
+            afterTokens: 0,
+            summary: 'top-level summary',
+          },
+        },
+      ]
+
+      const result = foldContextState(events, 'window-1')
+
+      expect(result.currentContextWindowId).toBe('window-2')
+      expect(result.compactionCount).toBe(1)
+    })
+  })
+
   describe('orphaned tool call filtering (abort scenario)', () => {
     it('strips orphaned toolCalls from assistant message in buildContextMessagesFromStoredEvents when tool.result is missing', () => {
       const events: StoredEvent[] = [

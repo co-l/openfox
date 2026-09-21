@@ -5,7 +5,7 @@
  * The EventStore is the single source of truth for session events.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import Database from 'better-sqlite3'
 import { mkdtempSync, rmSync, existsSync, statSync, writeFileSync, utimesSync } from 'node:fs'
 import { join } from 'node:path'
@@ -73,6 +73,28 @@ describe('EventStore', () => {
       expect(stored2.seq).toBe(2)
     })
 
+    it('probes past a seq already taken by a concurrent writer (UNIQUE retry)', () => {
+      // Simulate a concurrent writer having taken seq 1 while our MAX read
+      // was stale (returned 1 too).
+      db.prepare(`INSERT INTO events (session_id, seq, timestamp, event_type, payload) VALUES (?, ?, ?, ?, ?)`).run(
+        'session-race',
+        1,
+        Date.now(),
+        'message.start',
+        JSON.stringify({ messageId: 'x', role: 'user' }),
+      )
+      const getNextSeqSpy = vi.spyOn(store as unknown as { getNextSeq: () => number }, 'getNextSeq').mockReturnValue(1)
+
+      const stored = store.append('session-race', {
+        type: 'message.start',
+        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
+      })
+
+      expect(stored.seq).toBe(2)
+      expect((stored.data as { messageId: string }).messageId).toBe('msg-1')
+      getNextSeqSpy.mockRestore()
+    })
+
     it('should maintain separate seq per session', () => {
       const event: TurnEvent = {
         type: 'message.start',
@@ -120,6 +142,28 @@ describe('EventStore', () => {
 
       expect(stored[0]!.seq).toBe(2)
       expect(stored[1]!.seq).toBe(3)
+    })
+
+    it('restarts with a fresh base seq when a concurrent writer took the range', () => {
+      // Concurrent writer took seqs 1 and 2; our MAX read was stale (returned 1).
+      const insert = db.prepare(
+        `INSERT INTO events (session_id, seq, timestamp, event_type, payload) VALUES (?, ?, ?, ?, ?)`,
+      )
+      insert.run('session-batch-race', 1, Date.now(), 'message.start', JSON.stringify({ messageId: 'x', role: 'user' }))
+      insert.run('session-batch-race', 2, Date.now(), 'message.start', JSON.stringify({ messageId: 'y', role: 'user' }))
+      const getNextSeqSpy = vi.spyOn(store as unknown as { getNextSeq: () => number }, 'getNextSeq').mockReturnValue(1)
+
+      const events: TurnEvent[] = [
+        { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hi' } },
+        { type: 'message.done', data: { messageId: 'msg-1' } },
+      ]
+
+      const stored = store.appendBatch('session-batch-race', events)
+
+      expect(stored).toHaveLength(2)
+      expect(stored[0]!.seq).toBe(3)
+      expect(stored[1]!.seq).toBe(4)
+      getNextSeqSpy.mockRestore()
     })
   })
 

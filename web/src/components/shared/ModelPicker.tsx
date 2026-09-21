@@ -11,6 +11,7 @@ import { shouldAutofocus } from '../../lib/device'
 import { formatModelValue, parseModelValue } from '../../lib/model-value'
 import { resolveDisplayEffort } from '../../lib/effort-gate'
 import { useT } from '../../hooks/useT'
+import { PluginZone } from '../plugins/PluginZone'
 
 export interface ModelPickerProps {
   providers: Provider[]
@@ -263,6 +264,7 @@ export function ModelPicker({ providers, value, onChange, defaultLabel }: ModelP
                     {t({ en: 'No models match your search', fr: 'Aucun modèle ne correspond à votre recherche' })}
                   </div>
                 )}
+                <PluginZone id="model.picker.footer" />
               </ScrollArea>
             </div>
           </div>,

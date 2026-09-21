@@ -18,7 +18,12 @@ import { useBackgroundProcessesStore } from '../background-processes'
 import { writeSplitLayout, isSplitRoute } from '../../lib/splitPersistence'
 import type { SessionState, SessionPane, PendingPathConfirmation } from './types'
 import { getBuffer, setFlushFn, cancelStreamingFlush, releaseStreamingBuffer } from './streamingBuffer'
-import { handleServerMessage as handleMessage } from './messageHandler'
+import {
+  handleServerMessage as handleMessage,
+  trimPaneMessages,
+  getMaxVisibleItems,
+  appendStreamingOutput,
+} from './messageHandler'
 import {
   emptyPane,
   paneFromFlat,
@@ -63,10 +68,10 @@ function applyToolOutputs(
     matchedCallIds.add(tc.id)
     return {
       ...tc,
-      streamingOutput: [
-        ...(tc.streamingOutput ?? []),
-        ...outputs.map((o) => ({ stream: o.stream, content: o.content, timestamp: Date.now() })),
-      ],
+      streamingOutput: appendStreamingOutput(
+        tc.streamingOutput,
+        outputs.map((o) => ({ stream: o.stream, content: o.content, timestamp: Date.now() })),
+      ),
     }
   })
 }
@@ -186,7 +191,13 @@ export const useSessionStore = create<SessionState>((set, get) => {
           applied = true
         }
         if (!applied) return pane
-        return { ...pane, messages: pane.messages.map((m) => (m.id === buf.messageId ? updated : m)) }
+        return {
+          ...pane,
+          messages: trimPaneMessages(
+            pane.messages.map((m) => (m.id === buf.messageId ? updated : m)),
+            getMaxVisibleItems(),
+          ),
+        }
       })
     })
   })

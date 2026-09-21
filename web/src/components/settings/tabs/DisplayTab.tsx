@@ -43,6 +43,14 @@ const FEED_TOGGLES: ToggleDefinition[] = [
     },
   },
   {
+    key: SETTINGS_KEYS.DISPLAY_SHOW_TOOL_CALL_STREAMING,
+    label: { en: 'Show live tool call previews', fr: 'Afficher les aperçus en direct des appels d’outils' },
+    description: {
+      en: 'While the model writes or edits a file, preview the content live as it streams in',
+      fr: 'Pendant que le modèle écrit ou modifie un fichier, prévisualisez le contenu en direct pendant le streaming',
+    },
+  },
+  {
     key: SETTINGS_KEYS.DISPLAY_SHOW_STATS,
     label: { en: 'Show stats bar', fr: 'Afficher la barre de statistiques' },
     description: {
@@ -154,6 +162,7 @@ export function DisplayTab() {
   const applyLocale = useLocaleStore((state) => state.applyLocale)
   const showThinking = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_THINKING, 'true')
   const showVerboseToolOutput = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_VERBOSE_TOOL_OUTPUT, 'true')
+  const showToolCallStreaming = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_TOOL_CALL_STREAMING, 'false')
   const showStats = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_STATS, 'true')
   const showAgentDefinitions = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_AGENT_DEFINITIONS, 'true')
   const showWorkflowBars = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_WORKFLOW_BARS, 'true')
@@ -189,6 +198,7 @@ export function DisplayTab() {
   const localValues: Record<string, string> = {
     [SETTINGS_KEYS.DISPLAY_SHOW_THINKING]: showThinking.value,
     [SETTINGS_KEYS.DISPLAY_SHOW_VERBOSE_TOOL_OUTPUT]: showVerboseToolOutput.value,
+    [SETTINGS_KEYS.DISPLAY_SHOW_TOOL_CALL_STREAMING]: showToolCallStreaming.value,
     [SETTINGS_KEYS.DISPLAY_SHOW_STATS]: showStats.value,
     [SETTINGS_KEYS.DISPLAY_SHOW_AGENT_DEFINITIONS]: showAgentDefinitions.value,
     [SETTINGS_KEYS.DISPLAY_SHOW_WORKFLOW_BARS]: showWorkflowBars.value,
@@ -408,6 +418,7 @@ function ToggleList({
           <button
             type="button"
             onClick={() => onToggle(key)}
+            aria-pressed={local[key]}
             className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${
               local[key] ? 'bg-accent-primary' : 'bg-bg-tertiary'
             }`}

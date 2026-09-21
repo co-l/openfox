@@ -12,6 +12,7 @@ import {
 import type { Provider } from '../../stores/config'
 import { isSmallContext } from '../../lib/context-warning'
 import { useT } from '../../hooks/useT'
+import { PluginModelMeta } from '../plugins/PluginModelMeta'
 
 export function formatContextWindow(context: number): string {
   if (context >= 1000000) return `${(context / 1000000).toFixed(1)}M`
@@ -29,6 +30,7 @@ export interface ModelWithConfig {
   reasoningEffortOverride?: string
   thinkingLevel?: string
   thinkingEnabled?: boolean
+  pluginMetadata?: import('@shared/plugin.js').PluginModelMetadataView
 }
 
 export function modelMatchesQuery(model: { name?: string; id: string }, query: string): boolean {
@@ -60,6 +62,7 @@ export function getVisibleModels(provider: Provider): ModelWithConfig[] {
       ...(m.reasoningEffortOverride ? { reasoningEffortOverride: m.reasoningEffortOverride } : {}),
       ...(m.thinkingLevel ? { thinkingLevel: m.thinkingLevel } : {}),
       ...(m.thinkingEnabled !== undefined ? { thinkingEnabled: m.thinkingEnabled } : {}),
+      ...(m.pluginMetadata ? { pluginMetadata: m.pluginMetadata } : {}),
     }
   })
 }
@@ -138,6 +141,7 @@ export function ModelEntryRow({
             </span>
           )}
           <span className="text-xs text-text-muted">{formatContextWindow(modelConfig.contextWindow)}</span>
+          <PluginModelMeta metadata={modelConfig.pluginMetadata} />
           {isSmallContext(modelConfig.contextWindow) && (
             <span
               data-small-context

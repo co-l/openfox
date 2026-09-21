@@ -1,4 +1,4 @@
-import { memo, useRef, useState, useCallback } from 'react'
+import { Fragment, memo, useRef, useState, useCallback } from 'react'
 import type { Message, ContextState } from '@shared/types.js'
 import { AssistantMessage } from './AssistantMessage'
 import { ChatMessage } from './ChatMessage'
@@ -13,6 +13,7 @@ import { useViewport } from '../../hooks/useViewport'
 import { ScrollArea } from '../shared/ScrollArea'
 import type { OverlayScrollbarsComponentRef } from 'overlayscrollbars-react'
 import { ProgressBar } from '../shared/ProgressBar'
+import { FeedDivider } from './FeedDivider'
 
 interface SubAgentContainerProps {
   messages: Message[]
@@ -140,24 +141,29 @@ export const SubAgentContainer = memo(function SubAgentContainer({
 
       <ScrollArea
         ref={scrollRef}
-        className={`${expanded ? 'max-h-[calc(100vh-10rem)]' : 'max-h-80'} p-2 transition-[max-height] duration-200`}
+        className={`${expanded ? 'max-h-[calc(100vh-16rem)]' : 'max-h-80'} p-2 transition-[max-height] duration-200`}
         onScrollbarGesture={handleScrollbarGesture}
       >
-        {displayMessages.map((message) => {
-          if (message.role === 'assistant') {
-            return (
+        {displayMessages.map((message) => (
+          <Fragment key={message.id}>
+            {message.isCompactionSummary && (
+              <FeedDivider
+                testId="subagent-compaction-divider"
+                label={t({ en: 'Earlier context summarized', fr: 'Contexte antérieur résumé' })}
+              />
+            )}
+            {message.role === 'assistant' ? (
               <AssistantMessage
-                key={message.id}
                 message={message}
                 showStats={true}
                 showThinking={showThinking}
                 showVerboseToolOutput={showVerboseToolOutput}
               />
-            )
-          }
-
-          return <ChatMessage key={message.id} message={message} isLastAssistantMessage={false} />
-        })}
+            ) : (
+              <ChatMessage message={message} isLastAssistantMessage={false} />
+            )}
+          </Fragment>
+        ))}
       </ScrollArea>
     </div>
   )

@@ -5,15 +5,19 @@ import { ChatMessage } from './ChatMessage'
 import { AUTOSCROLL_REARM_EVENT } from './feed-window'
 import type { Attachment, Message } from '@shared/types.js'
 
-const { mockReplayMessage, mockLoadSession, mockForkSession } = vi.hoisted(() => ({
+const { mockReplayMessage, mockLoadSession, mockForkSession, mockForkSessionErrorMessage } = vi.hoisted(() => ({
   mockReplayMessage: vi.fn(),
   mockLoadSession: vi.fn(),
   mockForkSession: vi.fn(),
+  mockForkSessionErrorMessage: vi.fn((result: unknown) =>
+    result && typeof result === 'object' && 'error' in result ? (result as { error: string }).error : null,
+  ),
 }))
 
 vi.mock('../../lib/api.js', () => ({
   replayMessage: mockReplayMessage,
   forkSession: mockForkSession,
+  forkSessionErrorMessage: mockForkSessionErrorMessage,
 }))
 
 vi.mock('wouter', () => ({
@@ -66,6 +70,7 @@ function collectRearmEvents() {
 beforeEach(() => {
   mockReplayMessage.mockReset().mockResolvedValue(true)
   mockLoadSession.mockReset().mockResolvedValue(undefined)
+  mockForkSession.mockReset().mockResolvedValue(null)
 })
 
 afterEach(() => {
@@ -107,6 +112,17 @@ describe('ChatMessage replay and edit controls', () => {
     fireEvent.contextMenu(screen.getByText('Fix the login bug'))
     expect(screen.getByText('2026/08/16 14:44')).toBeTruthy()
     expect(screen.queryByRole('button', { name: '2026/08/16 14:44' })).toBeNull()
+  })
+
+  it('surfaces the server error message when forking fails', async () => {
+    mockForkSession.mockResolvedValue({
+      error: 'Message m1 belongs to a compacted context window; only the latest context window can be forked',
+    })
+    render(<ChatMessage message={userMessage()} messageId="m1" sessionId="s1" />)
+    fireEvent.contextMenu(screen.getByText('Fix the login bug'))
+    fireEvent.click(screen.getByText('Fork session from here'))
+    await waitFor(() => expect(screen.getByText(/compacted context window/)).toBeTruthy())
+    expect(mockForkSession).toHaveBeenCalledWith('s1', 'm1')
   })
 
   it('shows the attachment while editing and lets it be removed', async () => {

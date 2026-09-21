@@ -86,3 +86,33 @@ describe('CommandsModal duplicate from the default view', () => {
     expect(mockUpdateCommand).not.toHaveBeenCalled()
   })
 })
+
+describe('CommandsModal plugin provenance', () => {
+  afterEach(cleanup)
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockResourceState.data = {
+      defaults: [],
+      userItems: [{ id: 'plugin-hello', name: 'Plugin hello', pluginId: 'openfox-hello-plugin' }] as never,
+      projectItems: [],
+    }
+  })
+
+  it('marks plugin-contributed commands with a Plugin tag', () => {
+    render(<CommandsModal isOpen onClose={() => {}} />)
+    expect(screen.getByText('Plugin hello')).toBeTruthy()
+    expect(screen.getByText('Plugin')).toBeTruthy()
+  })
+
+  it('does not tag user commands without a pluginId', () => {
+    mockResourceState.data = {
+      defaults: [],
+      userItems: [{ id: 'my-command', name: 'My command' }] as never,
+      projectItems: [],
+    }
+    render(<CommandsModal isOpen onClose={() => {}} />)
+    expect(screen.getByText('My command')).toBeTruthy()
+    expect(screen.queryByText('Plugin')).toBeNull()
+  })
+})

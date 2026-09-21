@@ -64,6 +64,19 @@ import { getEnabledSkillMetadata } from '../skills/registry.js'
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
+/**
+ * Poll until the predicate holds. Replaces fixed sleeps that race the agent
+ * loop's async progress under load (the loop may not have reached the pause
+ * gate within an arbitrary delay).
+ */
+async function waitUntil(predicate: () => boolean, timeoutMs = 5000, intervalMs = 5): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error('waitUntil timed out')
+    await sleep(intervalMs)
+  }
+}
+
 function makeStreamResult(toolCalls: unknown[]): unknown {
   return {
     content: '',
@@ -201,8 +214,7 @@ describe('runTopLevelAgentLoop pause gate', () => {
 
     // The first LLM call completes, the tool batch runs, then the gate blocks
     // BEFORE the second LLM request is issued.
-    await sleep(50)
-    expect(gateCallCount).toBe(2)
+    await waitUntil(() => gateCallCount === 2)
     expect(consumeStreamGenerator).toHaveBeenCalledTimes(1)
 
     // Still running — the turn is paused, not finished
@@ -228,8 +240,7 @@ describe('runTopLevelAgentLoop pause gate', () => {
     const controller = new AbortController()
     const loop = runTopLevelAgentLoop(makeConfig({ signal: controller.signal }), mockTurnMetrics)
 
-    await sleep(50)
-    expect(gateCallCount).toBe(2)
+    await waitUntil(() => gateCallCount === 2)
     expect(consumeStreamGenerator).toHaveBeenCalledTimes(1)
 
     // Aborting the session resolves the gate as aborted
@@ -243,7 +254,7 @@ describe('runTopLevelAgentLoop pause gate', () => {
 
   it('never aborts the in-flight LLM request when pausing (gate is checked before the request)', async () => {
     const loop = runTopLevelAgentLoop(makeConfig(), mockTurnMetrics)
-    await sleep(50)
+    await waitUntil(() => gateCallCount === 2)
 
     // The first (in-flight-at-pause) request ran to completion — pause did not interrupt it
     expect(consumeStreamGenerator).toHaveBeenCalledTimes(1)

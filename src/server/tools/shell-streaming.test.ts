@@ -356,10 +356,13 @@ for i in a b c d e f g h i j; do echo "$i"; done
   })
 
   describe('zombie pipe (detached child holding the stdio pipes)', () => {
-    // A `setsid`-ed child moves to its own session/process group, so a
-    // process-group kill cannot reach it. It keeps the write end of the
-    // tool's stdio pipes open long after the shell has exited, which
-    // prevents Node's 'close' event from ever firing.
+    // A detached child (own session/process group) cannot be reached by a
+    // process-group kill. It keeps the write end of the tool's stdio pipes
+    // open long after the shell has exited, which prevents Node's 'close'
+    // event from ever firing. `setsid` is Linux-only, so the orphan is a
+    // detached grandchild spawned via node (`detached: true` calls setsid
+    // on every POSIX platform) that inherits the pipe fds.
+    const ORPHAN_COMMAND = `bash -c '${process.execPath} -e "const cp=require(\\"child_process\\");cp.spawn(process.execPath,[\\"-e\\",\\"setTimeout(()=>{},10000)\\"],{detached:true,stdio:[\\"ignore\\",process.stdout,process.stderr]}).unref()" & echo orphan-launched'`
 
     it.skipIf(IS_WIN32)(
       'settles after a small timeout instead of hanging',
@@ -372,9 +375,9 @@ for i in a b c d e f g h i j; do echo "$i"; done
 
         const started = Date.now()
         const result = await runCommandTool.execute(
-          // `sleep 10` outlives the 500ms timeout and 2s grace, but self-cleans
+          // The orphan outlives the 500ms timeout and 2s grace, but self-cleans
           // quickly so the test doesn't leave a 10-minute orphan behind.
-          { command: "bash -c 'setsid sleep 10 & echo orphan-launched'", timeout: 500 },
+          { command: ORPHAN_COMMAND, timeout: 500 },
           contextWithShortTimeout,
         )
 
@@ -398,8 +401,8 @@ for i in a b c d e f g h i j; do echo "$i"; done
 
         const started = Date.now()
         const result = await runCommandTool.execute(
-          // `sleep 10` outlives the 2s grace, but self-cleans quickly.
-          { command: "bash -c 'setsid sleep 10 & echo orphan-launched'" },
+          // The orphan outlives the 2s grace, but self-cleans quickly.
+          { command: ORPHAN_COMMAND },
           contextWithDefaultTimeout,
         )
 

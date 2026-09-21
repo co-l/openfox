@@ -511,6 +511,98 @@ describe('runTopLevelAgentLoop compaction', () => {
       .filter((event: any) => event?.type === 'context.compacted')
     expect(compactedEvents).toHaveLength(1)
     expect(rebuildCachedContext).toHaveBeenCalledTimes(1)
+
+    // Top-level compaction must not emit a sub-agent-style fresh-context marker.
+    const freshContextEvents = appendMock.mock.calls
+      .map(([event]) => event)
+      .filter((event: any) => event?.type === 'message.start' && event.data?.messageKind === 'context-reset')
+    expect(freshContextEvents).toHaveLength(0)
+  })
+
+  it('tags compaction events with sub-agent metadata and does not rebuild cached context', async () => {
+    let subTokens = 180_000
+    mockSessionManager = {
+      enterPauseGate: vi.fn().mockResolvedValue('released'),
+      requireSession: vi.fn().mockReturnValue({
+        workdir: '/test',
+        projectId: 'test-project',
+        executionState: null,
+        criteria: [],
+        isRunning: false,
+      }),
+      getEffectiveWorkdir: vi.fn().mockReturnValue('/test'),
+      getProjectWorkdir: vi.fn().mockReturnValue('/test'),
+      getContextState: vi.fn().mockReturnValue({
+        currentTokens: 0,
+        maxTokens: 200000,
+        compactionCount: 0,
+        dangerZone: false,
+        canCompact: false,
+        dynamicContextChanged: false,
+      }),
+      getCurrentModelContext: vi.fn().mockReturnValue(200000),
+      getCurrentModelSettings: vi.fn().mockReturnValue({}),
+      getModelCompactionThreshold: vi.fn().mockReturnValue(undefined),
+      setCurrentContextSize: vi.fn(),
+      getSubAgentContextTokens: vi.fn(() => subTokens),
+      getDynamicContextChanged: vi.fn().mockReturnValue(false),
+      setDynamicContextChanged: vi.fn(),
+      getCachedPrompt: vi.fn().mockReturnValue(undefined),
+      setCachedPrompt: vi.fn(),
+      getLspManager: vi.fn(),
+      drainAsapMessages: vi.fn().mockReturnValue([]),
+      getCurrentWindowMessages: vi.fn().mockReturnValue([]),
+      updateMessage: vi.fn(),
+    } as any
+
+    const appendMock = vi.fn((event: any) => {
+      if (event?.type === 'context.compacted') subTokens = 10
+    })
+    const rebuildCachedContext = vi.fn().mockResolvedValue(undefined)
+
+    await runTopLevelAgentLoop(
+      makeConfig({
+        append: appendMock,
+        subAgentMetadata: { subAgentId: 'sub-1', subAgentType: 'verifier' },
+        rebuildCachedContext,
+      }),
+      mockTurnMetrics,
+    )
+
+    const events = appendMock.mock.calls.map(([event]) => event)
+
+    const compactionPrompt = events.find(
+      (event: any) => event?.type === 'message.start' && event.data?.metadata?.type === 'compaction',
+    )
+    expect(compactionPrompt).toBeDefined()
+    expect(compactionPrompt.data.subAgentId).toBe('sub-1')
+    expect(compactionPrompt.data.subAgentType).toBe('verifier')
+
+    const compacted = events.filter((event: any) => event?.type === 'context.compacted')
+    expect(compacted).toHaveLength(1)
+    expect(compacted[0]!.data.subAgentId).toBe('sub-1')
+    expect(compacted[0]!.data.subAgentType).toBe('verifier')
+    // Sub-agent compaction must not mint a phantom window: it stays in the
+    // parent's current window.
+    expect(compacted[0]!.data.newWindowId).toBe(compacted[0]!.data.closedWindowId)
+
+    const summary = events.find(
+      (event: any) => event?.type === 'message.start' && event.data?.isCompactionSummary === true,
+    )
+    expect(summary).toBeDefined()
+    expect(summary.data.subAgentId).toBe('sub-1')
+    expect(summary.data.subAgentType).toBe('verifier')
+
+    // A fresh-context marker (sub-agent scoped) signals the new window after compaction.
+    const freshContext = events.find(
+      (event: any) => event?.type === 'message.start' && event.data?.messageKind === 'context-reset',
+    )
+    expect(freshContext).toBeDefined()
+    expect(freshContext.data.subAgentId).toBe('sub-1')
+    expect(freshContext.data.subAgentType).toBe('verifier')
+    expect(freshContext.data.content).toContain('Fresh Context')
+
+    expect(rebuildCachedContext).not.toHaveBeenCalled()
   })
 })
 

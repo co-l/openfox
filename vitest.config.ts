@@ -26,6 +26,7 @@ export default defineConfig({
       'web/src/**/*.test.tsx',
       'scripts/**/*.test.ts',
       'eslint/**/*.test.ts',
+      'examples/**/*.test.ts',
     ],
     // A few tests (init-llm, test-params) flake past the 5s default under
     // full-suite load on slower machines.

@@ -57,6 +57,15 @@ describe('AdvancedTab', () => {
     expect(mockSetSetting).toHaveBeenCalledWith('agent.autoContinueOnBoot', 'true')
   })
 
+  it('renders the parallel sub-agent calls toggle and persists it', async () => {
+    const { container } = render(<AdvancedTab onClose={vi.fn()} />)
+    const toggles = container.querySelectorAll('label')
+    const toggle = Array.from(toggles).find((t) => t.textContent?.includes('Parallel sub-agent calls'))
+    expect(toggle).toBeTruthy()
+    await userEvent.setup().click(toggle!)
+    expect(mockSetSetting).toHaveBeenCalledWith('agent.allowParallelSubAgents', 'true')
+  })
+
   it('renders the Speculative Cache Warming toggle', () => {
     const { container } = render(<AdvancedTab onClose={vi.fn()} />)
     expect(container.textContent).toContain('Speculative Cache Warming')

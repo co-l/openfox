@@ -89,6 +89,10 @@ describe('Write Tools', () => {
       const writeCall = response.toolCalls.find((tc) => tc.tool === 'write_file')
       if (writeCall && !writeCall.result?.success) {
         expect(writeCall.result?.error).toContain('read before writing')
+        // Fast-fail proof: the stream was aborted as soon as the path was
+        // known, so the executed write_file call never carried the content
+        // payload — the doomed generation was cut short.
+        expect(writeCall.args).not.toHaveProperty('content')
       }
       // LLM may be smart enough to read first, which is also acceptable
     })
@@ -129,6 +133,9 @@ describe('Write Tools', () => {
       const editCall = response.toolCalls.find((tc) => tc.tool === 'edit_file')
       if (editCall && !editCall.result?.success) {
         expect(editCall.result?.error).toContain('read before writing')
+        // Fast-fail proof: the aborted stream never carried old/new strings.
+        expect(editCall.args).not.toHaveProperty('old_string')
+        expect(editCall.args).not.toHaveProperty('new_string')
       }
     })
 

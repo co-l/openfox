@@ -22,14 +22,20 @@ vi.mock('../shared/ToolCallDisplay', () => ({
 }))
 
 vi.mock('../shared/ToolCallPreparing', () => ({
-  ToolCallPreparing: () => <div>tool preparing</div>,
+  ToolCallPreparing: (props: unknown) => {
+    toolCallPreparingMock(props)
+    return <div>tool preparing</div>
+  },
 }))
 
 vi.mock('../shared/TodoListDisplay', () => ({
   TodoListDisplay: () => <div>todo</div>,
 }))
 
-const { criteriaGroupMock } = vi.hoisted(() => ({ criteriaGroupMock: vi.fn() }))
+const { criteriaGroupMock, toolCallPreparingMock } = vi.hoisted(() => ({
+  criteriaGroupMock: vi.fn(),
+  toolCallPreparingMock: vi.fn(),
+}))
 
 vi.mock('../shared/CriteriaGroupDisplay', () => ({
   CriteriaGroupDisplay: (props: unknown) => {
@@ -252,6 +258,66 @@ describe('AssistantMessage', () => {
     render(<AssistantMessage message={message} />)
     expect(screen.getByText('tool preparing')).toBeTruthy()
     expect(criteriaGroupMock).not.toHaveBeenCalled()
+  })
+
+  it('passes forceCompact to preparing cards matching the expanded-output setting', () => {
+    toolCallPreparingMock.mockClear()
+    const message: Message = {
+      id: 'assistant-write',
+      role: 'assistant',
+      content: '',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      tokenCount: 0,
+      isStreaming: true,
+      preparingToolCalls: [
+        { index: 0, name: 'write_file', arguments: JSON.stringify({ path: 'src/a.ts', content: 'const x = 1' }) },
+      ],
+    }
+
+    render(<AssistantMessage message={message} showVerboseToolOutput />)
+    expect(toolCallPreparingMock).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'write_file', forceCompact: false }),
+    )
+
+    toolCallPreparingMock.mockClear()
+    render(<AssistantMessage message={message} showVerboseToolOutput={false} />)
+    expect(toolCallPreparingMock).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'write_file', forceCompact: true }),
+    )
+  })
+
+  it('passes the live edit context from preparing calls to the preparing card', () => {
+    toolCallPreparingMock.mockClear()
+    const editContext = [
+      {
+        startLine: 3,
+        endLine: 3,
+        beforeContext: [{ lineNumber: 2, content: 'line two' }],
+        afterContext: [{ lineNumber: 4, content: 'line four' }],
+        oldContent: 'a',
+        newContent: 'b',
+        edits: [{ startLine: 3, endLine: 3, oldContent: 'a', newContent: 'b' }],
+      },
+    ]
+    const message: Message = {
+      id: 'assistant-edit',
+      role: 'assistant',
+      content: '',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      tokenCount: 0,
+      isStreaming: true,
+      preparingToolCalls: [
+        {
+          index: 0,
+          name: 'edit_file',
+          arguments: JSON.stringify({ path: 'src/a.ts', old_string: 'a', new_string: 'b' }),
+          editContext,
+        },
+      ],
+    }
+
+    render(<AssistantMessage message={message} />)
+    expect(toolCallPreparingMock).toHaveBeenCalledWith(expect.objectContaining({ name: 'edit_file', editContext }))
   })
 
   it('opens stats details for persisted messages with null usage stats', () => {

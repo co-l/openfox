@@ -28,6 +28,16 @@ import { closeDatabase, getDatabase, initDatabase } from '../db/index.js'
 import { createProject } from '../db/projects.js'
 import { getSession, updateSessionWorkdir } from '../db/sessions.js'
 import { initEventStore, getCurrentContextWindowId, emitContextCompacted, getEventStore } from '../events/index.js'
+import {
+  emitUserMessage,
+  emitAssistantMessageStart,
+  emitMessageThinking,
+  emitMessageDelta,
+  emitMessageDone,
+  emitToolCall,
+  emitToolResult,
+} from '../events/session.js'
+import { buildContextMessagesFromEventHistory, foldContextState } from '../events/folding.js'
 import * as eventModule from '../events/index.js'
 import { setAgentModelOverride } from '../agents/model-overrides.js'
 import { SessionManager } from './manager.js'
@@ -417,6 +427,22 @@ describe('SessionManager', () => {
     const subAgentCtx = subAgentCtxEvents[0]!.data as { subAgentId?: string; compactionCount: number }
     expect(subAgentCtx.subAgentId).toBe('code-reviewer-run-1')
     expect(subAgentCtx.compactionCount).toBe(0)
+  })
+
+  it('tracks the active sub-agent per session and clears it', () => {
+    const session = manager.createSession(projectId)
+
+    expect(manager.getActiveSubAgent(session.id)).toBeUndefined()
+
+    manager.setActiveSubAgent(session.id, { subAgentId: 'sub-1', subAgentType: 'explorer' })
+    expect(manager.getActiveSubAgent(session.id)).toEqual({ subAgentId: 'sub-1', subAgentType: 'explorer' })
+
+    // Scoped per session — another session stays empty
+    const other = manager.createSession(projectId)
+    expect(manager.getActiveSubAgent(other.id)).toBeUndefined()
+
+    manager.setActiveSubAgent(session.id, undefined)
+    expect(manager.getActiveSubAgent(session.id)).toBeUndefined()
   })
 
   it('getContextState uses latest context.state event value', () => {
@@ -895,6 +921,160 @@ describe('SessionManager', () => {
       for (const m of snapshot.messages) {
         expect(m.contextWindowId).toBe(snapshot.currentContextWindowId)
       }
+    })
+
+    it('forks only the latest context window, preserving the original cache prefix', () => {
+      const original = manager.createSession(projectId)
+      const wid1 = getCurrentContextWindowId(original.id)!
+
+      // Old window (compacted away)
+      emitUserMessage(original.id, 'old user', { contextWindowId: wid1 })
+      const oldAsst = emitAssistantMessageStart(original.id, { contextWindowId: wid1 })
+      emitMessageDelta(original.id, oldAsst, 'old assistant')
+      emitMessageDone(original.id, oldAsst)
+
+      // Compaction closes window 1, opens window 2 with a summary message
+      const wid2 = crypto.randomUUID()
+      emitContextCompacted(original.id, wid1, wid2, 100, 0, 'summary')
+      emitUserMessage(original.id, 'summary of old window', {
+        contextWindowId: wid2,
+        isSystemGenerated: true,
+        messageKind: 'auto-prompt',
+        isCompactionSummary: true,
+      })
+
+      // Latest window
+      emitUserMessage(original.id, 'new user', { contextWindowId: wid2 })
+      const a2 = emitAssistantMessageStart(original.id, { contextWindowId: wid2 })
+      emitMessageDelta(original.id, a2, 'new assistant')
+      emitMessageDone(original.id, a2)
+
+      // The original's LLM context is limited to the latest window
+      const originalEvents = getEventStore().getEvents(original.id)
+      const originalWindowId = foldContextState(originalEvents, '').currentContextWindowId!
+      expect(originalWindowId).toBe(wid2)
+      const originalCtx = buildContextMessagesFromEventHistory(originalEvents, originalWindowId, {
+        includeVerifier: true,
+      })
+
+      const forked = manager.forkSession(original.id, a2)
+
+      // The forked session carries only the latest window, and its LLM context
+      // is byte-identical to the original's current-window context (cache prefix kept)
+      const forkedEvents = getEventStore().getEvents(forked.id)
+      const forkedCtx = buildContextMessagesFromEventHistory(
+        forkedEvents,
+        foldContextState(forkedEvents, '').currentContextWindowId!,
+        { includeVerifier: true },
+      )
+      expect(JSON.stringify(forkedCtx)).toBe(JSON.stringify(originalCtx))
+
+      // Old-window messages are not carried over into the forked session
+      const forkedContents = forked.messages.map((m) => m.content)
+      expect(forkedContents).not.toContain('old user')
+      expect(forkedContents).not.toContain('old assistant')
+      expect(forkedContents).toEqual(['summary of old window', 'new user', 'new assistant'])
+    })
+
+    it('rejects forking from a message in a compacted (older) context window with a clear error', () => {
+      const original = manager.createSession(projectId)
+      const wid1 = getCurrentContextWindowId(original.id)!
+
+      const oldAsst = emitAssistantMessageStart(original.id, { contextWindowId: wid1 })
+      emitMessageDelta(original.id, oldAsst, 'old assistant')
+      emitMessageDone(original.id, oldAsst)
+
+      const wid2 = crypto.randomUUID()
+      emitContextCompacted(original.id, wid1, wid2, 100, 0, 'summary')
+      const u2 = emitUserMessage(original.id, 'new user', { contextWindowId: wid2 })
+
+      expect(() => manager.forkSession(original.id, oldAsst)).toThrow(/compacted context window/)
+      expect(() => manager.forkSession(original.id, u2)).not.toThrow()
+    })
+
+    it('forks a non-compacted session with a byte-identical LLM context (thinking + tools)', () => {
+      const original = manager.createSession(projectId)
+      const wid = getCurrentContextWindowId(original.id)!
+
+      emitUserMessage(original.id, 'question', { contextWindowId: wid })
+      const a1 = emitAssistantMessageStart(original.id, { contextWindowId: wid })
+      emitMessageThinking(original.id, a1, 'hmm')
+      emitMessageDelta(original.id, a1, 'answer')
+      emitMessageDone(original.id, a1)
+
+      emitUserMessage(original.id, 'run it', { contextWindowId: wid })
+      const a2 = emitAssistantMessageStart(original.id, { contextWindowId: wid })
+      emitMessageDelta(original.id, a2, 'Let me check')
+      emitToolCall(original.id, a2, { id: 'tc-1', name: 'read_file', arguments: { path: 'x' } })
+      emitToolResult(original.id, a2, 'tc-1', {
+        success: true,
+        output: 'file content',
+        durationMs: 5,
+        truncated: false,
+      })
+      emitMessageDelta(original.id, a2, ' Done')
+      emitMessageDone(original.id, a2)
+
+      const originalEvents = getEventStore().getEvents(original.id)
+      const originalCtx = buildContextMessagesFromEventHistory(
+        originalEvents,
+        foldContextState(originalEvents, '').currentContextWindowId!,
+        { includeVerifier: true },
+      )
+
+      const forked = manager.forkSession(original.id, a2)
+
+      const forkedEvents = getEventStore().getEvents(forked.id)
+      const forkedCtx = buildContextMessagesFromEventHistory(
+        forkedEvents,
+        foldContextState(forkedEvents, '').currentContextWindowId!,
+        { includeVerifier: true },
+      )
+      expect(JSON.stringify(forkedCtx)).toBe(JSON.stringify(originalCtx))
+    })
+
+    it('keeps the cache prefix when a reminder is interleaved during tool execution', () => {
+      const original = manager.createSession(projectId)
+      const wid = getCurrentContextWindowId(original.id)!
+
+      emitUserMessage(original.id, 'run it', { contextWindowId: wid })
+      const a2 = emitAssistantMessageStart(original.id, { contextWindowId: wid })
+      emitMessageDelta(original.id, a2, 'Let me check')
+      emitToolCall(original.id, a2, { id: 'tc-1', name: 'read_file', arguments: { path: 'x' } })
+      emitUserMessage(original.id, '<system-reminder>do not commit</system-reminder>', {
+        contextWindowId: wid,
+        isSystemGenerated: true,
+        messageKind: 'auto-prompt',
+      })
+      emitToolResult(original.id, a2, 'tc-1', {
+        success: true,
+        output: 'file content',
+        durationMs: 5,
+        truncated: false,
+      })
+      emitMessageDelta(original.id, a2, ' Done')
+      emitMessageDone(original.id, a2)
+
+      const originalEvents = getEventStore().getEvents(original.id)
+      const originalCtx = buildContextMessagesFromEventHistory(
+        originalEvents,
+        foldContextState(originalEvents, '').currentContextWindowId!,
+        { includeVerifier: true },
+      )
+
+      const forked = manager.forkSession(original.id, a2)
+
+      // The forked context is a strict prefix of the original's context: the
+      // trailing injected reminder is dropped, but the shared prefix is intact,
+      // so the provider's prefix cache still hits.
+      const forkedEvents = getEventStore().getEvents(forked.id)
+      const forkedCtx = buildContextMessagesFromEventHistory(
+        forkedEvents,
+        foldContextState(forkedEvents, '').currentContextWindowId!,
+        { includeVerifier: true },
+      )
+      expect(forkedCtx.length).toBeLessThan(originalCtx.length)
+      expect(JSON.stringify(originalCtx.slice(0, forkedCtx.length))).toBe(JSON.stringify(forkedCtx))
     })
   })
 

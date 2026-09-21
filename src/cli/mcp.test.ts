@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
-import { createHash, createVerify, generateKeyPairSync, publicEncrypt } from 'node:crypto'
+import { constants, createHash, createVerify, generateKeyPairSync, publicEncrypt } from 'node:crypto'
 import { verifyPassword, signSessionToken, renderMcpClientConfig, portCandidates, findLivePort } from './mcp.js'
 
 const { publicKey, privateKey } = generateKeyPairSync('rsa', {
@@ -9,7 +9,10 @@ const { publicKey, privateKey } = generateKeyPairSync('rsa', {
 })
 
 function encryptPassword(password: string): string {
-  return publicEncrypt({ key: publicKey, padding: 1 }, Buffer.from(password)).toString('base64')
+  return publicEncrypt(
+    { key: publicKey, padding: constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
+    Buffer.from(password),
+  ).toString('base64')
 }
 
 describe('cli/mcp', () => {

@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import { createHash, createSign, privateDecrypt } from 'node:crypto'
+import { createHash, createSign, privateDecrypt, constants } from 'node:crypto'
 import { password, isCancel, cancel } from '@clack/prompts'
 import type { Mode } from './main.js'
 import { loadAuthConfig } from './auth.js'
@@ -52,8 +52,18 @@ export async function findLivePort(host: string, candidates: number[]): Promise<
  * auth config. Pure — no process-global state, unlike the server's variant.
  */
 export function verifyPassword(encryptedPassword: string, privateKey: string, entered: string): boolean {
+  const data = Buffer.from(encryptedPassword, 'base64')
   try {
-    const decrypted = privateDecrypt({ key: privateKey, padding: 1 }, Buffer.from(encryptedPassword, 'base64'))
+    const decrypted = privateDecrypt(
+      { key: privateKey, padding: constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
+      data,
+    )
+    if (decrypted.toString() === entered) return true
+  } catch {
+    // fall through to legacy padding
+  }
+  try {
+    const decrypted = privateDecrypt({ key: privateKey, padding: constants.RSA_PKCS1_PADDING }, data)
     return decrypted.toString() === entered
   } catch {
     return false

@@ -299,15 +299,21 @@ export function createRegistryFromTools(
 // All tools by name for dynamic registry creation
 // Lazy initialization to avoid circular dependency issues during module load
 let mcpToolsOverride: Tool[] = []
+let pluginToolsOverride: Tool[] = []
 
 export function setMcpTools(tools: Tool[]): void {
   mcpToolsOverride = tools
 }
 
+export function setPluginTools(tools: Tool[]): void {
+  pluginToolsOverride = tools
+}
+
 function getAllToolsMap(): Map<string, Tool> {
   const builtInEntries: [string, Tool][] = getBuiltInTools().map((t) => [t.name, t])
   const mcpEntries: [string, Tool][] = mcpToolsOverride.map((t) => [t.name, t])
-  return new Map<string, Tool>([...builtInEntries, ...mcpEntries])
+  const pluginEntries: [string, Tool][] = pluginToolsOverride.map((t) => [t.name, t])
+  return new Map<string, Tool>([...builtInEntries, ...mcpEntries, ...pluginEntries])
 }
 
 /**

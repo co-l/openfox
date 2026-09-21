@@ -1,17 +1,14 @@
 import { Router } from 'express'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-import { dirname, resolve, join } from 'node:path'
+import { dirname, join, resolve, normalize, sep } from 'node:path'
 import { existsSync } from 'node:fs'
-import { readFile, readdir, rm, rename } from 'node:fs/promises'
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
-import type { ProviderPluginRegistry } from '../../provider/index.js'
-import type { ProviderPluginDiagnostic } from '../providers/plugins/index.js'
-import { getGlobalConfigDir } from '../../cli/paths.js'
-import { isDirectoryEntry } from '../utils/fs.js'
-import type { ProviderRegistry } from '../providers/plugins/registry.js'
+import { readFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import type { Config } from '../../shared/types.js'
 import { serverT } from '../i18n.js'
+import { openFolder } from '../utils/openFolder.js'
+import { getGlobalConfigDir } from '../../cli/paths.js'
+import { PluginHost } from '../plugins/host.js'
+import { parseGithubUrl } from '../plugins/install.js'
 
 interface Logger {
   debug: (message: string, context?: Record<string, unknown>) => void
@@ -20,33 +17,56 @@ interface Logger {
   error: (message: string, context?: Record<string, unknown>) => void
 }
 
-import { openFolder } from '../utils/openFolder.js'
+export interface PluginRoutesOptions {
+  config: Config
+  logger: Logger
+  host?: PluginHost
+}
 
-const execFileP = promisify(execFile)
+const ID_PATTERN = /^[a-zA-Z0-9_@/.-]+$/
 
-async function openFolderRoute(
-  dir: string,
-  res: {
-    json: (data: unknown) => void
-    status: (code: number) => { json: (data: unknown) => void }
-  },
+function pluginId(req: { params: Record<string, string | string[]> }): string {
+  const raw = req.params['id']
+  return typeof raw === 'string' ? raw : ''
+}
+
+function requireValidId(id: string, res: { status: (code: number) => { json: (body: unknown) => void } }): boolean {
+  if (!ID_PATTERN.test(id) || id.split('/').includes('..')) {
+    res.status(400).json({ error: serverT({ en: 'Invalid plugin name', fr: 'Nom de plugin invalide' }) })
+    return false
+  }
+  return true
+}
+
+interface RouteResponse {
+  json: (body: unknown) => void
+  status: (code: number) => { json: (body: unknown) => void }
+}
+
+async function runForPluginId(
+  req: { params: Record<string, string | string[]> },
+  res: RouteResponse,
+  handler: (id: string) => Promise<unknown>,
 ): Promise<void> {
+  const id = pluginId(req)
+  if (!requireValidId(id, res)) return
   try {
-    await openFolder(dir)
-    res.json({ success: true })
-  } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to open folder' })
+    res.json(await handler(id))
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : String(error) })
   }
 }
 
-export function createPluginRoutes(options: {
-  config: Config
-  providerAdapters: ProviderRegistry
-  pluginDiagnostics: ProviderPluginDiagnostic[]
-  logger: Logger
-}): Router {
+export function createPluginRoutes(options: PluginRoutesOptions): Router {
   const router = Router()
-  const { config, providerAdapters, pluginDiagnostics, logger } = options
+  const { config, logger } = options
+  const host =
+    options.host ??
+    new PluginHost({
+      configDirectory: getGlobalConfigDir(config.mode ?? 'production'),
+      mode: config.mode === 'development' ? 'development' : 'production',
+      logger,
+    })
 
   let registryCache: { data: unknown; ts: number } | null = null
 
@@ -70,206 +90,200 @@ export function createPluginRoutes(options: {
     }
   })
 
-  router.post('/install', async (req, res) => {
-    const { githubUrl } = req.body as { githubUrl?: string }
-    if (!githubUrl || typeof githubUrl !== 'string') {
-      return res.status(400).json({ error: serverT({ en: 'githubUrl is required', fr: 'githubUrl est requis' }) })
-    }
-
-    const parsed = githubUrl.match(/github\.com\/([^/]+)\/([^/]+?)(?:\/|$)/)
-    if (!parsed) {
-      return res.status(400).json({ error: serverT({ en: 'Invalid GitHub URL', fr: 'URL GitHub invalide' }) })
-    }
-
-    const repoName = parsed[2]!.replace(/\.git$/, '')
-    if (!/^[a-zA-Z0-9_-]+$/.test(repoName)) {
-      return res.status(400).json({ error: serverT({ en: 'Invalid repository name', fr: 'Nom de dépôt invalide' }) })
-    }
-
-    const pluginsDir = join(getGlobalConfigDir(config.mode ?? 'production'), 'plugins')
-    const targetDir = join(pluginsDir, repoName)
-
-    const tmpDir = join(pluginsDir, `.${repoName}-tmp-${Date.now()}`)
-    try {
-      await execFileP('mkdir', ['-p', pluginsDir], { timeout: 5000 })
-    } catch {
-      return res.status(500).json({
-        error: serverT({
-          en: 'Failed to create plugins directory',
-          fr: 'Échec de la création du répertoire des plugins',
-        }),
-      })
-    }
-
-    let gitOk = false
-    try {
-      const { stdout } = await execFileP('git', ['--version'], { timeout: 5000 })
-      gitOk = stdout.includes('git version')
-    } catch {
-      // fall through
-    }
-    if (!gitOk) {
-      return res.status(500).json({
-        error: serverT({
-          en: 'git is not installed or not found in PATH',
-          fr: 'git n’est pas installé ou introuvable dans le PATH',
-        }),
-      })
-    }
-
-    try {
-      const cloneUrl = githubUrl.replace(/\/$/, '') + '.git'
-      await execFileP('git', ['clone', '--depth', '1', cloneUrl, tmpDir], { timeout: 60000 })
-      await rm(targetDir, { recursive: true, force: true })
-      await rename(tmpDir, targetDir)
-      let loaded = false
-      let loadError: string | undefined
-      try {
-        await execFileP('npm', ['install', '--no-audit', '--no-fund'], { cwd: targetDir, timeout: 120000 })
-        await execFileP('npm', ['run', 'build'], { cwd: targetDir, timeout: 120000 })
-      } catch (err) {
-        loadError = serverT({
-          en: 'Failed to install/build plugin dependencies',
-          fr: 'Échec de l’installation/du build des dépendances du plugin',
-        })
-        logger.error('Plugin build failed', { repoName, error: String(err) })
-      }
-
-      if (!loadError) {
-        try {
-          const manifest = JSON.parse(await readFile(join(targetDir, 'package.json'), 'utf8'))
-          const pluginEntry = manifest.openfox?.plugin as string | undefined
-          const apiVersion = manifest.openfox?.apiVersion as number | undefined
-
-          if (!pluginEntry || !manifest.name) {
-            loadError = serverT({
-              en: 'Plugin package.json is missing openfox.plugin or name field',
-              fr: 'Le package.json du plugin ne contient pas le champ openfox.plugin ou name',
-            })
-          } else if (apiVersion !== 1) {
-            loadError = serverT(
-              {
-                en: 'Unsupported plugin API version: {{version}}',
-                fr: 'Version d’API de plugin non prise en charge : {{version}}',
-              },
-              { version: String(apiVersion) },
-            )
-          } else {
-            const mod = (await import(pathToFileURL(join(targetDir, pluginEntry)).href)) as {
-              register?: (registry: ProviderPluginRegistry) => void | Promise<void>
-            }
-            if (typeof mod.register !== 'function') {
-              loadError = serverT({
-                en: 'Plugin does not export register(registry)',
-                fr: 'Le plugin n’exporte pas register(registry)',
-              })
-            } else {
-              const diagnostic: ProviderPluginDiagnostic = {
-                packageName: manifest.name,
-                version: manifest.version,
-                source: targetDir,
-                loaded: false,
-                authAdapters: [],
-                transportAdapters: [],
-                presets: [],
-              }
-              const trackingRegistry: ProviderPluginRegistry = {
-                runtime: providerAdapters.runtime,
-                registerAuth(adapter) {
-                  providerAdapters.registerAuth(adapter)
-                  diagnostic.authAdapters.push(adapter.id)
-                },
-                registerTransport(adapter) {
-                  providerAdapters.registerTransport(adapter)
-                  diagnostic.transportAdapters.push(adapter.id)
-                },
-                registerPreset(preset) {
-                  providerAdapters.registerPreset(preset)
-                  diagnostic.presets.push(preset.id)
-                },
-              }
-              await mod.register(trackingRegistry)
-              diagnostic.loaded = true
-              pluginDiagnostics.push(diagnostic)
-              loaded = true
-              config.providers = providerAdapters.resolveProviders(config.providers ?? [])
-            }
-          }
-        } catch (err) {
-          loadError =
-            err instanceof Error
-              ? err.message
-              : serverT({ en: 'Failed to load plugin', fr: 'Échec du chargement du plugin' })
-          logger.error('Plugin runtime load failed', { repoName, error: loadError })
-        }
-      }
-
-      res.json({ success: true, loaded, loadError, path: targetDir })
-    } catch (err) {
-      await rm(tmpDir, { recursive: true, force: true })
-      const msg = err instanceof Error ? err.message : serverT({ en: 'Clone failed', fr: 'Échec du clonage' })
-      logger.error('Plugin install failed', { githubUrl, error: msg })
-      res.status(500).json({ error: msg })
-    }
+  router.get('/list', (_req, res) => {
+    res.json({ plugins: host.getPlugins(), contributions: host.getUiContributions() })
   })
 
-  router.get('/installed', async (_req, res) => {
-    const pluginsDir = join(getGlobalConfigDir(config.mode ?? 'production'), 'plugins')
+  router.get('/ui', (_req, res) => {
+    res.json({ contributions: host.getUiContributions() })
+  })
+
+  router.get('/diagnostics', (_req, res) => {
+    res.json({ diagnostics: host.getDiagnostics() })
+  })
+
+  router.get('/tools', (_req, res) => {
+    res.json({ tools: host.getPluginTools() })
+  })
+
+  router.post('/install', async (req, res) => {
+    const body = req.body as { githubUrl?: unknown; npm?: unknown; path?: unknown }
     try {
-      const entries = await readdir(pluginsDir, { withFileTypes: true })
-      const installed: { name: string; version: string | null }[] = []
-      for (const entry of entries) {
-        if (!(await isDirectoryEntry(pluginsDir, entry))) continue
-        const pkgPath = join(pluginsDir, entry.name, 'package.json')
-        let version: string | null = null
-        try {
-          const pkg = JSON.parse(await readFile(pkgPath, 'utf8'))
-          version = (pkg.version as string) ?? null
-        } catch {
-          // ignore if package.json not found or invalid
+      if (typeof body.githubUrl === 'string') {
+        if (!body.githubUrl) {
+          return res.status(400).json({ error: serverT({ en: 'githubUrl is required', fr: 'githubUrl est requis' }) })
         }
-        installed.push({ name: entry.name, version })
+        try {
+          parseGithubUrl(body.githubUrl)
+        } catch (error) {
+          return res.status(400).json({ error: error instanceof Error ? error.message : String(error) })
+        }
+        const diagnostic = await host.installFromGithub(body.githubUrl)
+        return res.json({ success: true, plugin: diagnostic })
       }
-      res.json({ installed })
-    } catch {
-      res.json({ installed: [] })
+      if (typeof body.npm === 'string' && body.npm) {
+        const diagnostic = await host.installFromNpm(body.npm)
+        return res.json({ success: true, plugin: diagnostic })
+      }
+      if (typeof body.path === 'string' && body.path) {
+        const diagnostic = await host.installFromPath(body.path)
+        return res.json({ success: true, plugin: diagnostic })
+      }
+      return res.status(400).json({ error: serverT({ en: 'githubUrl is required', fr: 'githubUrl est requis' }) })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      logger.error('Plugin install failed', { error: message })
+      return res.status(500).json({ error: message })
     }
   })
 
   router.get('/open-folder', async (_req, res) => {
+    await openFolderRoute(join(getGlobalConfigDir(config.mode ?? 'production'), 'plugins'), res)
+  })
+
+  router.get('/:id/open-folder', async (req, res) => {
+    const id = pluginId(req)
+    if (!requireValidId(id, res)) return
     const pluginsDir = join(getGlobalConfigDir(config.mode ?? 'production'), 'plugins')
-    await openFolderRoute(pluginsDir, res)
-  })
-
-  router.get('/:name/open-folder', async (req, res) => {
-    const name = req.params.name as string
-    if (!/^[a-zA-Z0-9_-]+$/.test(name))
-      return res.status(400).json({ error: serverT({ en: 'Invalid plugin name', fr: 'Nom de plugin invalide' }) })
-    const targetDir = join(getGlobalConfigDir(config.mode ?? 'production'), 'plugins', name)
-    await openFolderRoute(targetDir, res)
-  })
-
-  router.delete('/:name', async (req, res) => {
-    const name = req.params.name as string
-    if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+    if (!isInsidePluginsDir(pluginsDir, id)) {
       return res.status(400).json({ error: serverT({ en: 'Invalid plugin name', fr: 'Nom de plugin invalide' }) })
     }
-    const targetDir = join(getGlobalConfigDir(config.mode ?? 'production'), 'plugins', name)
+    await openFolderRoute(join(pluginsDir, id), res)
+  })
+
+  router.post('/:id/enable', (req, res) => {
+    void runForPluginId(req, res, async (id) => {
+      await host.enable(id)
+      return { success: true, plugins: host.getPlugins() }
+    })
+  })
+
+  router.post('/:id/disable', (req, res) => {
+    void runForPluginId(req, res, async (id) => {
+      await host.disable(id)
+      return { success: true, plugins: host.getPlugins() }
+    })
+  })
+
+  router.post('/:id/uninstall', (req, res) => {
+    void runForPluginId(req, res, async (id) => {
+      await host.uninstall(id)
+      return { success: true, plugins: host.getPlugins() }
+    })
+  })
+
+  router.get('/:id/settings', (req, res) => {
+    const id = pluginId(req)
+    if (!requireValidId(id, res)) return
+    const scope = req.query['scope'] === 'project' ? 'project' : 'global'
+    const projectId = typeof req.query['projectId'] === 'string' ? req.query['projectId'] : undefined
+    const schema = host.getSettingsSchema(id)
+    if (!schema) {
+      return res
+        .status(404)
+        .json({ error: serverT({ en: 'Plugin has no settings', fr: 'Le plugin n’a pas de paramètres' }) })
+    }
+    const view = host.getSettingsView(id, scope, projectId)
+    res.json({ schema, values: view.values, secretsSet: view.secretsSet })
+  })
+
+  router.put('/:id/settings', (req, res) => {
+    const id = pluginId(req)
+    if (!requireValidId(id, res)) return
+    const body = req.body as {
+      values?: Record<string, unknown>
+      scope?: 'global' | 'project'
+      projectId?: string
+    }
+    if (!body.values || typeof body.values !== 'object') {
+      return res.status(400).json({ error: serverT({ en: 'values is required', fr: 'values est requis' }) })
+    }
+    const result = host.updateSettings(id, body.values, body.scope ?? 'global', body.projectId)
+    if (result.errors.length > 0) return res.status(400).json({ error: result.errors.join('; ') })
+    const view = host.getSettingsView(id, body.scope ?? 'global', body.projectId)
+    res.json({ success: true, values: view.values, secretsSet: view.secretsSet })
+  })
+
+  router.post('/:id/rpc/:method', async (req, res) => {
+    const id = pluginId(req)
+    if (!requireValidId(id, res)) return
+    const method = req.params['method'] as string
+    const body = (req.body ?? {}) as {
+      params?: Record<string, unknown>
+      sessionId?: string
+      workdir?: string
+      projectId?: string
+    }
     try {
-      await rm(targetDir, { recursive: true, force: true })
-      for (let i = pluginDiagnostics.length - 1; i >= 0; i--) {
-        if (pluginDiagnostics[i]!.source === targetDir) pluginDiagnostics.splice(i, 1)
-      }
-      res.json({ success: true })
-    } catch (err) {
-      res.status(500).json({
-        error:
-          err instanceof Error
-            ? err.message
-            : serverT({ en: 'Failed to remove plugin', fr: 'Échec de la suppression du plugin' }),
+      const result = await host.invokeRpc(id, method, body.params ?? {}, {
+        sessionId: body.sessionId ?? '',
+        workdir: body.workdir ?? process.cwd(),
+        ...(body.projectId ? { projectId: body.projectId } : {}),
       })
+      res.json({ result })
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  router.get('/:id/assets/*assetPath', async (req, res) => {
+    const id = pluginId(req)
+    if (!requireValidId(id, res)) return
+    const record = host.getPlugins().find((plugin) => plugin.id === id)
+    if (!record) return res.status(404).json({ error: serverT({ en: 'Plugin not found', fr: 'Plugin introuvable' }) })
+    const rawPath = req.params['assetPath']
+    const assetPath = Array.isArray(rawPath) ? rawPath.join('/') : (rawPath ?? '')
+    const registered = host.registry.getAssets(id)
+    if (!registered.includes(assetPath)) {
+      return res.status(404).json({ error: serverT({ en: 'Asset not found', fr: 'Ressource introuvable' }) })
+    }
+    const absolute = normalize(join(record.source, assetPath))
+    if (!absolute.startsWith(normalize(record.source))) {
+      return res.status(400).json({ error: serverT({ en: 'Invalid asset path', fr: 'Chemin de ressource invalide' }) })
+    }
+    try {
+      const content = await readFile(absolute)
+      res.setHeader('Content-Type', contentTypeFor(assetPath))
+      res.send(content)
+    } catch {
+      res.status(404).json({ error: serverT({ en: 'Asset not found', fr: 'Ressource introuvable' }) })
     }
   })
 
   return router
+}
+
+async function openFolderRoute(
+  dir: string,
+  res: {
+    json: (data: unknown) => void
+    status: (code: number) => { json: (data: unknown) => void }
+  },
+): Promise<void> {
+  try {
+    await openFolder(dir)
+    res.json({ success: true })
+  } catch (err) {
+    res.status(500).json({
+      error:
+        err instanceof Error
+          ? err.message
+          : serverT({ en: 'Failed to open folder', fr: 'Échec de l’ouverture du dossier' }),
+    })
+  }
+}
+
+function isInsidePluginsDir(pluginsDir: string, id: string): boolean {
+  const target = resolve(join(pluginsDir, id))
+  return target === pluginsDir || target.startsWith(`${pluginsDir}${sep}`)
+}
+
+function contentTypeFor(path: string): string {
+  if (path.endsWith('.css')) return 'text/css'
+  if (path.endsWith('.js')) return 'text/javascript'
+  if (path.endsWith('.json')) return 'application/json'
+  if (path.endsWith('.svg')) return 'image/svg+xml'
+  if (path.endsWith('.png')) return 'image/png'
+  if (path.endsWith('.html')) return 'text/html'
+  return 'text/plain'
 }

@@ -84,15 +84,14 @@ describe('StatsModal', () => {
     const { rerender } = render(<StatsModal isOpen onClose={() => {}} summary={summary} sessionId="s1" />)
     fireEvent.click(screen.getByText(/Load full stats/i))
 
-    await waitFor(() => expect(authFetchMock).toHaveBeenCalledTimes(1))
-    expect(authFetchMock).toHaveBeenCalledWith('/api/sessions/s1/stats')
+    await waitFor(() => expect(authFetchMock).toHaveBeenCalledWith('/api/sessions/s1/stats'))
 
     // Response log renders after the fetch resolves
     await waitFor(() => expect(screen.getByText(/Response Log \(\d+ responses\)/i)).toBeTruthy())
 
-    // Re-open with the same session keeps the cached detail — no second fetch.
+    // Re-open with the same session keeps the cached detail — no second stats fetch.
     rerender(<StatsModal isOpen onClose={() => {}} summary={summary} sessionId="s1" />)
-    expect(authFetchMock).toHaveBeenCalledTimes(1)
+    expect(authFetchMock.mock.calls.filter(([url]) => url === '/api/sessions/s1/stats')).toHaveLength(1)
   })
 
   it('auto-loads the full log for small sessions without a button', async () => {

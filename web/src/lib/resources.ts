@@ -1,5 +1,13 @@
 import { authFetch } from './api'
 import { resource, snapshot } from './resourceCache'
+import {
+  fetchPluginList,
+  fetchNotifications,
+  fetchPluginDiagnostics,
+  fetchPluginRegistry,
+  fetchPluginTools,
+  fetchPluginSettings,
+} from './plugin-actions'
 import type { AgentInfo } from './agents-actions'
 import type { AgentFull } from './agents-actions'
 import type { CommandInfo, CommandFull } from './commands-actions'
@@ -275,11 +283,16 @@ export interface McpServerInfo {
   status: string
   tools: McpToolInfo[]
   estimatedTokens: number
+  error?: string
   config: {
-    transport?: string
+    transport?: 'stdio' | 'http' | string
     command?: string
     args?: string[]
+    env?: Record<string, string>
     url?: string
+    headers?: Record<string, string>
+    oauth?: boolean
+    timeout?: number
     disabled?: boolean
   }
 }
@@ -592,6 +605,7 @@ export const SETTINGS_KEYS = {
   DISPLAY_USE_NATIVE_SCROLLBARS_CODE_BLOCKS: 'display.useNativeScrollbarsCodeBlocks',
   DISPLAY_COLLAPSE_LARGE_TOOL_CALLS: 'display.collapseLargeToolCalls',
   DISPLAY_DEFER_CODE_HIGHLIGHT_WHILE_STREAMING: 'display.deferCodeHighlightWhileStreaming',
+  DISPLAY_SHOW_TOOL_CALL_STREAMING: 'display.showToolCallStreaming',
   DISPLAY_FEED_VIRTUALIZATION: 'display.feedVirtualization',
   DISPLAY_MODEL_SELECTOR_HEIGHT: 'display.modelSelectorHeight',
   DISPLAY_COLLAPSE_PROVIDERS_BY_DEFAULT: 'display.collapseProvidersByDefault',
@@ -602,6 +616,7 @@ export const SETTINGS_KEYS = {
   LLM_CAVEMAN_THINKING: 'llm.cavemanThinking',
   CACHE_WARMING: 'cache.warming',
   AUTO_CONTINUE_ON_BOOT: 'agent.autoContinueOnBoot',
+  AGENT_ALLOW_PARALLEL_SUB_AGENTS: 'agent.allowParallelSubAgents',
   KEYBINDINGS: 'keybindings',
   RETRY_PATTERNS: 'agent.retryPatterns',
   SKILLS_DIRECTORIES: 'skills.directories',
@@ -633,6 +648,7 @@ export const DISPLAY_SETTINGS_KEYS = [
   SETTINGS_KEYS.DISPLAY_USE_NATIVE_SCROLLBARS_CODE_BLOCKS,
   SETTINGS_KEYS.DISPLAY_COLLAPSE_LARGE_TOOL_CALLS,
   SETTINGS_KEYS.DISPLAY_DEFER_CODE_HIGHLIGHT_WHILE_STREAMING,
+  SETTINGS_KEYS.DISPLAY_SHOW_TOOL_CALL_STREAMING,
   SETTINGS_KEYS.DISPLAY_FEED_VIRTUALIZATION,
 ] as const
 
@@ -817,5 +833,52 @@ export async function fetchAgentDefaultContent(agentId: string): Promise<AgentFu
 export const agentDefaultResource = resource<AgentFull | null, [string]>({
   key: (agentId) => `agent-default:${agentId}`,
   fetch: fetchAgentDefaultContent,
+  maxAgeMs: 0,
+})
+
+/** Installed plugins plus their declarative UI contributions (single fetch). */
+export const pluginListResource = resource<import('./plugin-actions').PluginListData, []>({
+  key: () => 'plugins:list',
+  fetch: fetchPluginList,
+  maxAgeMs: 0,
+})
+
+/** Plugin-emitted notifications (bell + toast source of truth). */
+export const notificationsResource = resource<import('./plugin-actions').NotificationsData, []>({
+  key: () => 'plugins:notifications',
+  fetch: fetchNotifications,
+})
+
+/** Per-plugin settings schema + masked values, keyed by plugin and scope. */
+export const pluginSettingsResource = resource<
+  import('./plugin-actions').PluginSettingsData,
+  [string, import('@shared/plugin.js').PluginSettingScope, string | undefined]
+>({
+  key: (pluginId, scope, projectId) => `plugins:settings:${pluginId}:${scope}:${projectId ?? ''}`,
+  fetch: fetchPluginSettings,
+  maxAgeMs: 0,
+})
+
+/** Curated plugin registry shipped with OpenFox (core-controlled). */
+export const pluginRegistryResource = resource<{ plugins: import('./plugin-actions').RegistryPlugin[] }, []>({
+  key: () => 'plugins:registry',
+  fetch: fetchPluginRegistry,
+  maxAgeMs: 300_000,
+})
+
+/** Load diagnostics for every discovered plugin (loaded, failed, disabled). */
+export const pluginDiagnosticsResource = resource<
+  { diagnostics: import('./plugin-actions').PluginDiagnosticInfo[] },
+  []
+>({
+  key: () => 'plugins:diagnostics',
+  fetch: fetchPluginDiagnostics,
+  maxAgeMs: 0,
+})
+
+/** Tools contributed by enabled plugins, with their owning plugin id. */
+export const pluginToolsResource = resource<{ tools: import('./plugin-actions').PluginToolInfo[] }, []>({
+  key: () => 'plugins:tools',
+  fetch: fetchPluginTools,
   maxAgeMs: 0,
 })

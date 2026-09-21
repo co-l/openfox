@@ -19,6 +19,8 @@ import type {
   ShellStep,
   UserStep,
 } from './types.js'
+import { runPluginTransitionHandler } from '../plugins/transition-handlers.js'
+import type { PluginTransitionContext } from '../../plugin/index.js'
 import { TERMINAL_DONE, TERMINAL_BLOCKED } from './types.js'
 import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
 import { createChatMessageMessage } from '../ws/protocol.js'
@@ -96,9 +98,43 @@ export function evaluateCondition(
       return entries.every((e) => condition.values.includes(e[condition.field] as string))
     }
 
+    case 'custom':
+      return false
+
     case 'always':
       return true
   }
+}
+
+export async function evaluateConditionAsync(
+  condition: TransitionCondition,
+  stepOutcome: StepOutcome | null,
+  metadataEntries?: Record<string, import('../../shared/types.js').MetadataEntry[]>,
+  context?: { workflowId?: string; stepId?: string },
+): Promise<boolean> {
+  if (condition.type !== 'custom') return evaluateCondition(condition, stepOutcome, metadataEntries)
+  const pluginContext: PluginTransitionContext = {
+    ...(context?.workflowId ? { workflowId: context.workflowId } : {}),
+    ...(context?.stepId ? { stepId: context.stepId } : {}),
+    ...(condition.config !== undefined ? { config: condition.config } : {}),
+    outcome: stepOutcome,
+    ...(metadataEntries ? { metadataEntries } : {}),
+  }
+  return runPluginTransitionHandler(condition.handler, pluginContext)
+}
+
+export async function findMatchingTransitionAsync(
+  transitions: Transition[],
+  stepOutcome: StepOutcome | null,
+  metadataEntries?: Record<string, import('../../shared/types.js').MetadataEntry[]>,
+  context?: { workflowId?: string; stepId?: string },
+): Promise<Transition | null> {
+  for (const transition of transitions) {
+    if (await evaluateConditionAsync(transition.when, stepOutcome, metadataEntries, context)) {
+      return transition
+    }
+  }
+  return null
 }
 
 export function findMatchingTransition(
@@ -370,10 +406,11 @@ export async function executeWorkflow(
   // Evaluate start condition if present
   if (workflow.startCondition && workflow.startCondition.type !== 'always') {
     const session = sessionManager.requireSession(sessionId)
-    const conditionMet = evaluateCondition(
+    const conditionMet = await evaluateConditionAsync(
       workflow.startCondition as TransitionCondition,
       null,
       session.metadataEntries,
+      { workflowId: workflow.metadata.id },
     )
     if (!conditionMet) {
       logger.debug('Workflow start condition not met', { sessionId, condition: workflow.startCondition.type })
@@ -805,7 +842,10 @@ export async function executeWorkflow(
     const candidates = subGroup
       ? step.transitions.filter((t) => !t.subGroup || activeSubGroups.has(t.subGroup))
       : step.transitions
-    const fired = findMatchingTransition(candidates, stepOutcome, refreshedSession.metadataEntries)
+    const fired = await findMatchingTransitionAsync(candidates, stepOutcome, refreshedSession.metadataEntries, {
+      workflowId: workflow.metadata.id,
+      stepId: step.id,
+    })
     let nextStepId = fired ? fired.goto : TERMINAL_BLOCKED
 
     // When running a sub-group, a transition leaving the active set either:

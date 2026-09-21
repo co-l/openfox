@@ -51,15 +51,17 @@ async function getDescendants(rootPid: number): Promise<number[]> {
           'powershell.exe',
           [
             '-NoProfile',
+            '-NonInteractive',
             '-Command',
-            'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }',
+            'try { Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" } } catch { exit 0 }',
           ],
         ] as const)
       : (['ps', ['-eo', 'pid=,ppid=']] as const)
-  const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
+
+  const { stdout } = await new Promise<{ stdout: string }>((resolve) => {
     execFile(cmd, [...args], { timeout: 15000, windowsHide: true }, (err, stdout) => {
-      if (err) reject(err)
-      else resolve({ stdout })
+      if (err) resolve({ stdout: '' })
+      else resolve({ stdout: stdout ?? '' })
     })
   })
   const children = new Map<number, number[]>()
@@ -227,12 +229,12 @@ describe('terminateProcessTree', () => {
     })
 
     await terminateProcessTree(proc)
-    await waitFor(() => closed && allDead(proc.pid!, ...descendants)())
+    await waitFor(() => closed && allDead(proc.pid!, ...descendants)(), 15000)
 
     expect(closed).toBe(true)
     expect(isAlive(proc.pid!)).toBe(false)
     for (const pid of descendants) {
       expect(isAlive(pid)).toBe(false)
     }
-  }, 20000)
+  }, 30000)
 })

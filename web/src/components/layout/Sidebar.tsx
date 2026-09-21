@@ -34,6 +34,8 @@ import { hasStoredToken, downloadSessionExport, importSession } from '../../lib/
 import { useResizable } from '../../hooks/useResizable'
 import { ResizeHandle } from '../shared/ResizeHandle'
 import { useSidebarStore } from '../../stores/sidebar'
+import { PluginBadges } from '../plugins/PluginBadges'
+import { PluginZone } from '../plugins/PluginZone'
 
 interface SidebarProps {
   projectId: string
@@ -293,53 +295,55 @@ export function Sidebar({ projectId, isOpen = true, overlay = false, onClose }: 
       {/* Sidebar content — shared between desktop and mobile variants */}
       {(() => {
         const sidebarContent = (
-          <>
-            <div className="p-4 border-b border-border flex gap-2">
-              <Link
-                href={`/p/${projectId}/new`}
-                className="flex-1 block text-center rounded font-medium transition-colors bg-accent-primary/25 text-text-primary hover:bg-accent-primary/40 px-3 py-1.5 text-sm"
-                data-testid="sidebar-new-session-button"
-              >
-                {t({ en: '+ New Session', fr: '+ Nouvelle session' })}
-              </Link>
-              <input
-                ref={importFileInputRef}
-                type="file"
-                accept=".json,application/json"
-                className="hidden"
-                onChange={handleImportFile}
-              />
-              <DropdownMenu
-                items={[
-                  {
-                    label: t({ en: 'Import session', fr: 'Importer une session' }),
-                    icon: <UploadIcon className="w-3.5 h-3.5" />,
-                    onClick: () => importFileInputRef.current?.click(),
-                  },
-                  {
-                    label: t({ en: 'Edit project settings', fr: 'Modifier les paramètres du projet' }),
-                    icon: <GearIcon className="w-3.5 h-3.5" />,
-                    onClick: () => setShowSettings(true),
-                  },
-                  {
-                    label: t({ en: 'Delete all sessions', fr: 'Supprimer toutes les sessions' }),
-                    icon: <TrashIcon className="w-3.5 h-3.5" />,
-                    onClick: handleDeleteAllSessions,
-                    danger: true,
-                  },
-                ]}
-                trigger={
-                  <button
-                    className="flex-shrink-0 p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
-                    title={t({ en: 'Options', fr: 'Options' })}
-                  >
-                    <EllipsisIcon />
-                  </button>
-                }
-              />
-              {/* Overlay close button */}
-              {onClose && overlay && <CloseButton onClick={onClose} variant="sidebar" size="md" />}
-            </div>
+          <PluginZone id="sidebar" context={{ projectId }}>
+            <PluginZone id="sidebar.header">
+              <div className="p-4 border-b border-border flex gap-2">
+                <Link
+                  href={`/p/${projectId}/new`}
+                  className="flex-1 block text-center rounded font-medium transition-colors bg-accent-primary/25 text-text-primary hover:bg-accent-primary/40 px-3 py-1.5 text-sm"
+                  data-testid="sidebar-new-session-button"
+                >
+                  {t({ en: '+ New Session', fr: '+ Nouvelle session' })}
+                </Link>
+                <input
+                  ref={importFileInputRef}
+                  type="file"
+                  accept=".json,application/json"
+                  className="hidden"
+                  onChange={handleImportFile}
+                />
+                <DropdownMenu
+                  items={[
+                    {
+                      label: t({ en: 'Import session', fr: 'Importer une session' }),
+                      icon: <UploadIcon className="w-3.5 h-3.5" />,
+                      onClick: () => importFileInputRef.current?.click(),
+                    },
+                    {
+                      label: t({ en: 'Edit project settings', fr: 'Modifier les paramètres du projet' }),
+                      icon: <GearIcon className="w-3.5 h-3.5" />,
+                      onClick: () => setShowSettings(true),
+                    },
+                    {
+                      label: t({ en: 'Delete all sessions', fr: 'Supprimer toutes les sessions' }),
+                      icon: <TrashIcon className="w-3.5 h-3.5" />,
+                      onClick: handleDeleteAllSessions,
+                      danger: true,
+                    },
+                  ]}
+                  trigger={
+                    <button
+                      className="flex-shrink-0 p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
+                      title={t({ en: 'Options', fr: 'Options' })}
+                    >
+                      <EllipsisIcon />
+                    </button>
+                  }
+                />
+                {/* Overlay close button */}
+                {onClose && overlay && <CloseButton onClick={onClose} variant="sidebar" size="md" />}
+              </div>
+            </PluginZone>
 
             {/* Transfer errors (import/export) */}
             {(importError || exportError) && (
@@ -465,43 +469,45 @@ export function Sidebar({ projectId, isOpen = true, overlay = false, onClose }: 
               />
             </Modal>
 
-            <ScrollArea className="flex-1">
-              {allFiltered.length === 0 ? (
-                <div className="p-4 text-center text-text-muted text-xs">
-                  {isSearching
-                    ? t({ en: 'No matching sessions', fr: 'Aucune session correspondante' })
-                    : t({ en: 'No sessions', fr: 'Aucune session' })}
-                </div>
-              ) : (
-                <>
-                  <div className="divide-y divide-border" ref={sessionListRef} onClick={handleSessionListClick}>
-                    {renderSessionList(
-                      filteredFavorites,
-                      filteredOthers,
-                      currentSession,
-                      unreadSessionIds,
-                      handleDeleteSession,
-                      handleRenameSession,
-                      handleToggleFavorite,
-                      handleExportSession,
-                      projectId,
-                      sessionsWithPendingConfirmations,
-                      pendingPathConfirmations,
-                      searchQuery,
-                      focusedIndex,
-                      t,
-                    )}
+            <PluginZone id="sidebar.sessions_list" context={{ projectId }}>
+              <ScrollArea className="flex-1">
+                {allFiltered.length === 0 ? (
+                  <div className="p-4 text-center text-text-muted text-xs">
+                    {isSearching
+                      ? t({ en: 'No matching sessions', fr: 'Aucune session correspondante' })
+                      : t({ en: 'No sessions', fr: 'Aucune session' })}
                   </div>
-                  {sessionsPaginationLoading && (
-                    <div className="p-4 text-center text-text-muted text-xs">
-                      {t({ en: 'Loading more...', fr: 'Chargement…' })}
+                ) : (
+                  <>
+                    <div className="divide-y divide-border" ref={sessionListRef} onClick={handleSessionListClick}>
+                      {renderSessionList(
+                        filteredFavorites,
+                        filteredOthers,
+                        currentSession,
+                        unreadSessionIds,
+                        handleDeleteSession,
+                        handleRenameSession,
+                        handleToggleFavorite,
+                        handleExportSession,
+                        projectId,
+                        sessionsWithPendingConfirmations,
+                        pendingPathConfirmations,
+                        searchQuery,
+                        focusedIndex,
+                        t,
+                      )}
                     </div>
-                  )}
-                  <div ref={loadMoreRef} className="h-px" />
-                </>
-              )}
-            </ScrollArea>
-          </>
+                    {sessionsPaginationLoading && (
+                      <div className="p-4 text-center text-text-muted text-xs">
+                        {t({ en: 'Loading more...', fr: 'Chargement…' })}
+                      </div>
+                    )}
+                    <div ref={loadMoreRef} className="h-px" />
+                  </>
+                )}
+              </ScrollArea>
+            </PluginZone>
+          </PluginZone>
         )
 
         return overlay ? (
@@ -652,6 +658,7 @@ function renderSessionList(
             <span className="text-text-muted text-xs flex-shrink-0">
               {t({ en: '{{count}} messages', fr: '{{count}} messages' }, { count: session.messageCount })}
             </span>
+            <PluginBadges slot="session.row.badges" context={{ sessionId: session.id, projectId }} />
           </div>
         </Link>
       </div>

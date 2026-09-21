@@ -78,6 +78,7 @@ function createSessionManager(initial?: CachedState) {
   let cached: CachedState | undefined = initial
   let announcedPromptHash: string | undefined
   let announcedToolFingerprint: string | undefined
+  let activeSubAgent: { subAgentId: string; subAgentType: string } | undefined
   return {
     getCachedPrompt: vi.fn(() => cached),
     setCachedPrompt: vi.fn(
@@ -94,6 +95,10 @@ function createSessionManager(initial?: CachedState) {
       announcedToolFingerprint = fingerprint
     }),
     setDynamicContextChanged: vi.fn(),
+    getActiveSubAgent: vi.fn(() => activeSubAgent),
+    setActiveSubAgent: vi.fn((_sessionId: string, subAgent?: { subAgentId: string; subAgentType: string }) => {
+      activeSubAgent = subAgent
+    }),
   } as unknown as SessionManager
 }
 
@@ -169,6 +174,46 @@ describe('checkToolChangesAndInject', () => {
     expect(sessionManager.setAnnouncedToolFingerprint).toHaveBeenCalled()
     // Drift lights up the rebase door: dynamicContextChanged flips to true.
     expect(sessionManager.setDynamicContextChanged).toHaveBeenCalledWith('s1', true)
+  })
+
+  it('tags injected reminders with the active sub-agent identity', async () => {
+    vi.mocked(getToolRegistryForAgent).mockReturnValue({
+      definitions: [tool('read_file'), tool('write_file')],
+    } as never)
+    const sessionManager = createSessionManager({
+      systemPrompt: 'new system prompt',
+      tools: [tool('read_file')],
+      hash: 'old-hash',
+    })
+    sessionManager.setActiveSubAgent('s1', { subAgentId: 'sub-1', subAgentType: 'explorer' })
+    const { append, events } = createAppend()
+
+    const result = await checkToolChangesAndInject(sessionManager, 's1', agentDef, OPTIONS, append)
+
+    expect(result.injectedToolReminder).toBe(true)
+    const starts = reminders(events)
+    expect(starts).toHaveLength(1)
+    expect(starts[0]!.data.subAgentId).toBe('sub-1')
+    expect(starts[0]!.data.subAgentType).toBe('explorer')
+  })
+
+  it('leaves reminders untagged when no sub-agent is active', async () => {
+    vi.mocked(getToolRegistryForAgent).mockReturnValue({
+      definitions: [tool('read_file'), tool('write_file')],
+    } as never)
+    const sessionManager = createSessionManager({
+      systemPrompt: 'new system prompt',
+      tools: [tool('read_file')],
+      hash: 'old-hash',
+    })
+    const { append, events } = createAppend()
+
+    await checkToolChangesAndInject(sessionManager, 's1', agentDef, OPTIONS, append)
+
+    const starts = reminders(events)
+    expect(starts).toHaveLength(1)
+    expect(starts[0]!.data.subAgentId).toBeUndefined()
+    expect(starts[0]!.data.subAgentType).toBeUndefined()
   })
 
   it('injects exactly once across consecutive turns (injection-once semantics)', async () => {

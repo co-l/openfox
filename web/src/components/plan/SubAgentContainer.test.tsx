@@ -115,4 +115,55 @@ describe('SubAgentContainer', () => {
 
     expect(screen.getByText('4x')).toBeInTheDocument()
   })
+
+  it('renders a "context summarized" divider before the compaction summary message', () => {
+    const withCompaction: Message[] = [
+      {
+        id: 'm1',
+        role: 'assistant' as const,
+        content: 'Findings before compaction',
+        timestamp: new Date(1_700_000_000_000).toISOString(),
+        subAgentId: 'code-reviewer-run-1',
+        subAgentType: 'code_reviewer',
+      },
+      {
+        id: 'm-summary',
+        role: 'assistant' as const,
+        content: 'Earlier context summary',
+        timestamp: new Date(1_700_000_000_100).toISOString(),
+        subAgentId: 'code-reviewer-run-1',
+        subAgentType: 'code_reviewer',
+        isCompactionSummary: true,
+      },
+      {
+        id: 'm2',
+        role: 'assistant' as const,
+        content: 'Continuing after compaction',
+        timestamp: new Date(1_700_000_000_200).toISOString(),
+        subAgentId: 'code-reviewer-run-1',
+        subAgentType: 'code_reviewer',
+      },
+    ]
+
+    render(
+      <SubAgentContainer
+        messages={withCompaction}
+        subAgentType="code_reviewer"
+        subAgentId="code-reviewer-run-1"
+        isStreaming={false}
+      />,
+    )
+
+    const divider = screen.getByTestId('subagent-compaction-divider')
+    expect(divider).toBeInTheDocument()
+
+    const summary = screen.getByText('Earlier context summary')
+    expect(divider.compareDocumentPosition(summary)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+
+  it('does not render a compaction divider when no compaction summary is present', () => {
+    renderContainer()
+
+    expect(screen.queryByTestId('subagent-compaction-divider')).toBeNull()
+  })
 })

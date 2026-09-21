@@ -57,7 +57,7 @@ export function McpServerCard({
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <Toggle enabled={serverToggleEnabled} onClick={onServerToggle} />
+          <Toggle enabled={serverToggleEnabled} onClick={onServerToggle} label={server.name} />
           {actions}
           <span className="text-xs text-text-muted">{expanded ? '▲' : '▼'}</span>
         </div>
@@ -109,7 +109,7 @@ export function McpServerCard({
                     <span className="text-xs text-text-muted mr-2 flex-shrink-0">
                       {formatTokens(tool.estimatedTokens)}
                     </span>
-                    <Toggle enabled={tool.enabled} onClick={() => onToolToggle(tool.name)} />
+                    <Toggle enabled={tool.enabled} onClick={() => onToolToggle(tool.name)} label={tool.name} />
                   </div>
                   {tool.description && tool.description.length > 80 && expandedDescs.has(tool.name) && (
                     <div className="text-xs text-text-muted mt-1 ml-1">{tool.description}</div>

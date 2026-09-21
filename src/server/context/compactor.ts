@@ -15,10 +15,13 @@ import { getCurrentWindowMessageOptions } from '../events/index.js'
  * Append the compaction prompt to the event store.
  * Used by both auto-compaction (threshold-gated, in agent-loop.ts) and
  * manual compaction (always appended, in ws/server.ts).
+ * When a sub-agent compacts, the prompt is tagged with its metadata so it
+ * stays scoped to the sub-agent's context and chatfeed window.
  */
 export function appendCompactionPrompt(
   sessionId: string,
   append: (event: import('../events/types.js').TurnEvent) => void,
+  subAgent?: { subAgentId: string; subAgentType: string },
 ): void {
   const compactPromptMsgId = crypto.randomUUID()
   append(
@@ -27,6 +30,7 @@ export function appendCompactionPrompt(
       isSystemGenerated: true,
       messageKind: 'auto-prompt',
       metadata: { type: 'compaction', name: 'Compaction', color: '#64748b' },
+      ...(subAgent ? { subAgentId: subAgent.subAgentId, subAgentType: subAgent.subAgentType } : {}),
     }),
   )
   append({ type: 'message.done', data: { messageId: compactPromptMsgId } })

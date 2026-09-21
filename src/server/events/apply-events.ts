@@ -236,6 +236,7 @@ export function applyEvents<
             index: data.index,
             name: data.name,
             ...(data.arguments ? { arguments: data.arguments } : {}),
+            ...(data.editContext && data.editContext.length > 0 ? { editContext: data.editContext } : {}),
           }
           if (existingIndex >= 0) {
             preparing[existingIndex] = entry

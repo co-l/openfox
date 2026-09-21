@@ -163,6 +163,7 @@ export type TransitionCondition =
   | { type: 'step_result'; result: string }
   | { type: 'metadata_all_match'; key: string; field: string; value: string }
   | { type: 'metadata_all_in'; key: string; field: string; values: string[] }
+  | { type: 'custom'; handler: string; config?: unknown }
   | { type: 'always' }
 
 // ============================================================================

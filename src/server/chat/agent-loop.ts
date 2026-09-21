@@ -30,11 +30,14 @@ import {
   recordLLMFailure,
   clearLLMFailure,
 } from './stream-pure.js'
+import { computeLiveEditContext } from './edit-file-preview.js'
+import { preflightPathTool } from './tool-preflight.js'
 import { getCurrentContextWindowId, getCurrentWindowMessageOptions } from '../events/index.js'
 import { getAllInstructions } from '../context/instructions.js'
 import { getEnabledSkillMetadata } from '../skills/registry.js'
 import { getRuntimeConfig } from '../runtime-config.js'
 import { getGlobalConfigDir } from '../../cli/paths.js'
+import { getSetting, SETTINGS_KEYS } from '../db/settings.js'
 import {
   createChatMessageUpdatedMessage,
   createChatDoneMessage,
@@ -49,6 +52,7 @@ import { createRetryLimiter, type RetryLimiter } from './retry-limiter.js'
 import { drainQueue } from './drain-queue.js'
 import { COMPACTION_PROMPT, CONTINUE_PROMPT, CONTINUE_AFTER_STREAM_ERROR_PROMPT } from './prompts.js'
 import { logger } from '../utils/logger.js'
+import { emitPluginHook } from '../plugins/hook-emitter.js'
 import type { LLMRetryPolicy } from '../runner/types.js'
 import { DEFAULT_LLM_RETRY_POLICY } from '../runner/types.js'
 import { serverT } from '../i18n.js'
@@ -172,7 +176,7 @@ export interface TopLevelLoopConfig {
    *  system prompt + tools become canonical for that window. */
   rebuildCachedContext?: (() => Promise<void> | void) | undefined
   /** When set, assistant messages are tagged with sub-agent metadata for scope isolation. */
-  subAgentMetadata?: { subAgentId: string; subAgentType: string }
+  subAgentMetadata?: { subAgentId: string; subAgentType: string; subAgentName?: string }
   /** When set and return_value tool is called, emit done events and break immediately. */
   breakOnReturnValue?: boolean
   /** When set, if the loop would normally break without return_value being called,
@@ -209,6 +213,13 @@ export async function runTopLevelAgentLoop(
   const { mode, sessionManager, sessionId, llmClient, signal, onMessage, statsIdentity } = config
   const append = config.append
   const agentType = config.subAgentMetadata ? ('sub-agent' as const) : undefined
+  // Sub-agent identity tags spread into scoped events (assistant messages,
+  // compaction prompt/summary, rejection, nudges) so they stay in the
+  // sub-agent's context and chatfeed window. Empty for top-level runs.
+  const subAgentTags = (): { subAgentId?: string; subAgentType?: string } =>
+    config.subAgentMetadata
+      ? { subAgentId: config.subAgentMetadata.subAgentId, subAgentType: config.subAgentMetadata.subAgentType }
+      : {}
   // Fresh per attempt when a resolver is provided (provider switch mid-turn).
   const resolveClient = () => config.getLLMClient?.() ?? llmClient
 
@@ -355,9 +366,7 @@ export async function runTopLevelAgentLoop(
         append(
           createMessageStartEvent(assistantMsgId, 'assistant', undefined, {
             ...(currentWindowMessageOptions ?? {}),
-            ...(config.subAgentMetadata
-              ? { subAgentId: config.subAgentMetadata.subAgentId, subAgentType: config.subAgentMetadata.subAgentType }
-              : {}),
+            ...subAgentTags(),
           }),
         )
       }
@@ -405,15 +414,43 @@ export async function runTopLevelAgentLoop(
         subAgentAliases,
         ...(config.retryPatterns ? { retryPatterns: config.retryPatterns } : {}),
         ...(modelSettings && { modelSettings }),
+        preflight: (path) =>
+          preflightPathTool(path, {
+            workdir: sessionManager.getEffectiveWorkdir(sessionId),
+            readFiles: sessionManager.getReadFiles(sessionId),
+          }),
       })
 
-      const attemptResult = await consumeStreamGenerator(streamGen, (event) => {
+      // Per-turn cache of file contents read to build live edit context for
+      // streaming edit_file preparing events.
+      const editFileContentCache = new Map<string, string>()
+
+      const attemptResult = await consumeStreamGenerator(streamGen, async (event) => {
         ensureAssistantMessage()
+        // While the LLM streams an edit_file call, enrich its preparing events
+        // with a live edit context (surrounding lines) computed from the file —
+        // the same shape the final tool result carries. The file content is
+        // read once per path for the whole turn.
+        if (event.type === 'tool.preparing' && event.data.name === 'edit_file') {
+          const editContext = await computeLiveEditContext(event.data.arguments, session.workdir, editFileContentCache)
+          append(editContext && editContext.length > 0 ? { ...event, data: { ...event.data, editContext } } : event)
+          return
+        }
         append(event)
       })
 
       if (!attemptResult.error) {
         result = attemptResult
+        emitPluginHook('llm.completed', {
+          sessionId,
+          data: {
+            model: attemptClient.getModel(),
+            finishReason: attemptResult.finishReason,
+            promptTokens: attemptResult.usage.promptTokens,
+            completionTokens: attemptResult.usage.completionTokens,
+            toolCalls: attemptResult.toolCalls.length,
+          },
+        })
         break
       }
 
@@ -583,7 +620,7 @@ export async function runTopLevelAgentLoop(
             runtimeConfig.context.compactionThreshold,
         )
       ) {
-        appendCompactionPrompt(sessionId, append)
+        appendCompactionPrompt(sessionId, append, config.subAgentMetadata)
         compacting = true
         continue
       }
@@ -656,6 +693,7 @@ ${COMPACTION_PROMPT}`,
               ...(currentWindowMessageOptions ?? {}),
               isSystemGenerated: true,
               messageKind: 'correction',
+              ...subAgentTags(),
             },
           ),
         )
@@ -693,6 +731,7 @@ ${COMPACTION_PROMPT}`,
           batchContext.providerManager = config.providerManager
         }
         batchContext.agentTimeout = getRuntimeConfig().agent.toolTimeout
+        batchContext.allowParallelSubAgents = getSetting(SETTINGS_KEYS.AGENT_ALLOW_PARALLEL_SUB_AGENTS) === 'true'
         const batchResult = await executeTools(assistantMsgId, result.toolCalls, batchContext, append)
         pendingToolResultTokens = estimateToolResultTokens(batchResult.toolMessages)
         if (batchResult.stepDoneCalled) {
@@ -772,23 +811,36 @@ ${COMPACTION_PROMPT}`,
 
       // The new context window starts fresh — apply the current system prompt
       // + tools so they are canonical and never stale there. Best-effort: a
-      // rebuild failure must not break the compaction itself.
-      try {
-        await config.rebuildCachedContext?.()
-      } catch (error) {
-        logger.error('Failed to rebuild cached context after compaction', {
-          sessionId,
-          error: error instanceof Error ? error.message : String(error),
-        })
+      // rebuild failure must not break the compaction itself. Top-level only:
+      // a sub-agent compaction must never rebuild the parent's cached context
+      // or reinject the parent's reminder.
+      if (!config.subAgentMetadata) {
+        try {
+          await config.rebuildCachedContext?.()
+        } catch (error) {
+          logger.error('Failed to rebuild cached context after compaction', {
+            sessionId,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
       }
 
       const closedWindowId = getCurrentContextWindowId(sessionId) ?? ''
-      const newWindowId = crypto.randomUUID()
+      // Sub-agent compaction is scoped: it stays in the current window (the
+      // parent's window must not rotate), so no fresh window id is minted.
+      const newWindowId = config.subAgentMetadata ? closedWindowId : crypto.randomUUID()
       const tokenCountAtClose = result.usage.promptTokens
 
       append({
         type: 'context.compacted',
-        data: { closedWindowId, newWindowId, beforeTokens: tokenCountAtClose, afterTokens: 0, summary },
+        data: {
+          closedWindowId,
+          newWindowId,
+          beforeTokens: tokenCountAtClose,
+          afterTokens: 0,
+          summary,
+          ...subAgentTags(),
+        },
       })
 
       append({
@@ -799,13 +851,38 @@ ${COMPACTION_PROMPT}`,
           content: summary,
           contextWindowId: newWindowId,
           isCompactionSummary: true,
+          ...subAgentTags(),
         },
       })
       append(createMessageDoneEvent(assistantMsgId, { stats: turnMetrics.buildStats(statsIdentity, mode) }))
       append(createChatDoneEvent(assistantMsgId, 'complete', undefined, agentType))
 
-      // Reinject the agent reminder into the new window
-      config.injectAgentReminder?.()
+      // Sub-agent compaction: emit a fresh-context marker so the chatfeed
+      // shows a new window boundary — mirrors the reinjected agent reminder
+      // the top-level agent gets after compaction. Purely visual (excluded
+      // from LLM context), scoped to the sub-agent.
+      if (config.subAgentMetadata) {
+        const freshMsgId = crypto.randomUUID()
+        append(
+          createMessageStartEvent(
+            freshMsgId,
+            'user',
+            `Fresh Context - ${config.subAgentMetadata.subAgentName ?? config.subAgentMetadata.subAgentType} Sub-Agent`,
+            {
+              ...(currentWindowMessageOptions ?? {}),
+              isSystemGenerated: true,
+              messageKind: 'context-reset',
+              ...subAgentTags(),
+            },
+          ),
+        )
+        append({ type: 'message.done', data: { messageId: freshMsgId } })
+      }
+
+      // Reinject the agent reminder into the new window (top-level only)
+      if (!config.subAgentMetadata) {
+        config.injectAgentReminder?.()
+      }
       compacting = false
 
       // Manual compaction (initialCompacting) is a one-shot operation — break after done.
@@ -829,9 +906,7 @@ ${COMPACTION_PROMPT}`,
               ...(currentWindowMessageOptions ?? {}),
               isSystemGenerated: true,
               messageKind: 'correction',
-              ...(config.subAgentMetadata
-                ? { subAgentId: config.subAgentMetadata.subAgentId, subAgentType: config.subAgentMetadata.subAgentType }
-                : {}),
+              ...subAgentTags(),
             },
           ),
         )

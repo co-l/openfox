@@ -23,6 +23,7 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
   const cavemanThinking = useSetting(SETTINGS_KEYS.LLM_CAVEMAN_THINKING).value === 'true'
   const cacheWarming = useSetting(SETTINGS_KEYS.CACHE_WARMING).value === 'true'
   const autoContinueOnBoot = useSetting(SETTINGS_KEYS.AUTO_CONTINUE_ON_BOOT).value === 'true'
+  const parallelSubAgents = useSetting(SETTINGS_KEYS.AGENT_ALLOW_PARALLEL_SUB_AGENTS).value === 'true'
   const retryPatternsSetting = useSetting(SETTINGS_KEYS.RETRY_PATTERNS).value
   const proxyUrlSetting = useSetting(SETTINGS_KEYS.PROXY_URL).value
   const defaultAgentSetting = useSetting(SETTINGS_KEYS.DEFAULT_AGENT).value
@@ -34,6 +35,7 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
     cacheWarming,
     cavemanThinking,
     autoContinueOnBoot,
+    parallelSubAgents,
   })
 
   const [retryPatterns, setRetryPatterns] = useState<RetryPatternsValue>({ patterns: [], maxRetriesPerTurn: 10 })
@@ -61,8 +63,9 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
       cacheWarming,
       cavemanThinking,
       autoContinueOnBoot,
+      parallelSubAgents,
     })
-  }, [showOpenInEditor, dynamicSystemPrompt, cacheWarming, cavemanThinking, autoContinueOnBoot])
+  }, [showOpenInEditor, dynamicSystemPrompt, cacheWarming, cavemanThinking, autoContinueOnBoot, parallelSubAgents])
 
   useEffect(() => {
     if (retryPatternsSetting) {
@@ -133,6 +136,12 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
     const newValue = !localToggles.autoContinueOnBoot
     setLocalToggles((prev) => ({ ...prev, autoContinueOnBoot: newValue }))
     void setSetting(SETTINGS_KEYS.AUTO_CONTINUE_ON_BOOT, String(newValue))
+  }
+
+  const handleToggleParallelSubAgents = () => {
+    const newValue = !localToggles.parallelSubAgents
+    setLocalToggles((prev) => ({ ...prev, parallelSubAgents: newValue }))
+    void setSetting(SETTINGS_KEYS.AGENT_ALLOW_PARALLEL_SUB_AGENTS, String(newValue))
   }
 
   function handleLaunchOnboarding() {
@@ -251,6 +260,17 @@ export function AdvancedTab({ onClose }: { onClose: () => void }) {
           </p>
         )}
       </div>
+      <hr className="border-border" />
+      <SettingsToggle
+        title={t({ en: 'Parallel sub-agent calls', fr: 'Appels de sous-agents en parallèle' })}
+        description={t({
+          en: 'When an agent launches several sub-agents in a single batch, run them simultaneously. Off by default: calls run one after the other to save context and compute on local models.',
+          fr: 'Lorsqu’un agent lance plusieurs sous-agents dans un même lot, les exécute simultanément. Désactivé par défaut : les appels s’exécutent les uns après les autres pour économiser le contexte et le calcul sur les modèles locaux.',
+        })}
+        enabled={localToggles.parallelSubAgents}
+        onToggle={handleToggleParallelSubAgents}
+        boldTitle
+      />
       <hr className="border-border" />
       <div>
         <h3 className="text-sm font-medium text-text-primary mb-1">{t({ en: 'Onboarding', fr: 'Prise en main' })}</h3>

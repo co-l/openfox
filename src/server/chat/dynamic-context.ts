@@ -310,6 +310,7 @@ function injectSystemReminder(
   content: string,
   type: string,
   name: string,
+  subAgent?: { subAgentId: string; subAgentType: string },
 ): void {
   const currentWindowId = getCurrentContextWindowId(sessionId)
   const reminderMsgId = randomUUID()
@@ -323,6 +324,7 @@ function injectSystemReminder(
       isSystemGenerated: true,
       messageKind: 'auto-prompt',
       metadata: { type, name, color: '#6b7280', kind: 'reminder' },
+      ...(subAgent ? { subAgentId: subAgent.subAgentId, subAgentType: subAgent.subAgentType } : {}),
     },
   })
   append({
@@ -360,6 +362,9 @@ async function injectDriftReminders(
 
   const liveTools = await getEffectiveToolDefinitions(agentDef, sessionId, options.modelName)
 
+  // When a sub-agent is running, scope the injected reminders to its window.
+  const activeSubAgent = sessionManager.getActiveSubAgent?.(sessionId)
+
   let injectedToolReminder = false
   let injectedPromptReminder = false
 
@@ -374,7 +379,7 @@ async function injectDriftReminders(
     if (hasToolChanges(changes)) {
       const reminder = renderToolChangeReminder(changes)
       if (reminder) {
-        injectSystemReminder(sessionId, append, reminder, 'tools', 'Tools')
+        injectSystemReminder(sessionId, append, reminder, 'tools', 'Tools', activeSubAgent)
         injectedToolReminder = true
       }
       // The prefix is frozen, so the change is pending until the user rebases —
@@ -399,7 +404,7 @@ async function injectDriftReminders(
     // build is pure string work but the LCS diff can be expensive on big prompts.
     const reminder = renderSystemPromptDiff(cached.systemPrompt, options.buildNewSystemPrompt())
     if (reminder) {
-      injectSystemReminder(sessionId, append, reminder, 'system-prompt', 'System Prompt')
+      injectSystemReminder(sessionId, append, reminder, 'system-prompt', 'System Prompt', activeSubAgent)
       injectedPromptReminder = true
     }
     sessionManager.setAnnouncedPromptHash(sessionId, livePromptHash)

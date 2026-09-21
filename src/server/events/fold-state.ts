@@ -111,6 +111,9 @@ export function foldContextState(events: EventLike[], initialWindowId: string): 
       }
       case 'context.compacted': {
         const data = event.data as Extract<TurnEvent, { type: 'context.compacted' }>['data']
+        // Sub-agent-scoped compaction: leave the parent's context window,
+        // compaction count and read-files cache untouched.
+        if (data.subAgentId) break
         currentContextWindowId = data.newWindowId
         compactionCount++
         readFilesMap.clear()

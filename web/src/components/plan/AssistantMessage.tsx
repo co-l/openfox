@@ -13,7 +13,7 @@ import { useSessionStore } from '../../stores/session'
 import { useAgents } from '../../hooks/useAgents'
 import { getAgentColor } from '../../lib/agents-actions'
 import { InfoIcon, WarningSmallIcon } from '../shared/icons'
-import { forkSession } from '../../lib/api.js'
+import { forkSession, forkSessionErrorMessage } from '../../lib/api.js'
 import { deriveToolCallStatus } from '../../lib/toolStatus'
 import { useLocation } from 'wouter'
 import { formatTime } from '../../lib/format-stats'
@@ -185,10 +185,13 @@ export const AssistantMessage = memo(function AssistantMessage({
     setForkError(null)
     const result = await forkSession(sessionId, message.id)
     setForkPending(false)
-    if (result?.session) {
+    if (result && 'session' in result) {
       navigate(`/p/${result.session.projectId}/s/${result.session.id}`)
     } else {
-      setForkError(t({ en: 'Failed to fork session', fr: 'Échec de la duplication de la session' }))
+      setForkError(
+        forkSessionErrorMessage(result) ??
+          t({ en: 'Failed to fork session', fr: 'Échec de la duplication de la session' }),
+      )
     }
   }
 
@@ -222,6 +225,8 @@ export const AssistantMessage = memo(function AssistantMessage({
                   key={`preparing-${element.preparing.index}`}
                   name={element.preparing.name}
                   arguments={element.preparing.arguments}
+                  editContext={element.preparing.editContext}
+                  forceCompact={!showVerboseToolOutput}
                 />
               )
 

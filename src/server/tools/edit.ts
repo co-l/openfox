@@ -4,7 +4,7 @@ import type { Diagnostic, EditContextRegion } from '../../shared/types.js'
 import { createTool } from './tool-helpers.js'
 import { formatDiagnosticsForLLM, appendLspInstallHint } from './diagnostics.js'
 import { validateFileForWrite, computeFileHash } from './file-tracker.js'
-import { extractEditContext } from './edit-context.js'
+import { extractEditContext } from '../../shared/edit-context.js'
 import { detectEncoding, decodeContent, encodeContent } from '../utils/encoding.js'
 import { serverT } from '../i18n.js'
 

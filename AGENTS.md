@@ -229,6 +229,8 @@ Every file in `.openfox/` must be **committable** and **meaningful in the projec
 
 **Workflows:** When asked to create or edit a workflow, load the built-in `workflows` skill via `load_skill("workflows")` — it is the authoritative reference for workflow file format, storage locations (project `.openfox/workflows/` vs global `{configDir}/workflows/`), the full JSON schema, step types, transition conditions, and template variables ([docs/WORKFLOWS.md](docs/WORKFLOWS.md) is a pointer to it). Project workflows belong in `.openfox/workflows/` and are committable.
 
+**Plugins:** When asked to create or edit a plugin, read [docs/PLUGINS.md](docs/PLUGINS.md) — the authoritative reference for the `openfox/plugin` contract (manifest, registry API, UI slots, settings, hooks, RPC, transitions, versioning, trust model). For host internals (lifecycle, install pipeline, wiring) see [docs/PLUGIN-ARCHITECTURE.md](docs/PLUGIN-ARCHITECTURE.md). The reference implementation lives in [examples/hello-plugin](examples/hello-plugin). Plugins run in-process with full trust; never load project-local plugin code from a cloned repo.
+
 ## TDD Workflow
 
 When fixing or refactoring: write/update the failing test FIRST, then make it pass.

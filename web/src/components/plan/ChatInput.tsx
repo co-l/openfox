@@ -32,6 +32,8 @@ import { AgentSelector } from './AgentSelector'
 import { DangerLevelSelector } from './DangerLevelSelector'
 import { ProviderSelector } from '../settings/ProviderSelector'
 import { McpSelector } from './McpSelector'
+import { PluginSlot } from '../plugins/PluginSlot'
+import { PluginZone } from '../plugins/PluginZone'
 import { SETTINGS_KEYS } from '../../lib/resources'
 import { useSetting } from '../../hooks/useSetting'
 import {
@@ -708,154 +710,178 @@ export function ChatInput({
 
       <WorkflowBar />
 
-      <form onSubmit={handleSubmit} className="p-2 @md:p-4 bg-secondary rounded-lg">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*,text/*,.pdf,.json,.xml,.yaml,.yml,.js,.sh,.xhtml"
-          onChange={handleFileSelect}
-          className="hidden"
-          multiple
-        />
+      <PluginZone
+        id="composer"
+        context={{
+          ...(sessionId ? { sessionId } : {}),
+          ...(workdir ? { workdir } : {}),
+        }}
+      >
+        <form onSubmit={handleSubmit} className="p-2 @md:p-4 bg-secondary rounded-lg">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,text/*,.pdf,.json,.xml,.yaml,.yml,.js,.sh,.xhtml"
+            onChange={handleFileSelect}
+            className="hidden"
+            multiple
+          />
 
-        {errorMessage && (
-          <div className="mb-2 p-2 bg-red-500/10 border border-red-500/50 rounded text-red-300 text-sm">
-            {errorMessage}
-          </div>
-        )}
+          {errorMessage && (
+            <div className="mb-2 p-2 bg-red-500/10 border border-red-500/50 rounded text-red-300 text-sm">
+              {errorMessage}
+            </div>
+          )}
 
-        {attachments.length > 0 && (
-          <div className="mb-3 flex flex-wrap gap-2">
-            {attachments.map((attachment) => (
-              <AttachmentPreview key={attachment.id} attachment={attachment} onRemove={handleRemoveAttachment} />
-            ))}
-          </div>
-        )}
+          {attachments.length > 0 && (
+            <div className="mb-3 flex flex-wrap gap-2">
+              {attachments.map((attachment) => (
+                <AttachmentPreview key={attachment.id} attachment={attachment} onRemove={handleRemoveAttachment} />
+              ))}
+            </div>
+          )}
 
-        {showHistory && (
-          <PromptHistoryList
-            history={history}
-            selectedIndex={selectedIndex}
-            onSelect={(content) => {
-              setInput(content)
-              closeHistory()
-            }}
-            onEscape={closeHistory}
-            onNavigate={(direction) => {
-              if (direction === 'up') navigateUp()
-              else navigateDown()
+          {showHistory && (
+            <PromptHistoryList
+              history={history}
+              selectedIndex={selectedIndex}
+              onSelect={(content) => {
+                setInput(content)
+                closeHistory()
+              }}
+              onEscape={closeHistory}
+              onNavigate={(direction) => {
+                if (direction === 'up') navigateUp()
+                else navigateDown()
+              }}
+            />
+          )}
+
+          <QueuedMessages
+            messages={queuedMessages}
+            onCancel={(queueId) => sessionId && cancelQueued(sessionId, queueId)}
+          />
+
+          <PluginSlot
+            slot="composer.actions"
+            context={{
+              ...(sessionId ? { sessionId } : {}),
+              ...(workdir ? { workdir } : {}),
             }}
           />
-        )}
 
-        <QueuedMessages
-          messages={queuedMessages}
-          onCancel={(queueId) => sessionId && cancelQueued(sessionId, queueId)}
-        />
-
-        <div
-          className={`flex items-end gap-3 p-3 rounded transition-colors ${
-            dragOver ? 'bg-accent-primary/10' : 'bg-primary'
-          }`}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
-          <div className="relative flex-1 min-w-0">
-            <textarea
-              id={CHAT_TEXTAREA_ID}
-              ref={textareaRef}
-              value={input}
-              onChange={handleInput}
-              onKeyDown={handleKeyDown}
-              onSelect={handleSelect}
-              onKeyUp={handleKeyUp}
-              onFocus={() => setIsFocused(true)}
-              onBlur={() => setIsFocused(false)}
-              placeholder={t({ en: 'What would you like to build?', fr: 'Que souhaitez-vous construire ?' })}
-              data-testid="chat-input-textarea"
-              className="w-full bg-transparent text-sm placeholder:text-text-muted resize-none overflow-y-auto focus:outline-none"
-              style={{
-                minHeight: `${COMPOSER_MIN_HEIGHT}px`,
-                maxHeight: expandedHeight !== null ? 'none' : `${COMPOSER_MAX_HEIGHT}px`,
-              }}
-              spellCheck={false}
-            />
-            <AtMentionAutocomplete
-              ref={autocompleteRef}
-              text={input}
-              cursorPos={cursorPosRef.current}
-              workdir={workdir}
-              onSelect={handleSelectFile}
-            />
-            <SlashAutocomplete
-              ref={slashAutocompleteRef}
-              text={input}
-              cursorPos={cursorPosRef.current}
-              workflows={workflows}
-              commands={commands}
-              onSelect={handleSelectSlash}
-            />
-            {activeSlashParams.length > 0 &&
-              (() => {
-                // Count space-separated args after the last /command
-                const match = input.match(/\/(\w+)\s+(.*)$/)
-                const args = match ? match[2]!.trim().split(/\s+/) : []
-                const filledCount = args.filter(Boolean).length
-                const nextParam = activeSlashParams[filledCount]
-                if (!nextParam) return null
-                return (
-                  <span
-                    className="absolute left-3 top-[26px] text-sm text-text-muted/40 pointer-events-none select-none"
-                    aria-hidden
-                  >
-                    {`${nextParam}=?`}
-                  </span>
-                )
-              })()}
-          </div>
-          <div className="hidden @md:flex items-center self-center gap-1.5">
-            {isRunning && (
-              <div className="flex items-center self-center">
-                {pauseButton()}
-                {stopButton()}
-              </div>
-            )}
-            <div className="flex items-center">
-              {sendButton()}
-              {moreMenu()}
+          <div
+            className={`flex items-end gap-3 p-3 rounded transition-colors ${
+              dragOver ? 'bg-accent-primary/10' : 'bg-primary'
+            }`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <div className="relative flex-1 min-w-0">
+              <textarea
+                id={CHAT_TEXTAREA_ID}
+                ref={textareaRef}
+                value={input}
+                onChange={handleInput}
+                onKeyDown={handleKeyDown}
+                onSelect={handleSelect}
+                onKeyUp={handleKeyUp}
+                onFocus={() => setIsFocused(true)}
+                onBlur={() => setIsFocused(false)}
+                placeholder={t({ en: 'What would you like to build?', fr: 'Que souhaitez-vous construire ?' })}
+                data-testid="chat-input-textarea"
+                className="w-full bg-transparent text-sm placeholder:text-text-muted resize-none overflow-y-auto focus:outline-none"
+                style={{
+                  minHeight: `${COMPOSER_MIN_HEIGHT}px`,
+                  maxHeight: expandedHeight !== null ? 'none' : `${COMPOSER_MAX_HEIGHT}px`,
+                }}
+                spellCheck={false}
+              />
+              <AtMentionAutocomplete
+                ref={autocompleteRef}
+                text={input}
+                cursorPos={cursorPosRef.current}
+                workdir={workdir}
+                onSelect={handleSelectFile}
+              />
+              <SlashAutocomplete
+                ref={slashAutocompleteRef}
+                text={input}
+                cursorPos={cursorPosRef.current}
+                workflows={workflows}
+                commands={commands}
+                onSelect={handleSelectSlash}
+              />
+              {activeSlashParams.length > 0 &&
+                (() => {
+                  // Count space-separated args after the last /command
+                  const match = input.match(/\/(\w+)\s+(.*)$/)
+                  const args = match ? match[2]!.trim().split(/\s+/) : []
+                  const filledCount = args.filter(Boolean).length
+                  const nextParam = activeSlashParams[filledCount]
+                  if (!nextParam) return null
+                  return (
+                    <span
+                      className="absolute left-3 top-[26px] text-sm text-text-muted/40 pointer-events-none select-none"
+                      aria-hidden
+                    >
+                      {`${nextParam}=?`}
+                    </span>
+                  )
+                })()}
             </div>
-          </div>
-          <div className="flex @md:hidden items-center self-center gap-1.5">
-            {isRunning && (
+            <div className="hidden @md:flex items-center self-center gap-1.5">
+              {isRunning && (
+                <div className="flex items-center self-center">
+                  {pauseButton()}
+                  {stopButton()}
+                </div>
+              )}
               <div className="flex items-center">
-                {pauseButton({ mobile: true })}
-                {stopButton({ mobile: true })}
+                {sendButton()}
+                {moreMenu()}
               </div>
-            )}
-            <div className="flex items-center">
-              {sendButton({ mobile: true })}
-              {moreMenu({ mobile: true })}
+            </div>
+            <div className="flex @md:hidden items-center self-center gap-1.5">
+              {isRunning && (
+                <div className="flex items-center">
+                  {pauseButton({ mobile: true })}
+                  {stopButton({ mobile: true })}
+                </div>
+              )}
+              <div className="flex items-center">
+                {sendButton({ mobile: true })}
+                {moreMenu({ mobile: true })}
+              </div>
             </div>
           </div>
-        </div>
-        <div className="mt-3 flex flex-col gap-y-1 @md:flex-row @md:flex-nowrap @md:items-center @md:gap-x-2">
-          <div className="flex items-center justify-between gap-2 @md:justify-start">
-            <AgentSelector />
-            <DangerLevelSelector />
-          </div>
-          <div className="flex items-center @md:ms-auto" data-testid="model-selector-group">
-            {perSessionMcpEnabled && (
-              <div data-testid="mcp-selector-slot">
-                <McpSelector />
+          <PluginZone
+            id="composer.toolbar"
+            context={{
+              ...(sessionId ? { sessionId } : {}),
+              ...(workdir ? { workdir } : {}),
+            }}
+          >
+            <div className="mt-3 flex flex-col gap-y-1 @md:flex-row @md:flex-nowrap @md:items-center @md:gap-x-2">
+              <div className="flex items-center justify-between gap-2 @md:justify-start">
+                <AgentSelector />
+                <DangerLevelSelector />
               </div>
-            )}
-            <div className="ms-auto @md:ms-0 min-w-0" data-testid="provider-selector-slot">
-              <ProviderSelector />
+              <div className="flex items-center @md:ms-auto" data-testid="model-selector-group">
+                {perSessionMcpEnabled && (
+                  <div data-testid="mcp-selector-slot">
+                    <McpSelector />
+                  </div>
+                )}
+                <div className="ms-auto @md:ms-0 min-w-0" data-testid="provider-selector-slot">
+                  <ProviderSelector />
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      </form>
+          </PluginZone>
+        </form>
+      </PluginZone>
     </div>
   )
 }

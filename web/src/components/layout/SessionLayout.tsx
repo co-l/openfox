@@ -1,5 +1,6 @@
 import { ScrollArea } from '../shared/ScrollArea'
 import { ResizeHandle } from '../shared/ResizeHandle'
+import { PluginZone } from '../plugins/PluginZone'
 import type { ReactNode } from 'react'
 import { useEffect } from 'react'
 import { useScopedPaneState } from '../../stores/session/session-scope'
@@ -51,7 +52,19 @@ export function SessionLayout({
 
       {/* Main Content */}
       <div className="flex h-full">
-        <div className="flex-1 min-w-0 flex flex-col overflow-hidden bg-secondary">{children}</div>
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden bg-secondary">
+          <PluginZone
+            id="session.content"
+            context={{
+              ...(session?.id ? { sessionId: session.id } : {}),
+              ...(session?.workdir ? { workdir: session.workdir } : {}),
+              ...(session?.projectId ? { projectId: session.projectId } : {}),
+            }}
+            className="flex-1 min-w-0 flex flex-col overflow-hidden"
+          >
+            {children}
+          </PluginZone>
+        </div>
 
         {criteriaSidebarOverlay ? (
           /* Overlay sidebar - floats over the feed so it keeps its full width */

@@ -4,31 +4,30 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createPluginRoutes } from './plugins.js'
-import { ProviderRegistry } from '../providers/plugins/registry.js'
-import type { ProviderPluginDiagnostic } from '../providers/plugins/index.js'
+import { openFolder } from '../utils/openFolder.js'
+import type { Config } from '../../shared/types.js'
+
+vi.mock('../utils/openFolder.js', () => ({ openFolder: vi.fn() }))
+
+const logger = {
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+}
 
 function createApp(options?: Partial<Parameters<typeof createPluginRoutes>[0]>) {
   const app = express()
   app.use(express.json())
-  const providerAdapters = new ProviderRegistry({ mode: 'production', configDirectory: '/tmp/openfox' })
-  const pluginDiagnostics: ProviderPluginDiagnostic[] = []
-  const logger = {
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  }
   app.use(
     '/api/plugins',
     createPluginRoutes({
-      config: { mode: 'production' } as any,
-      providerAdapters,
-      pluginDiagnostics,
+      config: { mode: 'production' } as Config,
       logger,
       ...options,
     }),
   )
-  return { app, providerAdapters, pluginDiagnostics, logger }
+  return { app, logger }
 }
 
 describe('plugin routes', () => {
@@ -39,7 +38,7 @@ describe('plugin routes', () => {
   beforeEach(async () => {
     rootDir = await mkdtemp(join(tmpdir(), 'openfox-plugins-'))
     const { app } = createApp({
-      config: { mode: 'test', providers: [] } as any,
+      config: { mode: 'test', providers: [] } as unknown as Config,
     })
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
@@ -50,6 +49,7 @@ describe('plugin routes', () => {
   })
 
   afterEach(async () => {
+    vi.clearAllMocks()
     await new Promise<void>((resolve) => server.close(() => resolve()))
     await rm(rootDir, { recursive: true, force: true })
   })
@@ -112,32 +112,30 @@ describe('plugin routes', () => {
     })
   })
 
-  describe('GET /installed', () => {
-    it('returns empty list when no plugins directory exists', async () => {
+  describe('removed legacy endpoints', () => {
+    it('GET /installed is gone in favor of /list', async () => {
       const res = await fetch(`${baseUrl}/api/plugins/installed`)
-      expect(res.status).toBe(200)
-      const body = (await res.json()) as { installed: unknown[] }
-      expect(body).toEqual({ installed: [] })
+      expect(res.status).toBe(404)
+    })
+
+    it('DELETE /:name is gone in favor of POST /:id/uninstall', async () => {
+      const res = await fetch(`${baseUrl}/api/plugins/demo-plugin`, { method: 'DELETE' })
+      expect(res.status).toBe(404)
     })
   })
 
-  describe('DELETE /:name', () => {
-    it('rejects plugin name with dots', async () => {
-      const res = await fetch(`${baseUrl}/api/plugins/my.plugin`, {
-        method: 'DELETE',
-      })
-      expect(res.status).toBe(400)
-      const body = (await res.json()) as { error: string }
-      expect(body.error).toBe('Invalid plugin name')
+  describe('GET /:id/open-folder', () => {
+    it('accepts scoped plugin ids without opening a folder', async () => {
+      const res = await fetch(`${baseUrl}/api/plugins/@scope%2Fdemo/open-folder`)
+      expect(res.status).toBe(200)
+      const expectedPath = join('@scope', 'demo')
+      expect(openFolder).toHaveBeenCalledWith(expect.stringContaining(expectedPath))
     })
 
-    it('rejects plugin name with special characters', async () => {
-      const res = await fetch(`${baseUrl}/api/plugins/my-plugin<script>`, {
-        method: 'DELETE',
-      })
+    it('rejects invalid plugin ids without opening a folder', async () => {
+      const res = await fetch(`${baseUrl}/api/plugins/bad%2F..%2Fid/open-folder`)
       expect(res.status).toBe(400)
-      const body = (await res.json()) as { error: string }
-      expect(body.error).toBe('Invalid plugin name')
+      expect(openFolder).not.toHaveBeenCalled()
     })
   })
 })

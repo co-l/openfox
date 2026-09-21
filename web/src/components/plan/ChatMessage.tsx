@@ -11,7 +11,7 @@ import { AttachmentPreview } from '../shared/AttachmentPreview.js'
 import { AutoPromptCard } from './AutoPromptCard'
 import { CheckIcon, CopyIcon, EditSmallIcon, ReloadIcon } from '../shared/icons'
 import { useT } from '../../hooks/useT'
-import { replayMessage, forkSession } from '../../lib/api.js'
+import { replayMessage, forkSession, forkSessionErrorMessage } from '../../lib/api.js'
 import { AUTOSCROLL_REARM_EVENT } from './feed-window'
 import { useSessionStore } from '../../stores/session.js'
 import { copyToClipboard } from '../../lib/clipboard.js'
@@ -75,11 +75,14 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
     setForkError(null)
     const result = await forkSession(sessionId, messageId)
     setForkPending(false)
-    if (result?.session) {
+    if (result && 'session' in result) {
       const projectId = result.session.projectId
       navigate(`/p/${projectId}/s/${result.session.id}`)
     } else {
-      setForkError(t({ en: 'Failed to fork session', fr: 'Échec de la duplication de la session' }))
+      setForkError(
+        forkSessionErrorMessage(result) ??
+          t({ en: 'Failed to fork session', fr: 'Échec de la duplication de la session' }),
+      )
     }
   }
 

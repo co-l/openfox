@@ -27,6 +27,15 @@ import { SETTINGS_KEYS } from '../db/settings.js'
 // 1GB+ copy is not left on disk forever.
 const SNAPSHOT_BACKUP_RETENTION_MS = 10 * 24 * 60 * 60 * 1000
 
+/**
+ * Detect a UNIQUE constraint violation (e.g. another openfox instance writing
+ * to the same database concurrently). Used to retry appends with the next seq.
+ */
+function isUniqueConstraintError(error: unknown): boolean {
+  const err = error as NodeJS.ErrnoException
+  return err?.code === 'SQLITE_CONSTRAINT_UNIQUE' || (err?.message ?? '').includes('UNIQUE constraint failed')
+}
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -229,15 +238,23 @@ export class EventStore {
     }
 
     const timestamp = Date.now()
-    const seq = this.getNextSeq(sessionId)
-    const payload = JSON.stringify(event.data)
+    const insert = this.db.prepare(
+      `INSERT INTO events (session_id, seq, timestamp, event_type, payload)
+       VALUES (?, ?, ?, ?, ?)`,
+    )
 
-    this.db
-      .prepare(
-        `INSERT INTO events (session_id, seq, timestamp, event_type, payload)
-         VALUES (?, ?, ?, ?, ?)`,
-      )
-      .run(sessionId, seq, timestamp, event.type, payload)
+    // Multi-process safety: another openfox instance may have taken our
+    // computed seq between the MAX read and the INSERT. Probe forward.
+    let seq = this.getNextSeq(sessionId)
+    for (let attempt = 0; attempt < 100; attempt++) {
+      try {
+        insert.run(sessionId, seq, timestamp, event.type, JSON.stringify(event.data))
+        break
+      } catch (error) {
+        if (!isUniqueConstraintError(error) || attempt === 99) throw error
+        seq++
+      }
+    }
 
     this.invalidateSessionCache(sessionId)
 
@@ -261,41 +278,52 @@ export class EventStore {
     if (events.length === 0) return []
 
     const timestamp = Date.now()
-    let seq = this.getNextSeq(sessionId)
-    const results: StoredEvent[] = []
 
     const insert = this.db.prepare(
       `INSERT INTO events (session_id, seq, timestamp, event_type, payload)
        VALUES (?, ?, ?, ?, ?)`,
     )
 
-    const transaction = this.db.transaction(() => {
-      for (const event of events) {
-        const payload = JSON.stringify(event.data)
-        insert.run(sessionId, seq, timestamp, event.type, payload)
+    // Multi-process safety: another openfox instance may have taken part of
+    // our seq range between the MAX read and the INSERTs. The transaction
+    // rolls back on the first collision; retry the whole batch from the next
+    // free slot.
+    let baseSeq = this.getNextSeq(sessionId)
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const results: StoredEvent[] = []
+      try {
+        const transaction = this.db.transaction(() => {
+          let seq = baseSeq
+          for (const event of events) {
+            insert.run(sessionId, seq, timestamp, event.type, JSON.stringify(event.data))
+            const stored: StoredEvent = {
+              seq,
+              timestamp,
+              sessionId,
+              type: event.type,
+              data: event.data,
+            }
+            results.push(stored)
+            seq++
+          }
+        })
+        transaction()
 
-        const stored: StoredEvent = {
-          seq,
-          timestamp,
-          sessionId,
-          type: event.type,
-          data: event.data,
+        this.invalidateSessionCache(sessionId)
+
+        // Notify after transaction commits
+        for (const stored of results) {
+          this.notifySubscribers(sessionId, stored)
         }
-        results.push(stored)
-        seq++
+
+        return results
+      } catch (error) {
+        if (!isUniqueConstraintError(error) || attempt === 99) throw error
+        baseSeq++
       }
-    })
-
-    transaction()
-
-    this.invalidateSessionCache(sessionId)
-
-    // Notify after transaction commits
-    for (const stored of results) {
-      this.notifySubscribers(sessionId, stored)
     }
 
-    return results
+    throw new Error('appendBatch: exhausted retries')
   }
 
   /**

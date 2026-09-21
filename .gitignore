@@ -63,4 +63,4 @@ e2e-test-project/
 tmp/
 worktrees/
 
-plugins/
+/plugins/

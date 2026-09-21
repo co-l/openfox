@@ -95,6 +95,8 @@ function createMockSessionManager(): SessionManager {
     getQueueState: vi.fn().mockReturnValue({ queued: 0, processing: false }),
     resolveEffectiveProviderModel: vi.fn(() => ({ providerId: null, model: null })),
     enterPauseGate: vi.fn().mockResolvedValue('released'),
+    setActiveSubAgent: vi.fn(),
+    getActiveSubAgent: vi.fn().mockReturnValue(undefined),
   } as unknown as SessionManager
 }
 
@@ -224,6 +226,13 @@ describe('SubAgentManager', () => {
     expect(llmCallCount).toBe(1)
     expect(result.content).toBe('Test result content')
     expect(result.result).toBe('success')
+
+    // The active sub-agent is registered for the duration of the run, then cleared.
+    expect(mockSessionManager.setActiveSubAgent).toHaveBeenCalledWith('test-session', {
+      subAgentId: expect.any(String),
+      subAgentType: 'explorer',
+    })
+    expect(mockSessionManager.setActiveSubAgent).toHaveBeenLastCalledWith('test-session', undefined)
 
     const allCalls: Array<[unknown]> = mockOnMessage.mock.calls as Array<[unknown]>
     const chatDoneMessages = allCalls.filter(([msg]) => (msg as { type: string }).type === 'chat.done')

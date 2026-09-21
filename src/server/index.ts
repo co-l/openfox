@@ -62,8 +62,11 @@ import { createAutoUpdateRoutes } from './routes/auto-update.js'
 import { createProviderAuthRoutes } from './routes/provider-auth.js'
 import { devServerManager } from './dev-server/manager.js'
 import { getGlobalConfigDir } from '../cli/paths.js'
-import { ProviderRegistry, loadProviderPlugins } from './providers/plugins/index.js'
+import { ProviderRegistry } from './providers/plugins/index.js'
+import { PluginHost } from './plugins/host.js'
 import { createPluginRoutes } from './routes/plugins.js'
+import { createNotificationRoutes } from './routes/notifications.js'
+import { pluginAssetToken } from './plugins/asset-auth.js'
 import { registerSessionFavoriteRoute } from './routes/session-favorite.js'
 import { logger, setLogLevel } from './utils/logger.js'
 import { VERSION } from '../constants.js'
@@ -137,10 +140,17 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     mode: config.mode === 'development' ? 'development' : 'production',
     configDirectory: configDir,
   })
-  const pluginDiagnostics = await loadProviderPlugins({ registry: providerAdapters, configDirectory: configDir })
+  const pluginHost = new PluginHost({
+    configDirectory: configDir,
+    mode: config.mode === 'development' ? 'development' : 'production',
+    logger,
+    registry: providerAdapters,
+  })
+  const pluginDiagnostics = await pluginHost.start()
   for (const diagnostic of pluginDiagnostics) {
-    if (!diagnostic.loaded) logger.warn('Provider plugin failed to load', { ...diagnostic })
+    if (!diagnostic.loaded) logger.warn('Plugin failed to load', { ...diagnostic })
   }
+  pluginHost.attachEventStore(getEventStore())
 
   // Hydrate concise preset-backed provider entries after plugins are loaded.
   config.providers = providerAdapters.resolveProviders(config.providers ?? [])
@@ -288,7 +298,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
     const authConfig = getAuthConfig()
     if (authConfig?.strategy === 'network' && authConfig.encryptedPassword) {
-      const token = req.headers['x-session-token'] as string
+      const headerToken = req.headers['x-session-token'] as string | undefined
+      const token = headerToken ?? pluginAssetToken(req)
       if (!token || !(await isValidToken(token))) {
         res.status(401).json({ error: 'Unauthorized' })
         return
@@ -2603,20 +2614,23 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
   })
 
-  app.use('/api/plugins', createPluginRoutes({ config, providerAdapters, pluginDiagnostics, logger }))
-  app.get('/api/plugins', (_req, res) => res.json({ plugins: pluginDiagnostics }))
-  app.get('/api/provider-presets', (_req, res) => res.json({ presets: providerAdapters.getPresets() }))
+  app.use('/api/plugins', createPluginRoutes({ config, host: pluginHost, logger }))
+  app.get('/api/plugins', (_req, res) => res.json({ plugins: pluginHost.getDiagnostics() }))
+  app.use('/api/notifications', createNotificationRoutes(pluginHost.notifications))
+  app.get('/api/provider-presets', (_req, res) => res.json({ presets: pluginHost.registry.getPresets() }))
   app.get('/api/provider-adapters', (_req, res) =>
     res.json({
-      authAdapters: providerAdapters.listAuthAdapters(),
-      transportAdapters: providerAdapters.listTransportAdapters(),
+      authAdapters: pluginHost.registry.listAuthAdapters(),
+      transportAdapters: pluginHost.registry.listTransportAdapters(),
     }),
   )
   app.use('/api/provider-auth', createProviderAuthRoutes(config, providerManager, providerAdapters))
 
   // Provider endpoints
-  app.get('/api/providers', (_req, res) => {
-    const providers = providerManager.getProviders().map((p) => ({
+  app.get('/api/providers', async (_req, res) => {
+    const { enrichProvidersWithPluginMetadata } = await import('./plugins/model-metadata.js')
+    const enriched = await enrichProvidersWithPluginMetadata(providerManager.getProviders())
+    const providers = enriched.map((p) => ({
       ...p,
       status: providerManager.getProviderStatus(p.id),
     }))
@@ -3601,6 +3615,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     () => mcpManager.getAllServers(),
   )
   const wss = wssExports.wss
+
+  // Point the plugin host at the live WebSocket broadcaster now that it exists.
+  pluginHost.setBroadcaster((message) => wssExports.broadcastAll(message))
 
   // Point the tasks service at the live WebSocket broadcaster now that it exists.
   // Broadcast to ALL clients (not just the project's active session): a task

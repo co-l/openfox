@@ -1,5 +1,10 @@
 import { OptionalScrollArea } from './OptionalScrollArea'
-import { memo, useMemo, useState } from 'react'
+import { memo, useMemo, useRef, useState } from 'react'
+import { ScrollArea } from './ScrollArea'
+import { AutoScrollToggle } from './AutoScrollToggle'
+import { useAutoScroll } from '../../hooks/useAutoScroll'
+import { useViewport } from '../../hooks/useViewport'
+import type { OverlayScrollbarsComponentRef } from 'overlayscrollbars-react'
 import { CodeHighlight } from './CodeHighlight'
 import { getLanguageFromPath } from '../../lib/syntax-highlighter'
 export { getLanguageFromPath, wrappedCodeStyle } from '../../lib/syntax-highlighter'
@@ -70,18 +75,47 @@ export const DiffView = memo(function DiffView({ oldString, newString, filePath 
 interface FilePreviewProps {
   content: string
   filePath?: string
+  /** While the file content is still streaming in: follow the tail and show the live toggle. */
+  streaming?: boolean
 }
 
-export const FilePreview = memo(function FilePreview({ content, filePath }: FilePreviewProps) {
+export const FilePreview = memo(function FilePreview({ content, filePath, streaming = false }: FilePreviewProps) {
   const language = useMemo(() => getLanguageFromPath(filePath), [filePath])
+  const scrollRef = useRef<OverlayScrollbarsComponentRef<'div'>>(null)
+  const getViewport = useViewport(scrollRef)
+  const { isAutoScrollActive, setAutoScroll, handleScrollbarGesture } = useAutoScroll(scrollRef, null, getViewport)
 
-  return (
-    <OptionalScrollArea className="rounded border border-border max-h-[45vh]">
-      <DiffSection type="added">
-        <CodeHighlight code={content} language={language} variant="block" showLineNumbers />
-      </DiffSection>
-    </OptionalScrollArea>
+  const preview = (
+    <DiffSection type="added">
+      <CodeHighlight code={content} language={language} variant="block" showLineNumbers />
+    </DiffSection>
   )
+
+  // While streaming, the preview follows the growing content (like the logs
+  // viewer). The live toggle disappears once the call finishes — the final
+  // render below shows the file from the top, matching the collapsed shape.
+  if (streaming) {
+    return (
+      <div className="relative">
+        <ScrollArea
+          ref={scrollRef}
+          onScrollbarGesture={handleScrollbarGesture}
+          className="rounded border border-border max-h-[45vh]"
+        >
+          {preview}
+        </ScrollArea>
+        <div className="absolute bottom-1 right-1 z-10">
+          <AutoScrollToggle
+            isActive={isAutoScrollActive}
+            onToggle={setAutoScroll}
+            className="text-xs text-text-muted hover:text-text-primary flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-bg-tertiary transition-colors"
+          />
+        </div>
+      </div>
+    )
+  }
+
+  return <OptionalScrollArea className="rounded border border-border max-h-[45vh]">{preview}</OptionalScrollArea>
 })
 
 /**

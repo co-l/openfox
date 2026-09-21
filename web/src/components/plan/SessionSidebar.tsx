@@ -20,6 +20,7 @@ import { DevServerFooter } from './DevServerFooter'
 import { BackgroundProcesses } from './BackgroundProcesses'
 import { ReloadIcon } from '../shared/icons'
 import { AutoUpdateModal } from '../AutoUpdateModal'
+import { PluginZone } from '../plugins/PluginZone'
 import { WorkspaceBranchSection } from './WorkspaceBranchSection'
 import { ContextPopover } from './ContextPopover'
 import type { SessionStatsSummary } from '@shared/types.js'
@@ -171,46 +172,48 @@ export function SessionSidebar({ workdir }: SessionSidebarProps) {
       <BackgroundProcesses sessionId={session?.id} />
 
       {/* Version footer */}
-      {version && (
-        <div className="mt-4 pt-4 border-t border-border text-center text-xs text-text-muted">
-          <div className="flex items-center justify-center gap-1">
-            <a
-              href="https://github.com/co-l/openfox"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-accent-primary transition-colors"
-            >
-              OpenFox
-            </a>
-            {' - '}
-            <span className="font-mono">{`v${version}`}</span>
-            <button
-              onClick={() => {
-                setManuallyChecked(true)
-                checkForUpdate(true)
-              }}
-              disabled={updateStatus === 'checking'}
-              className="p-0.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors disabled:opacity-50"
-              title={t({ en: 'Check for updates', fr: 'Vérifier les mises à jour' })}
-            >
-              <ReloadIcon className={`w-3 h-3 ${updateStatus === 'checking' ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
-          {updateStatus === 'available' && (
-            <button onClick={() => setShowUpdateModal(true)} className="text-accent-primary hover:underline mt-1">
-              {t({ en: 'Update OpenFox →', fr: 'Mettre à jour OpenFox →' })}
-            </button>
-          )}
-          {manuallyChecked && updateStatus === 'upToDate' && (
-            <div className="mt-1">{t({ en: 'Up to date', fr: 'À jour' })}</div>
-          )}
-          {updateStatus === 'error' && (
-            <div className="mt-1">
-              {t({ en: 'Update check failed', fr: 'Échec de la vérification des mises à jour' })}
+      <PluginZone id="session.footer" context={{ sessionId: session?.id, workdir }}>
+        {version && (
+          <div className="mt-4 pt-4 border-t border-border text-center text-xs text-text-muted">
+            <div className="flex items-center justify-center gap-1">
+              <a
+                href="https://github.com/co-l/openfox"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-accent-primary transition-colors"
+              >
+                OpenFox
+              </a>
+              {' - '}
+              <span className="font-mono">{`v${version}`}</span>
+              <button
+                onClick={() => {
+                  setManuallyChecked(true)
+                  checkForUpdate(true)
+                }}
+                disabled={updateStatus === 'checking'}
+                className="p-0.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors disabled:opacity-50"
+                title={t({ en: 'Check for updates', fr: 'Vérifier les mises à jour' })}
+              >
+                <ReloadIcon className={`w-3 h-3 ${updateStatus === 'checking' ? 'animate-spin' : ''}`} />
+              </button>
             </div>
-          )}
-        </div>
-      )}
+            {updateStatus === 'available' && (
+              <button onClick={() => setShowUpdateModal(true)} className="text-accent-primary hover:underline mt-1">
+                {t({ en: 'Update OpenFox →', fr: 'Mettre à jour OpenFox →' })}
+              </button>
+            )}
+            {manuallyChecked && updateStatus === 'upToDate' && (
+              <div className="mt-1">{t({ en: 'Up to date', fr: 'À jour' })}</div>
+            )}
+            {updateStatus === 'error' && (
+              <div className="mt-1">
+                {t({ en: 'Update check failed', fr: 'Échec de la vérification des mises à jour' })}
+              </div>
+            )}
+          </div>
+        )}
+      </PluginZone>
 
       <AutoUpdateModal isOpen={showUpdateModal} onClose={() => setShowUpdateModal(false)} versionInfo={null} />
 

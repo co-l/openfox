@@ -34,12 +34,14 @@ import type {
 import { useDevServerStore } from '../dev-server'
 import { useBackgroundProcessesStore } from '../background-processes'
 import { useTasksStore } from '../tasks'
+import { handlePluginMessage } from '../../lib/plugin-ws'
 import { playNewMessage } from '../../lib/sound'
 import type { AgentType } from '../notifications'
 import type { SessionState, PendingQuestion, SessionPane } from './types'
 import { handleGlobalSoundEffects, resolveAgentType } from './sounds'
 import { getBuffer, scheduleStreamingFlush, cancelStreamingFlush } from './streamingBuffer'
-import { mcpServersResource, type McpServerInfo } from '../../lib/resources'
+import { snapshot } from '../../lib/resourceCache'
+import { mcpServersResource, settingResource, SETTINGS_KEYS, type McpServerInfo } from '../../lib/resources'
 import {
   emptyPane,
   paneFromFlat,
@@ -55,6 +57,76 @@ const triggeredNewMessageSound = new Set<string>()
 // Message ids already counted into the flat summaries (homepage, sidebar,
 // search corpus). Re-delivered chat.message events must not inflate counts.
 const countedChatMessageIds = new Set<string>()
+
+// The feed store must not retain the whole streamed conversation: the server
+// only ever displays the last maxVisibleItems and the client re-slices the same
+// window, but live chat.message events are unbounded until a turn-boundary
+// session.state prune. Trim to the display window plus a small headroom so a
+// long agent run cannot balloon pane.messages (and Firefox's heap) with it.
+const MAX_VISIBLE_ITEMS_DEFAULT = 300
+export const MESSAGE_CAP_HEADROOM = 25
+export const MAX_COUNTED_MESSAGE_IDS = 2000
+export const MAX_TRIGGERED_SOUND_IDS = 200
+
+// Live tool output (run_command etc.) streams uncapped from the server: the
+// final result is truncated server-side (50KB / 2000 lines), but every
+// chat.tool_output chunk is broadcast in full and the client would otherwise
+// retain — and render — the entire streamed output of every command. Keep a
+// bounded tail so a chatty command cannot balloon the store (or the DOM).
+export const MAX_STREAMING_OUTPUT_BYTES = 256 * 1024
+export const MAX_STREAMING_OUTPUT_CHUNKS = 1000
+
+export interface StreamingOutputChunk {
+  stream: 'stdout' | 'stderr'
+  content: string
+  timestamp: number
+}
+
+/** Append streamed chunks, dropping the oldest until the byte/chunk budget is met. */
+export function appendStreamingOutput(
+  existing: StreamingOutputChunk[] | undefined,
+  incoming: StreamingOutputChunk[],
+): StreamingOutputChunk[] {
+  if (incoming.length === 0) return existing ?? []
+  const merged = existing && existing.length > 0 ? [...existing, ...incoming] : incoming
+  let total = 0
+  for (const chunk of merged) total += chunk.content.length
+  let start = 0
+  while (
+    (merged.length - start > MAX_STREAMING_OUTPUT_CHUNKS || total > MAX_STREAMING_OUTPUT_BYTES) &&
+    merged.length - start > 1
+  ) {
+    const dropped = merged[start]!
+    total -= dropped.content.length
+    start++
+  }
+  return start === 0 ? merged : merged.slice(start)
+}
+
+/** Server-persisted display window (mirrors useDisplaySettings' fallback). 0 means unlimited. */
+export function getMaxVisibleItems(): number {
+  const value = snapshot<string>(settingResource.keyOf(SETTINGS_KEYS.DISPLAY_MAX_VISIBLE_ITEMS)).data
+  if (value === undefined || value === null || value === '') return MAX_VISIBLE_ITEMS_DEFAULT
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : MAX_VISIBLE_ITEMS_DEFAULT
+}
+
+/** Keep at most maxVisibleItems + headroom messages, dropping the oldest. 0 = unlimited. */
+export function trimPaneMessages(messages: Message[], maxVisibleItems: number): Message[] {
+  if (maxVisibleItems <= 0) return messages
+  const cap = maxVisibleItems + MESSAGE_CAP_HEADROOM
+  return messages.length > cap ? messages.slice(-cap) : messages
+}
+
+/** Insertion-ordered bounded set: evicts the oldest entry when at capacity. */
+export function boundedAdd(set: Set<string>, value: string, max: number): void {
+  if (set.has(value)) return
+  if (set.size >= max) {
+    const oldest = set.values().next().value
+    if (oldest !== undefined) set.delete(oldest)
+  }
+  set.add(value)
+}
 
 function addUnreadSessionId(unreadSessionIds: string[], sessionId: string): string[] {
   return unreadSessionIds.includes(sessionId) ? unreadSessionIds : [...unreadSessionIds, sessionId]
@@ -420,7 +492,7 @@ export function handleServerMessage(
           }
           return {
             ...pane,
-            messages: [...pane.messages, payload.message],
+            messages: trimPaneMessages([...pane.messages, payload.message], getMaxVisibleItems()),
             session: pane.session
               ? { ...pane.session, messageCount: (pane.session.messageCount ?? 0) + 1 }
               : pane.session,
@@ -435,7 +507,7 @@ export function handleServerMessage(
       // lists ordered by last activity match the user experience. Re-delivered
       // messages are skipped so counts stay idempotent.
       if (!countedChatMessageIds.has(payload.message.id)) {
-        countedChatMessageIds.add(payload.message.id)
+        boundedAdd(countedChatMessageIds, payload.message.id, MAX_COUNTED_MESSAGE_IDS)
         refreshSessionSummaryActivity(set, message.sessionId, payload.message.timestamp)
       }
       break
@@ -494,7 +566,7 @@ export function handleServerMessage(
         !applyChat(set, get, sessionId, (pane) => {
           if (sessionId === activeSessionId) {
             if (!triggeredNewMessageSound.has(payload.messageId)) {
-              triggeredNewMessageSound.add(payload.messageId)
+              boundedAdd(triggeredNewMessageSound, payload.messageId, MAX_TRIGGERED_SOUND_IDS)
               const agent: AgentType | undefined = payload.subAgentType
                 ? 'sub-agent'
                 : resolveAgentType(get(), sessionId)
@@ -548,7 +620,15 @@ export function handleServerMessage(
           let preparingToolCalls: typeof existing
           if (existingIndex >= 0) {
             preparingToolCalls = existing.map((p, i) =>
-              i === existingIndex ? { ...p, arguments: payload.arguments } : p,
+              i === existingIndex
+                ? {
+                    ...p,
+                    arguments: payload.arguments,
+                    ...(payload.editContext && payload.editContext.length > 0
+                      ? { editContext: payload.editContext }
+                      : {}),
+                  }
+                : p,
             )
           } else {
             preparingToolCalls = [
@@ -557,6 +637,7 @@ export function handleServerMessage(
                 index: payload.index,
                 name: payload.name,
                 ...(payload.arguments ? { arguments: payload.arguments } : {}),
+                ...(payload.editContext && payload.editContext.length > 0 ? { editContext: payload.editContext } : {}),
               },
             ]
           }
@@ -595,11 +676,14 @@ export function handleServerMessage(
               startedAt: Date.now(),
               ...(bufferedOutputs.length > 0
                 ? {
-                    streamingOutput: bufferedOutputs.map((o) => ({
-                      stream: o.stream,
-                      content: o.content,
-                      timestamp: Date.now(),
-                    })),
+                    streamingOutput: appendStreamingOutput(
+                      undefined,
+                      bufferedOutputs.map((o) => ({
+                        stream: o.stream,
+                        content: o.content,
+                        timestamp: Date.now(),
+                      })),
+                    ),
                   }
                 : {}),
             },
@@ -657,7 +741,11 @@ export function handleServerMessage(
               ? {
                   ...m,
                   toolCalls: m.toolCalls?.map((tc) =>
-                    tc.id === payload.callId ? { ...tc, result: payload.result } : tc,
+                    tc.id === payload.callId
+                      ? // The final result supersedes the streamed view; drop the
+                        // accumulated chunks so done tool calls stop retaining them.
+                        { ...tc, result: payload.result, streamingOutput: undefined }
+                      : tc,
                   ),
                 }
               : m,
@@ -1142,6 +1230,14 @@ export function handleServerMessage(
 
     case 'tasks.update': {
       useTasksStore.getState().handleTasksUpdate(message.payload as import('@shared/protocol.js').TasksUpdatePayload)
+      break
+    }
+
+    case 'plugin.notification':
+    case 'plugin.notification_read':
+    case 'plugin.notification_deleted':
+    case 'plugin.ui_state': {
+      handlePluginMessage(message)
       break
     }
 

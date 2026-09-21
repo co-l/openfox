@@ -205,8 +205,26 @@ export function getConversationMessages(
   if (events.length === 0) return []
 
   const contextMessages = buildContextMessages(events, scope)
+  const requestMessages = minimalMessagesToRequestContextMessages(contextMessages, 'history')
 
-  return minimalMessagesToRequestContextMessages(contextMessages, 'history')
+  return ensureRequestNotEndingWithAssistant(requestMessages)
+}
+
+/**
+ * Append a user continuation message when the LLM request would otherwise end
+ * with an assistant message. This happens after compaction: the summary is an
+ * assistant message, and a request ending on an assistant turn makes providers
+ * (e.g. vLLM + deepseek-v4-flash) stream the model's reasoning as visible
+ * content instead of a thinking block. Appending a trailing user turn restores
+ * a fresh, properly-routed generation.
+ */
+export function ensureRequestNotEndingWithAssistant(messages: RequestContextMessage[]): RequestContextMessage[] {
+  const last = messages[messages.length - 1]
+  if (!last || last.role !== 'assistant') return messages
+  return [
+    ...messages,
+    { role: 'user', content: 'Continue your work. Do NOT repeat what was already written.', source: 'history' },
+  ]
 }
 
 /**

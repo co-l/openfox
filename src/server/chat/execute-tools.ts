@@ -33,6 +33,7 @@ export interface ToolBatchContext {
   providerManager?: ProviderManager | undefined
   onToolExecuted?: ((toolCall: ToolCall, result: ToolResult) => void) | undefined
   agentTimeout?: number
+  allowParallelSubAgents?: boolean | undefined
 }
 
 export interface ToolBatchResult {
@@ -41,6 +42,13 @@ export interface ToolBatchResult {
   returnValueContent?: string | undefined
   returnValueResult?: string | undefined
   stepDoneCalled?: boolean | undefined
+}
+
+export interface ExecutedToolCall {
+  toolCall: ToolCall
+  toolResult: ToolResult
+  content: string
+  index: number
 }
 
 function interruptedError(): string {
@@ -170,15 +178,7 @@ export async function executeTools(
     }
   }
 
-  const executeTool = async (
-    toolCall: ToolCall,
-    index: number,
-  ): Promise<{
-    toolCall: ToolCall
-    toolResult: ToolResult
-    content: string
-    index: number
-  }> => {
+  const executeTool = async (toolCall: ToolCall, index: number): Promise<ExecutedToolCall> => {
     if (ctx.signal?.aborted) {
       const toolResult = createInterruptedResult()
       append(createToolResultEvent(assistantMsgId, toolCall.id, toolResult))
@@ -248,10 +248,22 @@ export async function executeTools(
 
     const startTime = Date.now()
     let toolResult: ToolResult
-    try {
-      toolResult = await ctx.toolRegistry.execute(toolCall.name, toolCall.arguments, toolContext)
-    } catch (error) {
-      toolResult = await handleToolExecutionError(error, ctx.sessionId, startTime)
+    // Preflight-rejected calls must never execute: their arguments were cut
+    // short (path-only), so running the tool would either crash or produce a
+    // misleading result. Surface the preflight error directly instead.
+    if (toolCall.preflightError) {
+      toolResult = {
+        success: false,
+        error: toolCall.preflightError,
+        durationMs: Date.now() - startTime,
+        truncated: false,
+      }
+    } else {
+      try {
+        toolResult = await ctx.toolRegistry.execute(toolCall.name, toolCall.arguments, toolContext)
+      } catch (error) {
+        toolResult = await handleToolExecutionError(error, ctx.sessionId, startTime)
+      }
     }
 
     ctx.onToolExecuted?.(toolCall, toolResult)
@@ -300,8 +312,38 @@ export async function executeTools(
   }
 
   const batchStart = Date.now()
-  const executionPromises = toolCalls.map((toolCall, index) => executeTool(toolCall, index))
-  const results = await Promise.all(executionPromises)
+
+  const runParallel = (calls: Array<{ toolCall: ToolCall; index: number }>) =>
+    Promise.all(calls.map(({ toolCall, index }) => executeTool(toolCall, index)))
+
+  const runSubAgentsSequentially = async (
+    calls: Array<{ toolCall: ToolCall; index: number }>,
+  ): Promise<ExecutedToolCall[]> => {
+    const executed: ExecutedToolCall[] = []
+    for (const { toolCall, index } of calls) {
+      executed.push(await executeTool(toolCall, index))
+    }
+    return executed
+  }
+
+  const allCalls = toolCalls.map((toolCall, index) => ({ toolCall, index }))
+  const subAgentCalls = allCalls.filter(({ toolCall }) => toolCall.name === 'call_sub_agent')
+
+  // Sub-agents are expensive on local models (context + compute), so by
+  // default several sub-agent calls in one batch run one after the other,
+  // while other tools in the batch stay in parallel. The advanced
+  // "allowParallelSubAgents" setting restores full parallelism.
+  let results: ExecutedToolCall[]
+  if (subAgentCalls.length > 1 && !ctx.allowParallelSubAgents) {
+    const [others, sequential] = await Promise.all([
+      runParallel(allCalls.filter(({ toolCall }) => toolCall.name !== 'call_sub_agent')),
+      runSubAgentsSequentially(subAgentCalls),
+    ])
+    results = [...others, ...sequential]
+  } else {
+    results = await runParallel(allCalls)
+  }
+
   ctx.turnMetrics.addToolTime(Date.now() - batchStart)
 
   results.sort((a, b) => a.index - b.index)

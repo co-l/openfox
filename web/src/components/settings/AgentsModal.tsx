@@ -9,6 +9,7 @@ import { CRUDListHeader, useConfirmDialog, DestinationSelector, ModalActions } f
 import { AgentGroup } from './agents/AgentListItem'
 import { AgentForm } from './agents/AgentForm'
 import { ModelPicker } from '../shared/ModelPicker'
+import { PluginZone } from '../plugins/PluginZone'
 import { parseModelValue } from '../../lib/model-value'
 import { useT } from '../../hooks/useT'
 
@@ -352,78 +353,84 @@ export function AgentsModal({ isOpen, onClose, initialEditId, projectDir }: Agen
   return (
     <>
       <Modal isOpen={isOpen} onClose={onClose} title={t({ en: 'Agents', fr: 'Agents' })} size="lg">
-        <CRUDListHeader
-          description={t({
-            en: 'Agents define behavior, tools, and prompts for top-level modes and sub-agents.',
-            fr: 'Les agents définissent le comportement, les outils et les invites des modes principaux et des sous-agents.',
-          })}
-          onNew={handleNew}
-          loading={loading}
-          hasItems={defaults.length > 0 || userItems.length > 0 || projectItems.length > 0}
-        >
-          <div className="space-y-4">
-            {defaults.length > 0 && (
-              <AgentGroup
-                title={t({ en: 'Built-in', fr: 'Intégrés' })}
-                agents={defaultTopLevelAgents}
-                subagents={defaultSubAgents}
-                isBuiltIn={true}
-                alwaysAllowedNames={alwaysAllowedNames}
-                modelOverrides={modelOverrides}
-                onView={handleView}
-                onEdit={handleEditBuiltInModel}
-                onDuplicate={handleDuplicate}
-              />
-            )}
+        <PluginZone id="agents.modal" context={{ projectDir }}>
+          <CRUDListHeader
+            description={t({
+              en: 'Agents define behavior, tools, and prompts for top-level modes and sub-agents.',
+              fr: 'Les agents définissent le comportement, les outils et les invites des modes principaux et des sous-agents.',
+            })}
+            onNew={handleNew}
+            loading={loading}
+            hasItems={defaults.length > 0 || userItems.length > 0 || projectItems.length > 0}
+          >
+            <div className="space-y-4">
+              {defaults.length > 0 && (
+                <AgentGroup
+                  title={t({ en: 'Built-in', fr: 'Intégrés' })}
+                  agents={defaultTopLevelAgents}
+                  subagents={defaultSubAgents}
+                  isBuiltIn={true}
+                  alwaysAllowedNames={alwaysAllowedNames}
+                  modelOverrides={modelOverrides}
+                  onView={handleView}
+                  onEdit={handleEditBuiltInModel}
+                  onDuplicate={handleDuplicate}
+                />
+              )}
 
-            {(userTopLevelAgents.length > 0 ||
-              userSubAgents.length > 0 ||
-              projectTopLevelAgents.length > 0 ||
-              projectSubAgents.length > 0) && (
-              <div>
-                <h3 className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wide">
-                  {t({ en: 'Custom', fr: 'Personnalisés' })}
-                </h3>
-                <div className="ml-3 space-y-3">
-                  {[
-                    { title: t({ en: 'Global', fr: 'Global' }), agents: userTopLevelAgents, subagents: userSubAgents },
-                    {
-                      title: t({ en: 'Project', fr: 'Projet' }),
-                      agents: projectTopLevelAgents,
-                      subagents: projectSubAgents,
-                    },
-                  ].map(
-                    (section) =>
-                      (section.agents.length > 0 || section.subagents.length > 0) && (
-                        <AgentGroup
-                          key={section.title}
-                          title={section.title}
-                          agents={section.agents}
-                          subagents={section.subagents}
-                          isBuiltIn={false}
-                          alwaysAllowedNames={alwaysAllowedNames}
-                          modelOverrides={modelOverrides}
-                          isConfirmingDelete={(id) => isConfirming(id, 'delete')}
-                          onView={handleView}
-                          onDuplicate={handleDuplicate}
-                          onEdit={handleEdit}
-                          onDelete={(id) => {
-                            if (isConfirming(id, 'delete')) {
-                              handleDelete(id)
-                              clearConfirm()
-                            } else {
-                              requestDelete(id)
-                            }
-                          }}
-                          onCancelDelete={clearConfirm}
-                        />
-                      ),
-                  )}
+              {(userTopLevelAgents.length > 0 ||
+                userSubAgents.length > 0 ||
+                projectTopLevelAgents.length > 0 ||
+                projectSubAgents.length > 0) && (
+                <div>
+                  <h3 className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wide">
+                    {t({ en: 'Custom', fr: 'Personnalisés' })}
+                  </h3>
+                  <div className="ml-3 space-y-3">
+                    {[
+                      {
+                        title: t({ en: 'Global', fr: 'Global' }),
+                        agents: userTopLevelAgents,
+                        subagents: userSubAgents,
+                      },
+                      {
+                        title: t({ en: 'Project', fr: 'Projet' }),
+                        agents: projectTopLevelAgents,
+                        subagents: projectSubAgents,
+                      },
+                    ].map(
+                      (section) =>
+                        (section.agents.length > 0 || section.subagents.length > 0) && (
+                          <AgentGroup
+                            key={section.title}
+                            title={section.title}
+                            agents={section.agents}
+                            subagents={section.subagents}
+                            isBuiltIn={false}
+                            alwaysAllowedNames={alwaysAllowedNames}
+                            modelOverrides={modelOverrides}
+                            isConfirmingDelete={(id) => isConfirming(id, 'delete')}
+                            onView={handleView}
+                            onDuplicate={handleDuplicate}
+                            onEdit={handleEdit}
+                            onDelete={(id) => {
+                              if (isConfirming(id, 'delete')) {
+                                handleDelete(id)
+                                clearConfirm()
+                              } else {
+                                requestDelete(id)
+                              }
+                            }}
+                            onCancelDelete={clearConfirm}
+                          />
+                        ),
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
-        </CRUDListHeader>
+              )}
+            </div>
+          </CRUDListHeader>
+        </PluginZone>
       </Modal>
       <BuiltInModelModal
         agentId={modelModalAgentId}

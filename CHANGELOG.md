@@ -1,5 +1,91 @@
 # Changelog
 
+## 2.0.154 - 2026-09-21
+
+### Features
+
+- **Write/edit on unread files now fails fast** — the call aborts mid-stream once the path arrives, saving tokens on doomed payloads.
+
+### Enhancements
+
+- **Live tool call previews are now opt-in** — off by default; re-enable in Display settings.
+
+## 2.0.153 - 2026-09-20
+
+### Features
+
+- **write_file and edit_file previews stream live** — the file content, edit context, and diff update with auto-scroll as the tool call runs.
+- **New "Show live tool call previews" display setting** — opt out of streaming previews if you prefer.
+
+### Enhancements
+
+- **Forking a compacted session preserves prompt-cache hits** — only the latest context window is copied.
+- **Fork errors from the server now surface** — instead of a generic failure message.
+
+### Bug Fixes
+
+- **Drift reminders land in the running sub-agent's window** — no longer cluttering the main session.
+- **Sub-agent compactions now work** — post-compaction reasoning streams into the thinking block instead of visible content, and the parent context window is no longer rotated or inflated.
+
+## 2.0.152 - 2026-09-20
+
+### Features
+
+- **Plugin buttons gain a ghost variant** — matches native header button styling and shows the text label when no icon is set.
+- **Plugin icons accept SVG paths or raw markup** — icons also resolve dynamically by name from the built-in icon set, no whitelist needed.
+
+### Enhancements
+
+- **Sub-agent calls run sequentially by default** — several sub-agent calls in one batch no longer compete for context on local models; a new Advanced setting restores parallelism.
+
+## 2.0.151 - 2026-09-19
+
+### Features
+
+- **Plugins render UI in app zones** — header, sidebar, session, composer, and settings now accept plugin content.
+- **Zones can be hidden or replaced** — plugins override native content via hide/replace with replacement nodes.
+- **Plugin settings tabs** — plugins can register their own tabs in the settings modal.
+- **Per-agent session stats** — the stats modal now breaks down usage by agent and sub-agent.
+- **Project search** — find projects by name in the project picker and open-project modal.
+- **Branch search** — filter git branches as you type in the branch switcher.
+- **Provider modal banners** — new banners point to OpenFox plugins and proxy settings.
+
+### Enhancements
+
+- **Plugin UI DSL extended** — new stack, card, callout, icon, input, select, and iframe nodes.
+- **MCP toggles apply instantly** — server and tool enable/disable updates apply immediately in settings.
+- **Stats split by reasoning effort** — model groups now separate reasoning-effort variants.
+- **Longer sessions use less memory** — the live feed caps visible messages and tool streaming output.
+
+### Bug Fixes
+
+- **Pending confirmations auto-expand** — tool calls awaiting user confirmation now expand automatically.
+- **Collapsed tool output survives reloads** — large collapsed outputs stay collapsed after reloading.
+- **Search engine API keys persist** — keys no longer vanish on page reload.
+
+## 2.0.150 - 2026-09-18
+
+### Features
+
+- **Plugin system** — install plugins from a curated registry, GitHub, npm, or a local folder.
+- **Plugins extend OpenFox** — providers, tools, commands, skills, and custom workflow transitions.
+- **Declarative plugin UI** — actions, badges, and panels in the header, composer, and sessions.
+- **Plugin notifications** — a new header bell with dropdown center and toasts.
+- **Plugin management tab** — enable, disable, reinstall, and uninstall plugins.
+
+### Enhancements
+
+- **Notifications moved to a header dropdown** — no more modal; clicking a notification marks it read.
+- **Plugin actions consolidated into one header menu** — with a direct shortcut to plugin management.
+- **Mobile menu gains nested submenus** — notifications and plugins now reachable from the hamburger menu.
+- **Workflow setup step guards existing workspaces** — already-used workspaces can no longer be selected.
+
+### Bug Fixes
+
+- **Pre-upgrade passwords work again** — passwords stored before the encryption upgrade now verify correctly.
+- **Tool-call timers survive reloads** — pending tool calls keep their elapsed-time display after reloading.
+- **Notification bell styling fixed** — icon color matches the header and the unread badge no longer clips.
+
 ## 2.0.149 - 2026-09-15
 
 ### Features

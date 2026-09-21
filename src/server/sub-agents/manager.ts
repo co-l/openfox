@@ -315,43 +315,51 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
 
   const subAgentScope = { type: 'subagent' as const, sessionId, subAgentId, subAgentType }
 
-  const loopResult = await runTopLevelAgentLoop(
-    {
-      mode: subAgentType,
-      append: (event) => eventStore.append(sessionId, event),
-      sessionManager,
-      sessionId,
-      llmClient,
-      statsIdentity,
-      providerManager,
-      // When an override is active, use its model settings (or empty to avoid leaking session settings)
-      ...(hasOverride ? { modelSettings: overrideModelSettings ?? {} } : {}),
-      signal,
-      onMessage,
-      assembleRequest: async (input) =>
-        createAssemblyResult({
-          systemPrompt,
-          messages: input.messages,
-          injectedFiles: input.injectedFiles,
-          requestTools: input.promptTools,
-          toolChoice: input.toolChoice,
+  // Mark this sub-agent as active so system-generated events (e.g. tool/prompt
+  // drift reminders) are scoped to its window instead of the main session.
+  sessionManager.setActiveSubAgent(sessionId, { subAgentId, subAgentType })
+  let loopResult: Awaited<ReturnType<typeof runTopLevelAgentLoop>>
+  try {
+    loopResult = await runTopLevelAgentLoop(
+      {
+        mode: subAgentType,
+        append: (event) => eventStore.append(sessionId, event),
+        sessionManager,
+        sessionId,
+        llmClient,
+        statsIdentity,
+        providerManager,
+        // When an override is active, use its model settings (or empty to avoid leaking session settings)
+        ...(hasOverride ? { modelSettings: overrideModelSettings ?? {} } : {}),
+        signal,
+        onMessage,
+        assembleRequest: async (input) =>
+          createAssemblyResult({
+            systemPrompt,
+            messages: input.messages,
+            injectedFiles: input.injectedFiles,
+            requestTools: input.promptTools,
+            toolChoice: input.toolChoice,
 
-          ...(instructionContent ? { customInstructions: instructionContent } : {}),
-          ...(skills.length > 0 ? { skills } : {}),
-        }),
-      getToolRegistry: () => toolRegistry,
-      getConversationMessages: async () => {
-        const processedEvents = await processEventsForConversation(sessionId, llmClient, (event) =>
-          eventStore.append(sessionId, event),
-        )
-        return getConversationMessages(subAgentScope, { events: processedEvents })
+            ...(instructionContent ? { customInstructions: instructionContent } : {}),
+            ...(skills.length > 0 ? { skills } : {}),
+          }),
+        getToolRegistry: () => toolRegistry,
+        getConversationMessages: async () => {
+          const processedEvents = await processEventsForConversation(sessionId, llmClient, (event) =>
+            eventStore.append(sessionId, event),
+          )
+          return getConversationMessages(subAgentScope, { events: processedEvents })
+        },
+        subAgentMetadata: { subAgentId, subAgentType, subAgentName: agentDef.metadata.name },
+        breakOnReturnValue: true,
+        requireReturnValue: true,
       },
-      subAgentMetadata: { subAgentId, subAgentType },
-      breakOnReturnValue: true,
-      requireReturnValue: true,
-    },
-    turnMetrics,
-  )
+      turnMetrics,
+    )
+  } finally {
+    sessionManager.setActiveSubAgent(sessionId, undefined)
+  }
 
   // --- Build result ---
 

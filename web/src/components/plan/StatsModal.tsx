@@ -8,6 +8,7 @@ import { buildPerformanceChartData, buildResponseLogRows, type ResponseLogRow } 
 import type { CallStatsDataPoint, ModelSessionStats, SessionStats, SessionStatsSummary } from '@shared/types.js'
 import { formatTime } from '../../lib/format-stats'
 import { authFetch } from '../../lib/api'
+import { PluginZone } from '../plugins/PluginZone'
 
 interface StatsModalProps {
   isOpen: boolean
@@ -254,195 +255,197 @@ export function StatsModal({ isOpen, onClose, summary, sessionId }: StatsModalPr
       title={t({ en: 'Session Stats', fr: 'Statistiques de la session' })}
       size="lg"
     >
-      <div ref={contentRef} className="space-y-6">
-        {modelGroups.length > 1 && (
-          <section>
-            <div className="flex flex-wrap gap-2">
-              {modelGroups.map((group) => (
-                <button
-                  key={group.key}
-                  onClick={() => setSelectedModelKey(group.key)}
-                  className={`px-3 py-1.5 rounded border text-xs transition-colors ${
-                    group.key === currentSummary?.key
-                      ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
-                      : 'border-border text-text-muted hover:text-text-primary hover:bg-bg-tertiary/40'
-                  }`}
-                  title={group.label}
-                >
-                  {group.label}
-                </button>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Summary Section — always available from the lean payload */}
-        {currentSummary && (
-          <section>
-            <h3 className="text-sm font-semibold text-text-secondary mb-3 uppercase tracking-wide">
-              {t({ en: 'Summary', fr: 'Résumé' })}
-            </h3>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              <StatCard label={t({ en: 'AI Time', fr: 'Temps IA' })} value={formatTime(currentSummary.aiTime)} />
-              <StatCard
-                label={t({ en: 'Total Time', fr: 'Temps total' })}
-                value={formatTime(currentSummary.totalTime)}
-              />
-              <StatCard
-                label={t({ en: 'Tool Time', fr: 'Temps outils' })}
-                value={formatTime(currentSummary.toolTime)}
-              />
-              <StatCard
-                label={t({ en: 'Responses', fr: 'Réponses' })}
-                value={currentSummary.responseCount.toString()}
-              />
-              <StatCard
-                label={t({ en: 'LLM Calls', fr: 'Appels LLM' })}
-                value={currentSummary.llmCallCount.toString()}
-              />
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-3">
-              <StatCard
-                label={t({ en: 'Prefill Tokens', fr: 'Jetons de préremplissage' })}
-                value={formatTokens(currentSummary.prefillTokens)}
-                subValue={`@ ${formatSpeed(currentSummary.avgPrefillSpeed)} tok/s`}
-              />
-              <StatCard
-                label={t({ en: 'Gen Tokens', fr: 'Jetons générés' })}
-                value={formatTokens(currentSummary.generationTokens)}
-                subValue={`@ ${formatSpeed(currentSummary.avgGenerationSpeed)} tok/s`}
-              />
-              <StatCard
-                label={t({ en: 'Avg PP Speed', fr: 'Vitesse PP moyenne' })}
-                value={`${formatSpeed(currentSummary.avgPrefillSpeed)}`}
-                subValue="tok/s"
-              />
-              <StatCard
-                label={t({ en: 'Avg TG Speed', fr: 'Vitesse TG moyenne' })}
-                value={`${formatSpeed(currentSummary.avgGenerationSpeed)}`}
-                subValue="tok/s"
-              />
-            </div>
-          </section>
-        )}
-
-        {/* Deferred detail — warning + one-time load */}
-        {showDeferredDetail && (
-          <section className="rounded border border-border bg-bg-tertiary/40 p-4">
-            <p className="text-xs text-text-muted mb-3">
-              {t(
-                {
-                  en: 'The full response log is not loaded. Load it once to see per-response and per-call details ({{n}} responses, {{c}} calls).',
-                  fr: 'Le journal complet des réponses n’est pas chargé. Chargez-le une fois pour voir le détail par réponse et par appel ({{n}} réponses, {{c}} appels).',
-                },
-                { n: summary!.responseCount, c: summary!.llmCallCount },
-              )}
-            </p>
-            {loadError && <p className="text-xs text-accent-error mb-3">{loadError}</p>}
-            <button
-              onClick={() => void loadFull()}
-              disabled={loadingFull}
-              className="px-3 py-1.5 rounded bg-accent-primary/25 text-text-primary hover:bg-accent-primary/40 transition-colors text-xs font-medium disabled:opacity-50"
-            >
-              {loadingFull
-                ? t({ en: 'Loading…', fr: 'Chargement…' })
-                : t({ en: 'Load full stats', fr: 'Charger toutes les statistiques' })}
-            </button>
-          </section>
-        )}
-
-        {/* Progression Charts */}
-        {currentStats && chartData.points.length > 1 && (
-          <section>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wide">
-                {t({ en: 'Performance Progression', fr: 'Progression des performances' })}
-              </h3>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleCopyJson}
-                  className="px-2 py-1 text-xs text-text-muted hover:text-text-primary hover:bg-bg-tertiary rounded transition-colors"
-                >
-                  {t({ en: 'Copy JSON', fr: 'Copier le JSON' })}
-                </button>
-                <button
-                  onClick={handleExportPng}
-                  className="px-2 py-1 text-xs text-text-muted hover:text-text-primary hover:bg-bg-tertiary rounded transition-colors"
-                >
-                  {t({ en: 'Save PNG', fr: 'Enregistrer le PNG' })}
-                </button>
+      <PluginZone id="stats.modal" context={{ sessionId }}>
+        <div ref={contentRef} className="space-y-6">
+          {modelGroups.length > 1 && (
+            <section>
+              <div className="flex flex-wrap gap-2">
+                {modelGroups.map((group) => (
+                  <button
+                    key={group.key}
+                    onClick={() => setSelectedModelKey(group.key)}
+                    className={`px-3 py-1.5 rounded border text-xs transition-colors ${
+                      group.key === currentSummary?.key
+                        ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
+                        : 'border-border text-text-muted hover:text-text-primary hover:bg-bg-tertiary/40'
+                    }`}
+                    title={group.label}
+                  >
+                    {group.label}
+                  </button>
+                ))}
               </div>
-            </div>
-            <div className="bg-bg-tertiary/50 rounded p-4">
-              <DualSparkline
-                data={chartData.points}
-                width={50}
-                prefillLabel={chartData.prefillLabel}
-                generationLabel={chartData.generationLabel}
-                xLabel={chartData.xLabel}
-              />
-            </div>
-          </section>
-        )}
+            </section>
+          )}
 
-        {/* Response Log */}
-        {currentStats && (
-          <section>
-            <h3 className="text-sm font-semibold text-text-secondary mb-3 uppercase tracking-wide">
-              {t(
-                { en: 'Response Log ({{count}} responses)', fr: 'Journal des réponses ({{count}} réponses)' },
-                { count: currentStats.responseCount },
-              )}
-            </h3>
-            <ScrollArea className="bg-bg-tertiary/30 rounded">
-              <table className="w-full table-fixed border-separate border-spacing-0 text-xs">
-                <colgroup>
-                  <col className="w-[7%]" />
-                  <col className="w-[14%]" />
-                  <col className="w-[10%]" />
-                  <col className="w-[14%]" />
-                  <col className="w-[14%]" />
-                  <col className="w-[14%]" />
-                  <col className="w-[11%]" />
-                  <col className="w-[2%]" />
-                </colgroup>
-                <thead>
-                  <tr className="text-[10px] uppercase tracking-wide text-text-muted/80">
-                    <th className="px-3 py-2 text-center font-medium">#</th>
-                    <th className="px-2 py-2 text-center font-medium">{t({ en: 'At', fr: 'À' })}</th>
-                    <th className="px-2 py-2 text-center font-medium">{t({ en: 'Time', fr: 'Durée' })}</th>
-                    <th className="px-2 py-2 text-center font-medium">{t({ en: 'Context', fr: 'Contexte' })}</th>
-                    <th className="px-2 py-2 text-center font-medium">PP t/s</th>
-                    <th className="px-2 py-2 text-center font-medium">TG t/s</th>
-                    <th className="px-2 py-2 text-center font-medium">{t({ en: 'Calls', fr: 'Appels' })}</th>
-                    <th className="px-2 py-2" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {responseRows.map((row, i) => (
-                    <Fragment key={row.messageId}>
-                      <ResponseRow
-                        row={row}
-                        index={i}
-                        isExpanded={expandedResponses[row.messageId] ?? false}
-                        onToggle={row.isExpandable ? () => toggleResponse(row.messageId) : undefined}
-                      />
-                      {(expandedResponses[row.messageId] ?? false) &&
-                        row.calls.map((call, callIndex) => (
-                          <CallDataPointRow
-                            key={`${call.messageId}-${call.callIndex}`}
-                            dataPoint={call}
-                            index={callIndex}
-                          />
-                        ))}
-                    </Fragment>
-                  ))}
-                </tbody>
-              </table>
-            </ScrollArea>
-          </section>
-        )}
-      </div>
+          {/* Summary Section — always available from the lean payload */}
+          {currentSummary && (
+            <section>
+              <h3 className="text-sm font-semibold text-text-secondary mb-3 uppercase tracking-wide">
+                {t({ en: 'Summary', fr: 'Résumé' })}
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <StatCard label={t({ en: 'AI Time', fr: 'Temps IA' })} value={formatTime(currentSummary.aiTime)} />
+                <StatCard
+                  label={t({ en: 'Total Time', fr: 'Temps total' })}
+                  value={formatTime(currentSummary.totalTime)}
+                />
+                <StatCard
+                  label={t({ en: 'Tool Time', fr: 'Temps outils' })}
+                  value={formatTime(currentSummary.toolTime)}
+                />
+                <StatCard
+                  label={t({ en: 'Responses', fr: 'Réponses' })}
+                  value={currentSummary.responseCount.toString()}
+                />
+                <StatCard
+                  label={t({ en: 'LLM Calls', fr: 'Appels LLM' })}
+                  value={currentSummary.llmCallCount.toString()}
+                />
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-3">
+                <StatCard
+                  label={t({ en: 'Prefill Tokens', fr: 'Jetons de préremplissage' })}
+                  value={formatTokens(currentSummary.prefillTokens)}
+                  subValue={`@ ${formatSpeed(currentSummary.avgPrefillSpeed)} tok/s`}
+                />
+                <StatCard
+                  label={t({ en: 'Gen Tokens', fr: 'Jetons générés' })}
+                  value={formatTokens(currentSummary.generationTokens)}
+                  subValue={`@ ${formatSpeed(currentSummary.avgGenerationSpeed)} tok/s`}
+                />
+                <StatCard
+                  label={t({ en: 'Avg PP Speed', fr: 'Vitesse PP moyenne' })}
+                  value={`${formatSpeed(currentSummary.avgPrefillSpeed)}`}
+                  subValue="tok/s"
+                />
+                <StatCard
+                  label={t({ en: 'Avg TG Speed', fr: 'Vitesse TG moyenne' })}
+                  value={`${formatSpeed(currentSummary.avgGenerationSpeed)}`}
+                  subValue="tok/s"
+                />
+              </div>
+            </section>
+          )}
+
+          {/* Deferred detail — warning + one-time load */}
+          {showDeferredDetail && (
+            <section className="rounded border border-border bg-bg-tertiary/40 p-4">
+              <p className="text-xs text-text-muted mb-3">
+                {t(
+                  {
+                    en: 'The full response log is not loaded. Load it once to see per-response and per-call details ({{n}} responses, {{c}} calls).',
+                    fr: 'Le journal complet des réponses n’est pas chargé. Chargez-le une fois pour voir le détail par réponse et par appel ({{n}} réponses, {{c}} appels).',
+                  },
+                  { n: summary!.responseCount, c: summary!.llmCallCount },
+                )}
+              </p>
+              {loadError && <p className="text-xs text-accent-error mb-3">{loadError}</p>}
+              <button
+                onClick={() => void loadFull()}
+                disabled={loadingFull}
+                className="px-3 py-1.5 rounded bg-accent-primary/25 text-text-primary hover:bg-accent-primary/40 transition-colors text-xs font-medium disabled:opacity-50"
+              >
+                {loadingFull
+                  ? t({ en: 'Loading…', fr: 'Chargement…' })
+                  : t({ en: 'Load full stats', fr: 'Charger toutes les statistiques' })}
+              </button>
+            </section>
+          )}
+
+          {/* Progression Charts */}
+          {currentStats && chartData.points.length > 1 && (
+            <section>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wide">
+                  {t({ en: 'Performance Progression', fr: 'Progression des performances' })}
+                </h3>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleCopyJson}
+                    className="px-2 py-1 text-xs text-text-muted hover:text-text-primary hover:bg-bg-tertiary rounded transition-colors"
+                  >
+                    {t({ en: 'Copy JSON', fr: 'Copier le JSON' })}
+                  </button>
+                  <button
+                    onClick={handleExportPng}
+                    className="px-2 py-1 text-xs text-text-muted hover:text-text-primary hover:bg-bg-tertiary rounded transition-colors"
+                  >
+                    {t({ en: 'Save PNG', fr: 'Enregistrer le PNG' })}
+                  </button>
+                </div>
+              </div>
+              <div className="bg-bg-tertiary/50 rounded p-4">
+                <DualSparkline
+                  data={chartData.points}
+                  width={50}
+                  prefillLabel={chartData.prefillLabel}
+                  generationLabel={chartData.generationLabel}
+                  xLabel={chartData.xLabel}
+                />
+              </div>
+            </section>
+          )}
+
+          {/* Response Log */}
+          {currentStats && (
+            <section>
+              <h3 className="text-sm font-semibold text-text-secondary mb-3 uppercase tracking-wide">
+                {t(
+                  { en: 'Response Log ({{count}} responses)', fr: 'Journal des réponses ({{count}} réponses)' },
+                  { count: currentStats.responseCount },
+                )}
+              </h3>
+              <ScrollArea className="bg-bg-tertiary/30 rounded">
+                <table className="w-full table-fixed border-separate border-spacing-0 text-xs">
+                  <colgroup>
+                    <col className="w-[7%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[11%]" />
+                    <col className="w-[2%]" />
+                  </colgroup>
+                  <thead>
+                    <tr className="text-[10px] uppercase tracking-wide text-text-muted/80">
+                      <th className="px-3 py-2 text-center font-medium">#</th>
+                      <th className="px-2 py-2 text-center font-medium">{t({ en: 'At', fr: 'À' })}</th>
+                      <th className="px-2 py-2 text-center font-medium">{t({ en: 'Time', fr: 'Durée' })}</th>
+                      <th className="px-2 py-2 text-center font-medium">{t({ en: 'Context', fr: 'Contexte' })}</th>
+                      <th className="px-2 py-2 text-center font-medium">PP t/s</th>
+                      <th className="px-2 py-2 text-center font-medium">TG t/s</th>
+                      <th className="px-2 py-2 text-center font-medium">{t({ en: 'Calls', fr: 'Appels' })}</th>
+                      <th className="px-2 py-2" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {responseRows.map((row, i) => (
+                      <Fragment key={row.messageId}>
+                        <ResponseRow
+                          row={row}
+                          index={i}
+                          isExpanded={expandedResponses[row.messageId] ?? false}
+                          onToggle={row.isExpandable ? () => toggleResponse(row.messageId) : undefined}
+                        />
+                        {(expandedResponses[row.messageId] ?? false) &&
+                          row.calls.map((call, callIndex) => (
+                            <CallDataPointRow
+                              key={`${call.messageId}-${call.callIndex}`}
+                              dataPoint={call}
+                              index={callIndex}
+                            />
+                          ))}
+                      </Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              </ScrollArea>
+            </section>
+          )}
+        </div>
+      </PluginZone>
     </Modal>
   )
 }

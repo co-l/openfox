@@ -7,6 +7,8 @@ export interface CommandInfo {
   name: string
   agentMode?: string
   paramNames?: string[]
+  /** Set when the command is contributed by a plugin (its package name). */
+  pluginId?: string
 }
 
 export interface CommandFull {

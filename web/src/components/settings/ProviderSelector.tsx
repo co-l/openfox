@@ -25,6 +25,7 @@ import { useT } from '../../hooks/useT'
 import { useSetting } from '../../hooks/useSetting'
 import { useIsTouchDevice } from '../../hooks/useIsTouchDevice'
 import { SETTINGS_KEYS, setSetting } from '../../lib/resources'
+import { PluginZone } from '../plugins/PluginZone'
 
 type ProviderLabelProps = {
   activeProvider: { name: string; isLocal?: boolean } | undefined
@@ -1025,47 +1026,49 @@ export function ProviderSelector() {
               )}
             </div>
           </ScrollArea>
-          <div
-            className={`border-t border-border px-3 py-2 flex items-center justify-between gap-2 ${
-              isManageHighlighted ? 'bg-bg-tertiary' : ''
-            } flex-shrink-0`}
-          >
-            {isEffortPinned && (
-              <button
-                type="button"
-                onClick={handleUnpinEffort}
-                className="text-xs text-text-muted hover:text-text-primary hover:underline"
-                title={t({
-                  en: 'Stop pinning the reasoning effort so agent overrides and session picks apply again',
-                  fr: 'Arrêter d’épingler le niveau de raisonnement pour que les remplacements d’agent et les choix de session s’appliquent à nouveau',
-                })}
-              >
-                {t({ en: 'Unpin reasoning effort', fr: 'Désépingler le niveau de raisonnement' })}
-              </button>
-            )}
-            {hasSessionPreference && (
-              <button
-                type="button"
-                onClick={handleResetProvider}
-                className="text-xs text-text-muted hover:text-text-primary hover:underline"
-                title={t({
-                  en: "Clear this session's manually picked model so agent overrides and the global default apply again",
-                  fr: "Effacer le modèle choisi manuellement pour cette session afin que les remplacements d'agent et le défaut global s'appliquent à nouveau",
-                })}
-              >
-                {t({ en: 'Reset to default', fr: 'Réinitialiser au défaut' })}
-              </button>
-            )}
-            <button
-              onClick={() => {
-                setIsOpen(false)
-                setShowManageProviders(true)
-              }}
-              className="text-xs text-accent-primary hover:underline"
+          <PluginZone id="model.picker.footer" className="w-full">
+            <div
+              className={`border-t border-border px-3 py-2 flex items-center justify-between gap-2 ${
+                isManageHighlighted ? 'bg-bg-tertiary' : ''
+              } flex-shrink-0`}
             >
-              {t({ en: 'Manage providers', fr: 'Gérer les fournisseurs' })}
-            </button>
-          </div>
+              {isEffortPinned && (
+                <button
+                  type="button"
+                  onClick={handleUnpinEffort}
+                  className="text-xs text-text-muted hover:text-text-primary hover:underline"
+                  title={t({
+                    en: 'Stop pinning the reasoning effort so agent overrides and session picks apply again',
+                    fr: 'Arrêter d’épingler le niveau de raisonnement pour que les remplacements d’agent et les choix de session s’appliquent à nouveau',
+                  })}
+                >
+                  {t({ en: 'Unpin reasoning effort', fr: 'Désépingler le niveau de raisonnement' })}
+                </button>
+              )}
+              {hasSessionPreference && (
+                <button
+                  type="button"
+                  onClick={handleResetProvider}
+                  className="text-xs text-text-muted hover:text-text-primary hover:underline"
+                  title={t({
+                    en: "Clear this session's manually picked model so agent overrides and the global default apply again",
+                    fr: "Effacer le modèle choisi manuellement pour cette session afin que les remplacements d'agent et le défaut global s'appliquent à nouveau",
+                  })}
+                >
+                  {t({ en: 'Reset to default', fr: 'Réinitialiser au défaut' })}
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  setIsOpen(false)
+                  setShowManageProviders(true)
+                }}
+                className="text-xs text-accent-primary hover:underline"
+              >
+                {t({ en: 'Manage providers', fr: 'Gérer les fournisseurs' })}
+              </button>
+            </div>
+          </PluginZone>
         </DropdownPanel>
       )}
       {deviceChallenge && (

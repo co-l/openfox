@@ -56,6 +56,7 @@ import type {
   ContextState,
   ToolCall,
   PauseState,
+  EditContextRegion,
 } from '../../shared/types.js'
 
 /**
@@ -212,8 +213,15 @@ export function createChatToolPreparingMessage(
   index: number,
   name: string,
   args?: string,
+  editContext?: EditContextRegion[],
 ): ServerMessage<ChatToolPreparingPayload> {
-  return createServerMessage('chat.tool_preparing', { messageId, index, name, ...(args ? { arguments: args } : {}) })
+  return createServerMessage('chat.tool_preparing', {
+    messageId,
+    index,
+    name,
+    ...(args ? { arguments: args } : {}),
+    ...(editContext && editContext.length > 0 ? { editContext } : {}),
+  })
 }
 
 export function createChatToolCallMessage(
@@ -496,7 +504,7 @@ export function storedEventToServerMessage(event: StoredEvent): ServerMessage | 
 
     case 'tool.preparing': {
       const data = event.data as Extract<TurnEvent, { type: 'tool.preparing' }>['data']
-      return createChatToolPreparingMessage(data.messageId, data.index, data.name, data.arguments)
+      return createChatToolPreparingMessage(data.messageId, data.index, data.name, data.arguments, data.editContext)
     }
 
     case 'tool.call': {

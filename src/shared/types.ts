@@ -267,6 +267,22 @@ export interface CallStatsDataPoint {
   maxTokens?: number
 }
 
+export interface AgentSessionStats {
+  agentId: string
+  isSubAgent: boolean
+  totalTime: number
+  aiTime: number
+  toolTime: number
+  prefillTokens: number
+  generationTokens: number
+  avgPrefillSpeed: number
+  avgGenerationSpeed: number
+  responseCount: number
+  llmCallCount: number
+  dataPoints: StatsDataPoint[]
+  callDataPoints: CallStatsDataPoint[]
+}
+
 // Aggregated session-level stats for benchmarking
 export interface SessionStats {
   // Aggregates
@@ -283,6 +299,7 @@ export interface SessionStats {
   dataPoints: StatsDataPoint[]
   callDataPoints: CallStatsDataPoint[]
   modelGroups: ModelSessionStats[]
+  agentGroups: AgentSessionStats[]
 }
 
 export interface StatsIdentity {
@@ -308,6 +325,7 @@ export interface ModelSessionStats extends StatsIdentity {
   llmCallCount: number
   dataPoints: StatsDataPoint[]
   callDataPoints: CallStatsDataPoint[]
+  agentGroups?: AgentSessionStats[]
 }
 
 /**
@@ -372,6 +390,7 @@ export interface PreparingToolCall {
   index: number // Tool call index (for matching when complete)
   name: string // Tool name (available early in stream)
   arguments?: string // Partial arguments (streaming JSON fragments)
+  editContext?: EditContextRegion[] // Live edit context for streaming edit_file
 }
 
 export interface Attachment {
@@ -439,6 +458,7 @@ export interface ToolCall {
   streamingOutputTruncated?: boolean
   parseError?: string // Error message if JSON parsing failed
   rawArguments?: string // The unparsed arguments string for debugging
+  preflightError?: string // Set by stream fast-fail: the call must NOT execute, surface this error instead
 }
 
 /** A single line of context around an edit */
@@ -787,6 +807,8 @@ export interface ModelConfig {
   defaultTopP?: number
   defaultTopK?: number
   defaultMaxTokens?: number
+  /** Metadata contributed by plugins (pricing, capabilities, badges). */
+  pluginMetadata?: import('./plugin.js').PluginModelMetadataView
 }
 
 /** LLM provider configuration */

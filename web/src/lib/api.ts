@@ -55,9 +55,7 @@ export async function replayMessage(
   }
 }
 
-export interface ForkSessionResult {
-  session: import('@shared/types.js').Session
-}
+export type ForkSessionResult = { session: import('@shared/types.js').Session } | { error: string }
 
 export async function forkSession(
   sessionId: string,
@@ -70,11 +68,18 @@ export async function forkSession(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ messageId, ...(title !== undefined ? { title } : {}) }),
     })
-    if (!res.ok) return null
-    return (await res.json()) as ForkSessionResult
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as { error?: string } | null
+      return body?.error ? { error: body.error } : null
+    }
+    return (await res.json()) as { session: import('@shared/types.js').Session }
   } catch {
     return null
   }
+}
+
+export function forkSessionErrorMessage(result: ForkSessionResult | null): string | null {
+  return result && 'error' in result ? result.error : null
 }
 
 export interface SessionExportDocument {

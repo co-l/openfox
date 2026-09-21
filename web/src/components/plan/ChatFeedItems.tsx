@@ -4,6 +4,7 @@ import type { DisplayItem } from './groupMessages.js'
 import { ChatMessage } from './ChatMessage'
 import { AssistantMessage } from './AssistantMessage'
 import { SubAgentContainer } from './SubAgentContainer'
+import { FeedDivider } from './FeedDivider'
 import { FEED_REVEAL_EVENT } from './feed-window'
 import { useDisplaySettings } from '../../hooks/useDisplaySettings'
 import { useT } from '../../hooks/useT'
@@ -195,16 +196,8 @@ export const ChatFeedItems = memo(function ChatFeedItems({
         const displayIndex = displayStart + index
         if (item.type === 'context-divider') {
           return (
-            <div
-              key={itemKey(item)}
-              data-item-index={displayIndex}
-              className="flex items-center gap-2 feed-item px-2 @md:px-4"
-            >
-              <div className="flex-1 border-t border-border" />
-              <span className="text-[10px] text-text-muted font-medium px-2">
-                {t({ en: 'Earlier context summarized', fr: 'Contexte antérieur résumé' })}
-              </span>
-              <div className="flex-1 border-t border-border" />
+            <div key={itemKey(item)} data-item-index={displayIndex} className="feed-item px-2 @md:px-4">
+              <FeedDivider label={t({ en: 'Earlier context summarized', fr: 'Contexte antérieur résumé' })} />
             </div>
           )
         }

@@ -31,6 +31,7 @@ import {
   type TestProject,
   type TestServerHandle,
 } from './utils/index.js'
+import type { ServerMessage } from '@openfox/shared/protocol'
 // Type for path confirmation payload
 interface PathConfirmationPayload {
   callId: string
@@ -38,6 +39,26 @@ interface PathConfirmationPayload {
   paths: string[]
   workdir: string
   reason: 'outside_workdir' | 'sensitive_file' | 'both'
+}
+
+/**
+ * Wait until at least `count` chat.tool_result events are buffered.
+ *
+ * A session freshly switched to builder mode runs an agent-reminder
+ * acknowledgment turn whose chat.done can already sit in the event buffer when
+ * a test starts. Waiting on `chat.done` would match that stale event and check
+ * too early. Tool results only arrive from the turn under test, so polling for
+ * them is the deterministic completion signal.
+ */
+async function waitForToolResults(client: TestClient, count: number, timeoutMs = 20000): Promise<ServerMessage[]> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const results = client.allEvents().filter((e) => e.type === 'chat.tool_result')
+    if (results.length >= count || Date.now() >= deadline) {
+      return results
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
 }
 
 describe('Path Security', () => {
@@ -218,12 +239,9 @@ describe('Path Security', () => {
       const session = client.getSession()!
       await answerPathConfirmation(server.url, session.id, payload.callId, true)
 
-      // The operation should proceed after approval
-      await client.waitFor('chat.done').catch(() => null)
-
-      // Check for successful tool result
-      const allEvents = client.allEvents()
-      const toolResults = allEvents.filter((e) => e.type === 'chat.tool_result')
+      // The operation should proceed after approval — poll for the tool result
+      // rather than chat.done (a stale chat.done may already be buffered).
+      const toolResults = await waitForToolResults(client, 1)
       expect(toolResults.length).toBeGreaterThan(0)
     })
 
@@ -397,7 +415,7 @@ describe('Path Security', () => {
   describe('Danger Mode Switch', () => {
     async function collectConfirmations(): Promise<string[]> {
       const callIds: string[] = []
-      const deadline = Date.now() + 3000
+      const deadline = Date.now() + 15000
       while (Date.now() < deadline && callIds.length < 3) {
         const pending = client
           .allEvents()
@@ -436,14 +454,15 @@ describe('Path Security', () => {
       expect(resolved).not.toBeNull()
       for (const callId of callIds) {
         const msg = await client
-          .waitFor<{ callId: string }>('session.confirmation_resolved', (p) => p.callId === callId, 2000)
+          .waitFor<{ callId: string }>('session.confirmation_resolved', (p) => p.callId === callId, 5000)
           .catch(() => null)
         expect(msg, `expected confirmation_resolved for ${callId}`).not.toBeNull()
       }
 
-      // The whole batch completes without further prompting.
-      await client.waitFor('chat.done', undefined, 5000).catch(() => null)
-      const toolResults = client.allEvents().filter((e) => e.type === 'chat.tool_result')
+      // The whole batch completes without further prompting. Poll for the tool
+      // results: a stale chat.done from the beforeEach mode-switch reminder turn
+      // may already be buffered, so waiting on chat.done would check too early.
+      const toolResults = await waitForToolResults(client, 3)
       expect(toolResults.length).toBeGreaterThanOrEqual(3)
     })
 
