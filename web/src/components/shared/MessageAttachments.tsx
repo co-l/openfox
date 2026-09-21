@@ -3,6 +3,7 @@ import type { Attachment } from '@shared/types.js'
 import { ImageModal } from './ImageModal'
 import { useSessionStore } from '../../stores/session'
 import { isPreviewableImage, isTextMime, formatFileSize, getFileExtension } from '../../lib/attachment-utils.js'
+import { useT } from '../../hooks/useT'
 
 interface MessageAttachmentsProps {
   attachments: Attachment[]
@@ -10,6 +11,7 @@ interface MessageAttachmentsProps {
 }
 
 export function MessageAttachments({ attachments, messageId }: MessageAttachmentsProps) {
+  const t = useT()
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const visionFallbackByMessage = useSessionStore((state) => state.visionFallbackByMessage)
   const messages = useSessionStore((state) => state.messages)
@@ -76,7 +78,9 @@ export function MessageAttachments({ attachments, messageId }: MessageAttachment
                   />
                   {fallback?.type === 'start' && (
                     <div className="absolute inset-0 bg-black/60 flex items-center justify-center rounded-lg">
-                      <span className="text-xs text-text-primary animate-pulse">Describing image...</span>
+                      <span className="text-xs text-text-primary animate-pulse">
+                        {t({ en: 'Describing image...', fr: 'Description de l’image...' })}
+                      </span>
                     </div>
                   )}
                 </button>
@@ -116,7 +120,12 @@ export function MessageAttachments({ attachments, messageId }: MessageAttachment
       </div>
 
       {selectedImage && (
-        <ImageModal src={selectedImage} alt="Attached image" isOpen={true} onClose={handleCloseModal} />
+        <ImageModal
+          src={selectedImage}
+          alt={t({ en: 'Attached image', fr: 'Image jointe' })}
+          isOpen={true}
+          onClose={handleCloseModal}
+        />
       )}
     </>
   )

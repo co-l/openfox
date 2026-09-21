@@ -3,6 +3,37 @@ import type { SkillMetadata } from '../skills/types.js'
 import type { AgentDefinition } from '../agents/types.js'
 import { computeEffectiveTools } from '../tools/tool-policy.js'
 import { getPlatformShell } from '../utils/platform.js'
+import { getSetting, SETTINGS_KEYS } from '../db/settings.js'
+
+// ============================================================================
+// Optional "caveman thinking" section (opt-in via llm.cavemanThinking)
+// Compresses the agent's reasoning into terse fragments to cut thinking tokens.
+// ============================================================================
+
+const CAVEMAN_THINKING_SECTION = `## THINKING STYLE
+VERY IMPORTANT: think caveman style — fragments, no full sentences.
+BANNED in thinking: "the", "a", "an", "I should", "Let me", "Need to", "Found it", "User asks", "Now, ".
+NEVER restate the question or recap earlier steps. Each thinking block = one fresh fragment, straight to the point.
+BAD vs GOOD:
+- "Let me look at ChatInput.tsx." → "Check ChatInput.tsx."
+- "I need to run the tests." → "Run tests."
+- "I should read the file first." → "Read file first."
+- "Let me search for the pause button." → "Search web/src for 'pause'."
+- "User asks where the pause button is in the code." → "Question: pause button location."
+- "Now, how is this exposed?" → "How exposed?"
+- "I found the answer." → "Done."
+Full trace example (one line per thinking block):
+- "Question: pause button location. Plan mode — answer only, no criteria."
+- "Search web/src for 'pause'."
+- "ChatInput.tsx ~line 700, PauseIcon render."
+- "Answer: ChatInput.tsx, pause/stop row, ~line 700."
+More fragments:
+- "Test red: title mismatch. Fix string in ChatInput."
+- "Run typecheck after edit."
+- "Read file before edit. Check imports."
+- "Blocker: happy-dom, no layout. Assert classes."
+- "Wait for dev server restart before testing."
+Same meaning, far fewer tokens.`
 
 // ============================================================================
 // Base Prompt (shared by all agents)
@@ -29,6 +60,9 @@ export function buildBasePrompt(
   const instructionsSection = customInstructions ? `\n\n## CUSTOM INSTRUCTIONS\n\n${customInstructions}` : ''
 
   const modelLine = modelName ? `\nModel: ${modelName}` : ''
+
+  const cavemanSection =
+    getSetting(SETTINGS_KEYS.LLM_CAVEMAN_THINKING) === 'true' ? `\n\n${CAVEMAN_THINKING_SECTION}` : ''
 
   return `You are OpenFox, an agentic assistant.
 
@@ -87,7 +121,7 @@ assistant: src/foo.c
 
 user: write tests for new feature
 assistant: [uses run_command tool to find where similar tests are defined, uses concurrent read file tool use blocks in one tool call to read relevant files at the same time, uses edit file tool to write new tests]
-
+${cavemanSection}
 ## FILE REFERENCES
 @ prefix, e.g. @src/index.ts or @web/components/.
 Relative to the working directory above. Strip leading @ and resolve against working directory, never treat as absolute path.
@@ -307,5 +341,10 @@ Do not respond to any questions in the conversation, only output the summary.
 Be thorough but concise. Output as a structured summary.`
 
 export const FORMAT_CORRECTION_PROMPT = `IMPORTANT: You MUST use the JSON function calling API. Do NOT output XML tags like <tool_call>, <function=>, or <parameter=>. Your previous attempt was stopped because you used the wrong format. Use the proper tool_calls format.`
+
+export const CONTINUE_PROMPT = 'Continue your previous response. Do NOT repeat what you already wrote.'
+
+export const CONTINUE_AFTER_STREAM_ERROR_PROMPT =
+  'The LLM stream was interrupted mid-response. Continue exactly where you left off — do not repeat what was already written.'
 
 export const MAX_FORMAT_RETRIES = 10

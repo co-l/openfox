@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSessionStore } from '../../stores/session'
-import { useProjectStore } from '../../stores/project'
+import { useProjects } from '../../hooks/useProjects'
 import { PlanPanel } from '../plan/PlanPanel'
 import { TasksModal } from '../tasks/TasksModal'
 import { ProjectSettingsModal } from '../settings/ProjectSettingsModal'
@@ -8,6 +8,7 @@ import { DropdownMenu } from '../shared/DropdownMenu'
 import { authFetch } from '../../lib/api'
 import { XCloseIcon, MenuIcon, ChevronDownIcon, TasksIcon, FolderIcon, GearIcon } from '../shared/icons'
 import { Link } from 'wouter'
+import { useT } from '../../hooks/useT'
 
 // Container-query threshold is 768px; leave margin so the inline sidebar fits.
 const CRITERIA_MIN_WIDTH = 788
@@ -22,6 +23,7 @@ interface SessionPaneProps {
 }
 
 export function SessionPane({ sessionId, focused, onFocus, onClose, className }: SessionPaneProps) {
+  const t = useT()
   const rootRef = useRef<HTMLDivElement>(null)
   // The criteria sidebar follows the pane's width regime: open inline on wide
   // panes, closed (mobile-like overlay) on narrow ones so the chat input stays
@@ -49,7 +51,8 @@ export function SessionPane({ sessionId, focused, onFocus, onClose, className }:
   }, [])
   const pane = useSessionStore((state) => state.panes[sessionId])
   const projectId = pane?.session?.projectId
-  const project = useProjectStore((state) => (projectId ? state.projects.find((p) => p.id === projectId) : undefined))
+  const { projects } = useProjects()
+  const project = projects.find((p) => p.id === projectId)
   const title = pane?.session?.metadata?.title ?? sessionId.slice(0, 8)
   const isRunning = pane?.session?.isRunning ?? false
   const confirmationsCount = pane?.pendingPathConfirmations.length ?? 0
@@ -158,8 +161,8 @@ export function SessionPane({ sessionId, focused, onFocus, onClose, className }:
             onClose()
           }}
           className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors shrink-0"
-          title="Close pane"
-          aria-label="Close pane"
+          title={t({ en: 'Close pane', fr: 'Fermer le panneau' })}
+          aria-label={t({ en: 'Close pane', fr: 'Fermer le panneau' })}
         >
           <XCloseIcon className="w-3.5 h-3.5" />
         </button>

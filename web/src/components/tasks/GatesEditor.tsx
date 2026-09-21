@@ -3,8 +3,12 @@ import { Modal } from '../shared/SelfContainedModal'
 import { Button } from '../shared/Button'
 import { Input } from '../shared/Input'
 import { PlusIcon, TrashIcon } from '../shared/icons'
+import { SaveCancelButtons } from '../shared/SaveCancelButtons'
 import { useTasksStore } from '../../stores/tasks'
+import { useResource } from '../../hooks/useResource'
+import { boardResource } from '../../lib/resources'
 import type { TaskGateConfig } from '@shared/types.js'
+import { useT } from '../../hooks/useT'
 
 interface GatesEditorProps {
   projectId: string
@@ -14,15 +18,12 @@ interface GatesEditorProps {
 const NEW_GATE_ID = () => `gate_${crypto.randomUUID().slice(0, 8)}`
 
 export function GatesEditor({ projectId, onClose }: GatesEditorProps) {
-  const gates = useTasksStore((state) => state.gates)
-  const loadGates = useTasksStore((state) => state.loadGates)
+  const t = useT()
+  const { data: board } = useResource(boardResource, projectId)
+  const gates = board?.gates ?? []
   const setGateConfig = useTasksStore((state) => state.setGateConfig)
   const [localGates, setLocalGates] = useState<TaskGateConfig[]>([])
   const [saving, setSaving] = useState(false)
-
-  useEffect(() => {
-    void loadGates(projectId)
-  }, [projectId, loadGates])
 
   useEffect(() => {
     setLocalGates(gates)
@@ -57,28 +58,37 @@ export function GatesEditor({ projectId, onClose }: GatesEditorProps) {
     <Modal
       isOpen
       onClose={onClose}
-      title="Definition of Done"
+      title={t({ en: 'Definition of Done', fr: 'Définition de Terminé' })}
       size="lg"
       footer={
         <div className="flex items-center justify-between gap-2">
           <p className="text-sm text-text-muted">
-            Gates define what a task must carry before it may enter <strong>Done</strong>. Values are set by you or the
-            agent, each recorded with actor + timestamp.
+            {t({
+              en: 'Gates define what a task must carry before it may enter',
+              fr: 'Les portes définissent ce qu’une tâche doit comporter avant d’entrer dans',
+            })}{' '}
+            <strong>{t({ en: 'Done', fr: 'Terminé' })}</strong>.{' '}
+            {t({
+              en: 'Values are set by you or the agent, each recorded with actor + timestamp.',
+              fr: 'Les valeurs sont définies par vous ou l’agent, chacune enregistrée avec acteur + horodatage.',
+            })}
           </p>
-          <div className="flex items-center gap-2 shrink-0">
-            <Button onClick={onClose}>Cancel</Button>
-            <Button variant="primary" onClick={() => void save()} disabled={saving}>
-              {saving ? 'Saving…' : 'Save gates'}
-            </Button>
-          </div>
+          <SaveCancelButtons
+            onCancel={onClose}
+            onSave={() => void save()}
+            saving={saving}
+            saveLabel={t({ en: 'Save gates', fr: 'Enregistrer les portes' })}
+          />
         </div>
       }
     >
       <div className="space-y-3">
         {localGates.length === 0 && (
           <p className="text-sm text-text-muted">
-            No gates configured — any task can move straight to Done. Add a gate like “all green” (every criterion
-            passes with evidence) or “commit” (work committed with a commit reference).
+            {t({
+              en: 'No gates configured — any task can move straight to Done. Add a gate like “all green” (every criterion passes with evidence) or “commit” (work committed with a commit reference).',
+              fr: 'Aucune porte configurée — toute tâche peut passer directement à Terminé. Ajoutez une porte comme « all green » (chaque critère passe avec preuve) ou « commit » (travail validé avec une référence de commit).',
+            })}
           </p>
         )}
 
@@ -89,14 +99,17 @@ export function GatesEditor({ projectId, onClose }: GatesEditorProps) {
                 type="text"
                 value={gate.name}
                 onChange={(e) => updateGate(index, { name: e.target.value })}
-                placeholder="Gate name, e.g. “all green” or “commit”"
+                placeholder={t({
+                  en: 'Gate name, e.g. “all green” or “commit”',
+                  fr: 'Nom de la porte, ex. « all green » ou « commit »',
+                })}
                 className="flex-1 text-sm"
               />
               <button
                 type="button"
                 onClick={() => removeGate(index)}
                 className="p-1.5 rounded hover:bg-accent-error/10 text-text-muted hover:text-accent-error transition-colors"
-                title="Remove gate"
+                title={t({ en: 'Remove gate', fr: 'Supprimer la porte' })}
               >
                 <TrashIcon className="w-4 h-4" />
               </button>
@@ -105,7 +118,10 @@ export function GatesEditor({ projectId, onClose }: GatesEditorProps) {
               value={gate.description}
               onChange={(e) => updateGate(index, { description: e.target.value })}
               rows={2}
-              placeholder="What counts as acceptable proof? e.g. “every acceptance criterion passes with evidence, or work is committed with a commit SHA”"
+              placeholder={t({
+                en: 'What counts as acceptable proof? e.g. “every acceptance criterion passes with evidence, or work is committed with a commit SHA”',
+                fr: 'Qu’est-ce qui compte comme preuve acceptable ? ex. « chaque critère d’acceptation passe avec preuve, ou le travail est validé avec un SHA de commit »',
+              })}
               className="w-full px-2.5 py-1.5 bg-bg-tertiary border border-border rounded text-sm text-text-primary outline-none focus:border-accent-primary resize-y"
             />
             <div className="flex items-center gap-4 text-sm text-text-muted">
@@ -115,7 +131,7 @@ export function GatesEditor({ projectId, onClose }: GatesEditorProps) {
                   checked={gate.required}
                   onChange={(e) => updateGate(index, { required: e.target.checked })}
                 />
-                Required
+                {t({ en: 'Required', fr: 'Requise' })}
               </label>
               <label className="flex items-center gap-1.5">
                 <input
@@ -124,7 +140,7 @@ export function GatesEditor({ projectId, onClose }: GatesEditorProps) {
                   checked={gate.variant === 'done'}
                   onChange={() => updateGate(index, { variant: 'done' })}
                 />
-                Blocks Done
+                {t({ en: 'Blocks Done', fr: 'Bloque Terminé' })}
               </label>
               <label className="flex items-center gap-1.5">
                 <input
@@ -133,14 +149,14 @@ export function GatesEditor({ projectId, onClose }: GatesEditorProps) {
                   checked={gate.variant === 'ready'}
                   onChange={() => updateGate(index, { variant: 'ready' })}
                 />
-                Definition of ready (blocks In Progress)
+                {t({ en: 'Definition of ready (blocks In Progress)', fr: 'Définition de prêt (bloque En cours)' })}
               </label>
             </div>
           </div>
         ))}
 
         <Button onClick={addGate}>
-          <PlusIcon className="w-3.5 h-3.5 mr-1 inline-block" /> Add gate
+          <PlusIcon className="w-3.5 h-3.5 mr-1 inline-block" /> {t({ en: 'Add gate', fr: 'Ajouter une porte' })}
         </Button>
       </div>
     </Modal>

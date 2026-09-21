@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Modal } from './Modal'
 import { Button } from './Button'
+import { useT } from '../../hooks/useT'
 
 interface ConfirmModalProps {
   isOpen: boolean
@@ -19,10 +20,12 @@ export function ConfirmModal({
   onConfirm,
   title,
   message,
-  confirmLabel = 'Confirm',
+  confirmLabel,
   confirmVariant = 'primary',
   disabled = false,
 }: ConfirmModalProps) {
+  const t = useT()
+  const resolvedConfirmLabel = confirmLabel ?? t({ en: 'Confirm', fr: 'Confirmer' })
   return (
     <Modal
       isOpen={isOpen}
@@ -32,10 +35,10 @@ export function ConfirmModal({
       footer={
         <div className="flex justify-end gap-2">
           <Button variant="secondary" onClick={onClose} disabled={disabled}>
-            Cancel
+            {t({ en: 'Cancel', fr: 'Annuler' })}
           </Button>
           <Button variant={confirmVariant} onClick={onConfirm} disabled={disabled} autoFocus>
-            {confirmLabel}
+            {resolvedConfirmLabel}
           </Button>
         </div>
       }

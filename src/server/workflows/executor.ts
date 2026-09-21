@@ -14,20 +14,23 @@ import type {
   Transition,
   TransitionCondition,
   AgentStep,
+  ParallelStep,
   SubAgentStep,
   ShellStep,
   UserStep,
 } from './types.js'
+import { runPluginTransitionHandler } from '../plugins/transition-handlers.js'
+import type { PluginTransitionContext } from '../../plugin/index.js'
 import { TERMINAL_DONE, TERMINAL_BLOCKED } from './types.js'
 import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
 import { createChatMessageMessage } from '../ws/protocol.js'
 import { runAgentTurn, TurnMetrics, createMessageStartEvent } from '../chat/orchestrator.js'
-import { executeSubAgent } from '../sub-agents/manager.js'
-import { loadAllAgentsDefault, findAgentById, resolveDefaultAgentId } from '../agents/registry.js'
-import { getToolRegistryForAgent } from '../tools/index.js'
+import { loadAllAgentsDefault, resolveDefaultAgentId } from '../agents/registry.js'
 import { computeSessionStats } from '../../shared/stats.js'
 import { formatGitDiffFiles } from '../git/diff.js'
-import { executeShellCommand } from './shell.js'
+import { aggregateParallel, mapPool, runChild, runShellChild, runSubAgentChild, type RunChildDeps } from './parallel.js'
+import { resolveTemplate, type TemplateContext } from './template.js'
+import { resolveLLMClientForAgent, buildAgentOverrideStatsIdentity } from '../agents/model-overrides.js'
 import { logger } from '../utils/logger.js'
 import { LLMError } from '../utils/errors.js'
 
@@ -35,43 +38,11 @@ import { LLMError } from '../utils/errors.js'
 // Template Variables
 // ============================================================================
 
-export interface TemplateContext {
-  workdir: string
-  reason: string
-  /** @deprecated Use stepOutput.content instead */
-  verifierFindings: string
-  /** @deprecated Use stepOutput.stdout instead */
-  previousStepOutput: string
-  criteriaCount: number
-  pendingCount: number
-  criteriaList: string
-  modifiedFiles: string
-  stepOutput: Record<string, string>
-  /** User-supplied parameters from workflow launch (e.g. slash command args) */
-  params: Record<string, string>
-}
-
-/** Canonical list of template variables — single source of truth for resolveTemplate and the API. */
-export const TEMPLATE_VARIABLES: Array<{ name: string; description: string }> = [
-  { name: 'workdir', description: 'Working directory of the session' },
-  { name: 'reason', description: 'Human-readable reason (e.g. "2 criteria remaining")' },
-  {
-    name: 'stepOutput',
-    description: 'Structured output from the previous step (content, stdout, stderr, exitCode, etc.)',
-  },
-  {
-    name: 'verifierFindings',
-    description: '@deprecated Use stepOutput.content instead. Output from the last sub-agent step',
-  },
-  {
-    name: 'previousStepOutput',
-    description: '@deprecated Use stepOutput.stdout instead. Output from the last shell step',
-  },
-  { name: 'criteriaCount', description: 'Total number of criteria' },
-  { name: 'pendingCount', description: 'Number of pending/failed criteria' },
-  { name: 'criteriaList', description: 'Formatted list of all criteria with status' },
-  { name: 'modifiedFiles', description: 'List of modified files' },
-]
+// TemplateContext, TEMPLATE_VARIABLES and resolveTemplate live in template.js
+// (shared with the parallel child runners); re-exported so existing imports
+// from this module keep working.
+export { TEMPLATE_VARIABLES, resolveTemplate } from './template.js'
+export type { TemplateContext } from './template.js'
 
 export function formatCriteriaList(entries: import('../../shared/types.js').MetadataEntry[]): string {
   if (entries.length === 0) return '(none)'
@@ -92,25 +63,6 @@ export function formatCriteriaList(entries: import('../../shared/types.js').Meta
 
 export async function formatModifiedFiles(workdir: string): Promise<string> {
   return formatGitDiffFiles(workdir)
-}
-
-export function resolveTemplate(template: string, ctx: TemplateContext): string {
-  let result = template
-  // Resolve built-in variables first
-  for (const { name } of TEMPLATE_VARIABLES) {
-    if (name === 'stepOutput' || name === 'verifierFindings' || name === 'previousStepOutput') continue
-    const value = String(ctx[name as keyof TemplateContext])
-    result = result.replace(new RegExp(`\\{\\{${name}\\}\\}`, 'g'), value)
-  }
-  result = result.replace(/\{\{stepOutput\.(\w+)\}\}/g, (_, key) => ctx.stepOutput[key] ?? '')
-  result = result.replace(/\{\{verifierFindings\}\}/g, ctx.stepOutput['content'] ?? '')
-  result = result.replace(/\{\{previousStepOutput\}\}/g, ctx.stepOutput['stdout'] ?? '')
-  // Resolve user-supplied params (lower priority — can't override built-ins)
-  // Use replaceAll for literal string matching (avoids regex injection from param names)
-  for (const [key, value] of Object.entries(ctx.params)) {
-    result = result.replaceAll(`{{${key}}}`, value)
-  }
-  return result
 }
 
 // ============================================================================
@@ -146,9 +98,43 @@ export function evaluateCondition(
       return entries.every((e) => condition.values.includes(e[condition.field] as string))
     }
 
+    case 'custom':
+      return false
+
     case 'always':
       return true
   }
+}
+
+export async function evaluateConditionAsync(
+  condition: TransitionCondition,
+  stepOutcome: StepOutcome | null,
+  metadataEntries?: Record<string, import('../../shared/types.js').MetadataEntry[]>,
+  context?: { workflowId?: string; stepId?: string },
+): Promise<boolean> {
+  if (condition.type !== 'custom') return evaluateCondition(condition, stepOutcome, metadataEntries)
+  const pluginContext: PluginTransitionContext = {
+    ...(context?.workflowId ? { workflowId: context.workflowId } : {}),
+    ...(context?.stepId ? { stepId: context.stepId } : {}),
+    ...(condition.config !== undefined ? { config: condition.config } : {}),
+    outcome: stepOutcome,
+    ...(metadataEntries ? { metadataEntries } : {}),
+  }
+  return runPluginTransitionHandler(condition.handler, pluginContext)
+}
+
+export async function findMatchingTransitionAsync(
+  transitions: Transition[],
+  stepOutcome: StepOutcome | null,
+  metadataEntries?: Record<string, import('../../shared/types.js').MetadataEntry[]>,
+  context?: { workflowId?: string; stepId?: string },
+): Promise<Transition | null> {
+  for (const transition of transitions) {
+    if (await evaluateConditionAsync(transition.when, stepOutcome, metadataEntries, context)) {
+      return transition
+    }
+  }
+  return null
 }
 
 export function findMatchingTransition(
@@ -170,6 +156,52 @@ export function evaluateTransitions(
   metadataEntries?: Record<string, import('../../shared/types.js').MetadataEntry[]>,
 ): string {
   return findMatchingTransition(transitions, stepOutcome, metadataEntries)?.goto ?? TERMINAL_BLOCKED
+}
+
+// ============================================================================
+// Step-Done Nudge
+// ============================================================================
+
+const STEP_DONE_NUDGE =
+  "You haven't called step_done(). If you haven't finished the task, continue and when you're finished call step_done()"
+const STEP_DONE_REMINDER = 'If you have finished the task, call step_done()'
+
+/**
+ * True when a step's transition condition is already satisfied — the first
+ * matching transition would move the workflow away from the current step. In
+ * that case there is nothing left to do but call step_done, so the verbose
+ * "keep working" nudge should be skipped. A transition that loops back to the
+ * current step (the usual `always` fallback) means work remains.
+ */
+export function isStepTransitionSatisfied(
+  transitions: Transition[],
+  metadataEntries: Record<string, import('../../shared/types.js').MetadataEntry[]>,
+  currentStepId: string,
+): boolean {
+  const fired = findMatchingTransition(transitions, null, metadataEntries)
+  return fired !== null && fired.goto !== currentStepId
+}
+
+/**
+ * Build the reminder injected when an agent step loops back without calling
+ * step_done. When the transition condition is already satisfied (e.g. all
+ * criteria completed but step_done forgotten), the verbose nudgePrompt is
+ * skipped and only a simple "call step_done" reminder is emitted.
+ */
+export function buildAgentNudge(
+  nudgePrompt: string | undefined,
+  templateCtx: TemplateContext,
+  transitions: Transition[],
+  metadataEntries: Record<string, import('../../shared/types.js').MetadataEntry[]>,
+  currentStepId: string,
+): string {
+  const transitionSatisfied = isStepTransitionSatisfied(transitions, metadataEntries, currentStepId)
+  const parts: string[] = []
+  if (nudgePrompt && !transitionSatisfied) {
+    parts.push(resolveTemplate(nudgePrompt, templateCtx))
+  }
+  parts.push(transitionSatisfied ? STEP_DONE_REMINDER : STEP_DONE_NUDGE)
+  return parts.join('\n\n')
 }
 
 // ============================================================================
@@ -272,6 +304,27 @@ export function buildReason(metadataEntries?: Record<string, import('../../share
   return `${remaining.length} criteria remaining`
 }
 
+/** Build the RunChildDeps shared by the top-level sub_agent and shell step cases */
+function buildStepChildDeps(
+  options: OrchestratorOptions,
+  templateCtx: TemplateContext,
+  eventStore: ReturnType<typeof getEventStore>,
+  windowOptions: { contextWindowId: string } | undefined,
+): RunChildDeps {
+  const { sessionManager, sessionId, llmClient, statsIdentity, signal, onMessage } = options
+  return {
+    sessionManager,
+    sessionId,
+    llmClient,
+    ctx: templateCtx,
+    ...(signal ? { signal } : {}),
+    ...(onMessage ? { onMessage } : {}),
+    ...(statsIdentity !== undefined ? { statsIdentity } : {}),
+    eventStore,
+    windowOptions,
+  }
+}
+
 // ============================================================================
 // Executor
 // ============================================================================
@@ -353,10 +406,11 @@ export async function executeWorkflow(
   // Evaluate start condition if present
   if (workflow.startCondition && workflow.startCondition.type !== 'always') {
     const session = sessionManager.requireSession(sessionId)
-    const conditionMet = evaluateCondition(
+    const conditionMet = await evaluateConditionAsync(
       workflow.startCondition as TransitionCondition,
       null,
       session.metadataEntries,
+      { workflowId: workflow.metadata.id },
     )
     if (!conditionMet) {
       logger.debug('Workflow start condition not met', { sessionId, condition: workflow.startCondition.type })
@@ -487,8 +541,6 @@ export async function executeWorkflow(
       case 'agent': {
         const agentStep = step as AgentStep
         const STEP_DONE_PROMPT = "\n\nOnce you're done, call step_done()"
-        const STEP_DONE_NUDGE =
-          "You haven't called step_done(). If you haven't finished the task, continue and when you're finished call step_done()"
 
         // When resuming from the same step after abort, skip re-injecting the
         // prompt or nudge — the agent already knows what step it's in and the
@@ -530,14 +582,16 @@ export async function executeWorkflow(
             )
           }
         } else if (firstEntryForStep.has(step.id) && !isResumingCurrentStep) {
-          // Build nudge: nudgePrompt first (if exists), then step_done nudge
-          const parts: string[] = []
-          if (agentStep.nudgePrompt) {
-            const resolvedNudge = resolveTemplate(agentStep.nudgePrompt, templateCtx)
-            parts.push(resolvedNudge)
-          }
-          parts.push(STEP_DONE_NUDGE)
-          nudgeContent = parts.join('\n\n')
+          // Build nudge: if the transition condition is already satisfied (e.g.
+          // all criteria completed but step_done forgotten), only remind to call
+          // step_done instead of the verbose keep-working nudgePrompt.
+          nudgeContent = buildAgentNudge(
+            agentStep.nudgePrompt,
+            templateCtx,
+            step.transitions,
+            session.metadataEntries,
+            step.id,
+          )
 
           emitWorkflowMessage(eventStore, sessionId, nudgeContent, currentWindowMessageOptions, onMessage)
         }
@@ -571,22 +625,50 @@ export async function executeWorkflow(
 
         let stepDoneCalled = false
 
+        // Resolve the step's model: a per-agent override (e.g. builder-3.8-27b
+        // pinned to qwen) wins over the session client — mirrors the sub-agent
+        // path. Without an override the session client is used as before.
+        const stepAgentId = agentStep.agentId ?? resolveDefaultAgentId()
+        const effectiveProviderManager = sessionManager.getProviderManager?.()
+        let stepLlmClient = llmClient
+        let stepStatsIdentity = options.statsIdentity
+        let stepGetSessionLLMClient = options.getSessionLLMClient
+        if (effectiveProviderManager) {
+          const pinnedEffort = session.providerPinnedEffort ?? undefined
+          const resolved = resolveLLMClientForAgent(stepAgentId, llmClient, effectiveProviderManager, pinnedEffort)
+          if (resolved.usedOverride && resolved.override) {
+            stepLlmClient = resolved.client
+            stepStatsIdentity = buildAgentOverrideStatsIdentity(
+              effectiveProviderManager,
+              resolved.client,
+              resolved.override,
+            )
+            // Keep retries on the override client instead of the session client
+            stepGetSessionLLMClient = undefined
+          } else if (resolved.warning) {
+            logger.warn('Agent step model override unavailable, falling back', {
+              agentId: stepAgentId,
+              warning: resolved.warning,
+            })
+          }
+        }
+
         let agentResult: Awaited<ReturnType<typeof runAgentTurn>>
         try {
           agentResult = await runAgentTurn(
             {
               sessionManager,
               sessionId,
-              llmClient,
-              ...(options.getSessionLLMClient ? { getSessionLLMClient: options.getSessionLLMClient } : {}),
-              ...(options.statsIdentity ? { statsIdentity: options.statsIdentity } : {}),
+              llmClient: stepLlmClient,
+              ...(stepGetSessionLLMClient ? { getSessionLLMClient: stepGetSessionLLMClient } : {}),
+              ...(stepStatsIdentity ? { statsIdentity: stepStatsIdentity } : {}),
               ...(signal ? { signal } : {}),
               ...(onMessage ? { onMessage } : {}),
               ...(options.llmRetryPolicy ? { llmRetryPolicy: options.llmRetryPolicy } : {}),
               ...(isResumingCurrentStep ? { skipAgentReminder: true } : {}),
             },
             turnMetrics,
-            agentStep.agentId ?? resolveDefaultAgentId(),
+            stepAgentId,
             append,
             {
               ...(!firstEntryForStep.has(step.id) && !agentStep.prompt && !isResumingCurrentStep
@@ -649,121 +731,63 @@ export async function executeWorkflow(
 
       case 'sub_agent': {
         const subStep = step as SubAgentStep
-        const turnMetrics = new TurnMetrics()
+        const outcome = await runSubAgentChild(
+          subStep,
+          buildStepChildDeps(options, templateCtx, eventStore, currentWindowMessageOptions),
+        )
+        lastStepOutput = outcome.output
+        stepOutcome = { result: outcome.result, output: lastStepOutput }
+        break
+      }
 
-        const promptTemplate = subStep.prompt ?? 'Perform your task.'
-        const resolvedPrompt = resolveTemplate(promptTemplate, templateCtx)
+      case 'shell': {
+        const shellStep = step as ShellStep
+        const outcome = await runShellChild(
+          shellStep,
+          buildStepChildDeps(options, templateCtx, eventStore, currentWindowMessageOptions),
+        )
+        lastStepOutput = outcome.output
+        stepOutcome = { result: outcome.result, output: lastStepOutput }
+        break
+      }
 
+      case 'parallel': {
+        const parallelStep = step as ParallelStep
+        if (parallelStep.children.length === 0) {
+          logger.warn('Parallel step has no children', { sessionId, stepId: step.id })
+        }
+        const childIds = parallelStep.children.map((c) => c.id)
+        if (new Set(childIds).size !== childIds.length) {
+          logger.warn('Parallel step has duplicate child ids', { sessionId, stepId: step.id, ids: childIds })
+        }
         const allAgents = await loadAllAgentsDefault(sessionManager.getProjectWorkdir(sessionId))
-        const agentDef = findAgentById(subStep.subAgentType, allAgents)
-        if (!agentDef) {
-          logger.error('Sub-agent definition not found', { subAgentType: subStep.subAgentType })
-          stepOutcome = { result: 'error', output: {} }
-          break
-        }
-
-        const toolRegistry = getToolRegistryForAgent(agentDef)
-        // Filter out step_done tool from sub-agents (it's workflow-executor-only)
-        const filteredToolRegistry = {
-          tools: toolRegistry.tools.filter((t) => t.name !== 'step_done'),
-          definitions: toolRegistry.definitions.filter((d) => d.type === 'function' && d.function.name !== 'step_done'),
-          execute: toolRegistry.execute,
-        }
-
-        const result = await executeSubAgent({
-          subAgentType: subStep.subAgentType,
-          prompt: resolvedPrompt,
+        const baseDeps: RunChildDeps = {
           sessionManager,
           sessionId,
           llmClient,
-          toolRegistry: filteredToolRegistry,
-          turnMetrics,
+          ctx: templateCtx,
+          ...(signal ? { signal } : {}),
+          ...(onMessage ? { onMessage } : {}),
+          eventStore,
+          windowOptions: currentWindowMessageOptions,
           statsIdentity: options.statsIdentity ?? {
             providerId: '',
             providerName: '',
             backend: 'unknown',
             model: llmClient.getModel(),
           },
-          ...(signal ? { signal } : {}),
-          ...(onMessage ? { onMessage } : {}),
-        })
-
-        lastStepOutput = { content: result.content ?? '', ...(result.result ? { result: result.result } : {}) }
-        stepOutcome = { result: result.result ?? 'success', output: lastStepOutput }
-        break
-      }
-
-      case 'shell': {
-        const shellStep = step as ShellStep
-        const command = resolveTemplate(shellStep.command, templateCtx)
-        const timeout = shellStep.timeout ?? 60_000
-        const successCodes = shellStep.successExitCodes ?? [0]
-
-        // Emit a message showing the shell command being run
-        const shellMsgId = crypto.randomUUID()
-        eventStore.append(
-          sessionId,
-          createMessageStartEvent(shellMsgId, 'user', `Running: \`${command}\``, {
-            ...(currentWindowMessageOptions ?? {}),
-            isSystemGenerated: true,
-            messageKind: 'auto-prompt',
-            metadata: { type: 'workflow', name: 'Workflow', color: '#f59e0b' },
-          }),
-        )
-        if (onMessage) {
-          onMessage(
-            createChatMessageMessage({
-              id: shellMsgId,
-              role: 'user',
-              content: `Running: \`${command}\``,
-              timestamp: new Date().toISOString(),
-              isSystemGenerated: true,
-              messageKind: 'auto-prompt',
-              metadata: { type: 'workflow', name: 'Workflow', color: '#f59e0b' },
-            }),
-          )
+          agents: allAgents,
         }
-
-        const result = await executeShellCommand(
-          command,
-          sessionManager.getEffectiveWorkdir(sessionId),
-          timeout,
-          signal,
+        const limit = Math.min(
+          Math.max(Math.floor(parallelStep.maxConcurrency ?? parallelStep.children.length), 1),
+          parallelStep.children.length,
         )
-
-        const output = [result.stdout, result.stderr].filter(Boolean).join('\n').trim()
-        lastStepOutput = { stdout: result.stdout ?? '', stderr: result.stderr ?? '', exitCode: String(result.exitCode) }
-
-        // Append output as message content
-        const outputContent = output
-          ? `Exit code: ${result.exitCode}\n\`\`\`\n${output.slice(0, 10000)}\n\`\`\``
-          : `Exit code: ${result.exitCode}`
-        eventStore.append(sessionId, { type: 'message.done', data: { messageId: shellMsgId } })
-
-        const outputMsgId = crypto.randomUUID()
-        eventStore.append(
-          sessionId,
-          createMessageStartEvent(outputMsgId, 'user', outputContent, {
-            ...(currentWindowMessageOptions ?? {}),
-            isSystemGenerated: true,
-            messageKind: 'correction',
-          }),
+        const outcomes = await mapPool(parallelStep.children, limit, (child) =>
+          runChild(child, { ...baseDeps, label: child.id }),
         )
-        eventStore.append(sessionId, { type: 'message.done', data: { messageId: outputMsgId } })
-        if (onMessage) {
-          onMessage(
-            createChatMessageMessage({
-              id: outputMsgId,
-              role: 'user',
-              content: outputContent,
-              timestamp: new Date().toISOString(),
-              isSystemGenerated: true,
-              messageKind: 'correction',
-            }),
-          )
-        }
-
-        stepOutcome = { result: successCodes.includes(result.exitCode) ? 'success' : 'failure', output: lastStepOutput }
+        const aggregate = aggregateParallel(outcomes)
+        lastStepOutput = aggregate.output
+        stepOutcome = { result: aggregate.result, output: lastStepOutput }
         break
       }
 
@@ -818,7 +842,10 @@ export async function executeWorkflow(
     const candidates = subGroup
       ? step.transitions.filter((t) => !t.subGroup || activeSubGroups.has(t.subGroup))
       : step.transitions
-    const fired = findMatchingTransition(candidates, stepOutcome, refreshedSession.metadataEntries)
+    const fired = await findMatchingTransitionAsync(candidates, stepOutcome, refreshedSession.metadataEntries, {
+      workflowId: workflow.metadata.id,
+      stepId: step.id,
+    })
     let nextStepId = fired ? fired.goto : TERMINAL_BLOCKED
 
     // When running a sub-group, a transition leaving the active set either:

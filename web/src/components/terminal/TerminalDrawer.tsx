@@ -1,12 +1,13 @@
 import { ScrollArea } from '../shared/ScrollArea'
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useTerminalStore } from '../../stores/terminal'
-import { useProjectStore } from '../../stores/project'
+import { useCurrentProject } from '../../hooks/useCurrentProject'
 import { useSessionStore } from '../../stores/session/store'
 import { TerminalPane } from './TerminalPane'
 import { PlusSquareIcon, XCloseIcon } from '../shared/icons'
 import { focusChatTextarea } from '../../lib/focusChatTextarea'
 import { shouldAutofocus } from '../../lib/device'
+import { useT } from '../../hooks/useT'
 
 interface TerminalDrawerProps {
   isOpen: boolean
@@ -20,12 +21,13 @@ function getGridClass(count: number): string {
 }
 
 export function TerminalDrawer({ isOpen, onClose }: TerminalDrawerProps) {
+  const t = useT()
   const createSession = useTerminalStore((state) => state.createSession)
   const killSession = useTerminalStore((state) => state.killSession)
   const sessions = useTerminalStore((state) => state.sessions)
   const setWorkdir = useTerminalStore((state) => state.setWorkdir)
   const fetchSessions = useTerminalStore((state) => state.fetchSessions)
-  const currentProject = useProjectStore((state) => state.currentProject)
+  const currentProject = useCurrentProject()
   const currentSession = useSessionStore((state) => state.currentSession)
   const [isLoading, setIsLoading] = useState(true)
   const terminalRef = useRef<HTMLDivElement>(null)
@@ -109,19 +111,19 @@ export function TerminalDrawer({ isOpen, onClose }: TerminalDrawerProps) {
         }}
       >
         <div className="flex items-center justify-between px-4 py-2 border-b border-border">
-          <h3 className="text-sm font-semibold text-text-primary">Terminal</h3>
+          <h3 className="text-sm font-semibold text-text-primary">{t({ en: 'Terminal', fr: 'Terminal' })}</h3>
           <div className="flex items-center gap-2">
             <button
               onClick={() => createSession(undefined, currentSession?.projectId ?? currentProject?.id)}
               className="p-2 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
-              title="New terminal"
+              title={t({ en: 'New terminal', fr: 'Nouveau terminal' })}
             >
               <PlusSquareIcon />
             </button>
             <button
               onClick={onClose}
               className="p-2 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
-              title="Close (Esc)"
+              title={t({ en: 'Close (Esc)', fr: 'Fermer (Échap)' })}
             >
               <XCloseIcon />
             </button>
@@ -130,16 +132,18 @@ export function TerminalDrawer({ isOpen, onClose }: TerminalDrawerProps) {
 
         <ScrollArea className="flex-1 min-h-0 p-2">
           {isLoading ? (
-            <div className="flex items-center justify-center h-full text-text-muted">Loading...</div>
+            <div className="flex items-center justify-center h-full text-text-muted">
+              {t({ en: 'Loading...', fr: 'Chargement...' })}
+            </div>
           ) : sessions.length === 0 ? (
             <div className="flex items-center justify-center h-full text-text-muted">
               <div className="text-center">
-                <p className="mb-4">No terminal sessions</p>
+                <p className="mb-4">{t({ en: 'No terminal sessions', fr: 'Aucune session de terminal' })}</p>
                 <button
                   onClick={() => createSession(undefined, currentSession?.projectId ?? currentProject?.id)}
                   className="px-4 py-2 bg-accent-primary/25 text-text-primary rounded hover:bg-accent-primary/40 transition-colors"
                 >
-                  Create Terminal
+                  {t({ en: 'Create Terminal', fr: 'Créer un terminal' })}
                 </button>
               </div>
             </div>

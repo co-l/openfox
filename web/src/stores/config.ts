@@ -1,11 +1,21 @@
 import { create } from 'zustand'
 import { authFetch } from '../lib/api'
+import { configResource, providersResource, providerModelsResource, readProviders } from '../lib/resources'
 import type { ModelConfig } from '@shared/types.js'
 
 type LlmStatus = 'connected' | 'disconnected' | 'unknown'
 
 type Backend =
-  'vllm' | 'sglang' | 'ollama' | 'llamacpp' | 'lmstudio' | 'openai' | 'anthropic' | 'opencode-go' | 'unknown'
+  | 'vllm'
+  | 'sglang'
+  | 'ollama'
+  | 'llamacpp'
+  | 'lmstudio'
+  | 'unsloth'
+  | 'openai'
+  | 'anthropic'
+  | 'opencode-go'
+  | 'unknown'
 type ProviderStatus = 'connected' | 'disconnected' | 'unknown'
 
 interface Provider {
@@ -31,47 +41,6 @@ export interface PlatformInfo {
   wslDistro: string
 }
 
-interface ConfigState {
-  // Version
-  version: string | null
-  // Current active model/backend
-  model: string | null
-  maxContext: number
-  llmUrl: string | null
-  llmStatus: LlmStatus
-  backend: Backend
-  // Provider management
-  providers: Provider[]
-  activeProviderId: string | null
-  defaultModelSelection: string | null
-  // Platform info from server (WSL detection etc.)
-  platform: PlatformInfo | null
-  // Working directory reported by the server
-  workdir: string | null
-  loading: boolean
-  activating: boolean
-  error: string | null
-  autoRefreshInterval: ReturnType<typeof setInterval> | null
-
-  // Actions
-  fetchConfig: () => Promise<void>
-  refreshModel: () => Promise<void>
-  activateProvider: (providerId: string) => Promise<boolean>
-  setDefaultModel: (providerId: string, model: string) => Promise<boolean>
-  updateModelSettings: (
-    providerId: string,
-    modelId: string,
-    settings: { thinkingLevel?: string; thinkingEnabled?: boolean },
-  ) => Promise<boolean>
-  startAutoRefresh: () => void
-  stopAutoRefresh: () => void
-  refreshProviderModels: (providerId: string) => Promise<boolean>
-
-  // Selectors
-  getActiveProvider: () => Provider | undefined
-  getModelContext: (modelId: string) => number
-}
-
 const AUTO_REFRESH_INTERVAL_MS = 30_000
 
 function getBackendDisplayName(backend: Backend): string {
@@ -86,6 +55,8 @@ function getBackendDisplayName(backend: Backend): string {
       return 'llama.cpp'
     case 'lmstudio':
       return 'LM Studio'
+    case 'unsloth':
+      return 'Unsloth Studio'
     case 'openai':
       return 'OpenAI'
     case 'anthropic':
@@ -100,106 +71,56 @@ function getBackendDisplayName(backend: Backend): string {
 export { getBackendDisplayName }
 export type { Backend, LlmStatus, Provider, ProviderStatus }
 
-let configFetchPromise: Promise<void> | null = null
+interface ConfigState {
+  /** Local UI state only — all server data lives in the config/providers resources. */
+  loading: boolean
+  activating: boolean
+  error: string | null
+  autoRefreshInterval: ReturnType<typeof setInterval> | null
+
+  // Mutations delegating to the resource cache so all subscribers converge.
+  fetchConfig: () => Promise<void>
+  refreshModel: () => Promise<void>
+  activateProvider: (providerId: string) => Promise<boolean>
+  setDefaultModel: (providerId: string, model: string) => Promise<boolean>
+  updateModelSettings: (
+    providerId: string,
+    modelId: string,
+    settings: { thinkingLevel?: string; thinkingEnabled?: boolean },
+  ) => Promise<boolean>
+  refreshProviderModels: (providerId: string) => Promise<boolean>
+  startAutoRefresh: () => void
+  stopAutoRefresh: () => void
+}
 
 export const useConfigStore = create<ConfigState>((set, get) => ({
-  version: null,
-  model: null,
-  maxContext: 200000,
-  llmUrl: null,
-  llmStatus: 'unknown',
-  backend: 'unknown',
-  providers: [],
-  activeProviderId: null,
-  defaultModelSelection: null,
-  platform: null,
-  workdir: null,
   loading: false,
   activating: false,
   error: null,
   autoRefreshInterval: null,
 
   fetchConfig: async () => {
-    // Deduplicate concurrent calls: while a fetch is in flight, all callers
-    // share the same promise instead of firing N identical requests.
-    if (configFetchPromise) {
-      return configFetchPromise
-    }
-
     set({ loading: true, error: null })
-    configFetchPromise = (async () => {
-      try {
-        const response = await authFetch('/api/config')
-        if (!response.ok) {
-          throw new Error('Failed to fetch config')
-        }
-        const data = (await response.json()) as {
-          version: string
-          model: string
-          maxContext: number
-          llmUrl: string
-          llmStatus: LlmStatus
-          backend: Backend
-          providers: Provider[]
-          activeProviderId: string | null
-          defaultModelSelection: string | null
-          platform: unknown
-          workdir?: string
-        }
-        const platform: PlatformInfo | null =
-          data.platform && typeof data.platform === 'object'
-            ? {
-                isWSL: !!(data.platform as Record<string, unknown>).isWSL,
-                wslDistro: String((data.platform as Record<string, unknown>).wslDistro ?? ''),
-              }
-            : null
-        set({
-          version: data.version,
-          model: data.model,
-          maxContext: data.maxContext,
-          llmUrl: data.llmUrl,
-          llmStatus: data.llmStatus,
-          backend: data.backend,
-          providers: data.providers ?? [],
-          activeProviderId: data.activeProviderId ?? null,
-          defaultModelSelection: data.defaultModelSelection ?? null,
-          platform,
-          workdir: data.workdir ?? null,
-          loading: false,
-        })
-      } catch (error) {
-        set({
-          error: error instanceof Error ? error.message : 'Unknown error',
-          loading: false,
-        })
-      } finally {
-        configFetchPromise = null
-      }
-    })()
-
-    return configFetchPromise
+    try {
+      await Promise.all([configResource.refresh(), providersResource.refresh()])
+      set({ loading: false })
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : 'Unknown error', loading: false })
+    }
   },
 
   refreshModel: async () => {
     try {
       const response = await authFetch('/api/model/refresh', { method: 'POST' })
-      if (!response.ok) {
-        throw new Error('Failed to refresh model')
-      }
-      const data = (await response.json()) as {
-        model: string
-        source: string
-        llmStatus: LlmStatus
-        backend: Backend
-      }
-      set({ model: data.model, llmStatus: data.llmStatus, backend: data.backend })
+      if (!response.ok) throw new Error('Failed to refresh model')
+      await configResource.refresh()
     } catch (error) {
       console.error('Failed to refresh model:', error)
     }
   },
 
   activateProvider: async (providerId: string) => {
-    const { activeProviderId, providers } = get()
+    const activeProviderId = readProviders()?.activeProviderId ?? null
     if (providerId === activeProviderId) return true
 
     set({ activating: true, error: null })
@@ -209,35 +130,16 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         const errorData = (await response.json()) as { error?: string }
         throw new Error(errorData.error ?? 'Failed to activate provider')
       }
-      const data = (await response.json()) as {
-        success: boolean
-        activeProviderId: string
-        model: string
-        backend: Backend
-      }
-
-      set({
-        activeProviderId: data.activeProviderId,
-        model: data.model,
-        backend: data.backend,
-        providers: providers.map((p) => ({
-          ...p,
-          isActive: p.id === data.activeProviderId,
-        })),
-        activating: false,
-      })
+      await Promise.all([providersResource.refresh(), configResource.refresh()])
+      set({ activating: false })
       return true
     } catch (error) {
-      set({
-        error: error instanceof Error ? error.message : 'Failed to switch provider',
-        activating: false,
-      })
+      set({ error: error instanceof Error ? error.message : 'Failed to switch provider', activating: false })
       return false
     }
   },
 
   setDefaultModel: async (providerId: string, model: string) => {
-    const { providers } = get()
     try {
       const response = await authFetch('/api/default-model', {
         method: 'POST',
@@ -245,29 +147,14 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         body: JSON.stringify({ providerId, model }),
       })
       if (!response.ok) return false
-      const data = (await response.json()) as { success: boolean; defaultModelSelection: string }
-
-      set({
-        activeProviderId: providerId,
-        model,
-        defaultModelSelection: data.defaultModelSelection,
-        providers: providers.map((p) => ({
-          ...p,
-          isActive: p.id === providerId,
-        })),
-      })
+      await Promise.all([configResource.refresh(), providersResource.refresh()])
       return true
     } catch {
       return false
     }
   },
 
-  updateModelSettings: async (
-    providerId: string,
-    modelId: string,
-    settings: { thinkingLevel?: string; thinkingEnabled?: boolean },
-  ) => {
-    const { providers } = get()
+  updateModelSettings: async (providerId, modelId, settings) => {
     try {
       const response = await authFetch(`/api/providers/${providerId}/models/${encodeURIComponent(modelId)}/settings`, {
         method: 'PUT',
@@ -275,13 +162,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         body: JSON.stringify(settings),
       })
       if (!response.ok) return false
-      set({
-        providers: providers.map((p) =>
-          p.id === providerId
-            ? { ...p, models: p.models.map((m) => (m.id === modelId ? { ...m, ...settings } : m)) }
-            : p,
-        ),
-      })
+      await providersResource.refresh()
       return true
     } catch {
       return false
@@ -296,22 +177,11 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         const errorData = (await response.json()) as { error?: string }
         throw new Error(errorData.error ?? 'Failed to refresh models')
       }
-      const data = (await response.json()) as {
-        models: ModelConfig[]
-        status: 'connected' | 'disconnected' | 'unknown'
-      }
-
-      const { providers } = get()
-      set({
-        providers: providers.map((p) => (p.id === providerId ? { ...p, models: data.models, status: data.status } : p)),
-        activating: false,
-      })
+      await Promise.all([providerModelsResource.refresh(providerId), providersResource.refresh()])
+      set({ activating: false })
       return true
     } catch (error) {
-      set({
-        error: error instanceof Error ? error.message : 'Failed to refresh models',
-        activating: false,
-      })
+      set({ error: error instanceof Error ? error.message : 'Failed to refresh models', activating: false })
       return false
     }
   },
@@ -333,18 +203,5 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       clearInterval(autoRefreshInterval)
       set({ autoRefreshInterval: null })
     }
-  },
-
-  getActiveProvider: () => {
-    const { providers, activeProviderId } = get()
-    return providers.find((p) => p.id === activeProviderId)
-  },
-
-  getModelContext: (modelId: string) => {
-    const { providers, activeProviderId } = get()
-    const activeProvider = providers.find((p) => p.id === activeProviderId)
-    if (!activeProvider) return 200000
-    const model = activeProvider.models.find((m) => m.id === modelId)
-    return model?.contextWindow ?? 200000
   },
 }))

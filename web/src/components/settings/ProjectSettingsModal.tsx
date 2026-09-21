@@ -6,14 +6,19 @@ import { McpServerCard } from './McpServerCard'
 import { ModalFooter } from '../shared/ModalFooter'
 import { useProjectStore } from '../../stores/project'
 import { useResource } from '../../hooks/useResource'
-import { agentsResource } from '../../lib/resources'
-import { useWorkspaceConfigStore, type WorkspaceConfigResponse } from '../../stores/workspace-config'
-import { useMcpStore } from '../../stores/mcp'
+import {
+  agentsResource,
+  mcpServersResource,
+  workspaceConfigResource,
+  saveWorkspaceConfig,
+  type WorkspaceConfigResponse,
+} from '../../lib/resources'
 import { mcpStatusColor, mcpStatusDot } from '../../lib/mcp-utils'
 import { wsClient } from '../../lib/ws'
 import { authFetch } from '../../lib/api'
 import { formatRootDir, getRootDirBlockReason, suggestRootDirChild } from '@shared/workspace.js'
 import { dedupById } from '../../lib/modal-utils'
+import { useT } from '../../hooks/useT'
 
 interface ProjectSettingsModalProps {
   isOpen: boolean
@@ -22,11 +27,9 @@ interface ProjectSettingsModalProps {
 }
 
 export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettingsModalProps) {
+  const t = useT()
   const updateProject = useProjectStore((state) => state.updateProject)
-  const wsConfig = useWorkspaceConfigStore((s) => s.config)
-  const wsLoading = useWorkspaceConfigStore((s) => s.loading)
-  const fetchWsConfig = useWorkspaceConfigStore((s) => s.fetchConfig)
-  const saveWsConfig = useWorkspaceConfigStore((s) => s.saveConfig)
+  const { data: wsConfig, loading: wsLoading } = useResource(workspaceConfigResource, project.workdir)
   const { data } = useResource(agentsResource, project.workdir)
   const defaultAgents = data?.defaults ?? []
   const userAgents = data?.userItems ?? []
@@ -100,9 +103,8 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
       setRootDirDirty(false)
       setMcpDirty(false)
       setExpandedServers(new Set())
-      fetchWsConfig(project.workdir)
     }
-  }, [isOpen, project, fetchWsConfig])
+  }, [isOpen, project])
 
   useEffect(() => {
     if (wsConfig?.setup && wsConfig.setup.length > 0) {
@@ -114,7 +116,7 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
     setMcpOverrides(wsConfig?.mcpOverrides ?? {})
   }, [wsConfig])
 
-  const mcpServers = useMcpStore((s) => s.servers)
+  const mcpServers = useResource(mcpServersResource).data ?? []
 
   const getServerOverride = (name: string) => mcpOverrides[name] ?? {}
   const isServerDisabled = (name: string) => {
@@ -205,8 +207,8 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
       const wsConfigPayload: WorkspaceConfigResponse = {}
       if (setupDirty) wsConfigPayload.setup = setup
       if (rootDirDirty) wsConfigPayload.rootDir = rootDir.trim()
-      if (Object.keys(mcpOverrides).length > 0) wsConfigPayload.mcpOverrides = mcpOverrides
-      await saveWsConfig(project.workdir, wsConfigPayload)
+      if (mcpDirty) wsConfigPayload.mcpOverrides = mcpOverrides
+      await saveWorkspaceConfig(project.workdir, wsConfigPayload)
     }
     setInstructionsDirty(false)
     setDangerLevelDirty(false)
@@ -228,10 +230,25 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
     rootDirDirty,
     mcpDirty,
     updateProject,
-    saveWsConfig,
     project.workdir,
     handleClose,
   ])
+
+  const saveSettings = async () => {
+    setSaving(true)
+    setSaveError(null)
+    try {
+      await persistSettings()
+    } catch (err) {
+      setSaveError(
+        err instanceof Error
+          ? err.message
+          : t({ en: 'Failed to save settings', fr: 'Échec de l’enregistrement des paramètres' }),
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const handleSave = async () => {
     const trimmedRootDir = rootDir.trim()
@@ -242,26 +259,32 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
       if (blockReason === 'exact') {
         const displayPath = formatRootDir(trimmedRootDir)
         setSaveError(
-          `Cannot use "${displayPath}" directly as workspace root. Use a subdirectory like "${suggestRootDirChild(trimmedRootDir, project.name)}" instead.`,
+          t(
+            {
+              en: 'Cannot use "{{path}}" directly as workspace root. Use a subdirectory like "{{suggestion}}" instead.',
+              fr: 'Impossible d’utiliser « {{path}} » directement comme racine du workspace. Utilisez plutôt un sous-dossier comme « {{suggestion}} ».',
+            },
+            { path: displayPath, suggestion: suggestRootDirChild(trimmedRootDir, project.name) },
+          ),
         )
         return
       }
       if (blockReason === 'virtual_fs') {
-        setSaveError(`Cannot use paths under "${trimmedRootDir}" for workspaces.`)
+        setSaveError(
+          t(
+            {
+              en: 'Cannot use paths under "{{path}}" for workspaces.',
+              fr: 'Impossible d’utiliser les chemins sous « {{path}} » pour les workspaces.',
+            },
+            { path: trimmedRootDir },
+          ),
+        )
         return
       }
     }
 
     if (!rootDirDirty || !trimmedRootDir || trimmedRootDir === prevRootDir) {
-      setSaving(true)
-      setSaveError(null)
-      try {
-        await persistSettings()
-      } catch (err) {
-        setSaveError(err instanceof Error ? err.message : 'Failed to save settings')
-      } finally {
-        setSaving(false)
-      }
+      await saveSettings()
       return
     }
 
@@ -282,7 +305,13 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        setSaveError(data?.error ?? 'Failed to validate workspace root directory')
+        setSaveError(
+          data?.error ??
+            t({
+              en: 'Failed to validate workspace root directory',
+              fr: 'Échec de la validation du dossier racine du workspace',
+            }),
+        )
         return
       }
 
@@ -303,7 +332,11 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
       setSaveError(null)
       await persistSettings()
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Failed to validate settings')
+      setSaveError(
+        err instanceof Error
+          ? err.message
+          : t({ en: 'Failed to validate settings', fr: 'Échec de la validation des paramètres' }),
+      )
     } finally {
       setSaving(false)
     }
@@ -326,7 +359,7 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        setSaveError(data?.error ?? 'Failed to create directory')
+        setSaveError(data?.error ?? t({ en: 'Failed to create directory', fr: 'Échec de la création du dossier' }))
         setSaving(false)
         return
       }
@@ -342,7 +375,11 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
 
       await persistSettings()
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Failed to create directory')
+      setSaveError(
+        err instanceof Error
+          ? err.message
+          : t({ en: 'Failed to create directory', fr: 'Échec de la création du dossier' }),
+      )
     } finally {
       setSaving(false)
     }
@@ -350,15 +387,7 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
 
   const handleConfirmMigration = async () => {
     setShowMigrationWarning(false)
-    setSaving(true)
-    setSaveError(null)
-    try {
-      await persistSettings()
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Failed to save settings')
-    } finally {
-      setSaving(false)
-    }
+    await saveSettings()
   }
 
   const handleCancel = () => {
@@ -379,7 +408,7 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
     <Modal
       isOpen={isOpen}
       onClose={handleCancel}
-      title={<ModalCrumbTitle projectName={project.name}>Settings</ModalCrumbTitle>}
+      title={<ModalCrumbTitle projectName={project.name}>{t({ en: 'Settings', fr: 'Paramètres' })}</ModalCrumbTitle>}
       size="lg"
       footer={
         <ModalFooter onCancel={handleCancel} onSave={handleSave} saving={saving} saveDisabled={!isDirty || saving} />
@@ -387,9 +416,14 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
     >
       <div className="flex flex-col gap-5 -mt-1">
         <div>
-          <label className="block text-sm font-medium text-text-primary mb-1 flex-shrink-0">Default Danger Level</label>
+          <label className="block text-sm font-medium text-text-primary mb-1 flex-shrink-0">
+            {t({ en: 'Default Danger Level', fr: 'Niveau de danger par défaut' })}
+          </label>
           <p className="text-sm text-text-muted mb-3">
-            Default danger level for new sessions in this project. Existing sessions are not affected.
+            {t({
+              en: 'Default danger level for new sessions in this project. Existing sessions are not affected.',
+              fr: 'Niveau de danger par défaut pour les nouvelles sessions de ce projet. Les sessions existantes ne sont pas affectées.',
+            })}
           </p>
           <div className="flex items-center gap-1 px-1.5 py-1 rounded bg-bg-tertiary/50 w-fit">
             <button
@@ -400,9 +434,9 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
                   ? 'bg-bg-tertiary text-text-primary border border-border'
                   : 'text-text-muted hover:text-text-primary hover:bg-bg-tertiary'
               }`}
-              title="Use global default (Normal)"
+              title={t({ en: 'Use global default (Normal)', fr: 'Utiliser le défaut global (Normal)' })}
             >
-              Default
+              {t({ en: 'Default', fr: 'Défaut' })}
             </button>
             <button
               type="button"
@@ -412,9 +446,12 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
                   ? 'bg-accent-success/20 text-accent-success border border-accent-success/30'
                   : 'text-text-muted hover:text-text-primary hover:bg-bg-tertiary'
               }`}
-              title="Normal mode - requires path confirmation"
+              title={t({
+                en: 'Normal mode - requires path confirmation',
+                fr: 'Mode normal - nécessite une confirmation du chemin',
+              })}
             >
-              Normal
+              {t({ en: 'Normal', fr: 'Normal' })}
             </button>
             <button
               type="button"
@@ -424,9 +461,12 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
                   ? 'bg-red-500/20 text-red-400 border border-red-500/30'
                   : 'text-text-muted hover:text-text-primary hover:bg-bg-tertiary'
               }`}
-              title="Dangerous mode - bypasses all confirmations"
+              title={t({
+                en: 'Dangerous mode - bypasses all confirmations',
+                fr: 'Mode dangereux - contourne toutes les confirmations',
+              })}
             >
-              Dangerous
+              {t({ en: 'Dangerous', fr: 'Dangereux' })}
             </button>
           </div>
         </div>
@@ -436,11 +476,13 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
             htmlFor="project-default-agent"
             className="block text-sm font-medium text-text-primary mb-1 flex-shrink-0"
           >
-            Default Agent
+            {t({ en: 'Default Agent', fr: 'Agent par défaut' })}
           </label>
           <p className="text-sm text-text-muted mb-3">
-            Default agent for new sessions in this project. Choose "Use system default" to follow the global default
-            agent. Existing sessions are not affected.
+            {t({
+              en: 'Default agent for new sessions in this project. Choose "Use system default" to follow the global default agent. Existing sessions are not affected.',
+              fr: 'Agent par défaut pour les nouvelles sessions de ce projet. Choisissez « Utiliser le défaut système » pour suivre l’agent global par défaut. Les sessions existantes ne sont pas affectées.',
+            })}
           </p>
           <select
             id="project-default-agent"
@@ -452,8 +494,12 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
             className="w-full px-3 py-2 text-sm bg-bg-primary border border-border rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-accent-primary"
             disabled={saving}
           >
-            <option value="">Use system default</option>
-            {currentAgentMissing && <option value={defaultAgent}>{defaultAgent} (missing agent)</option>}
+            <option value="">{t({ en: 'Use system default', fr: 'Utiliser le défaut système' })}</option>
+            {currentAgentMissing && (
+              <option value={defaultAgent}>
+                {defaultAgent} {t({ en: '(missing agent)', fr: '(agent manquant)' })}
+              </option>
+            )}
             {groupedAgents.map(
               ({ label, agents }) =>
                 agents.length > 0 && (
@@ -469,29 +515,49 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
           </select>
           {currentAgentMissing && (
             <p className="text-xs text-red-400 mt-1">
-              The stored default agent "{defaultAgent}" no longer exists. Pick another agent to restore a valid default.
+              {t(
+                {
+                  en: 'The stored default agent "{{agent}}" no longer exists. Pick another agent to restore a valid default.',
+                  fr: 'L’agent par défaut enregistré « {{agent}} » n’existe plus. Choisissez un autre agent pour restaurer un défaut valide.',
+                },
+                { agent: defaultAgent },
+              )}
             </p>
           )}
           {topLevelAgents.length === 0 && (
-            <p className="text-xs text-text-muted mt-1">No agents available. Create one in the Agents modal.</p>
+            <p className="text-xs text-text-muted mt-1">
+              {t({
+                en: 'No agents available. Create one in the Agents modal.',
+                fr: 'Aucun agent disponible. Créez-en un dans la fenêtre Agents.',
+              })}
+            </p>
           )}
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-text-primary mb-1 flex-shrink-0">Project Path</label>
+          <label className="block text-sm font-medium text-text-primary mb-1 flex-shrink-0">
+            {t({ en: 'Project Path', fr: 'Chemin du projet' })}
+          </label>
           <p className="text-sm text-text-muted font-mono">{project.workdir}</p>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-text-primary mb-1 flex-shrink-0">Project Instructions</label>
+          <label className="block text-sm font-medium text-text-primary mb-1 flex-shrink-0">
+            {t({ en: 'Project Instructions', fr: 'Instructions du projet' })}
+          </label>
           <p className="text-sm text-text-muted mb-3 flex-shrink-0">
-            These instructions are injected into prompts when working in this project. They are applied after global
-            instructions but before AGENTS.md files.
+            {t({
+              en: 'These instructions are injected into prompts when working in this project. They are applied after global instructions but before AGENTS.md files.',
+              fr: 'Ces instructions sont injectées dans les invites lorsque vous travaillez dans ce projet. Elles sont appliquées après les instructions globales mais avant les fichiers AGENTS.md.',
+            })}
           </p>
           <textarea
             value={customInstructions}
             onChange={handleInstructionsChange}
-            placeholder="Enter project-specific instructions..."
+            placeholder={t({
+              en: 'Enter project-specific instructions...',
+              fr: 'Saisissez des instructions spécifiques au projet...',
+            })}
             className="w-full h-32 px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono resize-none focus:outline-none focus:ring-1 focus:ring-accent-primary"
             disabled={saving}
           />
@@ -499,15 +565,23 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
 
         <div>
           <label className="block text-sm font-medium text-text-primary mb-1 flex-shrink-0">
-            Workspace Setup Command
+            {t({ en: 'Workspace Setup Command', fr: 'Commande de configuration du workspace' })}
           </label>
           <p className="text-sm text-text-muted mb-3">
-            Command(s) to run after creating a workspace (shared clone). Use{' '}
-            <code className="text-xs bg-bg-tertiary px-1 rounded">&amp;&amp;</code> to chain multiple commands. Example:{' '}
+            {t({
+              en: 'Command(s) to run after creating a workspace (shared clone). Use',
+              fr: 'Commande(s) à exécuter après la création d’un workspace (clone partagé). Utilisez',
+            })}{' '}
+            <code className="text-xs bg-bg-tertiary px-1 rounded">&amp;&amp;</code>{' '}
+            {t({ en: 'to chain multiple commands. Example:', fr: 'pour enchaîner plusieurs commandes. Exemple :' })}{' '}
             <code className="text-xs bg-bg-tertiary px-1 rounded">npm install --prefer-offline</code>
           </p>
 
-          {wsLoading && <div className="text-xs text-text-muted mb-2">Loading config...</div>}
+          {wsLoading && (
+            <div className="text-xs text-text-muted mb-2">
+              {t({ en: 'Loading config…', fr: 'Chargement de la configuration…' })}
+            </div>
+          )}
 
           <input
             type="text"
@@ -521,12 +595,18 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
 
         <div>
           <label className="block text-sm font-medium text-text-primary mb-1 flex-shrink-0">
-            Workspace Root Directory
+            {t({ en: 'Workspace Root Directory', fr: 'Dossier racine du workspace' })}
           </label>
           <p className="text-sm text-text-muted mb-3">
-            Override the default workspace location. Leave empty to use the global directory{' '}
-            <code className="text-xs bg-bg-tertiary px-1 rounded">~/.local/share/openfox/workspaces/</code>. Supports
-            absolute paths or paths relative to the project.
+            {t({
+              en: 'Override the default workspace location. Leave empty to use the global directory',
+              fr: 'Remplacez l’emplacement par défaut du workspace. Laissez vide pour utiliser le dossier global',
+            })}{' '}
+            <code className="text-xs bg-bg-tertiary px-1 rounded">~/.local/share/openfox/workspaces/</code>.{' '}
+            {t({
+              en: 'Supports absolute paths or paths relative to the project.',
+              fr: 'Accepte les chemins absolus ou relatifs au projet.',
+            })}
           </p>
           <input
             type="text"
@@ -542,8 +622,10 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
           <div>
             <label className="block text-sm font-medium text-text-primary mb-1 flex-shrink-0">MCP Servers</label>
             <p className="text-sm text-text-muted mb-3">
-              Override MCP server availability for this project. These overrides apply to new conversations in this
-              project and can be further overridden per conversation from the chat MCP selector.
+              {t({
+                en: 'Override MCP server availability for this project. These overrides apply to new conversations in this project and can be further overridden per conversation from the chat MCP selector.',
+                fr: 'Remplacez la disponibilité des serveurs MCP pour ce projet. Ces remplacements s’appliquent aux nouvelles conversations de ce projet et peuvent être redéfinis par conversation depuis le sélecteur MCP du chat.',
+              })}
             </p>
             <div className="space-y-2">
               {mcpServers.map((server) => {
@@ -578,31 +660,25 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
         <Modal
           isOpen={showCreateDirModal}
           onClose={() => setShowCreateDirModal(false)}
-          title="Directory not found"
+          title={t({ en: 'Directory not found', fr: 'Dossier introuvable' })}
           size="md"
           footer={
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setShowCreateDirModal(false)}
-                className="px-4 py-2 text-sm font-medium rounded bg-bg-tertiary text-text-primary hover:bg-border transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleCreateDirectory}
-                className="px-4 py-2 text-sm font-medium rounded bg-accent-primary text-white hover:opacity-90 transition-colors"
-              >
-                Create
-              </button>
-            </div>
+            <FooterButtons
+              onCancel={() => setShowCreateDirModal(false)}
+              onConfirm={handleCreateDirectory}
+              confirmLabel={t({ en: 'Create', fr: 'Créer' })}
+              confirmClassName="bg-accent-primary"
+            />
           }
         >
           <p className="text-sm text-text-primary">
-            The directory <code className="text-xs bg-bg-tertiary px-1 rounded">{resolvedPath}</code> does not exist.
+            {t({ en: 'The directory', fr: 'Le dossier' })}{' '}
+            <code className="text-xs bg-bg-tertiary px-1 rounded">{resolvedPath}</code>{' '}
+            {t({ en: 'does not exist.', fr: "n'existe pas." })}
           </p>
-          <p className="text-sm text-text-muted mt-2">Would you like to create it?</p>
+          <p className="text-sm text-text-muted mt-2">
+            {t({ en: 'Would you like to create it?', fr: 'Souhaitez-vous le créer ?' })}
+          </p>
         </Modal>
       )}
 
@@ -610,29 +686,31 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
         <Modal
           isOpen={showMigrationWarning}
           onClose={() => setShowMigrationWarning(false)}
-          title="Orphaned workspaces"
+          title={t({ en: 'Orphaned workspaces', fr: 'Workspaces orphelins' })}
           size="md"
           footer={
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setShowMigrationWarning(false)}
-                className="px-4 py-2 text-sm font-medium rounded bg-bg-tertiary text-text-primary hover:bg-border transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmMigration}
-                className="px-4 py-2 text-sm font-medium rounded bg-red-500 text-white hover:opacity-90 transition-colors"
-              >
-                Confirm change
-              </button>
-            </div>
+            <FooterButtons
+              onCancel={() => setShowMigrationWarning(false)}
+              onConfirm={handleConfirmMigration}
+              confirmLabel={t({ en: 'Confirm change', fr: 'Confirmer le changement' })}
+              confirmClassName="bg-red-500"
+            />
           }
         >
           <p className="text-sm text-text-primary">
-            {pendingWorkspaces.length} existing workspace(s) will not be migrated and will become inaccessible:
+            {t(
+              {
+                en: {
+                  one: '{{count}} existing workspace will not be migrated and will become inaccessible:',
+                  other: '{{count}} existing workspaces will not be migrated and will become inaccessible:',
+                },
+                fr: {
+                  one: '{{count}} workspace existant ne sera pas migré et deviendra inaccessible :',
+                  other: '{{count}} workspaces existants ne seront pas migrés et deviendront inaccessibles :',
+                },
+              },
+              { count: pendingWorkspaces.length },
+            )}
           </p>
           <ul className="mt-2 space-y-1">
             {pendingWorkspaces.map((ws) => (
@@ -642,10 +720,45 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
             ))}
           </ul>
           <p className="text-sm text-text-muted mt-3">
-            Existing workspaces will remain in the old location but will no longer be accessible from this project.
+            {t({
+              en: 'Existing workspaces will remain in the old location but will no longer be accessible from this project.',
+              fr: 'Les workspaces existants resteront dans leur ancien emplacement mais ne seront plus accessibles depuis ce projet.',
+            })}
           </p>
         </Modal>
       )}
     </Modal>
+  )
+}
+
+function FooterButtons({
+  onCancel,
+  onConfirm,
+  confirmLabel,
+  confirmClassName,
+}: {
+  onCancel: () => void
+  onConfirm: () => void
+  confirmLabel: string
+  confirmClassName: string
+}) {
+  const t = useT()
+  return (
+    <div className="flex justify-end gap-2">
+      <button
+        type="button"
+        onClick={onCancel}
+        className="px-4 py-2 text-sm font-medium rounded bg-bg-tertiary text-text-primary hover:bg-border transition-colors"
+      >
+        {t({ en: 'Cancel', fr: 'Annuler' })}
+      </button>
+      <button
+        type="button"
+        onClick={onConfirm}
+        className={`px-4 py-2 text-sm font-medium rounded text-white hover:opacity-90 transition-colors ${confirmClassName}`}
+      >
+        {confirmLabel}
+      </button>
+    </div>
   )
 }

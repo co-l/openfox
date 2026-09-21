@@ -51,10 +51,21 @@ describe('QueueProcessor', () => {
     mode?: string
   }
   let queueItems: Array<{ queueId: string; mode: string; content: string; queuedAt: string; attachments?: any[] }>
+  let latestExecution: {
+    id: string
+    sessionId: string
+    workflowId: string
+    workflowName: string
+    status: string
+    currentStepId?: string
+    stepOutput: Record<string, string>
+    params: Record<string, string>
+  } | null
 
   beforeEach(() => {
     sessionState = { id: 'sess-1', isRunning: false, metadata: { title: undefined } }
     queueItems = []
+    latestExecution = null
 
     mockSessionManager = {
       subscribe: vi.fn(() => () => {}),
@@ -63,6 +74,8 @@ describe('QueueProcessor', () => {
       setRunning: vi.fn((_id: string, running: boolean) => {
         sessionState = { ...sessionState, isRunning: running }
       }),
+      getLatestWorkflowExecution: vi.fn(() => latestExecution),
+      cancelWorkflow: vi.fn(),
       addMessage: vi.fn(() => ({ id: 'msg-1' })),
       cancelQueuedMessage: vi.fn((_id: string, queueId: string) => {
         queueItems = queueItems.filter((q) => q.queueId !== queueId)
@@ -383,6 +396,61 @@ describe('QueueProcessor', () => {
       const callback = mockSessionManager.subscribe.mock.calls[0][0]
       callback({ type: 'running_changed', sessionId: 'sess-1', isRunning: false })
 
+      expect(mockSessionManager.setRunning).toHaveBeenCalledWith('sess-1', true)
+    })
+
+    it('cancels a blocked workflow execution before starting a plain chat turn', () => {
+      sessionState = { id: 'sess-1', isRunning: false, metadata: { title: undefined } }
+      queueItems = [{ queueId: 'q-1', mode: 'asap', content: 'hello', queuedAt: '2024-01-01' }]
+      latestExecution = {
+        id: 'exec-1',
+        sessionId: 'sess-1',
+        workflowId: 'default',
+        workflowName: 'Build & Verify',
+        status: 'blocked',
+        currentStepId: 'build',
+        stepOutput: {},
+        params: {},
+      }
+
+      queueProcessor.start()
+
+      const callback = mockSessionManager.subscribe.mock.calls[0][0]
+      callback({ type: 'queue_added', sessionId: 'sess-1', queueId: 'q-1', mode: 'asap', content: 'hello' })
+
+      // A user-intervention chat turn abandons the blocked workflow
+      expect(mockSessionManager.cancelWorkflow).toHaveBeenCalledWith(
+        'sess-1',
+        'exec-1',
+        'default',
+        'Build & Verify',
+        undefined,
+      )
+      // The turn still starts
+      expect(mockSessionManager.setRunning).toHaveBeenCalledWith('sess-1', true)
+      expect(mockSessionManager.addMessage).toHaveBeenCalled()
+    })
+
+    it('does NOT cancel a non-blocked workflow execution before a chat turn', () => {
+      sessionState = { id: 'sess-1', isRunning: false, metadata: { title: undefined } }
+      queueItems = [{ queueId: 'q-1', mode: 'asap', content: 'hello', queuedAt: '2024-01-01' }]
+      latestExecution = {
+        id: 'exec-1',
+        sessionId: 'sess-1',
+        workflowId: 'default',
+        workflowName: 'Build & Verify',
+        status: 'running',
+        currentStepId: 'build',
+        stepOutput: {},
+        params: {},
+      }
+
+      queueProcessor.start()
+
+      const callback = mockSessionManager.subscribe.mock.calls[0][0]
+      callback({ type: 'queue_added', sessionId: 'sess-1', queueId: 'q-1', mode: 'asap', content: 'hello' })
+
+      expect(mockSessionManager.cancelWorkflow).not.toHaveBeenCalled()
       expect(mockSessionManager.setRunning).toHaveBeenCalledWith('sess-1', true)
     })
   })

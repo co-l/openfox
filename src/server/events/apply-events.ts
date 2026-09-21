@@ -207,8 +207,13 @@ export function applyEvents<
         const data = event.data as Extract<TurnEvent, { type: 'tool.call' }>['data']
         const msg = messages.get(data.messageId)
         if (msg) {
-          attachToolCallToMessage(msg, data.toolCall)
-          removeFromPreparing(msg, data.toolCall.id)
+          // Tool calls are rebuilt from stored events on load; the client's
+          // timeout display needs the start timestamp. The event timestamp is
+          // when the server dispatched the call — the same moment the live
+          // path stamps it — so derive it here rather than persisting a copy.
+          const toolCall = data.toolCall.startedAt ? data.toolCall : { ...data.toolCall, startedAt: event.timestamp }
+          attachToolCallToMessage(msg, toolCall)
+          removeFromPreparing(msg, toolCall.id)
         }
         break
       }
@@ -231,6 +236,7 @@ export function applyEvents<
             index: data.index,
             name: data.name,
             ...(data.arguments ? { arguments: data.arguments } : {}),
+            ...(data.editContext && data.editContext.length > 0 ? { editContext: data.editContext } : {}),
           }
           if (existingIndex >= 0) {
             preparing[existingIndex] = entry

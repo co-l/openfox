@@ -318,5 +318,41 @@ Use session_metadata for each one.`,
 
       expect(completeEvents.length).toBe(1)
     })
+
+    it('streams live chat.stats throughout a multi-call turn', async () => {
+      const { client } = pool.get()
+
+      // This chat requires at least one tool call (read_file) then a follow-up
+      // response — multiple LLM calls in a single turn.
+      await client.send('chat.send', {
+        content: 'Read package.json and tell me the project version.',
+      })
+
+      const events = await collectChatEvents(client)
+      assertNoErrors(events)
+
+      // Guard the multi-call premise: a tool call means a follow-up LLM call,
+      // so the turn spans at least two calls.
+      const toolCalls = events.get('chat.tool_call')
+      expect(toolCalls.length).toBeGreaterThan(0)
+
+      // Live stats are emitted after each completed LLM call.
+      const statsEvents = events.get('chat.stats')
+      expect(statsEvents.length).toBeGreaterThanOrEqual(2)
+
+      // The last live update must agree with the final chat.done stats — they
+      // describe the same cumulative turn.
+      const doneEvents = events.get('chat.done')
+      const doneStats = (doneEvents[0]!.payload as { stats?: { prefillTokens: number; generationTokens: number } })
+        .stats
+      expect(doneStats).toBeDefined()
+      const lastStats = (
+        statsEvents[statsEvents.length - 1]!.payload as {
+          stats: { prefillTokens: number; generationTokens: number }
+        }
+      ).stats
+      expect(lastStats.prefillTokens).toBe(doneStats!.prefillTokens)
+      expect(lastStats.generationTokens).toBe(doneStats!.generationTokens)
+    })
   })
 })

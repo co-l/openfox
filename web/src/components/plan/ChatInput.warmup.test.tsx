@@ -29,28 +29,6 @@ vi.mock('../../stores/session', () => ({
   useQueuedMessages: () => [],
 }))
 
-vi.mock('../../stores/workflows', () => ({
-  useWorkflowsStore: Object.assign(
-    (selector: (state: unknown) => unknown) =>
-      selector({ defaults: [], userItems: [], projectItems: [], fetchWorkflows: vi.fn() }),
-    { getState: () => ({ defaults: [], userItems: [], projectItems: [], fetchWorkflows: vi.fn() }) },
-  ),
-  selectAllWorkflows: (state: { defaults: unknown[]; userItems: unknown[]; projectItems: unknown[] }) => [
-    ...state.defaults,
-    ...state.userItems,
-    ...state.projectItems,
-  ],
-  useAllWorkflows: () => [],
-}))
-
-vi.mock('../../stores/commands', () => ({
-  useCommandsStore: Object.assign(
-    (selector: (state: unknown) => unknown) =>
-      selector({ defaults: [], userItems: [], projectItems: [], fetchCommands: vi.fn() }),
-    { getState: () => ({ defaults: [], userItems: [], projectItems: [], fetchCommands: vi.fn() }) },
-  ),
-}))
-
 vi.mock('../../hooks/useScrolledSend', () => ({
   useScrolledSend: () => ({ sendMessage: vi.fn(), launchWorkflow: vi.fn() }),
 }))
@@ -69,14 +47,9 @@ vi.mock('../../components/plan/EffortChangeGate', () => ({
   EffortChangeGateProvider: (props: { children?: unknown }) => <>{props.children}</>,
   useEffortChangeGate: () => ({ requestEffortSwitch: vi.fn() }),
 }))
-vi.mock('../../stores/settings', async (importOriginal) => {
-  const actual = (await importOriginal()) as Record<string, unknown>
-  return {
-    ...actual,
-    useSettingsStore: (selector: (state: unknown) => unknown) =>
-      selector({ settings: { 'features.perSessionMcp': 'false' } }),
-  }
-})
+vi.mock('../../hooks/useSetting', () => ({
+  useSetting: (_key: string, fallback = '') => ({ value: fallback, loading: false }),
+}))
 
 function renderChatInput() {
   return render(

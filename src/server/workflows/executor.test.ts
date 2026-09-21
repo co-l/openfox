@@ -17,6 +17,7 @@ import {
   formatCriteriaList,
   formatModifiedFiles,
   buildReason,
+  isStepTransitionSatisfied,
 } from './executor.js'
 import type { TemplateContext } from './executor.js'
 
@@ -265,6 +266,61 @@ describe('evaluateTransitions', () => {
       { when: { type: 'step_result', result: 'failure' }, goto: 'retry' },
     ]
     expect(evaluateTransitions(transitions, { result: 'failure', output: {} })).toBe('retry')
+  })
+})
+
+// ============================================================================
+// isStepTransitionSatisfied
+// ============================================================================
+
+describe('isStepTransitionSatisfied', () => {
+  it('returns true when the first matching transition leaves the current step', () => {
+    const transitions: Transition[] = [
+      {
+        when: { type: 'metadata_all_in', key: 'criteria', field: 'status', values: ['completed', 'passed'] },
+        goto: 'verify',
+      },
+      { when: { type: 'always' }, goto: 'build' },
+    ]
+    const entries = {
+      criteria: [
+        makeMetadataEntry({ id: 'c1', status: 'completed' }),
+        makeMetadataEntry({ id: 'c2', status: 'passed' }),
+      ],
+    }
+    expect(isStepTransitionSatisfied(transitions, entries, 'build')).toBe(true)
+  })
+
+  it('returns false when the first matching transition loops back to the current step', () => {
+    const transitions: Transition[] = [
+      {
+        when: { type: 'metadata_all_in', key: 'criteria', field: 'status', values: ['completed', 'passed'] },
+        goto: 'verify',
+      },
+      { when: { type: 'always' }, goto: 'build' },
+    ]
+    const entries = {
+      criteria: [makeMetadataEntry({ id: 'c1', status: 'pending' }), makeMetadataEntry({ id: 'c2', status: 'failed' })],
+    }
+    expect(isStepTransitionSatisfied(transitions, entries, 'build')).toBe(false)
+  })
+
+  it('returns true when the only transition always leaves the current step', () => {
+    const transitions: Transition[] = [{ when: { type: 'always' }, goto: '$done' }]
+    expect(isStepTransitionSatisfied(transitions, {}, 'summarize')).toBe(true)
+  })
+
+  it('returns false when only step_result conditions exist (outcome unknown)', () => {
+    const transitions: Transition[] = [{ when: { type: 'step_result', result: 'success' }, goto: 'next' }]
+    expect(isStepTransitionSatisfied(transitions, {}, 'build')).toBe(false)
+  })
+
+  it('returns false when no transition matches', () => {
+    const transitions: Transition[] = [
+      { when: { type: 'metadata_all_in', key: 'criteria', field: 'status', values: ['completed'] }, goto: 'verify' },
+    ]
+    const entries = { criteria: [makeMetadataEntry({ id: 'c1', status: 'pending' })] }
+    expect(isStepTransitionSatisfied(transitions, entries, 'build')).toBe(false)
   })
 })
 

@@ -1,5 +1,6 @@
 import { type ReactNode, useMemo } from 'react'
 import type { Provider } from '../../stores/config'
+import { useT } from '../../hooks/useT'
 
 export interface VisionModelOption {
   providerId: string
@@ -39,6 +40,7 @@ export interface ProviderModelSelectProps {
 }
 
 export function ProviderModelSelect({ value, options, onChange, className }: ProviderModelSelectProps) {
+  const t = useT()
   return (
     <select
       value={value}
@@ -48,10 +50,10 @@ export function ProviderModelSelect({ value, options, onChange, className }: Pro
         'w-full px-4 py-2 bg-bg-secondary border border-border rounded-lg text-text-primary focus:outline-none focus:border-accent-primary'
       }
     >
-      <option value="">Manual configuration...</option>
+      <option value="">{t({ en: 'Manual configuration...', fr: 'Configuration manuelle...' })}</option>
       {options.map((opt) => (
         <option key={`${opt.providerId}/${opt.modelId}`} value={`${opt.providerId}/${opt.modelId}`}>
-          {opt.providerName} • {opt.modelName}
+          {`${opt.providerName} • ${opt.modelName}`}
         </option>
       ))}
     </select>
@@ -79,22 +81,32 @@ export function ManualVisionConfig({
   onModelChange,
   onApiKeyChange,
 }: ManualVisionConfigProps) {
+  const t = useT()
   return (
     <div className="space-y-4">
       <div>
-        <label className="block text-sm text-text-secondary mb-1">Backend type</label>
+        <label className="block text-sm text-text-secondary mb-1">
+          {t({ en: 'Backend type', fr: 'Type de backend' })}
+        </label>
         <select
           value={backend}
           onChange={(e) => onBackendChange(e.target.value as 'ollama' | 'openai')}
           className="w-full px-4 py-2 bg-bg-secondary border border-border rounded-lg text-text-primary focus:outline-none focus:border-accent-primary"
         >
-          <option value="ollama">Ollama</option>
-          <option value="openai">OpenAI-compatible (vLLM, sglang, llama.cpp)</option>
+          <option value="ollama">{t({ en: 'Ollama', fr: 'Ollama' })}</option>
+          <option value="openai">
+            {t({
+              en: 'OpenAI-compatible (vLLM, sglang, llama.cpp)',
+              fr: 'Compatible OpenAI (vLLM, sglang, llama.cpp)',
+            })}
+          </option>
         </select>
       </div>
 
       <div>
-        <label className="block text-sm text-text-secondary mb-1">Vision server URL</label>
+        <label className="block text-sm text-text-secondary mb-1">
+          {t({ en: 'Vision server URL', fr: 'URL du serveur de vision' })}
+        </label>
         <input
           type="text"
           value={url}
@@ -105,7 +117,9 @@ export function ManualVisionConfig({
       </div>
 
       <div>
-        <label className="block text-sm text-text-secondary mb-1">Vision model name</label>
+        <label className="block text-sm text-text-secondary mb-1">
+          {t({ en: 'Vision model name', fr: 'Nom du modèle de vision' })}
+        </label>
         <input
           type="text"
           value={model}
@@ -117,12 +131,17 @@ export function ManualVisionConfig({
 
       {backend === 'openai' && (
         <div>
-          <label className="block text-sm text-text-secondary mb-1">API key (optional)</label>
+          <label className="block text-sm text-text-secondary mb-1">
+            {t({ en: 'API key (optional)', fr: 'Clé API (facultatif)' })}
+          </label>
           <input
             type="password"
             value={apiKey}
             onChange={(e) => onApiKeyChange(e.target.value)}
-            placeholder="Leave empty for a local server that needs no auth"
+            placeholder={t({
+              en: 'Leave empty for a local server that needs no auth',
+              fr: 'Laissez vide pour un serveur local qui ne nécessite pas d’authentification',
+            })}
             className="w-full px-4 py-2 bg-bg-secondary border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-primary"
           />
         </div>
@@ -184,13 +203,16 @@ export function VisionModelConfigSection({
   children,
   ...manualConfig
 }: VisionModelConfigSectionProps) {
+  const t = useT()
   if (!enabled) return null
 
   return (
     <div className="space-y-4 pl-8">
       {hasOptions ? (
         <div>
-          <label className="block text-sm text-text-secondary mb-1">Vision model from your providers</label>
+          <label className="block text-sm text-text-secondary mb-1">
+            {t({ en: 'Vision model from your providers', fr: 'Modèle de vision depuis vos fournisseurs' })}
+          </label>
           <ProviderModelSelect value={selectedRef} options={visionModelOptions} onChange={onProviderModelSelect} />
         </div>
       ) : (

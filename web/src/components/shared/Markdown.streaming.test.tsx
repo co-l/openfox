@@ -12,7 +12,7 @@ vi.mock('../../lib/syntax-highlighter', () => ({
 }))
 
 const settingsMock = vi.hoisted(() => ({ deferCodeHighlightWhileStreaming: false }))
-vi.mock('../../stores/settings', () => ({
+vi.mock('../../hooks/useDisplaySettings', () => ({
   useDisplaySettings: () => ({ showSyntaxHighlighting: true, ...settingsMock }),
 }))
 

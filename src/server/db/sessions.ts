@@ -261,31 +261,39 @@ export function updateSessionCachedPrompt(
   systemPrompt: string,
   tools: import('../llm/types.js').LLMToolDefinition[],
   hash: string,
+  promptHash?: string,
 ): void {
   const db = getDatabase()
   const now = new Date().toISOString()
 
   db.prepare(
     `
-    UPDATE sessions SET cached_system_prompt = ?, cached_tools = ?, cached_hash = ?, updated_at = ? WHERE id = ?
+    UPDATE sessions SET cached_system_prompt = ?, cached_tools = ?, cached_hash = ?, cached_prompt_hash = ?, updated_at = ? WHERE id = ?
   `,
-  ).run(systemPrompt, JSON.stringify(tools), hash, now, id)
+  ).run(systemPrompt, JSON.stringify(tools), hash, promptHash ?? null, now, id)
 }
 
 export function getSessionCachedPrompt(id: string): {
   systemPrompt: string
   tools: import('../llm/types.js').LLMToolDefinition[]
   hash: string
+  promptHash?: string
 } | null {
   const db = getDatabase()
   const row = db
     .prepare(
       `
-    SELECT cached_system_prompt, cached_tools, cached_hash FROM sessions WHERE id = ?
+    SELECT cached_system_prompt, cached_tools, cached_hash, cached_prompt_hash FROM sessions WHERE id = ?
   `,
     )
     .get(id) as
-    { cached_system_prompt: string | null; cached_tools: string | null; cached_hash: string | null } | undefined
+    | {
+        cached_system_prompt: string | null
+        cached_tools: string | null
+        cached_hash: string | null
+        cached_prompt_hash: string | null
+      }
+    | undefined
 
   if (!row || !row.cached_system_prompt || !row.cached_tools || !row.cached_hash) {
     return null
@@ -293,7 +301,12 @@ export function getSessionCachedPrompt(id: string): {
 
   try {
     const tools = JSON.parse(row.cached_tools) as import('../llm/types.js').LLMToolDefinition[]
-    return { systemPrompt: row.cached_system_prompt, tools, hash: row.cached_hash }
+    return {
+      systemPrompt: row.cached_system_prompt,
+      tools,
+      hash: row.cached_hash,
+      ...(row.cached_prompt_hash ? { promptHash: row.cached_prompt_hash } : {}),
+    }
   } catch {
     return null
   }
@@ -309,6 +322,25 @@ export function updateSessionMessageCount(id: string, delta: number): void {
       UPDATE sessions SET message_count = message_count + ?, updated_at = ? WHERE id = ?
     `,
     ).run(delta, now, id)
+  } catch {
+    // Database not initialized (test scenarios) - silently skip
+  }
+}
+
+/**
+ * Set the cached message count directly (used on session import, where the
+ * delta-based update would not produce the imported count).
+ */
+export function setSessionMessageCount(id: string, count: number): void {
+  try {
+    const db = getDatabase()
+    const now = new Date().toISOString()
+
+    db.prepare(
+      `
+      UPDATE sessions SET message_count = ?, updated_at = ? WHERE id = ?
+    `,
+    ).run(count, now, id)
   } catch {
     // Database not initialized (test scenarios) - silently skip
   }
@@ -415,17 +447,17 @@ function listSessionsPaged(
 }
 
 /**
- * The lightweight homepage list: the N most recently updated sessions per
- * project, summaries only. Deliberately does NOT load recent user prompts —
- * that requires parsing each session's snapshot, which is the slow path the
- * homepage must avoid. Returns a flat list ordered by last activity.
+ * The lightweight homepage list: the 20 most recently updated sessions across
+ * ALL projects, summaries only, plus any running / waiting / blocked session
+ * that falls outside that budget so active work never drops off the homepage.
+ * Deliberately does NOT load recent user prompts — that requires parsing each
+ * session's snapshot, which is the slow path the homepage must avoid. Returns
+ * a flat list ordered by last activity.
  */
-export function listHomeSessions(sessionsPerProject = 5): SessionSummary[] {
+export function listHomeSessions(limit = 20): SessionSummary[] {
   const db = getDatabase()
 
-  const rows = db
-    .prepare(
-      `
+  const select = `
     SELECT
       s.id,
       s.project_id,
@@ -443,20 +475,25 @@ export function listHomeSessions(sessionsPerProject = 5): SessionSummary[] {
       s.provider_model,
       s.message_count
     FROM sessions s
-    ORDER BY s.updated_at DESC
-  `,
-    )
-    .all() as SessionSummaryRow[]
+  `
 
-  const seen = new Map<string, number>()
-  const result: SessionSummary[] = []
-  for (const row of rows) {
-    const count = seen.get(row.project_id) ?? 0
-    if (count >= sessionsPerProject) continue
-    seen.set(row.project_id, count + 1)
-    result.push(mapSessionSummaryRow(row))
-  }
-  return result
+  const rows = db.prepare(`${select} ORDER BY s.updated_at DESC LIMIT ?`).all(limit) as SessionSummaryRow[]
+
+  // Pin attention-required sessions that fell outside the recent budget so a
+  // single busy project cannot hide running/waiting/blocked work elsewhere.
+  const pinned = db
+    .prepare(
+      `${select}
+       WHERE (s.is_running = 1 OR s.workflow_phase IN ('waiting', 'blocked'))
+         AND s.id NOT IN (SELECT id FROM sessions ORDER BY updated_at DESC LIMIT ?)`,
+    )
+    .all(limit) as SessionSummaryRow[]
+
+  const merged = [...rows, ...pinned].sort(
+    (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+  )
+
+  return merged.map(mapSessionSummaryRow)
 }
 
 export function updateSessionWorkdir(
@@ -574,6 +611,7 @@ interface SessionRow {
   cached_system_prompt: string | null
   cached_tools: string | null
   cached_hash: string | null
+  cached_prompt_hash: string | null
 }
 
 interface SessionSummaryRow {

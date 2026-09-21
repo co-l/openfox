@@ -4,6 +4,7 @@ import { Modal } from '../shared/Modal'
 import { LogRenderer } from '../shared/LogRenderer'
 import { AutoScrollToggle } from '../shared/AutoScrollToggle'
 import { TrashIcon, PlusIcon } from '../shared/icons'
+import { useT } from '../../hooks/useT'
 import { useAutoScroll } from '../../hooks/useAutoScroll'
 import { useViewport } from '../../hooks/useViewport'
 import type { OverlayScrollbarsComponentRef } from 'overlayscrollbars-react'
@@ -27,6 +28,7 @@ export const LogViewer = memo(function LogViewer({
   onInsertMarker,
   preClassName,
 }: LogViewerProps) {
+  const t = useT()
   const scrollRef = useRef<OverlayScrollbarsComponentRef<'div'>>(null)
 
   const getViewport = useViewport(scrollRef)
@@ -53,20 +55,20 @@ export const LogViewer = memo(function LogViewer({
             <button
               onClick={onInsertMarker}
               className="text-xs text-text-muted hover:text-text-primary flex items-center gap-1 px-2 py-1 rounded hover:bg-bg-tertiary transition-colors"
-              title="Insert marker"
+              title={t({ en: 'Insert marker', fr: 'Insérer un repère' })}
             >
               <PlusIcon className="w-3.5 h-3.5" />
-              Marker
+              {t({ en: 'Marker', fr: 'Repère' })}
             </button>
           )}
           {onClear && (
             <button
               onClick={onClear}
               className="text-xs text-text-muted hover:text-accent-error flex items-center gap-1 px-2 py-1 rounded hover:bg-bg-tertiary transition-colors"
-              title="Clear logs"
+              title={t({ en: 'Clear logs', fr: 'Effacer les journaux' })}
             >
               <TrashIcon className="w-3.5 h-3.5" />
-              Clear
+              {t({ en: 'Clear', fr: 'Effacer' })}
             </button>
           )}
         </div>
@@ -74,7 +76,7 @@ export const LogViewer = memo(function LogViewer({
     >
       {subtitle && (
         <div className="subtitle-strip flex items-start gap-2 px-2 py-1.5 mb-2 bg-bg-tertiary rounded text-[11px] font-mono text-text-secondary whitespace-pre-wrap break-all border border-border">
-          <span className="text-text-muted flex-shrink-0 select-none">Command:</span>
+          <span className="text-text-muted flex-shrink-0 select-none">{t({ en: 'Command:', fr: 'Commande :' })}</span>
           <span>{subtitle}</span>
         </div>
       )}

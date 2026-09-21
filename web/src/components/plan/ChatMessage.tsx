@@ -9,15 +9,16 @@ import { WorkflowStartedCard } from './WorkflowStartedCard'
 import { MessageAttachments } from '../shared/MessageAttachments.js'
 import { AttachmentPreview } from '../shared/AttachmentPreview.js'
 import { AutoPromptCard } from './AutoPromptCard'
-import { CheckIcon, CopyIcon, EditSmallIcon, ReloadIcon, BranchIcon } from '../shared/icons'
-import { replayMessage, forkSession } from '../../lib/api.js'
+import { CheckIcon, CopyIcon, EditSmallIcon, ReloadIcon } from '../shared/icons'
+import { useT } from '../../hooks/useT'
+import { replayMessage, forkSession, forkSessionErrorMessage } from '../../lib/api.js'
 import { AUTOSCROLL_REARM_EVENT } from './feed-window'
 import { useSessionStore } from '../../stores/session.js'
 import { copyToClipboard } from '../../lib/clipboard.js'
-import { formatDateTime } from '../../lib/format-date.js'
 import { shouldAutofocus } from '../../lib/device'
 import { useLocation } from 'wouter'
 import { useContextMenu } from '../../hooks/useContextMenu'
+import { useMessageContextMenu } from '../../hooks/useMessageContextMenu'
 
 interface ChatMessageProps {
   message: Message
@@ -33,6 +34,7 @@ interface UserMessageProps {
 }
 
 function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
+  const t = useT()
   const isAutoPrompt = message.messageKind === 'auto-prompt'
   const isCommand = message.messageKind === 'command'
   const isSystemGenerated = message.isSystemGenerated
@@ -73,11 +75,14 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
     setForkError(null)
     const result = await forkSession(sessionId, messageId)
     setForkPending(false)
-    if (result?.session) {
+    if (result && 'session' in result) {
       const projectId = result.session.projectId
       navigate(`/p/${projectId}/s/${result.session.id}`)
     } else {
-      setForkError('Failed to fork session')
+      setForkError(
+        forkSessionErrorMessage(result) ??
+          t({ en: 'Failed to fork session', fr: 'Échec de la duplication de la session' }),
+      )
     }
   }
 
@@ -91,7 +96,7 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
       window.dispatchEvent(new CustomEvent(AUTOSCROLL_REARM_EVENT))
       loadSession(sessionId, true)
     } else {
-      setError('Failed to replay')
+      setError(t({ en: 'Failed to replay', fr: 'Échec de la relecture' }))
     }
   }
 
@@ -106,7 +111,7 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
       loadSession(sessionId, true)
       setEditing(false)
     } else {
-      setError('Failed to send')
+      setError(t({ en: 'Failed to send', fr: 'Échec de l’envoi' }))
     }
   }
 
@@ -133,7 +138,7 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
             onClick={() => {
               void handleCopy()
             }}
-            title="Copy"
+            title={t({ en: 'Copy', fr: 'Copier' })}
             disabled={pending}
             className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary disabled:opacity-50"
           >
@@ -148,7 +153,7 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
                   setEditAttachments(message.attachments ?? [])
                   setEditing(true)
                 }}
-                title="Edit & resend"
+                title={t({ en: 'Edit & resend', fr: 'Modifier et renvoyer' })}
                 disabled={pending}
                 className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary disabled:opacity-50"
               >
@@ -158,7 +163,7 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
                 onClick={() => {
                   void handleReplay()
                 }}
-                title="Replay"
+                title={t({ en: 'Replay', fr: 'Rejouer' })}
                 disabled={pending}
                 className="p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary disabled:opacity-50"
               >
@@ -176,7 +181,11 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
       >
         {isSystemGenerated && (
           <span className="text-[10px] block mb-0.5 text-text-system">
-            {isCommand ? 'Command' : isAutoPrompt ? 'Auto' : 'System'}
+            {isCommand
+              ? t({ en: 'Command', fr: 'Commande' })
+              : isAutoPrompt
+                ? t({ en: 'Auto', fr: 'Auto' })
+                : t({ en: 'System', fr: 'Système' })}
           </span>
         )}
         {editing ? (
@@ -223,7 +232,7 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
                 disabled={pending}
                 className="px-4 py-1.5 rounded text-sm bg-bg-tertiary/50 text-text-muted hover:bg-bg-tertiary hover:text-text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Cancel
+                {t({ en: 'Cancel', fr: 'Annuler' })}
               </button>
               <button
                 onClick={() => {
@@ -232,7 +241,7 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
                 disabled={pending || !editContent.trim()}
                 className="px-4 py-1.5 rounded text-sm bg-accent-primary/20 text-accent-primary font-medium hover:bg-accent-primary/30 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
               >
-                Send
+                {t({ en: 'Send', fr: 'Envoyer' })}
               </button>
             </div>
           </div>
@@ -249,22 +258,13 @@ function UserMessage({ message, messageId, sessionId }: UserMessageProps) {
         )}
       </div>
 
-      {contextMenu([
-        {
-          label: formatDateTime(message.timestamp),
-          info: true,
-        },
-        {
-          label: 'Copy',
-          icon: <CopyIcon className="w-4 h-4" />,
-          onClick: () => void handleCopy(),
-        },
-        {
-          label: 'Fork session from here',
-          icon: <BranchIcon className="w-4 h-4" />,
-          onClick: () => void handleFork(),
-        },
-      ])}
+      {contextMenu(
+        useMessageContextMenu(
+          message,
+          () => void handleCopy(),
+          () => void handleFork(),
+        ),
+      )}
     </div>
   )
 }
@@ -275,6 +275,7 @@ export const ChatMessage = memo(function ChatMessage({
   messageId,
   sessionId,
 }: ChatMessageProps) {
+  const t = useT()
   const isUser = message.role === 'user'
   const isAssistant = message.role === 'assistant'
   const isSystem = message.role === 'system'
@@ -287,7 +288,7 @@ export const ChatMessage = memo(function ChatMessage({
   if (isSystem && message.isCompacted) {
     return (
       <div className="feed-item bg-bg-tertiary/50 border border-border rounded p-2">
-        <div className="text-text-muted text-xs mb-0.5">[Compacted]</div>
+        <div className="text-text-muted text-xs mb-0.5">{t({ en: '[Compacted]', fr: '[Compacté]' })}</div>
         <div className="text-text-secondary text-xs whitespace-pre-wrap">
           {message.content.replace('[COMPACTED HISTORY]\n', '')}
         </div>
@@ -298,7 +299,9 @@ export const ChatMessage = memo(function ChatMessage({
   if (isTool) {
     return (
       <div className="feed-item bg-bg-tertiary/30 border-l-2 border-accent-primary rounded-r p-2">
-        <div className="text-accent-primary text-xs mb-0.5">Tool: {message.toolName}</div>
+        <div className="text-accent-primary text-xs mb-0.5">
+          {t({ en: 'Tool:', fr: 'Outil :' })} {message.toolName}
+        </div>
         <OptionalScrollArea horizontal className="max-h-32">
           <pre className="text-text-secondary text-xs whitespace-pre-wrap break-words">
             {message.content.slice(0, 500)}
@@ -345,7 +348,7 @@ export const ChatMessage = memo(function ChatMessage({
     return (
       <div className="flex justify-end feed-item">
         <div className="max-w-[75%] rounded p-2 bg-bg-system border border-border-system">
-          <span className="text-[10px] block mb-0.5 text-text-system">System</span>
+          <span className="text-[10px] block mb-0.5 text-text-system">{t({ en: 'System', fr: 'Système' })}</span>
           <div className="whitespace-pre-wrap break-words text-sm text-text-system italic">{message.content}</div>
         </div>
       </div>

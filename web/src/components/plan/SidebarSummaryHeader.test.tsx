@@ -12,6 +12,7 @@ import { SessionScopeProvider } from '../../stores/session/session-scope'
 
 const mockSessionStore = vi.fn() as Mock
 const mockDevServerStore = vi.fn() as Mock
+const mockUseDevServer = vi.fn() as Mock
 const mockUseGitStatus = vi.fn() as Mock
 
 vi.mock('../../stores/session', () => ({
@@ -22,7 +23,10 @@ vi.mock('../../stores/session', () => ({
 vi.mock('../../stores/dev-server', () => ({
   useDevServerStore: (selector?: (s: unknown) => unknown) =>
     selector ? selector(mockDevServerStore()) : mockDevServerStore(),
-  useDevServerEntry: () => mockDevServerStore(),
+}))
+
+vi.mock('../../hooks/useDevServer', () => ({
+  useDevServer: (...args: unknown[]) => mockUseDevServer(...args),
 }))
 
 vi.mock('../../hooks/useGitStatus', () => ({
@@ -76,6 +80,10 @@ beforeEach(() => {
   })
 
   mockDevServerStore.mockReturnValue({
+    start: vi.fn(),
+  })
+
+  mockUseDevServer.mockReturnValue({
     status: {
       state: 'off',
       url: null,
@@ -85,6 +93,7 @@ beforeEach(() => {
       inspectProxyPort: null,
     },
     config: null,
+    logs: [],
   })
 
   mockUseGitStatus.mockReturnValue({
@@ -174,7 +183,7 @@ describe('SidebarSummaryHeader', () => {
   })
 
   it('shows dev server Start button when off', () => {
-    mockDevServerStore.mockReturnValue({
+    mockUseDevServer.mockReturnValue({
       status: {
         state: 'off',
         url: null,
@@ -184,6 +193,7 @@ describe('SidebarSummaryHeader', () => {
         inspectProxyPort: null,
       },
       config: { command: 'npm run dev', url: 'http://localhost:3000', hotReload: false },
+      logs: [],
     })
 
     const html = renderToStaticMarkup(<SidebarSummaryHeader visible={true} />)
@@ -191,7 +201,7 @@ describe('SidebarSummaryHeader', () => {
   })
 
   it('shows dev server icon-only Open button when running', () => {
-    mockDevServerStore.mockReturnValue({
+    mockUseDevServer.mockReturnValue({
       status: {
         state: 'running',
         url: 'http://localhost:3000',
@@ -201,6 +211,7 @@ describe('SidebarSummaryHeader', () => {
         inspectProxyPort: null,
       },
       config: { command: 'npm run dev', url: 'http://localhost:3000', hotReload: false },
+      logs: [],
     })
 
     const html = renderToStaticMarkup(<SidebarSummaryHeader visible={true} />)
@@ -208,7 +219,7 @@ describe('SidebarSummaryHeader', () => {
   })
 
   it('shows dev server icon-only Open button in warning state', () => {
-    mockDevServerStore.mockReturnValue({
+    mockUseDevServer.mockReturnValue({
       status: {
         state: 'warning',
         url: 'http://localhost:3000',
@@ -218,6 +229,7 @@ describe('SidebarSummaryHeader', () => {
         inspectProxyPort: null,
       },
       config: { command: 'npm run dev', url: 'http://localhost:3000', hotReload: false },
+      logs: [],
     })
 
     const html = renderToStaticMarkup(<SidebarSummaryHeader visible={true} />)
@@ -225,7 +237,7 @@ describe('SidebarSummaryHeader', () => {
   })
 
   it('shows dev server error state', () => {
-    mockDevServerStore.mockReturnValue({
+    mockUseDevServer.mockReturnValue({
       status: {
         state: 'error',
         url: null,
@@ -235,10 +247,16 @@ describe('SidebarSummaryHeader', () => {
         inspectProxyPort: null,
       },
       config: { command: 'npm run dev', url: 'http://localhost:3000', hotReload: false },
+      logs: [],
     })
 
     const html = renderToStaticMarkup(<SidebarSummaryHeader visible={true} />)
     expect(html).toContain('Start')
+  })
+
+  it('loads dev server data via useDevServer for the scoped workdir', () => {
+    renderToStaticMarkup(<SidebarSummaryHeader visible={true} />)
+    expect(mockUseDevServer).toHaveBeenCalledWith('/tmp/proj/my-workspace')
   })
 
   it('does not include session stats', () => {

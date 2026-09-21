@@ -1,10 +1,29 @@
 // @vitest-environment happy-dom
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { useSkillsStore, type SkillInfo } from '../../stores/skills'
+import type { SkillInfo } from '../../lib/skills-actions'
 import { useSessionStore } from '../../stores/session/store'
+import { clearCache } from '../../lib/resourceCache'
+import { skillsResource } from '../../lib/resources'
+import { authFetch } from '../../lib/api'
 import { SkillsContent } from './SkillsModal'
+
+;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+vi.mock('../../lib/api', () => ({
+  authFetch: vi.fn(),
+}))
+
+const { mockToggleSkill, mockDeleteSkill } = vi.hoisted(() => ({
+  mockToggleSkill: vi.fn(),
+  mockDeleteSkill: vi.fn(async () => ({ success: true })),
+}))
+
+vi.mock('../../lib/skills-actions', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/skills-actions')>()
+  return { ...actual, toggleSkill: mockToggleSkill, deleteSkill: mockDeleteSkill }
+})
 
 const skill: SkillInfo = {
   id: 'my-skill',
@@ -19,30 +38,41 @@ const skill: SkillInfo = {
   warnings: [],
 }
 
+function seedSkills(workdir?: string) {
+  vi.mocked(authFetch).mockImplementation(async (url: string) => {
+    if (url === `/api/skills${workdir ? `?workdir=${encodeURIComponent(workdir)}` : ''}`) {
+      return {
+        ok: true,
+        json: async () => ({
+          defaults: [],
+          userItems: [skill],
+          projectItems: [],
+          items: [skill],
+          selectedDirectory: {
+            configuredPath: '/tmp/skills',
+            resolvedPath: '/tmp/skills',
+            available: true,
+            custom: false,
+          },
+          diagnostics: [],
+        }),
+      } as unknown as Response
+    }
+    return { ok: true, json: async () => ({}) } as unknown as Response
+  })
+}
+
 describe('SkillsContent', () => {
   afterEach(cleanup)
 
-  beforeEach(() => {
-    useSkillsStore.setState({
-      defaults: [],
-      userItems: [skill],
-      projectItems: [],
-      items: [skill],
-      selectedDirectory: {
-        configuredPath: '/tmp/skills',
-        resolvedPath: '/tmp/skills',
-        available: true,
-        custom: false,
-      },
-      diagnostics: [],
-      loading: false,
-    })
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    clearCache()
+    seedSkills()
+    await skillsResource.refresh()
   })
 
   it('shows activation next to delete and toggles the skill', () => {
-    const toggleSkill = vi.fn()
-    useSkillsStore.setState({ toggleSkill })
-
     render(<SkillsContent isOpen={false} />)
 
     const activation = screen.getByRole('switch', { name: 'Activation for My Skill' })
@@ -52,30 +82,22 @@ describe('SkillsContent', () => {
     expect(activation.parentElement?.lastElementChild).toBe(activation)
 
     fireEvent.click(activation)
-    expect(toggleSkill).toHaveBeenCalledWith('my-skill')
+    expect(mockToggleSkill).toHaveBeenCalledWith('my-skill', undefined)
   })
 
   it('requires modal confirmation before deleting the full skill folder', async () => {
-    const deleteSkill = vi.fn(async () => ({ success: true }))
-    const fetchSkills = vi.fn(async () => undefined)
-    useSkillsStore.setState({ deleteSkill, fetchSkills })
-
     render(<SkillsContent isOpen={false} />)
     fireEvent.click(screen.getByTitle('Delete'))
 
     expect(screen.getByText('This skill files will be deleted.')).toBeTruthy()
     expect(screen.getByText('The full skill folder and all its contents will be removed.')).toBeTruthy()
-    expect(deleteSkill).not.toHaveBeenCalled()
+    expect(mockDeleteSkill).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete skill' }))
-    await vi.waitFor(() => expect(deleteSkill).toHaveBeenCalledWith('my-skill'))
-    expect(fetchSkills).toHaveBeenCalled()
+    await vi.waitFor(() => expect(mockDeleteSkill).toHaveBeenCalledWith('my-skill', undefined))
   })
 
-  it('loads skills from the session project workdir even when a workspace is active', () => {
-    const setWorkdir = vi.fn()
-    const fetchSkills = vi.fn(async () => undefined)
-    useSkillsStore.setState({ setWorkdir, fetchSkills })
+  it('loads skills scoped to the session project workdir even when a workspace is active', async () => {
     useSessionStore.setState({
       currentSession: {
         id: 's1',
@@ -90,7 +112,8 @@ describe('SkillsContent', () => {
 
     render(<SkillsContent isOpen={true} />)
 
-    expect(setWorkdir).toHaveBeenCalledWith('/original/project')
-    expect(fetchSkills).toHaveBeenCalledWith('/original/project')
+    await waitFor(() => {
+      expect(authFetch).toHaveBeenCalledWith('/api/skills?workdir=%2Foriginal%2Fproject')
+    })
   })
 })

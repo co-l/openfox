@@ -1,18 +1,28 @@
 // @vitest-environment happy-dom
-import { cleanup, render } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useSessionStore } from '../../stores/session'
-import { SETTINGS_KEYS, useSettingsStore } from '../../stores/settings'
+import { SETTINGS_KEYS, settingResource } from '../../lib/resources'
+import { clearCache } from '../../lib/resourceCache'
 import { SessionScopeProvider } from '../../stores/session/session-scope'
 import { ToolCallDisplay } from './ToolCallDisplay'
+
+vi.mock('../../lib/api', () => ({ authFetch: vi.fn() }))
 
 vi.mock('./RunCommandView', () => ({
   RunCommandView: () => <div data-testid="run-command-view">command output content</div>,
 }))
 
+const { filePreviewCaptureMock } = vi.hoisted(() => ({
+  filePreviewCaptureMock: vi.fn(),
+}))
+
 vi.mock('./DiffView', () => ({
   DiffView: () => <div data-testid="diff-view">diff output</div>,
-  FilePreview: () => <div data-testid="file-preview">file preview</div>,
+  FilePreview: (props: unknown) => {
+    filePreviewCaptureMock(props)
+    return <div data-testid="file-preview">file preview</div>
+  },
   EditContextView: () => <div data-testid="edit-context-view">edit context</div>,
   ReadFileView: () => <div data-testid="read-file-view">read file output</div>,
 }))
@@ -46,7 +56,7 @@ const pendingConfirmation = {
 describe('ToolCallDisplay — remote execution', () => {
   beforeEach(() => {
     useSessionStore.setState({ pendingPathConfirmations: [] })
-    useSettingsStore.setState({ settings: {} })
+    clearCache()
   })
 
   afterEach(cleanup)
@@ -96,7 +106,7 @@ describe('ToolCallDisplay — remote execution', () => {
 describe('ToolCallDisplay — PathConfirmationButtons placement', () => {
   beforeEach(() => {
     useSessionStore.setState({ pendingPathConfirmations: [] })
-    useSettingsStore.setState({ settings: {} })
+    clearCache()
   })
 
   afterEach(cleanup)
@@ -234,6 +244,8 @@ describe('ToolCallDisplay — PathConfirmationButtons placement', () => {
           gitStatus: null,
           error: null,
           llmRetry: null,
+          liveTurnStats: null,
+          sessionStats: null,
         },
       },
     })
@@ -259,7 +271,7 @@ describe('ToolCallDisplay — PathConfirmationButtons placement', () => {
 describe('ToolCallDisplay — project_tasks', () => {
   beforeEach(() => {
     useSessionStore.setState({ pendingPathConfirmations: [] })
-    useSettingsStore.setState({ settings: {} })
+    clearCache()
   })
 
   afterEach(cleanup)
@@ -298,7 +310,7 @@ describe('ToolCallDisplay — project_tasks', () => {
 describe('ToolCallDisplay — default expansion', () => {
   beforeEach(() => {
     useSessionStore.setState({ pendingPathConfirmations: [] })
-    useSettingsStore.setState({ settings: {} })
+    clearCache()
   })
 
   afterEach(cleanup)
@@ -313,9 +325,7 @@ describe('ToolCallDisplay — default expansion', () => {
   })
 
   it('collapses large finished results when collapseLargeToolCalls is enabled', () => {
-    useSettingsStore.setState({
-      settings: { [SETTINGS_KEYS.DISPLAY_COLLAPSE_LARGE_TOOL_CALLS]: 'true' },
-    })
+    settingResource.write('true', SETTINGS_KEYS.DISPLAY_COLLAPSE_LARGE_TOOL_CALLS)
     const bigResult = 'x'.repeat(10_000)
     const { container } = render(
       <ToolCallDisplay tool="custom_tool" args={{}} status="success" result={bigResult} variant="expandable" />,
@@ -358,5 +368,179 @@ describe('ToolCallDisplay — default expansion', () => {
     )
 
     expect(container.querySelector('[data-testid="file-preview"]')).not.toBeNull()
+  })
+
+  it('renders the finished write_file preview without the live streaming flag', () => {
+    filePreviewCaptureMock.mockClear()
+    render(
+      <ToolCallDisplay
+        tool="write_file"
+        args={{ path: '/tmp/x.ts', content: 'final content' }}
+        status="success"
+        variant="expandable"
+      />,
+    )
+
+    expect(filePreviewCaptureMock.mock.calls.length).toBeGreaterThan(0)
+    for (const call of filePreviewCaptureMock.mock.calls) {
+      expect(call[0]).toMatchObject({ filePath: '/tmp/x.ts', content: 'final content' })
+      expect((call[0] as { streaming?: boolean }).streaming).toBeFalsy()
+    }
+  })
+})
+
+describe('ToolCallDisplay — forceCompact (Show expanded tool output)', () => {
+  beforeEach(() => {
+    useSessionStore.setState({ pendingPathConfirmations: [], focusedSessionId: null, panes: {} })
+    clearCache()
+  })
+
+  afterEach(cleanup)
+
+  it('collapses when forceCompact flips on after mount (async setting arrival)', () => {
+    const { container, rerender } = render(
+      <ToolCallDisplay
+        tool="custom_tool"
+        args={{}}
+        status="success"
+        result="output"
+        variant="expandable"
+        forceCompact={false}
+      />,
+    )
+
+    expect(container.querySelector('pre')?.textContent).toContain('output')
+
+    rerender(
+      <ToolCallDisplay
+        tool="custom_tool"
+        args={{}}
+        status="success"
+        result="output"
+        variant="expandable"
+        forceCompact
+      />,
+    )
+
+    expect(container.querySelector('pre')).toBeNull()
+  })
+
+  it('starts collapsed when forceCompact is set from the first render', () => {
+    const { container } = render(
+      <ToolCallDisplay
+        tool="custom_tool"
+        args={{}}
+        status="success"
+        result="output"
+        variant="expandable"
+        forceCompact
+      />,
+    )
+
+    expect(container.querySelector('pre')).toBeNull()
+  })
+
+  it('does not clobber a manual expand once the setting has settled', () => {
+    const { container, rerender } = render(
+      <ToolCallDisplay
+        tool="custom_tool"
+        args={{}}
+        status="success"
+        result="output"
+        variant="expandable"
+        forceCompact
+      />,
+    )
+
+    fireEvent.click(container.querySelector('button') as HTMLElement)
+    expect(container.querySelector('pre')?.textContent).toContain('output')
+
+    rerender(
+      <ToolCallDisplay
+        tool="custom_tool"
+        args={{}}
+        status="success"
+        result="output"
+        variant="expandable"
+        forceCompact
+      />,
+    )
+
+    expect(container.querySelector('pre')?.textContent).toContain('output')
+  })
+
+  it('forces expansion when a pending confirmation matches even with forceCompact', () => {
+    useSessionStore.setState({ pendingPathConfirmations: [pendingConfirmation] })
+
+    const { container } = render(
+      <ToolCallDisplay
+        tool="run_command"
+        args={{ command: 'echo hello' }}
+        status="pending"
+        variant="expandable"
+        forceCompact
+        callId="call-run-1"
+      />,
+    )
+
+    expect(container.textContent).toContain('Allow')
+    expect(container.textContent).toContain('Deny')
+  })
+
+  it('expands when a confirmation arrives mid-turn on a collapsed card', async () => {
+    const { container } = render(
+      <ToolCallDisplay
+        tool="run_command"
+        args={{ command: 'echo hello' }}
+        status="pending"
+        variant="expandable"
+        forceCompact
+        callId="call-run-1"
+      />,
+    )
+
+    expect(container.textContent).not.toContain('Allow')
+
+    useSessionStore.setState({ pendingPathConfirmations: [pendingConfirmation] })
+
+    await waitFor(() => expect(container.textContent).toContain('Allow'))
+    expect(container.textContent).toContain('Deny')
+  })
+})
+
+describe('ToolCallDisplay — truncated path tooltip', () => {
+  const LONG_PATH = '/home/user/very/long/project/path/to/a/source/file.ts'
+
+  beforeEach(() => {
+    useSessionStore.setState({ pendingPathConfirmations: [] })
+    clearCache()
+  })
+
+  afterEach(() => {
+    delete (HTMLElement.prototype as { clientWidth?: unknown }).clientWidth
+    delete (Element.prototype as { scrollWidth?: unknown }).scrollWidth
+    cleanup()
+  })
+
+  it('shows a hover tooltip with the full path when the label overflows', async () => {
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 100 })
+    Object.defineProperty(Element.prototype, 'scrollWidth', { configurable: true, value: 300 })
+
+    render(<ToolCallDisplay tool="read_file" args={{ path: LONG_PATH }} status="pending" variant="compact" />)
+
+    const label = screen.getByText(LONG_PATH)
+    fireEvent.mouseEnter(label.parentElement as HTMLElement)
+    await waitFor(() => expect(screen.getByRole('tooltip').textContent).toContain(LONG_PATH))
+  })
+
+  it('does not show a tooltip when the path fits', async () => {
+    const { container } = render(
+      <ToolCallDisplay tool="read_file" args={{ path: 'src/a.ts' }} status="pending" variant="compact" />,
+    )
+
+    fireEvent.mouseEnter(container.firstElementChild as HTMLElement)
+    await new Promise((resolve) => setTimeout(resolve, 250))
+
+    expect(screen.queryByRole('tooltip')).toBeNull()
   })
 })

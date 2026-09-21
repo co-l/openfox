@@ -6,11 +6,12 @@ import { loadWorkspaceConfig, saveWorkspaceConfig } from '../git/workspace-confi
 import { getGlobalDataDir } from '../git/workspace.js'
 import { isDirectoryEntry } from '../utils/fs.js'
 import { getProjectByWorkdir, updateProject } from '../db/projects.js'
-import { setSessionDisabledServers } from '../mcp/session-overrides.js'
+import { setSessionDisabledServers, computeDisabledServersForProject } from '../mcp/session-overrides.js'
 import { logger } from '../utils/logger.js'
 import type { WorkspaceConfig } from '../../shared/workspace.js'
 import { formatRootDir, getRootDirBlockReason, suggestRootDirChild } from '../../shared/workspace.js'
 import type { SessionManager } from '../session/manager.js'
+import { serverT } from '../i18n.js'
 
 async function isWritable(path: string): Promise<boolean> {
   try {
@@ -48,7 +49,45 @@ async function checkDirExists(path: string): Promise<boolean> {
 
 async function validatePathWritable(path: string): Promise<string | null> {
   if (await isWritable(path)) return null
-  return 'Workspace root directory exists but is not writable'
+  return serverT({
+    en: 'Workspace root directory exists but is not writable',
+    fr: 'Le répertoire racine du workspace existe mais n’est pas accessible en écriture',
+  })
+}
+
+/** Error message when a rootDir choice is blocked, or null when allowed. */
+function rootDirBlockError(
+  blockReason: ReturnType<typeof getRootDirBlockReason> | null,
+  displayPath: string,
+  suggestion?: string,
+): string | null {
+  if (blockReason === 'exact') {
+    return suggestion
+      ? serverT(
+          {
+            en: 'Cannot use "{{path}}" directly as workspace root. Use a subdirectory like "{{suggestion}}" instead.',
+            fr: 'Impossible d’utiliser « {{path}} » directement comme racine du workspace. Utilisez plutôt un sous-répertoire comme « {{suggestion}} ».',
+          },
+          { path: displayPath, suggestion },
+        )
+      : serverT(
+          {
+            en: 'Cannot use "{{path}}" directly as workspace root. Use a subdirectory instead.',
+            fr: 'Impossible d’utiliser « {{path}} » directement comme racine du workspace. Utilisez un sous-répertoire à la place.',
+          },
+          { path: displayPath },
+        )
+  }
+  if (blockReason === 'virtual_fs') {
+    return serverT(
+      {
+        en: 'Cannot use paths under "{{path}}" for workspaces.',
+        fr: 'Impossible d’utiliser des chemins sous « {{path}} » pour les workspaces.',
+      },
+      { path: displayPath },
+    )
+  }
+  return null
 }
 
 async function findOrphanedWorkspaces(dir: string): Promise<{ name: string }[]> {
@@ -80,7 +119,7 @@ export function createWorkspaceConfigRoutes(sessionManager: SessionManager): Rou
 
   router.get('/config', async (req, res) => {
     const workdir = req.query['workdir'] as string
-    if (!workdir) return res.status(400).json({ error: 'workdir required' })
+    if (!workdir) return res.status(400).json({ error: serverT({ en: 'workdir required', fr: 'workdir requis' }) })
     const config = await loadWorkspaceConfig(workdir)
     const project = getProjectByWorkdir(workdir)
     const rootDir = project?.workspaceRootDir ?? undefined
@@ -91,19 +130,31 @@ export function createWorkspaceConfigRoutes(sessionManager: SessionManager): Rou
 
   router.post('/config', async (req, res) => {
     const workdir = req.query['workdir'] as string
-    if (!workdir) return res.status(400).json({ error: 'workdir required' })
+    if (!workdir) return res.status(400).json({ error: serverT({ en: 'workdir required', fr: 'workdir requis' }) })
     const { setup, rootDir, mcpOverrides } = req.body
     if (!Array.isArray(setup) && typeof rootDir !== 'string' && mcpOverrides === undefined) {
-      return res.status(400).json({ error: 'At least one of setup, rootDir, or mcpOverrides must be provided' })
+      return res.status(400).json({
+        error: serverT({
+          en: 'At least one of setup, rootDir, or mcpOverrides must be provided',
+          fr: 'Au moins un de setup, rootDir ou mcpOverrides doit être fourni',
+        }),
+      })
     }
     if (setup !== undefined && !Array.isArray(setup)) {
-      return res.status(400).json({ error: 'setup must be an array of strings' })
+      return res.status(400).json({
+        error: serverT({ en: 'setup must be an array of strings', fr: 'setup doit être un tableau de chaînes' }),
+      })
     }
     if (
       mcpOverrides !== undefined &&
       (typeof mcpOverrides !== 'object' || mcpOverrides === null || Array.isArray(mcpOverrides))
     ) {
-      return res.status(400).json({ error: 'mcpOverrides must be an object mapping server names to overrides' })
+      return res.status(400).json({
+        error: serverT({
+          en: 'mcpOverrides must be an object mapping server names to overrides',
+          fr: 'mcpOverrides doit être un objet associant les noms de serveurs à des surcharges',
+        }),
+      })
     }
     // Merge with existing config to preserve fields not in this request
     const existing = await loadWorkspaceConfig(workdir)
@@ -118,14 +169,8 @@ export function createWorkspaceConfigRoutes(sessionManager: SessionManager): Rou
         const resolvedPath = resolveRootDir(trimmed, workdir)
         const displayPath = formatRootDir(resolvedPath)
         const blockReason = getRootDirBlockReason(resolvedPath)
-        if (blockReason === 'exact') {
-          return res
-            .status(400)
-            .json({ error: `Cannot use "${displayPath}" directly as workspace root. Use a subdirectory instead.` })
-        }
-        if (blockReason === 'virtual_fs') {
-          return res.status(400).json({ error: `Cannot use paths under "${displayPath}" for workspaces.` })
-        }
+        const blockError = rootDirBlockError(blockReason, displayPath)
+        if (blockError) return res.status(400).json({ error: blockError })
         const dirExists = await checkDirExists(resolvedPath)
         if (dirExists) {
           const writableErr = await validatePathWritable(resolvedPath)
@@ -150,12 +195,14 @@ export function createWorkspaceConfigRoutes(sessionManager: SessionManager): Rou
       if (mcpOverrides !== undefined) {
         const project = getProjectByWorkdir(workdir)
         if (project) {
+          const overridesObj =
+            Object.keys(mcpOverrides).length > 0
+              ? (mcpOverrides as Record<string, { disabled?: boolean; disabledTools?: string[] }>)
+              : null
           updateProject(project.id, {
-            mcpOverrides: Object.keys(mcpOverrides).length > 0 ? mcpOverrides : null,
+            mcpOverrides: overridesObj,
           })
-          const disabledServers = Object.entries(mcpOverrides as Record<string, { disabled?: boolean }>)
-            .filter(([, override]) => override.disabled)
-            .map(([name]) => name)
+          const disabledServers = computeDisabledServersForProject(overridesObj)
           const allSessions = sessionManager.listSessions()
           for (const s of allSessions) {
             if (s.projectId === project.id) {
@@ -168,34 +215,31 @@ export function createWorkspaceConfigRoutes(sessionManager: SessionManager): Rou
 
       res.json({ config: { ...config, rootDir: savedRootDir ?? undefined } })
     } catch (err) {
-      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to save config' })
+      res.status(500).json({
+        error:
+          err instanceof Error
+            ? err.message
+            : serverT({ en: 'Failed to save config', fr: 'Échec de l’enregistrement de la configuration' }),
+      })
     }
   })
 
   router.post('/config/validate', async (req, res) => {
     const { rootDir, workdir, projectName, createIfMissing } = req.body
     if (!rootDir || typeof rootDir !== 'string') {
-      return res.status(400).json({ error: 'rootDir is required' })
+      return res.status(400).json({ error: serverT({ en: 'rootDir is required', fr: 'rootDir est requis' }) })
     }
     if (!workdir || typeof workdir !== 'string') {
-      return res.status(400).json({ error: 'workdir is required' })
+      return res.status(400).json({ error: serverT({ en: 'workdir is required', fr: 'workdir est requis' }) })
     }
 
     const resolvedPath = resolveRootDir(rootDir, workdir)
     const displayPath = formatRootDir(resolvedPath)
 
     const blockReason = getRootDirBlockReason(resolvedPath)
-    if (blockReason === 'exact') {
-      const suggestion = typeof projectName === 'string' ? suggestRootDirChild(resolvedPath, projectName) : undefined
-      return res.status(400).json({
-        error: suggestion
-          ? `Cannot use "${displayPath}" directly as workspace root. Use a subdirectory like "${suggestion}" instead.`
-          : `Cannot use "${displayPath}" directly as workspace root. Use a subdirectory instead.`,
-      })
-    }
-    if (blockReason === 'virtual_fs') {
-      return res.status(400).json({ error: `Cannot use paths under "${displayPath}" for workspaces.` })
-    }
+    const suggestion = typeof projectName === 'string' ? suggestRootDirChild(resolvedPath, projectName) : undefined
+    const blockError = rootDirBlockError(blockReason, displayPath, suggestion)
+    if (blockError) return res.status(400).json({ error: blockError })
 
     let dirExists = await checkDirExists(resolvedPath)
     if (dirExists) {

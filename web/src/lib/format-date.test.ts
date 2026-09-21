@@ -1,14 +1,20 @@
 // @vitest-environment happy-dom
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import {
   formatDateHeader,
   formatTime,
   formatTimeSince,
   formatDateTime,
+  formatRelativeDate,
   extractDateKey,
   groupSessionsByDate,
 } from './format-date.js'
+import { setLocale } from '@shared/i18n/index.js'
 import type { SessionSummary } from '@shared/types.js'
+
+beforeEach(() => {
+  setLocale('en')
+})
 
 describe('formatDateHeader', () => {
   it('formats date to "Dayname YYYY/MM/DD" format', () => {
@@ -29,6 +35,12 @@ describe('formatDateHeader', () => {
   it('pads month and day with leading zeros', () => {
     expect(formatDateHeader('2024-01-05T00:00:00Z')).toBe('Friday 2024/01/05')
     expect(formatDateHeader('2024-05-01T00:00:00Z')).toBe('Wednesday 2024/05/01')
+  })
+
+  it('uses French weekday names in fr locale', () => {
+    setLocale('fr')
+    expect(formatDateHeader('2024-01-15T14:30:00Z')).toBe('lundi 2024/01/15')
+    expect(formatDateHeader('2024-01-14T00:00:00Z')).toBe('dimanche 2024/01/14')
   })
 })
 
@@ -82,6 +94,37 @@ describe('formatDateTime', () => {
   it('never uses 12-hour AM/PM formatting', () => {
     expect(formatDateTime('2026-08-16T14:44:00')).not.toMatch(/(AM|PM|am|pm)/)
     expect(formatDateTime('2026-08-16T00:30:00')).not.toMatch(/(AM|PM|am|pm)/)
+  })
+})
+
+describe('formatRelativeDate', () => {
+  const NOW = new Date('2024-01-15T12:00:00').getTime()
+
+  const at = (daysOffset: number, hour = 10) =>
+    new Date(new Date(NOW).setDate(new Date(NOW).getDate() + daysOffset)).toISOString().slice(0, 11) +
+    `${String(hour).padStart(2, '0')}:00:00`
+
+  it('renders today with the time in en', () => {
+    expect(formatRelativeDate(at(0), NOW)).toBe('today 10:00')
+  })
+
+  it('renders yesterday with the time in en', () => {
+    expect(formatRelativeDate(at(-1), NOW)).toBe('yesterday 10:00')
+  })
+
+  it('renders days ago in en', () => {
+    expect(formatRelativeDate(at(-3), NOW)).toBe('3 days ago 10:00')
+  })
+
+  it('renders older dates as YYYY/MM/DD HH:MM in en', () => {
+    expect(formatRelativeDate('2023-01-01T10:00:00', NOW)).toBe('2023/01/01 10:00')
+  })
+
+  it('renders relative labels in fr', () => {
+    setLocale('fr')
+    expect(formatRelativeDate(at(0), NOW)).toBe("aujourd'hui 10:00")
+    expect(formatRelativeDate(at(-1), NOW)).toBe('hier 10:00')
+    expect(formatRelativeDate(at(-3), NOW)).toBe('il y a 3 jours à 10:00')
   })
 })
 

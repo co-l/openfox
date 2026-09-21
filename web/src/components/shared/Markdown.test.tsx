@@ -60,6 +60,31 @@ describe('Markdown', () => {
       expect(olHtml).toContain('list-decimal')
       expect(ulHtml).toContain('list-disc')
     })
+
+    it('renders a numbered list that continues a previous section without a blank line', () => {
+      // CommonMark: only "1." can interrupt a paragraph, so "3." after a
+      // paragraph line would collapse into it. The preprocessor must insert
+      // the missing blank line so the continuation renders as a list.
+      const content = '**Part 2 — mark current episode done**\n3. New shared helper\n4. TDD suite'
+      const html = renderToString(<Markdown content={content} />)
+
+      expect(html).toContain('<ol start="3"')
+      expect(html).toContain('<li')
+      // The header must close its paragraph before the list starts, not merge inline.
+      expect(html.indexOf('</strong>')).toBeLessThan(html.indexOf('<ol'))
+      expect(html).not.toContain('</strong>3. New shared helper')
+    })
+
+    it('preserves the start number for continued lists', () => {
+      // Even with a proper blank line, the custom ol component must forward
+      // the start attribute instead of renumbering from 1.
+      const content = '**H**\n\n3. First continued\n4. Second continued'
+      const html = renderToString(<Markdown content={content} />)
+
+      expect(html).toContain('<ol start="3"')
+      expect(html).toContain('First continued')
+      expect(html).toContain('Second continued')
+    })
   })
 
   describe('preprocessing', () => {
@@ -87,6 +112,26 @@ describe('Markdown', () => {
 
       expect(html).toContain('tool')
       expect(html).toContain('Use when: testing')
+    })
+
+    it('does not inject blank lines inside fenced code blocks', () => {
+      // The "blank line before numbered items" rule must not touch lines that
+      // live inside a fenced code block, or it would alter the rendered code.
+      const content = '```txt\n3. inside code\n```\nafter\n4. real list'
+      const html = renderToString(<Markdown content={content} />)
+
+      expect(html).toContain('<ol start="4"')
+      expect(html).toContain('>3. inside code')
+      expect(html).not.toContain('<ol start="3"')
+    })
+
+    it('does not inject blank lines inside tilde fenced code blocks', () => {
+      const content = '~~~txt\n3. inside code\n~~~\nafter\n4. real list'
+      const html = renderToString(<Markdown content={content} />)
+
+      expect(html).toContain('<ol start="4"')
+      expect(html).toContain('>3. inside code')
+      expect(html).not.toContain('<ol start="3"')
     })
   })
 

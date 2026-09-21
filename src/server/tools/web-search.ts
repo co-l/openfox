@@ -1,6 +1,7 @@
 import { createTool, buildSignal } from './tool-helpers.js'
 import { getSetting } from '../db/settings.js'
 import { SETTINGS_KEYS } from '../db/settings.js'
+import { serverT } from '../i18n.js'
 
 const DEFAULT_TIMEOUT_MS = 15_000
 const DEFAULT_MAX_RESULTS = 5
@@ -156,9 +157,10 @@ export const webSearchTool = createTool<WebSearchArgs>(
     const active = getActiveEngine()
     if (!active) {
       return helpers.error(
-        'web_search requires at least one search engine configured. ' +
-          'Set the TAVILY_API_KEY environment variable, or configure SearXNG via SEARXNG_URL (and optionally SEARXNG_API_KEY). ' +
-          'You can also configure these in Settings > Advanced > Search Engine.',
+        serverT({
+          en: 'web_search requires at least one search engine configured. Set the TAVILY_API_KEY environment variable, or configure SearXNG via SEARXNG_URL (and optionally SEARXNG_API_KEY). You can also configure these in Settings > Advanced > Search Engine.',
+          fr: 'web_search nécessite au moins un moteur de recherche configuré. Définissez la variable d’environnement TAVILY_API_KEY, ou configurez SearXNG via SEARXNG_URL (et éventuellement SEARXNG_API_KEY). Vous pouvez aussi les configurer dans Paramètres > Avancé > Moteur de recherche.',
+        }),
       )
     }
 
@@ -176,15 +178,27 @@ export const webSearchTool = createTool<WebSearchArgs>(
       }
 
       if (results.length === 0) {
-        return helpers.success('No search results found.', false)
+        return helpers.success(
+          serverT({ en: 'No search results found.', fr: 'Aucun résultat de recherche trouvé.' }),
+          false,
+        )
       }
 
       return helpers.success(formatResults(results), false)
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
-        return helpers.error('Search request timed out (15s). Try a more specific query.')
+        return helpers.error(
+          serverT({
+            en: 'Search request timed out (15s). Try a more specific query.',
+            fr: 'La recherche a expiré (15 s). Essayez une requête plus précise.',
+          }),
+        )
       }
-      return helpers.error(error instanceof Error ? error.message : 'Search request failed')
+      return helpers.error(
+        error instanceof Error
+          ? error.message
+          : serverT({ en: 'Search request failed', fr: 'Échec de la requête de recherche' }),
+      )
     }
   },
 )

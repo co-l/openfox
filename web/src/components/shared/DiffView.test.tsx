@@ -1,6 +1,9 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, afterEach } from 'vitest'
+import { cleanup, render } from '@testing-library/react'
 import { FilePreview, wrappedCodeStyle } from './DiffView'
+
+afterEach(cleanup)
 
 describe('FilePreview component', () => {
   it('should have correct props interface', () => {
@@ -39,5 +42,21 @@ describe('FilePreview component', () => {
   it('should have overflow-wrap: break-word in wrappedCodeStyle for proper word wrapping', () => {
     // This test will FAIL because overflowWrap is not in wrappedCodeStyle
     expect(wrappedCodeStyle.overflowWrap).toBe('break-word')
+  })
+})
+
+describe('FilePreview streaming preview', () => {
+  it('renders the streaming variant with the live toggle', () => {
+    const { container } = render(<FilePreview content={'const x = 1\nconst y = 2\n'} filePath="src/a.ts" streaming />)
+
+    expect(container.textContent).toContain('const x = 1')
+    expect(container.textContent).toContain('Live')
+  })
+
+  it('renders the non-streaming variant without the live toggle', () => {
+    const { container } = render(<FilePreview content={'const x = 1\n'} filePath="src/a.ts" />)
+
+    expect(container.textContent).toContain('const x = 1')
+    expect(container.textContent).not.toContain('Live')
   })
 })

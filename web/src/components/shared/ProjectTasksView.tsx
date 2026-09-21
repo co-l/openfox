@@ -1,5 +1,7 @@
 import { memo } from 'react'
 import { OptionalScrollArea } from './OptionalScrollArea'
+import { useT } from '../../hooks/useT'
+import type { Translation } from '@shared/i18n/index.js'
 
 interface ProjectTasksViewProps {
   result: string
@@ -36,18 +38,25 @@ interface ListData {
   tasks?: TaskView[]
 }
 
-const STATUS_META: Record<string, { label: string; className: string }> = {
-  todo: { label: 'To Do', className: 'bg-accent-warning/10 text-accent-warning border-accent-warning/30' },
+const STATUS_META: Record<string, { label: Translation; className: string }> = {
+  todo: {
+    label: { en: 'To Do', fr: 'À faire' },
+    className: 'bg-accent-warning/10 text-accent-warning border-accent-warning/30',
+  },
   in_progress: {
-    label: 'In Progress',
+    label: { en: 'In Progress', fr: 'En cours' },
     className: 'bg-accent-primary/10 text-accent-primary border-accent-primary/30',
   },
-  done: { label: 'Done', className: 'bg-accent-success/10 text-accent-success border-accent-success/30' },
+  done: {
+    label: { en: 'Done', fr: 'Terminées' },
+    className: 'bg-accent-success/10 text-accent-success border-accent-success/30',
+  },
 }
 
 const SINGLE_TASK_ACTIONS = new Set(['get', 'create', 'edit', 'move', 'set_gate_value', 'duplicate', 'reorder'])
 
 export const ProjectTasksView = memo(function ProjectTasksView({ result, action }: ProjectTasksViewProps) {
+  const t = useT()
   let parsed: unknown
   try {
     parsed = JSON.parse(result)
@@ -58,7 +67,7 @@ export const ProjectTasksView = memo(function ProjectTasksView({ result, action 
   if (action === 'list') {
     return (
       <OptionalScrollArea className="max-h-[60vh]">
-        <Board data={parsed as ListData} />
+        <Board data={parsed as ListData} t={t} />
       </OptionalScrollArea>
     )
   }
@@ -66,7 +75,7 @@ export const ProjectTasksView = memo(function ProjectTasksView({ result, action 
     const gates = (parsed as Record<string, unknown>)['gates']
     return (
       <OptionalScrollArea className="max-h-[60vh]">
-        <GateList gates={Array.isArray(gates) ? (gates as GateConfigView[]) : []} />
+        <GateList gates={Array.isArray(gates) ? (gates as GateConfigView[]) : []} t={t} />
       </OptionalScrollArea>
     )
   }
@@ -80,7 +89,7 @@ export const ProjectTasksView = memo(function ProjectTasksView({ result, action 
   if (SINGLE_TASK_ACTIONS.has(action)) {
     return (
       <OptionalScrollArea className="max-h-[60vh]">
-        <TaskCard task={parseTask(parsed)} />
+        <TaskCard task={parseTask(parsed)} t={t} />
       </OptionalScrollArea>
     )
   }
@@ -95,7 +104,13 @@ function RawFallback({ result }: { result: string }) {
   )
 }
 
-function Board({ data }: { data: ListData }) {
+function Board({
+  data,
+  t,
+}: {
+  data: ListData
+  t: (tx: Translation, vars?: Record<string, string | number>) => string
+}) {
   const tasks = (data.tasks ?? []).map(parseTask)
   const gates = data.gates ?? []
   const todo = tasks.filter((t) => t.status === 'todo')
@@ -106,26 +121,54 @@ function Board({ data }: { data: ListData }) {
   return (
     <div className="space-y-2 text-xs">
       <div className="text-text-muted">
-        Task board · {tasks.length} task{tasks.length === 1 ? '' : 's'}
+        {t(
+          {
+            en: { one: 'Task board · {{count}} task', other: 'Task board · {{count}} tasks' },
+            fr: { one: 'Tableau des tâches · {{count}} tâche', other: 'Tableau des tâches · {{count}} tâches' },
+          },
+          { count: tasks.length },
+        )}
         {gates.length > 0 && (
-          <span> — Gates: {gates.map((g) => `${g.name} (${g.required ? 'required' : 'optional'})`).join(', ')}</span>
+          <span>
+            {t(
+              { en: ' — Gates: {{gates}}', fr: ' — Portes : {{gates}}' },
+              {
+                gates: gates
+                  .map(
+                    (g) =>
+                      `${g.name} (${g.required ? t({ en: 'required', fr: 'requise' }) : t({ en: 'optional', fr: 'facultative' })})`,
+                  )
+                  .join(', '),
+              },
+            )}
+          </span>
         )}
       </div>
       {tasks.length === 0 ? (
-        <div className="text-text-muted italic">No tasks on the board</div>
+        <div className="text-text-muted italic">
+          {t({ en: 'No tasks on the board', fr: 'Aucune tâche sur le tableau' })}
+        </div>
       ) : (
         <>
-          <Column title="To Do" tasks={todo} />
-          <Column title="In Progress" tasks={inProgress} />
-          <Column title="Done" tasks={done} />
-          <Column title="Other" tasks={other} />
+          <Column title={t({ en: 'To Do', fr: 'À faire' })} tasks={todo} t={t} />
+          <Column title={t({ en: 'In Progress', fr: 'En cours' })} tasks={inProgress} t={t} />
+          <Column title={t({ en: 'Done', fr: 'Terminées' })} tasks={done} t={t} />
+          <Column title={t({ en: 'Other', fr: 'Autres' })} tasks={other} t={t} />
         </>
       )}
     </div>
   )
 }
 
-function Column({ title, tasks }: { title: string; tasks: TaskView[] }) {
+function Column({
+  title,
+  tasks,
+  t,
+}: {
+  title: string
+  tasks: TaskView[]
+  t: (tx: Translation, vars?: Record<string, string | number>) => string
+}) {
   if (tasks.length === 0) return null
   return (
     <div className="space-y-1.5">
@@ -133,34 +176,37 @@ function Column({ title, tasks }: { title: string; tasks: TaskView[] }) {
         {title} · {tasks.length}
       </div>
       {tasks.map((task) => (
-        <TaskCard key={task.id} task={task} />
+        <TaskCard key={task.id} task={task} t={t} />
       ))}
     </div>
   )
 }
 
-function TaskCard({ task }: { task: TaskView }) {
-  const meta = STATUS_META[task.status] ?? {
-    label: task.status,
-    className: 'bg-bg-tertiary text-text-secondary border-border',
-  }
+function TaskCard({
+  task,
+  t,
+}: {
+  task: TaskView
+  t: (tx: Translation, vars?: Record<string, string | number>) => string
+}) {
+  const meta = STATUS_META[task.status] ?? null
   return (
     <div className="rounded-md border border-border bg-bg-tertiary px-2.5 py-2">
       <div className="flex flex-wrap items-center gap-1.5">
         <span
-          className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium ${meta.className}`}
+          className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium ${meta?.className ?? 'bg-bg-tertiary text-text-secondary border-border'}`}
         >
-          {meta.label}
+          {meta ? t(meta.label) : task.status}
         </span>
         {task.runState === 'running' && (
           <span className="inline-flex items-center gap-1 rounded-full border border-accent-success/40 bg-accent-success/10 px-1.5 py-0.5 text-[10px] font-medium text-accent-success">
             <span className="w-1.5 h-1.5 rounded-full bg-accent-success animate-pulse" />
-            Running
+            {t({ en: 'Running', fr: 'En cours d’exécution' })}
           </span>
         )}
         {task.runState === 'queued' && (
           <span className="inline-flex items-center rounded border border-accent-warning/40 bg-accent-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-accent-warning">
-            Queued · #{task.queuePosition ?? 1}
+            {t({ en: 'Queued · #{{pos}}', fr: 'En file · #{{pos}}' }, { pos: task.queuePosition ?? 1 })}
           </span>
         )}
       </div>
@@ -168,11 +214,19 @@ function TaskCard({ task }: { task: TaskView }) {
         {task.prompt}
       </p>
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] text-text-muted">
-        {task.boundSession && <span>Bound: {task.boundSession}</span>}
+        {task.boundSession && (
+          <span>{t({ en: 'Bound: {{session}}', fr: 'Liée à : {{session}}' }, { session: task.boundSession })}</span>
+        )}
         {task.model && <span className="px-1.5 py-0.5 rounded bg-bg-secondary border border-border">{task.model}</span>}
         {task.attachments !== undefined && task.attachments > 0 && (
           <span>
-            {task.attachments} attachment{task.attachments === 1 ? '' : 's'}
+            {t(
+              {
+                en: { one: '{{count}} attachment', other: '{{count}} attachments' },
+                fr: { one: '{{count}} pièce jointe', other: '{{count}} pièces jointes' },
+              },
+              { count: task.attachments },
+            )}
           </span>
         )}
         {task.gates.map((gate) => (
@@ -185,12 +239,18 @@ function TaskCard({ task }: { task: TaskView }) {
   )
 }
 
-function GateList({ gates }: { gates: GateConfigView[] }) {
+function GateList({
+  gates,
+  t,
+}: {
+  gates: GateConfigView[]
+  t: (tx: Translation, vars?: Record<string, string | number>) => string
+}) {
   return (
     <div className="space-y-1 text-xs">
-      <div className="text-text-muted mb-1">Gate configuration</div>
+      <div className="text-text-muted mb-1">{t({ en: 'Gate configuration', fr: 'Configuration des portes' })}</div>
       {gates.length === 0 ? (
-        <div className="text-text-muted italic">No gates configured</div>
+        <div className="text-text-muted italic">{t({ en: 'No gates configured', fr: 'Aucune porte configurée' })}</div>
       ) : (
         gates.map((gate) => (
           <div key={gate.id} className="flex items-start gap-2">
@@ -199,7 +259,7 @@ function GateList({ gates }: { gates: GateConfigView[] }) {
               <div className="text-text-primary">
                 {gate.name}{' '}
                 <span className="ml-0.5 px-1.5 py-0.5 rounded border border-border bg-bg-tertiary text-[10px]">
-                  {gate.required ? 'required' : 'optional'}
+                  {gate.required ? t({ en: 'required', fr: 'requise' }) : t({ en: 'optional', fr: 'facultative' })}
                 </span>
                 {gate.variant && (
                   <span className="ml-0.5 px-1.5 py-0.5 rounded border border-border bg-bg-tertiary text-[10px]">

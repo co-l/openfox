@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useT } from '../../hooks/useT'
 import { authFetch } from '../../lib/api'
 import { PlusLgIcon } from '../shared/icons'
 import { CloseButton } from '../shared/CloseButton'
@@ -27,6 +28,7 @@ interface OnboardingWizardProps {
 }
 
 export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
+  const t = useT()
   const [step, setStep] = useState(1)
   const [saving, setSaving] = useState(false)
   const [data, setData] = useState<Partial<OnboardingData>>({})
@@ -85,14 +87,20 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
       <StepIndicator
         currentStep={step}
         totalSteps={3}
-        labels={['LLM Providers', 'Projects Folder', 'Vision']}
+        labels={[
+          t({ en: 'LLM Providers', fr: 'Fournisseurs LLM' }),
+          t({ en: 'Projects Folder', fr: 'Dossier des projets' }),
+          t({ en: 'Vision', fr: 'Vision' }),
+        ]}
         onStepClick={handleStepClick}
       />
       <div className="max-w-xl mx-auto">
         {saving ? (
           <div className="text-center">
             <PlusLgIcon className="w-6 h-6" />
-            <p className="mt-4 text-text-secondary">Saving your settings...</p>
+            <p className="mt-4 text-text-secondary">
+              {t({ en: 'Saving your settings...', fr: 'Enregistrement de vos paramètres…' })}
+            </p>
           </div>
         ) : (
           <>

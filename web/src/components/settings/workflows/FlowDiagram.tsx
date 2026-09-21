@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
-import type { WorkflowStep } from '../../../stores/workflows'
-import type { AgentInfo } from '../../../stores/agents'
+import type { WorkflowStep } from '../../../lib/workflows-actions'
+import type { AgentInfo } from '../../../lib/agents-actions'
 import { computeLayout, PORT_R, type LayoutEdge, type LayoutNode, type DragState } from './layout'
 
 interface FlowDiagramProps {

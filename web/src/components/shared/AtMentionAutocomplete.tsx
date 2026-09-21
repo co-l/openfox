@@ -68,6 +68,7 @@ const AtMentionAutocomplete = forwardRef<AtMentionAutocompleteHandle, AtMentionA
       try {
         const params = new URLSearchParams({ q: query })
         if (workdir) params.set('workdir', workdir)
+        // Authorized transient read: file search is a debounced autocomplete query, not shared state.
         const response = await authFetch(`/api/files?${params.toString()}`)
         const data: FileSuggestion[] = await response.json()
         setSuggestions(data)

@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react'
-import { authFetch } from '../../../lib/api'
+import { useT } from '../../../hooks/useT'
 import { useCopyToClipboard } from '../../../hooks/useCopyToClipboard'
+import { useConfig } from '../../../hooks/useConfig'
+import { useResource } from '../../../hooks/useResource'
+import { providersResource } from '../../../lib/resources'
 import { CheckIcon, ClipboardIcon } from '../../shared/icons'
 import type { Provider } from '../../../stores/config'
 import {
@@ -25,6 +28,7 @@ interface VisionStepProps {
 }
 
 export function VisionStep({ onNext }: VisionStepProps) {
+  const t = useT()
   const [enabled, setEnabled] = useState(false)
   const [url, setUrl] = useState('http://localhost:11434')
   const [model, setModel] = useState('qwen3.5:0.8b')
@@ -33,30 +37,30 @@ export function VisionStep({ onNext }: VisionStepProps) {
   const [providers, setProviders] = useState<Provider[]>([])
   const [selectedRef, setSelectedRef] = useState<string>('')
   const { copied, copy } = useCopyToClipboard()
+  const { config } = useConfig()
+  const { data: providersData } = useResource(providersResource)
 
   useEffect(() => {
-    authFetch('/api/config')
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.visionFallback) {
-          setEnabled(data.visionFallback.enabled)
-          if (data.visionFallback.providerModelRef) {
-            setSelectedRef(data.visionFallback.providerModelRef)
-          } else {
-            setUrl(data.visionFallback.url ?? 'http://localhost:11434')
-            setModel(data.visionFallback.model ?? 'qwen3.5:0.8b')
-            setApiKey(data.visionFallback.apiKey ?? '')
-            if (data.visionFallback.backend) {
-              setBackend(data.visionFallback.backend)
-            }
-          }
+    if (providersData) {
+      setProviders(providersData.providers)
+    }
+  }, [providersData])
+
+  useEffect(() => {
+    const fallback = config?.visionFallback
+    if (fallback) {
+      setEnabled(fallback.enabled)
+      if (fallback.providerModelRef) {
+        setSelectedRef(fallback.providerModelRef)
+      } else {
+        setUrl(fallback.url ?? 'http://localhost:11434')
+        setModel(fallback.model ?? 'qwen3.5:0.8b')
+        if (fallback.backend) {
+          setBackend(fallback.backend)
         }
-        if (data.providers) {
-          setProviders(data.providers)
-        }
-      })
-      .catch(() => {})
-  }, [])
+      }
+    }
+  }, [config?.visionFallback])
 
   const visionModelOptions = useVisionModelOptions(providers)
 
@@ -94,39 +98,56 @@ export function VisionStep({ onNext }: VisionStepProps) {
   }
 
   const hasOptions = visionModelOptions.length > 0
-  const noVisionMsg = 'No vision-capable models found in your providers. You can manually enter a model below.'
+  const noVisionMsg = t({
+    en: 'No vision-capable models found in your providers. You can manually enter a model below.',
+    fr: 'Aucun modèle de vision trouvé dans vos fournisseurs. Vous pouvez saisir un modèle manuellement ci-dessous.',
+  })
 
   return (
     <div className="max-w-xl mx-auto">
-      <h2 className="text-2xl font-bold text-text-primary mb-2">Vision (Optional)</h2>
-      <p className="text-text-secondary mb-8">Configure a vision model for non-vision models</p>
+      <h2 className="text-2xl font-bold text-text-primary mb-2">
+        {t({ en: 'Vision (Optional)', fr: 'Vision (facultatif)' })}
+      </h2>
+      <p className="text-text-secondary mb-8">
+        {t({
+          en: 'Configure a vision model for non-vision models',
+          fr: 'Configurez un modèle de vision pour les modèles sans vision',
+        })}
+      </p>
 
       <div className="space-y-6">
         <div className="bg-bg-secondary rounded-lg p-4 border border-border">
           <p className="text-text-secondary text-sm mb-2">
-            You need a server with a vision model. Choose your backend type below.
+            {t({
+              en: 'You need a server with a vision model. Choose your backend type below.',
+              fr: 'Vous avez besoin d’un serveur avec un modèle de vision. Choisissez le type de backend ci-dessous.',
+            })}
           </p>
-          <p className="text-text-secondary text-sm mb-2">For Ollama:</p>
+          <p className="text-text-secondary text-sm mb-2">{t({ en: 'For Ollama:', fr: 'Pour Ollama :' })}</p>
           <a
             href="https://ollama.com/download"
             target="_blank"
             rel="noopener noreferrer"
             className="text-accent-primary hover:underline text-sm"
           >
-            Download Ollama
+            {t({ en: 'Download Ollama', fr: 'Télécharger Ollama' })}
           </a>
           <div className="mt-3 p-2 bg-bg-primary rounded border border-border flex items-center justify-between gap-2">
             <code className="text-text-secondary text-xs">ollama pull qwen3.5:0.8b</code>
             <button
               onClick={() => copy('ollama pull qwen3.5:0.8b')}
               className="text-text-muted hover:text-text-primary transition-colors"
-              title="Copy"
+              title={t({ en: 'Copy', fr: 'Copier' })}
             >
               {copied ? <CheckIcon className="w-4 h-4 text-accent-primary" /> : <ClipboardIcon className="w-4 h-4" />}
             </button>
           </div>
           <p className="text-text-secondary text-sm mt-3">
-            For OpenAI-compatible servers (vLLM, sglang, llama.cpp): use the <strong>OpenAI</strong> backend type.
+            {t({
+              en: 'For OpenAI-compatible servers (vLLM, sglang, llama.cpp), use the',
+              fr: 'Pour les serveurs compatibles OpenAI (vLLM, sglang, llama.cpp), utilisez le type de backend',
+            })}{' '}
+            <strong>OpenAI</strong> {t({ en: 'backend type.', fr: 'OpenAI.' })}
           </p>
         </div>
 
@@ -137,7 +158,12 @@ export function VisionStep({ onNext }: VisionStepProps) {
             onChange={(e) => setEnabled(e.target.checked)}
             className="w-5 h-5 rounded border-border bg-bg-secondary text-accent-primary focus:ring-accent-primary"
           />
-          <span className="text-text-primary">Enable vision fallback for non-vision models</span>
+          <span className="text-text-primary">
+            {t({
+              en: 'Enable vision fallback for non-vision models',
+              fr: 'Activer le fallback vision pour les modèles sans vision',
+            })}
+          </span>
         </label>
 
         <VisionModelConfigSection
@@ -157,13 +183,13 @@ export function VisionStep({ onNext }: VisionStepProps) {
             data-testid="onboarding-skip-button"
             className="text-text-muted hover:text-text-secondary text-sm underline"
           >
-            Skip for now
+            {t({ en: 'Skip for now', fr: 'Passer pour l’instant' })}
           </button>
           <button
             onClick={() => handleFinish(false)}
             className="px-6 py-3 bg-accent-primary text-text-primary rounded-lg font-medium hover:bg-accent-primary/90 transition-colors"
           >
-            Finish Setup
+            {t({ en: 'Finish Setup', fr: 'Terminer la configuration' })}
           </button>
         </div>
       </div>

@@ -2,9 +2,9 @@ import { useState, useEffect, useCallback } from 'react'
 import { Modal } from './shared/Modal'
 import { Markdown } from './shared/Markdown'
 import { Toggle } from './shared/Toggle'
-import { authFetch } from '../lib/api'
-import { useSettingsStoreState } from './settings/useSettingsStore'
-import { SETTINGS_KEYS } from '../stores/settings'
+import { useT } from '../hooks/useT'
+import { changelogResource, SETTINGS_KEYS, setSetting } from '../lib/resources'
+import { useSetting } from '../hooks/useSetting'
 
 interface ChangelogModalProps {
   isOpen: boolean
@@ -13,48 +13,44 @@ interface ChangelogModalProps {
 }
 
 export function ChangelogModal({ isOpen, onClose, since }: ChangelogModalProps) {
+  const t = useT()
   const [content, setContent] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const { settings, getSetting, setSetting } = useSettingsStoreState()
-  const showOnUpdate = settings[SETTINGS_KEYS.DISPLAY_SHOW_CHANGELOG_ON_UPDATE] !== 'false'
-
-  useEffect(() => {
-    if (!isOpen) return
-    getSetting(SETTINGS_KEYS.DISPLAY_SHOW_CHANGELOG_ON_UPDATE)
-  }, [isOpen, getSetting])
+  const showOnUpdate = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_CHANGELOG_ON_UPDATE, 'true', isOpen).value !== 'false'
 
   useEffect(() => {
     if (!isOpen) return
     setLoading(true)
-    const url = since ? `/api/changelog?since=${encodeURIComponent(since)}` : '/api/changelog'
-    authFetch(url)
-      .then((res) => res.json())
-      .then((data) => {
-        setContent(data.content as string)
-      })
-      .catch(() => {
-        setContent('# Changelog\n\nFailed to load changelog.')
-      })
+    const fallback = t({
+      en: '# Changelog\n\nFailed to load changelog.',
+      fr: '# Journal des modifications\n\nÉchec du chargement du journal.',
+    })
+    changelogResource
+      .refresh(since)
+      .then((data) => setContent(data ?? fallback))
+      .catch(() => setContent(fallback))
       .finally(() => setLoading(false))
-  }, [isOpen, since])
+  }, [isOpen, since, t])
 
   const handleToggleShowOnUpdate = useCallback(() => {
     const newValue = showOnUpdate ? 'false' : 'true'
-    setSetting(SETTINGS_KEYS.DISPLAY_SHOW_CHANGELOG_ON_UPDATE, newValue)
-  }, [showOnUpdate, setSetting])
+    void setSetting(SETTINGS_KEYS.DISPLAY_SHOW_CHANGELOG_ON_UPDATE, newValue)
+  }, [showOnUpdate])
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="What's New in OpenFox"
+      title={t({ en: "What's New in OpenFox", fr: 'Nouveautés d’OpenFox' })}
       size="xl"
       closeOnBackdropClick
       showCloseButton
       footer={
         <label className="flex items-center gap-3 cursor-pointer">
           <Toggle enabled={showOnUpdate} onClick={handleToggleShowOnUpdate} />
-          <span className="text-sm text-text-muted">Show changelog on future updates</span>
+          <span className="text-sm text-text-muted">
+            {t({ en: 'Show changelog on future updates', fr: 'Afficher le journal lors des prochaines mises à jour' })}
+          </span>
         </label>
       }
     >

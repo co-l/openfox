@@ -50,7 +50,10 @@ export function InlineDropdown({ items, trigger, isActive = false }: InlineDropd
       </button>
 
       {isOpen && items.length > 0 && (
-        <div className="absolute top-full left-0 mt-1 w-56 bg-bg-secondary border border-border rounded-lg shadow-lg overflow-hidden z-50">
+        <div
+          data-testid="inline-dropdown-menu"
+          className="absolute top-full left-0 mt-1 w-56 bg-bg-secondary border border-border rounded-lg shadow-lg overflow-hidden z-50"
+        >
           {items.map((item, index) => {
             const linkChild =
               item.label && typeof item.label === 'object' && (item.label as React.ReactElement).type === Link
@@ -63,6 +66,10 @@ export function InlineDropdown({ items, trigger, isActive = false }: InlineDropd
                 <Link
                   key={index}
                   href={href}
+                  onClick={() => setIsOpen(false)}
+                  onAuxClick={(e) => {
+                    if (e.button === 1) setIsOpen(false)
+                  }}
                   className="flex items-center gap-2 px-3 py-2 text-sm border-b border-border hover:bg-bg-tertiary transition-colors"
                 >
                   {item.icon}
@@ -75,6 +82,10 @@ export function InlineDropdown({ items, trigger, isActive = false }: InlineDropd
                 <a
                   key={index}
                   href={item.href}
+                  onClick={() => setIsOpen(false)}
+                  onAuxClick={(e) => {
+                    if (e.button === 1) setIsOpen(false)
+                  }}
                   className="flex items-center gap-2 px-3 py-2 text-sm border-b border-border hover:bg-bg-tertiary transition-colors"
                 >
                   {item.icon}

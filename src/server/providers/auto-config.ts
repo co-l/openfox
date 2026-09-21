@@ -7,6 +7,7 @@ import { logger } from '../utils/logger.js'
 import { findLmStudioModel } from './lmstudio.js'
 import { ensureVersionPrefix } from '../llm/url-utils.js'
 import { getCatalogEntry } from './model-catalog.js'
+import { hasVisionEvidence } from './vision.js'
 
 /** Build the standard JSON headers with optional bearer auth. */
 function buildAuthHeaders(apiKey: string | undefined): Record<string, string> {
@@ -28,6 +29,8 @@ export interface ModelProbeResult {
   nonThinkingConfig: Record<string, unknown> | null
   /** Set to false when the provider rejects reasoning in assistant history. */
   sendReasoningInMessages?: boolean
+  /** Field the model returns its chain-of-thought in (e.g. reasoning_content for DeepSeek). */
+  thinkingField?: string
   /** Top-level request body params rejected by the model (to be stripped at request time). */
   rejectedParams?: string[]
   /** Reasoning effort values for the model, from the curated catalog. */
@@ -169,8 +172,8 @@ async function detectOllamaInfo(baseUrl: string, modelId: string): Promise<Model
   const ctxKey = Object.keys(mi).find((k) => k.endsWith('.context_length') || k === 'context_length')
   const ctxLen = ctxKey ? Number(mi[ctxKey]) : undefined
 
-  // Vision: indicated by vision_start_token_id or .vision. keys in model_info
-  const supportsVision = !!mi['vision_start_token_id'] || Object.keys(mi).some((k) => k.includes('.vision.'))
+  // Vision: positive evidence in model_info (vision_start_token_id or .vision keys)
+  const supportsVision = hasVisionEvidence(mi)
 
   if (ctxLen && !isNaN(ctxLen)) {
     return { contextWindow: ctxLen, source: 'backend', supportsVision }
@@ -201,7 +204,19 @@ interface ProbeResult {
   combo: Record<string, unknown>
   httpCode: number
   hasContent: boolean
+  /** The field the model returned its chain-of-thought in (if any). */
+  thinkingField?: string
   durationMs: number
+}
+
+const REASONING_FIELDS = ['reasoning', 'reasoning_content', 'thinking'] as const
+
+function detectThinkingField(message: Record<string, unknown>): string | undefined {
+  for (const field of REASONING_FIELDS) {
+    const value = message[field]
+    if (typeof value === 'string' && value.length > 0) return field
+  }
+  return undefined
 }
 
 async function probeCombo(
@@ -236,14 +251,16 @@ async function probeCombo(
       choices?: Array<{ message?: Record<string, unknown> }>
     }
     const message = data.choices?.[0]?.message ?? {}
-    const hasContent = !!(
-      message['content'] ||
-      message['reasoning'] ||
-      message['reasoning_content'] ||
-      message['thinking']
-    )
+    const thinkingField = detectThinkingField(message)
+    const hasContent = !!(message['content'] || thinkingField)
 
-    return { combo, httpCode: response.status, hasContent, durationMs }
+    return {
+      combo,
+      httpCode: response.status,
+      hasContent,
+      ...(thinkingField ? { thinkingField } : {}),
+      durationMs,
+    }
   } catch {
     const durationMs = Date.now() - start
     return { combo, httpCode: 0, hasContent: false, durationMs }
@@ -255,7 +272,7 @@ async function probeCombos(
   apiKey: string | undefined,
   model: string,
   combos: Record<string, unknown>[],
-): Promise<Record<string, unknown> | null> {
+): Promise<{ combo: Record<string, unknown>; thinkingField?: string } | null> {
   const timeout = AbortSignal.timeout(15000)
   const results = await Promise.allSettled(combos.map((combo) => probeCombo(baseUrl, apiKey, model, combo, timeout)))
 
@@ -274,7 +291,7 @@ async function probeCombos(
       combo: winner.combo,
       durationMs: winner.durationMs,
     })
-    return winner.combo
+    return { combo: winner.combo, ...(winner.thinkingField ? { thinkingField: winner.thinkingField } : {}) }
   }
 
   logger.debug('Auto-config: no working combo found', { model })
@@ -470,11 +487,15 @@ export async function autoConfig(input: AutoConfigInput): Promise<AutoConfigOutp
     // misdetected or collapsed depending on the serving engine.
     const reasoningEfforts = catalog?.reasoningEfforts
 
-    const [thinkingConfig, nonThinkingConfig, rejectedParams] = await Promise.all([
+    const [thinkingResult, nonThinkingResult, rejectedParams] = await Promise.all([
       probeCombos(baseUrl, apiKey, model.id, THINKING_COMBOS),
       probeCombos(baseUrl, apiKey, model.id, NON_THINKING_COMBOS),
       probeRejectedParams(baseUrl, apiKey, model.id, backend),
     ])
+
+    const thinkingConfig = thinkingResult?.combo ?? null
+    const nonThinkingConfig = nonThinkingResult?.combo ?? null
+    const thinkingField = thinkingResult?.thinkingField
 
     const sendReasoningInMessages = thinkingConfig
       ? await probeReasoningInMessages(baseUrl, apiKey, model.id)
@@ -487,6 +508,7 @@ export async function autoConfig(input: AutoConfigInput): Promise<AutoConfigOutp
       supportsVision,
       thinkingConfig,
       nonThinkingConfig,
+      ...(thinkingField ? { thinkingField } : {}),
       ...(sendReasoningInMessages !== undefined ? { sendReasoningInMessages } : {}),
       ...(rejectedParams.length > 0 ? { rejectedParams } : {}),
       ...(reasoningEfforts ? { reasoningEfforts } : {}),

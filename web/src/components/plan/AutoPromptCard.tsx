@@ -1,5 +1,6 @@
 import { ScrollArea } from '../shared/ScrollArea'
 import { useState } from 'react'
+import { useT } from '../../hooks/useT'
 import type { Message } from '@shared/types.js'
 import { Modal } from '../shared/SelfContainedModal'
 
@@ -8,6 +9,7 @@ interface AutoPromptCardProps {
 }
 
 export function AutoPromptCard({ message }: AutoPromptCardProps) {
+  const t = useT()
   const [isModalOpen, setIsModalOpen] = useState(false)
 
   if (message.messageKind !== 'auto-prompt') {
@@ -17,18 +19,24 @@ export function AutoPromptCard({ message }: AutoPromptCardProps) {
   const metadata = message.metadata
   const metaColor = metadata?.color ?? '#6b7280'
   const metaType = metadata?.type ?? 'agent'
-  const metaName = metaType === 'workspace' ? 'Workspace' : (metadata?.name ?? 'Agent')
+  const metaName =
+    metaType === 'workspace'
+      ? t({ en: 'Workspace', fr: 'Espace de travail' })
+      : (metadata?.name ?? t({ en: 'Agent', fr: 'Agent' }))
 
   const typeLabels: Record<string, string> = {
-    agent: metadata?.kind === 'reminder' ? 'reminder' : 'definition injected',
-    workflow: 'instructions',
-    compaction: 'prompt injected',
-    subagent: 'instructions',
+    agent:
+      metadata?.kind === 'reminder'
+        ? t({ en: 'reminder', fr: 'rappel' })
+        : t({ en: 'definition injected', fr: 'définition injectée' }),
+    workflow: t({ en: 'instructions', fr: 'instructions' }),
+    compaction: t({ en: 'prompt injected', fr: 'invite injectée' }),
+    subagent: t({ en: 'instructions', fr: 'instructions' }),
     workspace: `${metadata?.workspaceName ?? ''} · ${metadata?.branchName ?? ''}`,
     branch: `🌿 ${metadata?.branchName ?? ''}`,
-    task: '🗂 task',
+    task: `🗂 ${t({ en: 'task', fr: 'tâche' })}`,
   }
-  const label = typeLabels[metaType] ?? 'injected'
+  const label = typeLabels[metaType] ?? t({ en: 'injected', fr: 'injecté' })
 
   const showContentDirectly = metaType === 'workflow' || metaType === 'subagent'
 
@@ -70,7 +78,12 @@ export function AutoPromptCard({ message }: AutoPromptCardProps) {
         </div>
       )}
 
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={`${metaName} Prompt`} size="lg">
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        title={t({ en: '{{name}} Prompt', fr: 'Invite {{name}}' }, { name: metaName })}
+        size="lg"
+      >
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <span className="w-3 h-3 rounded-full" style={{ backgroundColor: metaColor }} />

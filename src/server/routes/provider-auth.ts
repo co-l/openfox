@@ -4,6 +4,7 @@ import type { ProviderAuthAdapter } from '../../provider/index.js'
 import type { ProviderManager } from '../provider-manager.js'
 import type { ProviderRegistry } from '../providers/plugins/registry.js'
 import { logger } from '../utils/logger.js'
+import { serverT } from '../i18n.js'
 
 type AuthContext = { provider: Provider; adapter: ProviderAuthAdapter | undefined }
 
@@ -17,14 +18,20 @@ export function createProviderAuthRoutes(
   function resolveAuthContext(providerId: string, res: Response): AuthContext | undefined {
     const provider = providerManager.getProviders().find((item) => item.id === providerId)
     if (!provider) {
-      res.status(404).json({ error: 'Provider not found' })
+      res.status(404).json({ error: serverT({ en: 'Provider not found', fr: 'Fournisseur introuvable' }) })
       return undefined
     }
     return { provider, adapter: registry.getAuth(provider.authAdapter) }
   }
 
   function missingAuthPlugin(provider: Provider): string {
-    return `Missing provider auth plugin: ${provider.authAdapter ?? 'unknown'}`
+    return serverT(
+      {
+        en: 'Missing provider auth plugin: {{adapter}}',
+        fr: 'Plugin d’authentification du fournisseur manquant : {{adapter}}',
+      },
+      { adapter: provider.authAdapter ?? 'unknown' },
+    )
   }
 
   router.post('/:providerId/login', async (req, res) => {
@@ -52,7 +59,15 @@ export function createProviderAuthRoutes(
         })
       res.json(challenge)
     } catch (error) {
-      res.status(502).json({ error: error instanceof Error ? error.message : 'Unable to start provider login' })
+      res.status(502).json({
+        error:
+          error instanceof Error
+            ? error.message
+            : serverT({
+                en: 'Unable to start provider login',
+                fr: 'Impossible de démarrer la connexion au fournisseur',
+              }),
+      })
     }
   })
 

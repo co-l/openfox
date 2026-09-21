@@ -1,6 +1,8 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useLocation } from 'wouter'
-import { useProjectStore } from '../stores/project'
+import { projectsResource } from '../lib/resources'
+import { useConfig } from '../hooks/useConfig'
+import { useT } from '../hooks/useT'
 import { Modal } from './shared/SelfContainedModal'
 import { Button } from './shared/Button'
 import { Input } from './shared/Input'
@@ -16,8 +18,9 @@ interface CreateProjectModalProps {
 }
 
 export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps) {
+  const t = useT()
   const [, navigate] = useLocation()
-  const listProjects = useProjectStore((state) => state.listProjects)
+  const { config } = useConfig()
   const [projectName, setProjectName] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -28,13 +31,9 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
   // Fetch workdir from config when modal opens
   useEffect(() => {
     if (isOpen) {
-      authFetch('/api/config')
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.workdir) {
-            setWorkdir(data.workdir)
-          }
-        })
+      if (config?.workdir) {
+        setWorkdir(config.workdir)
+      }
       setProjectName('')
       setError(null)
       setLoading(false)
@@ -44,7 +43,7 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
         if (shouldAutofocus()) inputRef.current?.focus()
       }, 100)
     }
-  }, [isOpen])
+  }, [isOpen, config?.workdir])
 
   const handleSubmit = useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
@@ -91,17 +90,21 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
           setLoading(false)
           return
         }
-        throw new Error(errorData.error || 'Failed to create project')
+        throw new Error(errorData.error || t({ en: 'Failed to create project', fr: 'Échec de la création du projet' }))
       }
 
       const data = await response.json()
       const project = data.project
 
       onClose()
-      await listProjects()
+      await projectsResource.refresh()
       navigate(`/p/${project.id}`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create project')
+      setError(
+        err instanceof Error
+          ? err.message
+          : t({ en: 'Failed to create project', fr: 'Échec de la création du projet' }),
+      )
       setLoading(false)
     }
   }
@@ -119,12 +122,12 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
       <Modal
         isOpen={isOpen}
         onClose={handleCancel}
-        title="Create New Project"
+        title={t({ en: 'Create New Project', fr: 'Créer un nouveau projet' })}
         size="sm"
         footer={
           <div className="flex justify-end gap-2">
             <Button type="button" variant="secondary" onClick={handleCancel} disabled={loading}>
-              Cancel
+              {t({ en: 'Cancel', fr: 'Annuler' })}
             </Button>
             <Button
               type="submit"
@@ -137,10 +140,10 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
               {loading ? (
                 <span className="flex items-center gap-2">
                   <PlusMdIcon className="h-4 w-4" />
-                  Creating...
+                  {t({ en: 'Creating...', fr: 'Création…' })}
                 </span>
               ) : (
-                'Create'
+                t({ en: 'Create', fr: 'Créer' })
               )}
             </Button>
           </div>
@@ -149,7 +152,7 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
         <form id="create-project-form" onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label htmlFor="project-name" className="block text-sm font-medium text-text-secondary mb-2">
-              Project Name
+              {t({ en: 'Project Name', fr: 'Nom du projet' })}
             </label>
             <Input
               ref={inputRef}
@@ -159,7 +162,7 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
                 setProjectName(e.target.value)
                 setError(null)
               }}
-              placeholder="my-project"
+              placeholder={t({ en: 'my-project', fr: 'mon-projet' })}
               disabled={loading}
               data-testid="create-project-name-input"
               className="w-full"
@@ -168,7 +171,7 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
             {/* Path preview */}
             {projectName && (
               <div className="mt-2 text-xs text-text-muted">
-                Full path: <span className="font-mono">{fullPath}</span>
+                {t({ en: 'Full path:', fr: 'Chemin complet :' })} <span className="font-mono">{fullPath}</span>
               </div>
             )}
 

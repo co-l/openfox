@@ -5,12 +5,14 @@ import { useSessionStore, usePendingQuestions, type PendingQuestion } from '../.
 import { shouldAutofocus } from '../../lib/device'
 import { useSessionScope } from '../../stores/session/session-scope'
 import { Markdown } from './Markdown'
+import { useT } from '../../hooks/useT'
 
 interface AskUserCardProps {
   toolCall: ToolCall
 }
 
 export function AskUserCard({ toolCall }: AskUserCardProps) {
+  const t = useT()
   const sessionId = useSessionScope()
   const pendingQuestions = usePendingQuestions(sessionId)
   const answerQuestion = useSessionStore((state) => state.answerQuestion)
@@ -97,19 +99,19 @@ export function AskUserCard({ toolCall }: AskUserCardProps) {
                   onClick={() => handleOptionSelect('yes')}
                   className={`${btnBase} flex-1 bg-accent-success/20 hover:bg-accent-success/30 text-accent-success border border-accent-success/30`}
                 >
-                  Yes
+                  {t({ en: 'Yes', fr: 'Oui' })}
                 </button>
                 <button
                   onClick={() => handleOptionSelect('no')}
                   className={`${btnBase} flex-1 bg-accent-error/20 hover:bg-accent-error/30 text-accent-error border border-accent-error/30`}
                 >
-                  No
+                  {t({ en: 'No', fr: 'Non' })}
                 </button>
                 <button
                   onClick={handleSkip}
                   className={`${btnBase} bg-bg-tertiary hover:bg-bg-tertiary/80 text-text-secondary border border-border`}
                 >
-                  Skip
+                  {t({ en: 'Skip', fr: 'Passer' })}
                 </button>
               </div>
             ) : type === 'choice' && choiceOptions !== undefined && choiceOptions.length > 0 ? (
@@ -134,7 +136,10 @@ export function AskUserCard({ toolCall }: AskUserCardProps) {
                     value={answer}
                     onChange={(e) => setAnswer(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="Or type your own answer... (Enter to submit)"
+                    placeholder={t({
+                      en: 'Or type your own answer... (Enter to submit)',
+                      fr: 'Ou saisissez votre propre réponse... (Entrée pour envoyer)',
+                    })}
                     className="flex-1 min-h-[36px] max-h-[80px] px-2 py-1.5 bg-bg-tertiary border border-border rounded text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent-primary/50 resize-y"
                     rows={1}
                   />
@@ -143,13 +148,13 @@ export function AskUserCard({ toolCall }: AskUserCardProps) {
                     disabled={!answer.trim()}
                     className={`${btnBase} bg-accent-primary/25 hover:bg-accent-primary/40 text-text-primary disabled:opacity-50 disabled:cursor-not-allowed`}
                   >
-                    Send
+                    {t({ en: 'Send', fr: 'Envoyer' })}
                   </button>
                   <button
                     onClick={handleSkip}
                     className={`${btnBase} bg-bg-tertiary hover:bg-bg-tertiary/80 text-text-secondary border border-border`}
                   >
-                    Skip
+                    {t({ en: 'Skip', fr: 'Passer' })}
                   </button>
                 </div>
               </>
@@ -160,7 +165,10 @@ export function AskUserCard({ toolCall }: AskUserCardProps) {
                   value={answer}
                   onChange={(e) => setAnswer(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="Type your answer here... (Enter to submit, Shift+Enter for new line)"
+                  placeholder={t({
+                    en: 'Type your answer here... (Enter to submit, Shift+Enter for new line)',
+                    fr: 'Saisissez votre réponse ici... (Entrée pour envoyer, Maj+Entrée pour une nouvelle ligne)',
+                  })}
                   className="w-full min-h-[80px] px-3 py-2 bg-bg-tertiary border border-border rounded text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent-primary/50 resize-y"
                   autoFocus={shouldAutofocus()}
                 />
@@ -169,14 +177,14 @@ export function AskUserCard({ toolCall }: AskUserCardProps) {
                     onClick={handleSkip}
                     className={`${btnBase} bg-bg-tertiary hover:bg-bg-tertiary/80 text-text-secondary border border-border`}
                   >
-                    Skip
+                    {t({ en: 'Skip', fr: 'Passer' })}
                   </button>
                   <button
                     onClick={handleSubmit}
                     disabled={!answer.trim()}
                     className={`${btnBase} bg-accent-primary/25 hover:bg-accent-primary/40 text-text-primary disabled:opacity-50 disabled:cursor-not-allowed`}
                   >
-                    Send Answer
+                    {t({ en: 'Send Answer', fr: 'Envoyer la réponse' })}
                   </button>
                 </div>
               </>
@@ -188,7 +196,9 @@ export function AskUserCard({ toolCall }: AskUserCardProps) {
       {hasResult && (
         <div className="mt-1 flex items-center gap-2">
           <span className={`text-xs ${isSkipped ? 'text-amber-400' : 'text-accent-success'}`}>
-            {isSkipped ? 'Skipped' : `Answered: ${resultText}`}
+            {isSkipped
+              ? t({ en: 'Skipped', fr: 'Passée' })
+              : t({ en: 'Answered: {{answer}}', fr: 'Réponse : {{answer}}' }, { answer: resultText })}
           </span>
         </div>
       )}

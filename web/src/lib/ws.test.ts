@@ -141,4 +141,27 @@ describe('WebSocketClient reconnect logic', () => {
 
     await vi.waitFor(() => expect(statusHandler).toHaveBeenCalledWith('connected'))
   })
+
+  it('does not auto-reconnect after an intentional disconnect', async () => {
+    const client = new WebSocketClient('ws://localhost:9999/ws')
+    const statusHandler = vi.fn()
+    client.onStatusChange(statusHandler)
+    await connectClient(client, statusHandler)
+
+    const oldSocket = wsInstances[0]
+    if (!oldSocket) throw new Error('expected a connected socket')
+    // A real browser fires onclose asynchronously after close(); MockWebSocket.close()
+    // does not. Capture the live handler and invoke it after disconnect() so this
+    // genuinely simulates the delayed close. disconnect() detaches the socket's own
+    // handlers, so the captured reference is what exercises the intentionalClose guard
+    // (a partial regression that kept detachment but dropped the flag would fail here).
+    const delayedOnClose = oldSocket.onclose
+    client.disconnect()
+    statusHandler.mockClear()
+
+    delayedOnClose?.({ code: 1005 } as { code: number })
+
+    expect(statusHandler).not.toHaveBeenCalledWith('reconnecting')
+    expect(wsInstances.length).toBe(1)
+  })
 })

@@ -12,7 +12,6 @@
 
 import type { StoredEvent, TurnEvent } from '../events/types.js'
 import type { ContextMessage } from '../events/folding.js'
-import type { VisionBackend } from '../llm/vision-fallback.js'
 import {
   handleMessageThinking,
   handleMessageDelta,
@@ -26,8 +25,7 @@ import type { RequestContextMessage } from './request-context.js'
 import { minimalMessagesToRequestContextMessages } from './request-context.js'
 import { buildContextMessagesFromEventHistory, foldContextState } from '../events/folding.js'
 import { getEventStore } from '../events/index.js'
-import { getRuntimeConfig } from '../runtime-config.js'
-import { processContextImages, loadVisionModelFromGlobalConfig } from '../context/image-processor.js'
+import { processContextImages, loadResolvedVisionModel } from '../context/image-processor.js'
 import { modelSupportsVision } from '../llm/profiles.js'
 import type { Attachment } from '../../shared/types.js'
 import type { LLMClientWithModel } from '../llm/client.js'
@@ -207,8 +205,26 @@ export function getConversationMessages(
   if (events.length === 0) return []
 
   const contextMessages = buildContextMessages(events, scope)
+  const requestMessages = minimalMessagesToRequestContextMessages(contextMessages, 'history')
 
-  return minimalMessagesToRequestContextMessages(contextMessages, 'history')
+  return ensureRequestNotEndingWithAssistant(requestMessages)
+}
+
+/**
+ * Append a user continuation message when the LLM request would otherwise end
+ * with an assistant message. This happens after compaction: the summary is an
+ * assistant message, and a request ending on an assistant turn makes providers
+ * (e.g. vLLM + deepseek-v4-flash) stream the model's reasoning as visible
+ * content instead of a thinking block. Appending a trailing user turn restores
+ * a fresh, properly-routed generation.
+ */
+export function ensureRequestNotEndingWithAssistant(messages: RequestContextMessage[]): RequestContextMessage[] {
+  const last = messages[messages.length - 1]
+  if (!last || last.role !== 'assistant') return messages
+  return [
+    ...messages,
+    { role: 'user', content: 'Continue your work. Do NOT repeat what was already written.', source: 'history' },
+  ]
 }
 
 /**
@@ -223,15 +239,7 @@ export async function processEventsForConversation(
   const eventStore = getEventStore()
   const rawEvents = eventStore.getEvents(sessionId)
   const modelVision = modelSupportsVision(llmClient.getModel())
-  const runtimeConfig = getRuntimeConfig()
-  const visionModel = runtimeConfig.llm?.visionModel
-    ? {
-        baseUrl: runtimeConfig.llm.baseUrl,
-        model: runtimeConfig.llm.visionModel,
-        timeout: runtimeConfig.llm.timeout,
-        backend: (runtimeConfig.llm.backend === 'ollama' ? 'ollama' : 'openai') as VisionBackend,
-      }
-    : await loadVisionModelFromGlobalConfig()
+  const visionModel = await loadResolvedVisionModel()
   const { events: processedEvents } = await processContextImages(rawEvents, {
     modelSupportsVision: modelVision,
     ...(visionModel ? { visionModel } : {}),

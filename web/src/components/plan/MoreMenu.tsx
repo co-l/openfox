@@ -1,11 +1,14 @@
 import { ScrollArea } from '../shared/ScrollArea'
 import { useEffect, useState, useRef } from 'react'
 import { MoreIcon, AttachIcon } from '../shared/icons'
-import { useCommandsStore } from '../../stores/commands'
-import { CommandsModal } from '../settings/CommandsModal'
+import { useT } from '../../hooks/useT'
 import { useSessionStore } from '../../stores/session'
-import { useWorkflowsStore, type WorkflowInfo, useAllWorkflows } from '../../stores/workflows'
+import { type WorkflowInfo } from '../../lib/workflows-actions'
+import { CommandsModal } from '../settings/CommandsModal'
 import { WorkflowsModal } from '../settings/WorkflowsModal'
+import { useResource } from '../../hooks/useResource'
+import { useWorkflows } from '../../hooks/useWorkflows'
+import { commandsResource, commandResource } from '../../lib/resources'
 import { dedupById } from '../../lib/modal-utils'
 import { SCOPE_LABELS } from '../../lib/workflow-scope'
 import { shouldAutofocus } from '../../lib/device'
@@ -23,6 +26,7 @@ interface MoreMenuProps {
   onAttach: () => void
   textareaContent?: string
   attachments?: Attachment[]
+  onTriggerMouseDown?: (e: React.MouseEvent) => void
 }
 
 type Tab = 'commands' | 'workflows' | 'attach'
@@ -49,7 +53,9 @@ export function MoreMenu({
   onAttach,
   textareaContent,
   attachments,
+  onTriggerMouseDown,
 }: MoreMenuProps) {
+  const t = useT()
   const [isOpen, setIsOpen] = useState(false)
   const [tab, setTab] = useState<Tab>('commands')
   const [search, setSearch] = useState('')
@@ -59,25 +65,15 @@ export function MoreMenu({
   const searchRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const commandDefaults = useCommandsStore((state) => state.defaults)
-  const commandUserItems = useCommandsStore((state) => state.userItems)
-  const commandProjectItems = useCommandsStore((state) => state.projectItems)
-  const fetchCommands = useCommandsStore((state) => state.fetchCommands)
-
-  const fetchWorkflows = useWorkflowsStore((state) => state.fetchWorkflows)
   const currentWorkdir = useSessionStore((state) => state.currentSession?.workdir)
 
-  const commands = dedupById(dedupById(commandDefaults, commandUserItems), commandProjectItems)
+  const { data: commandData } = useResource(commandsResource, currentWorkdir)
+  const commands = commandData
+    ? dedupById(dedupById(commandData.defaults, commandData.userItems), commandData.projectItems)
+    : []
   // Workflows: keep every scope visible so same-id workflows in different scopes
   // are distinguishable instead of silently collapsed.
-  const workflows = useAllWorkflows()
-
-  useEffect(() => {
-    if (isOpen) {
-      if (tab === 'commands') fetchCommands(currentWorkdir)
-      else if (tab === 'workflows') fetchWorkflows(currentWorkdir)
-    }
-  }, [isOpen, tab, fetchCommands, fetchWorkflows, currentWorkdir])
+  const { workflows } = useWorkflows(currentWorkdir)
 
   useEffect(() => {
     if (isOpen) {
@@ -137,7 +133,7 @@ export function MoreMenu({
   const filteredWorkflows = workflows.filter((w) => !search || w.name.toLowerCase().includes(search.toLowerCase()))
 
   const handleSelectCommand = async (commandId: string) => {
-    const full = await useCommandsStore.getState().fetchCommand(commandId, currentWorkdir)
+    const full = await commandResource.refresh(commandId, currentWorkdir)
     if (full) {
       onSendCommand(full.prompt, full.metadata.agentMode, textareaContent, attachments)
     }
@@ -166,8 +162,9 @@ export function MoreMenu({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
+        onMouseDown={onTriggerMouseDown}
         className="px-1.5 py-2 rounded-r bg-bg-secondary text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors border-l border-border/50"
-        title="More options"
+        title={t({ en: 'More options', fr: 'Plus d’options' })}
       >
         <MoreIcon className="w-4 h-4" />
       </button>
@@ -188,7 +185,7 @@ export function MoreMenu({
                   : 'text-text-muted hover:text-text-primary'
               }`}
             >
-              Commands
+              {t({ en: 'Commands', fr: 'Commandes' })}
             </button>
             <button
               type="button"
@@ -203,7 +200,7 @@ export function MoreMenu({
                   : 'text-text-muted hover:text-text-primary'
               }`}
             >
-              Workflows
+              {t({ en: 'Workflows', fr: 'Workflows' })}
             </button>
             <button
               type="button"
@@ -214,7 +211,7 @@ export function MoreMenu({
                   : 'text-text-muted hover:text-text-primary'
               }`}
             >
-              Attach
+              {t({ en: 'Attach', fr: 'Joindre' })}
             </button>
           </div>
 
@@ -225,7 +222,11 @@ export function MoreMenu({
                 value={search}
                 onChange={(e) => handleSearchChange(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={tab === 'commands' ? 'Search commands...' : 'Search workflows...'}
+                placeholder={
+                  tab === 'commands'
+                    ? t({ en: 'Search commands...', fr: 'Rechercher des commandes…' })
+                    : t({ en: 'Search workflows...', fr: 'Rechercher des workflows…' })
+                }
                 className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary"
               />
             </div>
@@ -235,7 +236,9 @@ export function MoreMenu({
             {tab === 'commands' ? (
               filteredCommands.length === 0 ? (
                 <div className="px-3 py-2 text-text-muted text-sm">
-                  {commands.length === 0 ? 'No commands yet' : 'No matches'}
+                  {commands.length === 0
+                    ? t({ en: 'No commands yet', fr: 'Aucune commande pour le moment' })
+                    : t({ en: 'No matches', fr: 'Aucun résultat' })}
                 </div>
               ) : (
                 filteredCommands.map((command, index) => (
@@ -258,7 +261,9 @@ export function MoreMenu({
             ) : tab === 'workflows' ? (
               filteredWorkflows.length === 0 ? (
                 <div className="px-3 py-2 text-text-muted text-sm">
-                  {workflows.length === 0 ? 'No workflows yet' : 'No matches'}
+                  {workflows.length === 0
+                    ? t({ en: 'No workflows yet', fr: 'Aucun workflow pour le moment' })
+                    : t({ en: 'No matches', fr: 'Aucun résultat' })}
                 </div>
               ) : (
                 filteredWorkflows.map((workflow, index) => {
@@ -285,7 +290,11 @@ export function MoreMenu({
                           <span
                             className="w-1.5 h-1.5 rounded-full flex-shrink-0"
                             style={{ backgroundColor: condMet ? '#22c55e' : '#6b7280' }}
-                            title={condMet ? 'Entry condition met' : 'Entry condition not met'}
+                            title={
+                              condMet
+                                ? t({ en: 'Entry condition met', fr: 'Condition d’entrée satisfaite' })
+                                : t({ en: 'Entry condition not met', fr: 'Condition d’entrée non satisfaite' })
+                            }
                           />
                         )}
                       </button>
@@ -319,9 +328,11 @@ export function MoreMenu({
                   className="flex items-center gap-2 px-4 py-2 rounded bg-bg-tertiary hover:bg-accent-primary/20 text-text-primary transition-colors"
                 >
                   <AttachIcon className="w-4 h-4" />
-                  <span className="text-sm font-medium">Attach file</span>
+                  <span className="text-sm font-medium">{t({ en: 'Attach file', fr: 'Joindre un fichier' })}</span>
                 </button>
-                <span className="text-xs text-text-muted">or drag & drop into chat</span>
+                <span className="text-xs text-text-muted">
+                  {t({ en: 'or drag & drop into chat', fr: 'ou glissez-déposez dans le chat' })}
+                </span>
               </div>
             )}
           </ScrollArea>
@@ -337,7 +348,9 @@ export function MoreMenu({
                 }}
                 className="w-full text-left px-3 py-1.5 rounded text-sm text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors"
               >
-                {tab === 'commands' ? 'Manage Commands...' : 'Manage Workflows...'}
+                {tab === 'commands'
+                  ? t({ en: 'Manage Commands...', fr: 'Gérer les commandes…' })
+                  : t({ en: 'Manage Workflows...', fr: 'Gérer les workflows…' })}
               </button>
             </div>
           )}
@@ -360,6 +373,7 @@ export function MoreMenu({
 }
 
 function WorkflowSubGroupMenu({ subGroups, onSelect }: { subGroups: string[]; onSelect: (subGroup: string) => void }) {
+  const t = useT()
   const [menuOpen, setMenuOpen] = useState(false)
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0 })
   const buttonRef = useRef<HTMLButtonElement>(null)
@@ -383,7 +397,7 @@ function WorkflowSubGroupMenu({ subGroups, onSelect }: { subGroups: string[]; on
         type="button"
         onClick={toggle}
         className="p-1 rounded text-text-muted hover:text-text-primary transition-colors"
-        title="Sub-groups"
+        title={t({ en: 'Sub-groups', fr: 'Sous-groupes' })}
       >
         ⋮
       </button>

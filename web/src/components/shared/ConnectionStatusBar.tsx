@@ -1,7 +1,9 @@
 import { useSessionStore } from '../../stores/session'
 import { WarningIcon } from './icons'
+import { useT } from '../../hooks/useT'
 
 export function ConnectionStatusBar() {
+  const t = useT()
   const connectionStatus = useSessionStore((state) => state.connectionStatus)
   const reconnect = useSessionStore((state) => state.reconnect)
 
@@ -37,12 +39,12 @@ export function ConnectionStatusBar() {
                 style={{ animationDelay: '300ms' }}
               />
             </span>
-            <span>Reconnecting to server...</span>
+            <span>{t({ en: 'Reconnecting to server...', fr: 'Reconnexion au serveur...' })}</span>
           </>
         ) : (
           <>
             <WarningIcon />
-            <span>Connection lost</span>
+            <span>{t({ en: 'Connection lost', fr: 'Connexion perdue' })}</span>
           </>
         )}
       </div>
@@ -59,7 +61,9 @@ export function ConnectionStatusBar() {
           }
         `}
       >
-        {isReconnecting ? 'Reconnecting...' : 'Reconnect'}
+        {isReconnecting
+          ? t({ en: 'Reconnecting...', fr: 'Reconnexion...' })
+          : t({ en: 'Reconnect', fr: 'Reconnecter' })}
       </button>
     </div>
   )

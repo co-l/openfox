@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { useT } from '../../../hooks/useT'
 
 interface WorkflowListItemProps {
   name: string
@@ -10,6 +11,7 @@ interface WorkflowListItemProps {
 }
 
 export function WorkflowListItem({ name, id, color, description, isBuiltIn, actions }: WorkflowListItemProps) {
+  const t = useT()
   return (
     <div className="flex items-center justify-between bg-bg-secondary rounded-lg p-4 border border-border">
       <div className="flex-1 min-w-0">
@@ -19,7 +21,7 @@ export function WorkflowListItem({ name, id, color, description, isBuiltIn, acti
           <span className="text-text-muted text-xs font-mono">{id}</span>
           {isBuiltIn && (
             <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-bg-primary text-text-muted">
-              Built-in
+              {t({ en: 'Built-in', fr: 'Intégré' })}
             </span>
           )}
         </div>

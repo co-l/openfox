@@ -2,6 +2,7 @@ import { memo, useMemo, useState, useCallback } from 'react'
 import type { MetadataEntry } from '@shared/types.js'
 import { MetadataStatusIcon, statusOrder, decodeHtmlEntities } from './MetadataStatusIcon'
 import { TrashIcon } from './icons'
+import { useT } from '../../hooks/useT'
 
 interface MetadataEntriesProps {
   entries: MetadataEntry[]
@@ -39,6 +40,7 @@ export function MetadataSectionHeader({ entries, title }: { entries: MetadataEnt
 }
 
 export const MetadataEntries = memo(function MetadataEntries({ entries, title, onClearAll }: MetadataEntriesProps) {
+  const t = useT()
   const [clearConfirm, setClearConfirm] = useState(false)
 
   const handleClear = useCallback(() => {
@@ -74,28 +76,28 @@ export const MetadataEntries = memo(function MetadataEntries({ entries, title, o
             <button
               onClick={() => setClearConfirm(true)}
               className="flex items-center gap-1 text-xs text-text-muted hover:text-accent-error transition-colors ml-auto cursor-pointer"
-              title="Clear all"
+              title={t({ en: 'Clear all', fr: 'Tout effacer' })}
             >
               <TrashIcon className="w-3 h-3" />
-              Clear all
+              {t({ en: 'Clear all', fr: 'Tout effacer' })}
             </button>
           </div>
           {clearConfirm && (
             <div className="px-1.5 py-1 border-t border-border bg-secondary">
               <div className="flex items-center gap-2 justify-between">
-                <span className="text-xs text-accent-error">Clear all?</span>
+                <span className="text-xs text-accent-error">{t({ en: 'Clear all?', fr: 'Tout effacer ?' })}</span>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleClear}
                     className="text-xs text-accent-error hover:text-accent-error/70 transition-colors cursor-pointer"
                   >
-                    Yes
+                    {t({ en: 'Yes', fr: 'Oui' })}
                   </button>
                   <button
                     onClick={() => setClearConfirm(false)}
                     className="text-xs text-text-muted hover:text-text-primary transition-colors cursor-pointer"
                   >
-                    No
+                    {t({ en: 'No', fr: 'Non' })}
                   </button>
                 </div>
               </div>

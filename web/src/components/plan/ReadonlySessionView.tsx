@@ -1,14 +1,16 @@
 import { ScrollArea } from '../shared/ScrollArea'
 import { useState, useEffect, useMemo } from 'react'
 import { useRoute } from 'wouter'
-import { authFetch } from '../../lib/api'
-import { useDisplaySettings, useSettingsStore, DISPLAY_SETTINGS_KEYS } from '../../stores/settings'
+import { useT } from '../../hooks/useT'
+import { readonlySessionResource } from '../../lib/resources'
+import { useDisplaySettings } from '../../hooks/useDisplaySettings'
 import { groupMessages, type DisplayItem } from './groupMessages.js'
 import { ChatFeedItems } from './ChatFeedItems'
 import { Spinner } from '../shared/Spinner'
 import type { Session, Message } from '@shared/types.js'
 
 export function ReadonlySessionView() {
+  const t = useT()
   const [, params] = useRoute('/p/:projectId/s/:sessionId/readonly')
   const sessionId = params?.sessionId
 
@@ -23,26 +25,16 @@ export function ReadonlySessionView() {
     setLoading(true)
     setError(null)
     try {
-      const res = await authFetch(`/api/sessions/${sessionId}?full=true`)
-      if (!res.ok) {
-        setError(`Failed to load session (${res.status})`)
-        setLoading(false)
-        return
-      }
-      const data = await res.json()
-      setSession(data.session ?? null)
-      setMessages((data.messages as Message[]) ?? [])
-      setHiddenCount((data.hiddenCount as number) ?? 0)
+      const data = await readonlySessionResource.refresh(sessionId)
+      setSession(data?.session ?? null)
+      setMessages(data?.messages ?? [])
+      setHiddenCount(data?.hiddenCount ?? 0)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error')
+      setError(err instanceof Error ? err.message : t({ en: 'Unknown error', fr: 'Erreur inconnue' }))
     } finally {
       setLoading(false)
     }
   }
-
-  useEffect(() => {
-    useSettingsStore.getState().getSettings([...DISPLAY_SETTINGS_KEYS])
-  }, [])
 
   useEffect(() => {
     loadSession()
@@ -72,7 +64,7 @@ export function ReadonlySessionView() {
             onClick={loadSession}
             className="px-3 py-1.5 text-sm bg-bg-tertiary text-text-primary border border-border rounded hover:bg-bg-tertiary/80 transition-colors"
           >
-            Retry
+            {t({ en: 'Retry', fr: 'Réessayer' })}
           </button>
         </div>
       </div>
@@ -84,10 +76,14 @@ export function ReadonlySessionView() {
       <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-secondary shrink-0 print:hidden">
         <div className="flex items-center gap-3 min-w-0">
           <h1 className="text-sm font-medium text-text-primary truncate">
-            {session?.metadata?.title ?? 'Session'} — Read-only view
+            {session?.metadata?.title ?? t({ en: 'Session', fr: 'Session' })} —{' '}
+            {t({ en: 'Read-only view', fr: 'Vue en lecture seule' })}
           </h1>
           <span className="text-xs text-text-muted whitespace-nowrap">
-            {messages.length} messages{hiddenCount > 0 ? ` (${hiddenCount} older hidden)` : ''}
+            {t({ en: '{{count}} messages', fr: '{{count}} messages' }, { count: messages.length })}
+            {hiddenCount > 0
+              ? ` (${t({ en: '{{count}} older hidden', fr: '{{count}} plus anciens masqués' }, { count: hiddenCount })})`
+              : ''}
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -96,7 +92,7 @@ export function ReadonlySessionView() {
             disabled={loading}
             className="px-3 py-1 text-xs bg-bg-tertiary text-text-primary border border-border rounded hover:bg-bg-tertiary/80 transition-colors disabled:opacity-50"
           >
-            {loading ? 'Refreshing...' : 'Refresh'}
+            {loading ? t({ en: 'Refreshing...', fr: 'Actualisation…' }) : t({ en: 'Refresh', fr: 'Actualiser' })}
           </button>
         </div>
       </div>

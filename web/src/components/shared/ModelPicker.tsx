@@ -1,12 +1,17 @@
 import { ScrollArea } from './ScrollArea'
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronDownIcon, SearchIcon } from './icons'
+import { ChevronDownIcon, SearchIcon, EditSmallIcon } from './icons'
+import { ProviderModal, providerFormPayload, type ProviderFormData } from './ProviderModal'
+import { authFetch } from '../../lib/api'
+import { providersResource } from '../../lib/resources'
 import { useModelSearch, ModelEntryRow } from '../settings/model-list'
 import type { Provider } from '../../stores/config'
 import { shouldAutofocus } from '../../lib/device'
 import { formatModelValue, parseModelValue } from '../../lib/model-value'
 import { resolveDisplayEffort } from '../../lib/effort-gate'
+import { useT } from '../../hooks/useT'
+import { PluginZone } from '../plugins/PluginZone'
 
 export interface ModelPickerProps {
   providers: Provider[]
@@ -15,11 +20,35 @@ export interface ModelPickerProps {
   defaultLabel?: string
 }
 
-export function ModelPicker({ providers, value, onChange, defaultLabel = 'Default (global model)' }: ModelPickerProps) {
+export function ModelPicker({ providers, value, onChange, defaultLabel }: ModelPickerProps) {
+  const t = useT()
+  const resolvedDefaultLabel = defaultLabel ?? t({ en: 'Default (global model)', fr: 'Défaut (modèle global)' })
   const [isOpen, setIsOpen] = useState(false)
+  const [editingProvider, setEditingProvider] = useState<Provider | null>(null)
+  const [showProviderModal, setShowProviderModal] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({})
+
+  function handleEditProvider(provider: Provider) {
+    setEditingProvider(provider)
+    setIsOpen(false)
+    setShowProviderModal(true)
+  }
+
+  async function handleSaveProvider(formData: ProviderFormData) {
+    // Authorized transient read: provider detail for the model picker form.
+    const response = await authFetch(`/api/providers/${formData.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(providerFormPayload(formData)),
+    })
+    if (response.ok) {
+      await providersResource.refresh()
+    }
+    setEditingProvider(null)
+    setShowProviderModal(false)
+  }
 
   const parsedValue = parseModelValue(value)
   const selectedModelId = parsedValue?.model
@@ -126,7 +155,7 @@ export function ModelPicker({ providers, value, onChange, defaultLabel = 'Defaul
         className="w-full flex items-center justify-between gap-2 px-3 py-1.5 bg-bg-tertiary border border-border rounded text-sm text-text-primary hover:bg-bg-secondary transition-colors"
       >
         <span className={shortModelName ? 'text-text-primary' : 'text-text-muted'}>
-          {shortModelName ?? defaultLabel}
+          {shortModelName ?? resolvedDefaultLabel}
           {shortModelName && displayEffort && <span className="text-text-muted">:{displayEffort}</span>}
         </span>
         <ChevronDownIcon className={`w-3 h-3 text-text-muted transition-transform ${isOpen ? 'rotate-180' : ''}`} />
@@ -148,7 +177,7 @@ export function ModelPicker({ providers, value, onChange, defaultLabel = 'Defaul
                     setHighlightedIndex(-1)
                   }}
                   onKeyDown={handleSearchKeyDown}
-                  placeholder="Search models..."
+                  placeholder={t({ en: 'Search models...', fr: 'Rechercher des modèles...' })}
                   className="bg-transparent border-none outline-none text-sm text-text-primary w-full placeholder:text-text-muted"
                 />
               </div>
@@ -165,13 +194,25 @@ export function ModelPicker({ providers, value, onChange, defaultLabel = 'Defaul
                     !value ? 'text-accent-primary bg-accent-primary/5' : 'text-text-muted'
                   }`}
                 >
-                  {defaultLabel}
+                  {resolvedDefaultLabel}
                 </button>
 
                 {visibleGroups.map((group) => (
                   <div key={group.provider.id}>
-                    <div className="px-4 py-1.5 text-xs font-medium text-text-muted uppercase tracking-wider bg-bg-tertiary/50">
-                      {group.provider.name}
+                    <div className="px-4 py-1.5 text-xs font-medium text-text-muted uppercase tracking-wider bg-bg-tertiary/50 flex items-center justify-between gap-2">
+                      <span className="truncate">{group.provider.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleEditProvider(group.provider)}
+                        className="p-0.5 text-text-muted hover:text-text-primary rounded transition-colors flex-shrink-0"
+                        title={t({ en: 'Edit provider', fr: 'Modifier le fournisseur' })}
+                        aria-label={t({
+                          en: `Edit provider ${group.provider.name}`,
+                          fr: `Modifier le fournisseur ${group.provider.name}`,
+                        })}
+                      >
+                        <EditSmallIcon className="w-3 h-3" />
+                      </button>
                     </div>
                     {group.models.map((modelConfig) => {
                       const modelFlatIndex = flatItems.findIndex(
@@ -219,13 +260,29 @@ export function ModelPicker({ providers, value, onChange, defaultLabel = 'Defaul
                 ))}
 
                 {visibleGroups.length === 0 && searchQuery.trim() && (
-                  <div className="px-4 py-3 text-sm text-text-muted text-center">No models match your search</div>
+                  <div className="px-4 py-3 text-sm text-text-muted text-center">
+                    {t({ en: 'No models match your search', fr: 'Aucun modèle ne correspond à votre recherche' })}
+                  </div>
                 )}
+                <PluginZone id="model.picker.footer" />
               </ScrollArea>
             </div>
           </div>,
           document.body,
         )}
+
+      {showProviderModal && editingProvider && (
+        <ProviderModal
+          isOpen
+          onClose={() => {
+            setEditingProvider(null)
+            setShowProviderModal(false)
+          }}
+          onSave={handleSaveProvider}
+          initialStep={2}
+          editProvider={editingProvider}
+        />
+      )}
     </div>
   )
 }

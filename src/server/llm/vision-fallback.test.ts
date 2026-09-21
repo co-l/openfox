@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { describeImage, describeImageFromDataUrl } from './vision-fallback.js'
+import { describeImage, describeImageFromDataUrl, isVisionFallbackFailure } from './vision-fallback.js'
 import type { VisionModelConfig } from './vision-fallback.js'
 
 global.fetch = vi.fn()
@@ -226,6 +226,56 @@ describe('vision-fallback', () => {
     })
   })
 
+  describe('describeImage with a specific question', () => {
+    it('uses the question as the prompt instead of the generic image prompt (ollama)', async () => {
+      const mockResponse = {
+        ok: true,
+        json: async () => ({ message: { content: 'It says "Save Changes".' } }),
+      }
+      vi.mocked(fetch).mockResolvedValue(mockResponse as unknown as Response)
+
+      const result = await describeImage('dGVzdA==', ollamaVisionModel, {
+        question: 'What does the button in the top-right say?',
+      })
+
+      expect(result).toBe('It says "Save Changes".')
+      const body = JSON.parse(vi.mocked(fetch).mock.calls[0]![1]?.body as string)
+      const prompt = body.messages[0].content
+      expect(prompt).toContain('What does the button in the top-right say?')
+      expect(prompt).not.toContain('Describe this image')
+    })
+
+    it('uses the question as the prompt instead of the generic image prompt (openai)', async () => {
+      const mockResponse = {
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: 'It says "Cancel".' } }] }),
+      }
+      vi.mocked(fetch).mockResolvedValue(mockResponse as unknown as Response)
+
+      await describeImage('dGVzdA==', openaiVisionModel, { question: 'What does the cancel button say?' })
+
+      const body = JSON.parse(vi.mocked(fetch).mock.calls[0]![1]?.body as string)
+      const prompt = body.messages[0].content[0].text
+      expect(prompt).toContain('What does the cancel button say?')
+      expect(prompt).not.toContain('Describe this image')
+    })
+
+    it('prefers the question over context when both are provided (ollama)', async () => {
+      const mockResponse = {
+        ok: true,
+        json: async () => ({ message: { content: 'answer' } }),
+      }
+      vi.mocked(fetch).mockResolvedValue(mockResponse as unknown as Response)
+
+      await describeImage('dGVzdA==', ollamaVisionModel, { question: 'Specific?', context: 'File: x.png' })
+
+      const body = JSON.parse(vi.mocked(fetch).mock.calls[0]![1]?.body as string)
+      const prompt = body.messages[0].content
+      expect(prompt).toContain('Specific?')
+      expect(prompt).not.toContain('File: x.png')
+    })
+  })
+
   describe('HTTP auth headers', () => {
     it('sends Authorization: Bearer header when apiKey is provided with openai backend', async () => {
       const modelWithKey: VisionModelConfig = {
@@ -318,6 +368,21 @@ describe('vision-fallback', () => {
     it('returns error for invalid data URL', async () => {
       const result = await describeImageFromDataUrl('not-a-data-url', ollamaVisionModel)
       expect(result).toBe('[Invalid image data URL]')
+    })
+  })
+
+  describe('isVisionFallbackFailure', () => {
+    it('detects every failure marker the fallback can return', () => {
+      expect(isVisionFallbackFailure('[Image description failed: HTTP 503]')).toBe(true)
+      expect(isVisionFallbackFailure('[Image description failed: aborted]')).toBe(true)
+      expect(isVisionFallbackFailure('[Image description timed out]')).toBe(true)
+      expect(isVisionFallbackFailure('[Image - could not describe]')).toBe(true)
+      expect(isVisionFallbackFailure('[Invalid image data URL]')).toBe(true)
+    })
+
+    it('does not flag a normal description', () => {
+      expect(isVisionFallbackFailure('A red square on a white background.')).toBe(false)
+      expect(isVisionFallbackFailure('[Image: shot.png] It shows a chart.')).toBe(false)
     })
   })
 })

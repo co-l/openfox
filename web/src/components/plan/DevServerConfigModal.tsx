@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { Modal } from '../shared/SelfContainedModal'
-import { useDevServerStore, useDevServerEntry } from '../../stores/dev-server'
+import { useT } from '../../hooks/useT'
+import { useDevServerStore } from '../../stores/dev-server'
+import { useDevServer } from '../../hooks/useDevServer'
 
 interface DevServerConfigModalProps {
   isOpen: boolean
@@ -10,7 +12,8 @@ interface DevServerConfigModalProps {
 }
 
 export function DevServerConfigModal({ isOpen, onClose, workdir }: DevServerConfigModalProps) {
-  const { config } = useDevServerEntry(workdir)
+  const t = useT()
+  const { config } = useDevServer(workdir)
   const saveConfig = useDevServerStore((s) => s.saveConfig)
 
   const [command, setCommand] = useState('')
@@ -40,22 +43,22 @@ export function DevServerConfigModal({ isOpen, onClose, workdir }: DevServerConf
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Dev Server Config"
+      title={t({ en: 'Dev Server Config', fr: 'Configuration du serveur de dev' })}
       size="sm"
       footer={
         <div className="flex justify-end gap-2">
           <button className="btn btn-secondary" onClick={onClose}>
-            Cancel
+            {t({ en: 'Cancel', fr: 'Annuler' })}
           </button>
           <button className="btn btn-primary" onClick={handleSave} disabled={saving || !command.trim() || !url.trim()}>
-            {saving ? 'Saving...' : 'Save'}
+            {saving ? t({ en: 'Saving...', fr: 'Enregistrement…' }) : t({ en: 'Save', fr: 'Enregistrer' })}
           </button>
         </div>
       }
     >
       <div className="space-y-4">
         <div>
-          <label className="block text-xs text-text-secondary mb-1">Command</label>
+          <label className="block text-xs text-text-secondary mb-1">{t({ en: 'Command', fr: 'Commande' })}</label>
           <input
             className="input w-full"
             type="text"
@@ -66,7 +69,7 @@ export function DevServerConfigModal({ isOpen, onClose, workdir }: DevServerConf
         </div>
 
         <div>
-          <label className="block text-xs text-text-secondary mb-1">Dev URL</label>
+          <label className="block text-xs text-text-secondary mb-1">{t({ en: 'Dev URL', fr: 'URL de dev' })}</label>
           <input
             className="input w-full"
             type="text"
@@ -85,7 +88,7 @@ export function DevServerConfigModal({ isOpen, onClose, workdir }: DevServerConf
             className="rounded border-border bg-bg-tertiary"
           />
           <label htmlFor="hotReload" className="text-xs text-text-secondary">
-            Hot Reload
+            {t({ en: 'Hot Reload', fr: 'Rechargement à chaud' })}
           </label>
         </div>
 
@@ -98,7 +101,7 @@ export function DevServerConfigModal({ isOpen, onClose, workdir }: DevServerConf
             className="rounded border-border bg-bg-tertiary"
           />
           <label htmlFor="disableInspect" className="text-xs text-text-secondary">
-            Disable inspect feedback
+            {t({ en: 'Disable inspect feedback', fr: 'Désactiver le retour d’inspection' })}
           </label>
         </div>
       </div>

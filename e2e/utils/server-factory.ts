@@ -12,8 +12,16 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
+export interface CreateTestServerOptions {
+  maxContext?: number
+  /** Fixed port to listen on (defaults to a dynamic port). */
+  port?: number
+  /** MCP servers to configure at startup, e.g. a self-referencing openfox entry. */
+  mcpServers?: Config['mcpServers']
+}
+
 // Create test config by modifying env vars before calling loadConfig
-function createTestConfig(options: { maxContext?: number } = {}): Config {
+function createTestConfig(options: CreateTestServerOptions = {}): Config {
   // Set test-specific env vars (loadConfig reads from process.env)
   process.env['OPENFOX_DB_PATH'] = ':memory:'
   process.env['OPENFOX_LOG_LEVEL'] = 'error'
@@ -65,7 +73,7 @@ export interface TestServerHandle extends ServerHandle {
  * })
  * ```
  */
-export async function createTestServer(options: { maxContext?: number } = {}): Promise<TestServerHandle> {
+export async function createTestServer(options: CreateTestServerOptions = {}): Promise<TestServerHandle> {
   // Set mock LLM env before importing server (it reads env at module load time)
   process.env['OPENFOX_MOCK_LLM'] = 'true'
 
@@ -74,8 +82,11 @@ export async function createTestServer(options: { maxContext?: number } = {}): P
   const { createServerHandle } = await import('../../src/server/index.js')
 
   const config = createTestConfig(options)
+  if (options.mcpServers !== undefined) {
+    config.mcpServers = options.mcpServers
+  }
   const handle = await createServerHandle(config)
-  const { port } = await handle.start(0) // Dynamic port
+  const { port } = await handle.start(options.port ?? 0) // Dynamic port by default
 
   const url = `http://127.0.0.1:${port}`
   const wsUrl = `ws://127.0.0.1:${port}/ws`

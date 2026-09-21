@@ -18,6 +18,7 @@ import {
   cancelPathConfirmationsForSession,
   cancelPathConfirmation,
   hasPendingPathConfirmation,
+  autoApprovePendingConfirmationsForSession,
   isSensitivePath,
   registerPathConfirmation,
   requestPathAccess,
@@ -674,6 +675,92 @@ describe('path-security', () => {
         const paths = extractAbsolutePathsFromCommand('find /var/log -name x 2>/dev/null')
         expect(paths).toContain('/var/log')
       })
+
+      // Nested quotes: a path in single quotes inside a double-quoted argument
+      // (python -c, node -e, bash -c ...). The quote scanner must pair quotes by
+      // type, otherwise the path becomes a delimiter between two pseudo-strings
+      // and is never inspected — an unconfirmed read/write outside the workdir.
+      it('flags a single-quoted path nested in a double-quoted python -c program', () => {
+        const paths = extractAbsolutePathsFromCommand(`python3 -c "print(open('/etc/passwd').read())"`)
+        expect(paths).toContain('/etc/passwd')
+      })
+
+      it('flags a single-quoted path nested in a double-quoted node -e program', () => {
+        const paths = extractAbsolutePathsFromCommand(`node -e "require('fs').readFileSync('/etc/passwd')"`)
+        expect(paths).toContain('/etc/passwd')
+      })
+
+      it('flags a single-quoted path nested in a double-quoted bash -c command', () => {
+        const paths = extractAbsolutePathsFromCommand(`bash -c "cat '/etc/passwd'"`)
+        expect(paths).toContain('/etc/passwd')
+      })
+
+      it('flags a nested-quote write outside the workdir', () => {
+        const paths = extractAbsolutePathsFromCommand(`python3 -c "open('/etc/evil.conf','w').write('x')"`)
+        expect(paths).toContain('/etc/evil.conf')
+      })
+    })
+
+    describe('search-tool patterns', () => {
+      // grep [OPTIONS] PATTERN [FILE...] — the first non-option operand is the
+      // pattern, never a file. A route-shaped pattern is the common case for an
+      // agent grepping its own codebase, and confirming it blocks headless runs.
+      it('does not extract a route-shaped grep pattern', () => {
+        const paths = extractAbsolutePathsFromCommand('grep -rn "/api/routage/gestes" portail/')
+        expect(paths).not.toContain('/api/routage/gestes')
+      })
+
+      it('does not extract a single-segment grep pattern', () => {
+        expect(extractAbsolutePathsFromCommand('grep -rn "/health" .')).toEqual([])
+      })
+
+      it('does not extract the pattern for ripgrep', () => {
+        const paths = extractAbsolutePathsFromCommand('rg "/api/routage/gestes" portail/')
+        expect(paths).not.toContain('/api/routage/gestes')
+      })
+
+      it('does not extract a pattern passed through -e', () => {
+        const paths = extractAbsolutePathsFromCommand("grep -e '/api/routage' /var/log/messages")
+        expect(paths).not.toContain('/api/routage')
+      })
+
+      it('still extracts file operands after the pattern', () => {
+        const paths = extractAbsolutePathsFromCommand("grep ERROR '/var/log/messages'")
+        expect(paths).toContain('/var/log/messages')
+      })
+
+      it('still extracts file operands when the pattern comes from -e', () => {
+        const paths = extractAbsolutePathsFromCommand("grep -e '/api/routage' /var/log/messages")
+        expect(paths).toContain('/var/log/messages')
+      })
+
+      it('still extracts the pattern file of -f', () => {
+        const paths = extractAbsolutePathsFromCommand('grep -f /etc/patterns.txt file.txt')
+        expect(paths).toContain('/etc/patterns.txt')
+      })
+
+      it('skips option values so the pattern is still identified', () => {
+        const paths = extractAbsolutePathsFromCommand('grep -A 3 "/api/routage" file.txt')
+        expect(paths).not.toContain('/api/routage')
+      })
+
+      it('still extracts a search root given after the pattern', () => {
+        const paths = extractAbsolutePathsFromCommand('grep -rn "/api/routage" /var/log')
+        expect(paths).toContain('/var/log')
+        expect(paths).not.toContain('/api/routage')
+      })
+
+      it('recognises the tool through an absolute invocation path', () => {
+        const paths = extractAbsolutePathsFromCommand('/usr/bin/grep -rn "/api/routage" .')
+        expect(paths).not.toContain('/api/routage')
+        expect(paths).toContain('/usr/bin/grep')
+      })
+
+      it('only masks the pattern of the search sub-command', () => {
+        const paths = extractAbsolutePathsFromCommand('grep -rn "/api/routage" . && cat /etc/hosts')
+        expect(paths).toContain('/etc/hosts')
+        expect(paths).not.toContain('/api/routage')
+      })
     })
 
     describe('sed/awk/perl/ruby regex address false positives', () => {
@@ -1188,6 +1275,82 @@ describe('path-security', () => {
       await expect(pendingC).rejects.toThrow('cleanup')
     })
 
+    it('auto-approves all pending confirmations for a session when switching to dangerous mode', async () => {
+      const pendingA = registerPathConfirmation(
+        'danger-a',
+        ['/tmp/a'],
+        'session-danger',
+        'read_file',
+        '/tmp',
+        'outside_workdir',
+      )
+      const pendingB = registerPathConfirmation(
+        'danger-b',
+        ['/tmp/b'],
+        'session-danger',
+        'write_file',
+        '/tmp',
+        'sensitive_file',
+      )
+      const pendingOther = registerPathConfirmation(
+        'danger-other',
+        ['/tmp/c'],
+        'session-other',
+        'read_file',
+        '/tmp',
+        'outside_workdir',
+      )
+
+      const approvedA = expect(pendingA).resolves.toBe(true)
+      const approvedB = expect(pendingB).resolves.toBe(true)
+
+      const resolved = autoApprovePendingConfirmationsForSession('session-danger')
+      expect(resolved.sort()).toEqual(['danger-a', 'danger-b'])
+      expect(hasPendingPathConfirmation('danger-a')).toBe(false)
+      expect(hasPendingPathConfirmation('danger-b')).toBe(false)
+      expect(hasPendingPathConfirmation('danger-other')).toBe(true)
+      expect(autoApprovePendingConfirmationsForSession('session-danger')).toEqual([])
+
+      await Promise.all([approvedA, approvedB])
+      expect(cancelPathConfirmation('danger-other', 'cleanup')).toBe(true)
+      await expect(pendingOther).rejects.toThrow('cleanup')
+    })
+
+    it('auto-approve keeps git_no_verify confirmations pending even in dangerous mode', async () => {
+      const pendingGit = registerPathConfirmation(
+        'danger-git',
+        ['/tmp'],
+        'session-git',
+        'run_command',
+        '/tmp',
+        'git_no_verify',
+      )
+      const pendingCmd = registerPathConfirmation(
+        'danger-cmd',
+        ['rm -rf /'],
+        'session-git',
+        'run_command',
+        '/tmp',
+        'dangerous_command',
+      )
+
+      const approvedCmd = expect(pendingCmd).resolves.toBe(true)
+
+      const resolved = autoApprovePendingConfirmationsForSession('session-git')
+      expect(resolved).toEqual(['danger-cmd'])
+      expect(hasPendingPathConfirmation('danger-git')).toBe(true)
+      expect(hasPendingPathConfirmation('danger-cmd')).toBe(false)
+
+      await approvedCmd
+      expect(providePathConfirmation('danger-git', true)).toEqual({
+        found: true,
+        sessionId: 'session-git',
+        approved: true,
+      })
+      await expect(pendingGit).resolves.toBe(true)
+      expect(hasPendingPathConfirmation('danger-git')).toBe(false)
+    })
+
     it('requests path access, emits confirmation events, and resolves approval/denial', async () => {
       const onEvent = vi.fn()
       const sensitivePath = join(CANONICAL_WORKDIR, '.env')
@@ -1604,6 +1767,30 @@ describe('path-security', () => {
       expect(result.deniedPaths).toEqual([])
       expect(result.sensitivePaths).toEqual([])
     })
+
+    it('does not extract absolute paths from heredoc bodies', () => {
+      const command = [
+        "cat > /tmp/script.sh <<'EOF'",
+        'rm /etc/passwd /home/conrad/secrets.key',
+        'EOF',
+        'npx tsx /tmp/script.sh',
+      ].join('\n')
+
+      const paths = extractAbsolutePathsFromCommand(command)
+
+      // Legitimate path on the command line itself is still extracted
+      expect(paths).toContain('/tmp/script.sh')
+      // Paths that only appear inside the heredoc body are not
+      expect(paths).not.toContain('/etc/passwd')
+      expect(paths).not.toContain('/home/conrad/secrets.key')
+    })
+
+    it('does not extract sensitive file paths from heredoc bodies', () => {
+      const command = ["cat > /tmp/script.sh <<'EOF'", 'export FOO=secrets.key', '.env', 'EOF'].join('\n')
+
+      const sensitivePaths = extractSensitivePathsFromCommand(command)
+      expect(sensitivePaths).toEqual([])
+    })
   })
 
   // ===========================================================================
@@ -1664,6 +1851,26 @@ describe('path-security', () => {
           'echo "=== maxVisibleItems / virtualization new? ==="; git show 2d51cb87 --stat | grep -iE "virtualiz|display|chatfeed|messagelist|feed" ; git grep -n "maxVisibleItems" 2d51cb87 -- web/src | head; echo; echo "=== new setting keys in config.ts ==="; git show 2d51cb87 -- web/src/stores/config.ts | grep -E "^\\+" | grep -iE "setting|key:|name|nativeScrollbar|collapseLarge|deferHighlight|highlight|scrollbar" | head -20',
         ),
       ).toBe(false)
+    })
+
+    it('detects --no-verify after a quoted commit message containing a semicolon', () => {
+      expect(
+        extractGitNoVerify(
+          'git add src/server/db/sessions.ts && git commit -m "feat(web): flat recent-sessions homepage with starred-first projects index - Homepage shows up to 20 most recent sessions across all projects, ordered by last activity, always visible, with real links (open in new tab) and running/waiting/blocked status dots. - listHomeSessions returns the 20 most recent sessions flat (drops the 5-per-project cap) and pins running/waiting/blocked sessions so active work never drops off the list. - Projects section below keeps Tasks/+ New Session/delete actions; cards contain no sessions, ordered starred first then alphabetical (star icon for starred projects)." --no-verify 2>&1 | tail -5',
+        ),
+      ).toBe(true)
+    })
+
+    it('detects --no-verify when shell separators appear inside the quoted message', () => {
+      expect(extractGitNoVerify('git commit -m "a; b | c && d" --no-verify')).toBe(true)
+    })
+
+    it('does not flag --no-verify used as a quoted message value', () => {
+      expect(extractGitNoVerify('git commit -m "--no-verify"')).toBe(false)
+    })
+
+    it('still flags --no-verify after an unterminated quoted message', () => {
+      expect(extractGitNoVerify('git commit -m "msg --no-verify')).toBe(true)
     })
   })
 
@@ -2320,6 +2527,62 @@ describe('resolveRelativeTraversals', () => {
     it('returns empty for commands with no traversals', () => {
       expect(resolveRelativeTraversals('npx vite build --outDir dist/web', ws)).toEqual([])
       expect(resolveRelativeTraversals('', ws)).toEqual([])
+    })
+  })
+
+  describe('heredoc handling', () => {
+    it('does not extract .. traversals from heredoc bodies', () => {
+      const command = [
+        "cd /home/conrad/dev/openfox && cat > tmp/extract-test.ts <<'EOF'",
+        'import {',
+        '  extractAbsolutePathsFromCommand,',
+        "} from '../src/server/tools/path-security.js'",
+        'EOF',
+        'npx tsx tmp/extract-test.ts',
+      ].join('\n')
+      const paths = resolveRelativeTraversals(command, ws)
+      expect(paths).toEqual([])
+    })
+
+    it('does not extract .. from quoted, tab-stripped, or multiple heredocs', () => {
+      const command = [
+        "cat <<'A' > /tmp/one",
+        'cd ../outside && echo hi',
+        'A',
+        'cat <<-B > /tmp/two',
+        '\tcd ../../x',
+        'B',
+        'cat <<EOF',
+        'ls /../tmp',
+        'EOF',
+      ].join('\n')
+      const paths = resolveRelativeTraversals(command, ws)
+      expect(paths).toEqual([])
+    })
+
+    it('still resolves real traversals outside heredocs', () => {
+      const command = ["cat > /tmp/x <<'EOF'", 'cd ../inside-heredoc', 'EOF', 'cd web && cat ../dist/x'].join('\n')
+      const paths = resolveRelativeTraversals(command, ws)
+      expect(paths).toEqual([resolve(join(ws, 'web'), '../dist/x')])
+    })
+
+    it('does not trigger path confirmation for a heredoc writing a file with a ../ import', async () => {
+      const command = [
+        `cd ${ws} && cat > tmp/extract-test.ts <<'EOF'`,
+        "import { extractAbsolutePathsFromCommand } from '../src/server/tools/path-security.js'",
+        'EOF',
+        'npx tsx tmp/extract-test.ts',
+      ].join('\n')
+      const pathsToCheck = [
+        ws,
+        ...extractAbsolutePathsFromCommand(command),
+        ...resolveRelativeTraversals(command, ws),
+        ...extractSensitivePathsFromCommand(command),
+      ]
+      const result = await checkPathsAccess(pathsToCheck, ws)
+      expect(result.needsConfirmation).toBe(false)
+      expect(result.deniedPaths).toEqual([])
+      expect(result.sensitivePaths).toEqual([])
     })
   })
 })

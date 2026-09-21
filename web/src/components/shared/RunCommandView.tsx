@@ -4,6 +4,7 @@ import { useAutoScroll } from '../../hooks/useAutoScroll'
 import { useViewport } from '../../hooks/useViewport'
 import { memo, useEffect, useRef, useState } from 'react'
 import { ansiToReact } from '../../lib/ansiParser'
+import { useT } from '../../hooks/useT'
 
 interface StreamingChunk {
   stream: 'stdout' | 'stderr'
@@ -34,6 +35,7 @@ export const RunCommandView = memo(function RunCommandView({
   error,
   durationMs,
 }: RunCommandViewProps) {
+  const t = useT()
   const scrollRef = useRef<OverlayScrollbarsComponentRef<'div'>>(null)
   const [elapsed, setElapsed] = useState(0)
 
@@ -81,10 +83,14 @@ export const RunCommandView = memo(function RunCommandView({
 
         {/* Timeout indicator - fixed width to prevent layout shifts */}
         <div className="flex items-center gap-2 text-xs text-text-muted flex-shrink-0">
-          {status === 'pending' && <span className="animate-pulse text-accent-warning">running</span>}
-          {status === 'interrupted' && <span className="text-red-400">interrupted</span>}
+          {status === 'pending' && (
+            <span className="animate-pulse text-accent-warning">{t({ en: 'running', fr: 'en cours' })}</span>
+          )}
+          {status === 'interrupted' && (
+            <span className="text-red-400">{t({ en: 'interrupted', fr: 'interrompu' })}</span>
+          )}
           <span className={status === 'pending' ? 'text-text-secondary' : 'text-text-muted'}>
-            {elapsedSec.toFixed(1)}s / {timeoutSec}s
+            {`${elapsedSec.toFixed(1)}s / ${timeoutSec}s`}
           </span>
         </div>
       </div>

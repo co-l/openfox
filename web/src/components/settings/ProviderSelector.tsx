@@ -1,16 +1,19 @@
 import { ScrollArea } from '../shared/ScrollArea'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useConfigStore, getBackendDisplayName, type Provider } from '../../stores/config'
+import { useProviders } from '../../hooks/useProviders'
+import { useConfig } from '../../hooks/useConfig'
 import { useSessionStore } from '../../stores/session'
 import { useSessionScope, useScopedPaneState } from '../../stores/session/session-scope'
 import { useResource } from '../../hooks/useResource'
 import { agentsResource } from '../../lib/resources'
-import { getAgentColor } from '../../stores/agents'
+import { getAgentColor } from '../../lib/agents-actions'
 import { ProviderModal, providerFormPayload, type ProviderFormData } from '../shared/ProviderModal'
 import { Modal } from '../shared/Modal'
 import { ManageProvidersModal } from './ManageProvidersModal'
+import { DropdownPanel } from '../shared/DropdownPanel'
 import { authFetch } from '../../lib/api'
-import { ChevronDownIcon, ReloadIcon, CheckIcon, SearchIcon, PinIcon } from '../shared/icons'
+import { ChevronDownIcon, ReloadIcon, CheckIcon, SearchIcon, PinIcon, EditSmallIcon } from '../shared/icons'
 import { useKeybindings, useBinding } from '../../hooks/useKeybindings'
 import { focusChatTextarea } from '../../lib/focusChatTextarea'
 import { shouldAutofocus } from '../../lib/device'
@@ -18,6 +21,11 @@ import { useModelSearch, ModelEntryRow, type ModelWithConfig } from './model-lis
 import { parseModelValue } from '../../lib/model-value'
 import { shouldGateEffortChange, resolveDisplayEffort } from '../../lib/effort-gate'
 import { useEffortChangeGate } from '../plan/EffortChangeGate'
+import { useT } from '../../hooks/useT'
+import { useSetting } from '../../hooks/useSetting'
+import { useIsTouchDevice } from '../../hooks/useIsTouchDevice'
+import { SETTINGS_KEYS, setSetting } from '../../lib/resources'
+import { PluginZone } from '../plugins/PluginZone'
 
 type ProviderLabelProps = {
   activeProvider: { name: string; isLocal?: boolean } | undefined
@@ -39,6 +47,7 @@ function ProviderLabel({
   agentName,
   pinned,
 }: ProviderLabelProps) {
+  const t = useT()
   return (
     <>
       <span className="text-sm text-accent-primary flex items-center gap-1">
@@ -46,25 +55,31 @@ function ProviderLabel({
           <span
             className="w-2.5 h-2.5 rounded-full flex-shrink-0 ring-1 ring-border"
             style={{ backgroundColor: agentColor ?? '#6b7280' }}
-            title={`Model set by agent "${agentName ?? 'unknown'}". Change it in Settings > Agents.`}
+            title={t({
+              en: `Model set by agent "${agentName ?? 'unknown'}". Change it in Settings > Agents.`,
+              fr: `Modèle défini par l’agent « ${agentName ?? 'inconnu'} ». Modifiez-le dans Paramètres > Agents.`,
+            })}
           />
         )}
         {activeProvider ? (
           <>
-            <span className="hidden @sm:inline">{activeProvider.name} • </span>
-            {shortModelName}
-            {effort && <span className="text-text-muted">:{effort}</span>}
+            <span className="hidden @sm:inline">{`${activeProvider.name} • `}</span>
+            <span className="truncate min-w-0">{shortModelName}</span>
+            {effort && <span className="text-text-muted flex-shrink-0">:{effort}</span>}
           </>
         ) : (
           <>
-            {shortModelName}
-            {effort && <span className="text-text-muted">:{effort}</span>}
+            <span className="truncate min-w-0">{shortModelName}</span>
+            {effort && <span className="text-text-muted flex-shrink-0">:{effort}</span>}
           </>
         )}
         {pinned && (
           <span
             className="flex-shrink-0 text-text-muted"
-            title={`Reasoning effort pinned for this session (chosen via "Keep current reasoning effort").`}
+            title={t({
+              en: 'Reasoning effort pinned for this session (chosen via "Keep current reasoning effort").',
+              fr: 'Niveau de raisonnement épinglé pour cette session (choisi via « Conserver le niveau de raisonnement actuel »).',
+            })}
           >
             <PinIcon className="w-3 h-3" />
           </span>
@@ -77,13 +92,14 @@ function ProviderLabel({
             : 'text-accent-warning bg-accent-warning/10'
         }`}
       >
-        {activeProvider?.isLocal ? 'local' : 'api'}
+        {activeProvider?.isLocal ? t({ en: 'local', fr: 'local' }) : t({ en: 'api', fr: 'api' })}
       </span>
     </>
   )
 }
 
 export function ProviderSelector() {
+  const t = useT()
   const sessionId = useSessionScope()
   const currentSession = useScopedPaneState(
     sessionId,
@@ -107,6 +123,7 @@ export function ProviderSelector() {
   const [loadingModels, setLoadingModels] = useState<string | null>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const [editingModel, setEditingModel] = useState<{ providerId: string; model: ModelWithConfig } | null>(null)
+  const [editingProviderId, setEditingProviderId] = useState<string | null>(null)
   const [showProviderModal, setShowProviderModal] = useState(false)
   const [authStates, setAuthStates] = useState<
     Record<string, 'disconnected' | 'pending' | 'connected' | 'expired' | 'error'>
@@ -124,9 +141,9 @@ export function ProviderSelector() {
   const codeCopiedTimerRef = useRef<number | null>(null)
   const [devicePageOpened, setDevicePageOpened] = useState(false)
   const loadedProvidersRef = useRef<Set<string>>(new Set())
-  const providers = useConfigStore((state) => state.providers)
-  const activeProviderId = useConfigStore((state) => state.activeProviderId)
-  const defaultModelSelection = useConfigStore((state) => state.defaultModelSelection)
+  const prevIsOpenRef = useRef(false)
+  const { providers, activeProviderId } = useProviders()
+  const defaultModelSelection = useConfig().config?.defaultModelSelection ?? null
   const activating = useConfigStore((state) => state.activating)
   const activateProvider = useConfigStore((state) => state.activateProvider)
   const refreshModel = useConfigStore((state) => state.refreshModel)
@@ -134,6 +151,41 @@ export function ProviderSelector() {
   const setDefaultModel = useConfigStore((state) => state.setDefaultModel)
   const updateModelSettings = useConfigStore((state) => state.updateModelSettings)
   const fetchConfig = useConfigStore((state) => state.fetchConfig)
+  const modelSelectorHeight = useSetting(SETTINGS_KEYS.DISPLAY_MODEL_SELECTOR_HEIGHT, 'default').value || 'default'
+  const isAllScreenHigh = modelSelectorHeight === 'all_screen_high' || modelSelectorHeight === 'full_height'
+  // On touch devices the dropdown always renders as a viewport-contained centered
+  // modal — anchored panels (default or full-height) overflow narrow screens.
+  const isTouch = useIsTouchDevice()
+  const isModalPanel = isTouch
+  const collapseProvidersByDefault =
+    useSetting(SETTINGS_KEYS.DISPLAY_COLLAPSE_PROVIDERS_BY_DEFAULT, 'false').value === 'true'
+  const collapseFavoritesByDefault =
+    useSetting(SETTINGS_KEYS.DISPLAY_COLLAPSE_FAVORITES_BY_DEFAULT, 'false').value === 'true'
+  const favoriteModelsSetting = useSetting(SETTINGS_KEYS.DISPLAY_MODEL_FAVORITES, '[]').value
+
+  const favoriteKeys = useMemo(() => {
+    try {
+      const parsed = JSON.parse(favoriteModelsSetting)
+      return Array.isArray(parsed) ? (parsed as string[]) : []
+    } catch {
+      return []
+    }
+  }, [favoriteModelsSetting])
+
+  // Filter favorites to only those where the provider and model actually exist in the current configuration
+  const validFavorites = useMemo(() => {
+    return favoriteKeys.filter((favKey) => {
+      const slashIdx = favKey.indexOf('/')
+      if (slashIdx === -1) return false
+      const pId = favKey.slice(0, slashIdx)
+      const mId = favKey.slice(slashIdx + 1)
+      const p = providers.find((prov) => prov.id === pId)
+      if (!p) return false
+      return p.models.some((m) => m.id === mId)
+    })
+  }, [favoriteKeys, providers])
+
+  const [favoritesExpanded, setFavoritesExpanded] = useState(!collapseFavoritesByDefault)
 
   const keybindings = useKeybindings()
   useBinding(keybindings.modelSelector, () => setIsOpen((prev) => !prev))
@@ -196,7 +248,7 @@ export function ProviderSelector() {
   const isEffortPinned = !!sessionPinnedEffort
   const shortModelName = effectiveModel
     ? (effectiveModel.split('/').pop()?.replace(/-/g, ' ') ?? effectiveModel)
-    : 'No model'
+    : t({ en: 'No model', fr: 'Aucun modèle' })
 
   // Fall back to the model's configured effort for display, so the label
   // reflects what will actually be sent even without an explicit session pick.
@@ -270,7 +322,14 @@ export function ProviderSelector() {
   useEffect(() => {
     if (isOpen) {
       const allProviderIds = providers.map((p) => p.id)
-      setExpandedProviderIds(allProviderIds)
+      if (!prevIsOpenRef.current) {
+        if (!collapseProvidersByDefault) {
+          setExpandedProviderIds(allProviderIds)
+        } else {
+          setExpandedProviderIds([])
+        }
+        setFavoritesExpanded(!collapseFavoritesByDefault)
+      }
       providers
         .filter((provider) => Boolean(provider.authAdapter))
         .forEach((provider) => void refreshAuthStatus(provider.id))
@@ -281,7 +340,8 @@ export function ProviderSelector() {
         }
       })
     }
-  }, [isOpen, providers])
+    prevIsOpenRef.current = isOpen
+  }, [isOpen, providers, collapseProvidersByDefault, collapseFavoritesByDefault])
 
   useEffect(() => {
     if (!deviceChallenge) return
@@ -389,6 +449,7 @@ export function ProviderSelector() {
   }
 
   const refreshAuthStatus = async (providerId: string) => {
+    // Authorized transient read: provider auth status is a one-shot check, not shared state.
     const response = await authFetch(`/api/provider-auth/${providerId}/status`)
     if (!response.ok) return 'error' as const
     const data = (await response.json()) as { state: 'disconnected' | 'pending' | 'connected' | 'expired' | 'error' }
@@ -459,13 +520,23 @@ export function ProviderSelector() {
 
   const handleEditModel = (providerId: string, model: ModelWithConfig) => {
     setEditingModel({ providerId, model })
+    setEditingProviderId(null)
     setShowProviderModal(true)
   }
 
-  const editingProvider = editingModel ? providers.find((p) => p.id === editingModel.providerId) : undefined
+  const handleEditProvider = (provider: Provider) => {
+    setEditingProviderId(provider.id)
+    setEditingModel(null)
+    setIsOpen(false)
+    setShowProviderModal(true)
+  }
+
+  const modalProviderId = editingModel?.providerId ?? editingProviderId
+  const modalProvider = modalProviderId ? providers.find((p) => p.id === modalProviderId) : undefined
 
   const handleCloseEditModal = () => {
     setEditingModel(null)
+    setEditingProviderId(null)
     setShowProviderModal(false)
   }
 
@@ -476,12 +547,13 @@ export function ProviderSelector() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(providerFormPayload(formData)),
       })
-      if (!res.ok) throw new Error('Failed to update provider')
+      if (!res.ok) throw new Error(t({ en: 'Failed to update provider', fr: 'Échec de la mise à jour du fournisseur' }))
       await useConfigStore.getState().fetchConfig()
     } catch {
       // Silently fail
     }
     setEditingModel(null)
+    setEditingProviderId(null)
     setShowProviderModal(false)
   }
 
@@ -592,6 +664,13 @@ export function ProviderSelector() {
     }
   }
 
+  const handleToggleFavorite = async (e: React.MouseEvent, providerId: string, modelId: string) => {
+    e.stopPropagation()
+    const key = `${providerId}/${modelId}`
+    const next = favoriteKeys.includes(key) ? favoriteKeys.filter((k) => k !== key) : [...favoriteKeys, key]
+    await setSetting(SETTINGS_KEYS.DISPLAY_MODEL_FAVORITES, JSON.stringify(next))
+  }
+
   const {
     searchQuery,
     setSearchQuery,
@@ -627,10 +706,16 @@ export function ProviderSelector() {
         type="button"
         onClick={() => refreshModel()}
         className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-bg-tertiary transition-colors group"
-        title={isLlmOffline ? 'LLM server is offline. Click to retry.' : (shortModelName ?? 'Click to refresh model')}
+        title={
+          isLlmOffline
+            ? t({ en: 'LLM server is offline. Click to retry.', fr: 'Serveur LLM hors ligne. Cliquez pour réessayer.' })
+            : (shortModelName ?? t({ en: 'Click to refresh model', fr: 'Cliquez pour actualiser le modèle' }))
+        }
       >
         {isLlmOffline ? (
-          <span className="text-sm text-accent-error animate-pulse">LLM offline</span>
+          <span className="text-sm text-accent-error animate-pulse">
+            {t({ en: 'LLM offline', fr: 'LLM hors ligne' })}
+          </span>
         ) : (
           <ProviderLabel
             activeProvider={activeProvider}
@@ -652,11 +737,11 @@ export function ProviderSelector() {
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-bg-tertiary transition-colors group"
-        title="Click to switch provider or model"
+        className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-bg-tertiary transition-colors group min-w-0 max-w-full"
+        title={t({ en: 'Click to switch provider or model', fr: 'Cliquez pour changer de fournisseur ou de modèle' })}
       >
         {isLlmOffline ? (
-          <span className="text-sm text-accent-error animate-pulse">offline</span>
+          <span className="text-sm text-accent-error animate-pulse">{t({ en: 'offline', fr: 'hors ligne' })}</span>
         ) : (
           <ProviderLabel
             activeProvider={activeProvider}
@@ -672,7 +757,13 @@ export function ProviderSelector() {
       </button>
 
       {isOpen && (
-        <div className="absolute bottom-full right-0 mb-1 min-w-72 max-w-[100vw] bg-bg-secondary border border-border rounded-lg shadow-lg z-50 flex flex-col max-h-[80vh]">
+        <DropdownPanel
+          isModal={isModalPanel}
+          testId="provider-dropdown"
+          fillViewport
+          anchoredClassName={`right-0 ${isAllScreenHigh ? 'h-[calc(100vh-6.5rem)] max-h-[calc(100vh-6.5rem)]' : 'max-h-[80vh]'}`}
+          onClose={() => setIsOpen(false)}
+        >
           <div className="flex items-center gap-1 px-3 py-2 border-b border-border flex-shrink-0">
             <SearchIcon className="w-3.5 h-3.5 text-text-muted flex-shrink-0" />
             <input
@@ -684,12 +775,78 @@ export function ProviderSelector() {
                 setHighlightedIndex(-1)
               }}
               onKeyDown={handleProviderSearchKeyDown}
-              placeholder="Search models..."
+              placeholder={t({ en: 'Search models...', fr: 'Rechercher des modèles...' })}
               className="bg-transparent border-none outline-none text-sm text-text-primary w-full placeholder:text-text-muted"
             />
           </div>
           <ScrollArea className="flex-1 min-h-0">
             <div>
+              {validFavorites.length > 0 && !searchQuery.trim() && (
+                <div key="__favorites__">
+                  <div
+                    className={`px-3 py-2 flex items-center justify-between bg-bg-tertiary/50 ${
+                      activating ? 'opacity-50 cursor-wait' : 'cursor-pointer'
+                    }`}
+                    onClick={() => setFavoritesExpanded((prev) => !prev)}
+                  >
+                    <div className="flex flex-col min-w-0 flex-1">
+                      <span className="text-sm font-medium truncate text-text-primary">
+                        {t({ en: 'Favorites', fr: 'Favoris' })}
+                      </span>
+                      <span className="text-xs text-text-muted truncate">
+                        {t({ en: 'Pinned models', fr: 'Modèles épinglés' })}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <ChevronDownIcon
+                        className={`w-4 h-4 transition-transform ${favoritesExpanded ? 'rotate-180' : ''} text-text-muted`}
+                      />
+                    </div>
+                  </div>
+
+                  {favoritesExpanded && (
+                    <ScrollArea
+                      className={`bg-bg-primary border-t border-border ${isAllScreenHigh ? 'max-h-none' : 'max-h-40'}`}
+                    >
+                      {validFavorites.map((favKey) => {
+                        const slashIdx = favKey.indexOf('/')
+                        const pId = favKey.slice(0, slashIdx)
+                        const mId = favKey.slice(slashIdx + 1)
+                        const provider = providers.find((p) => p.id === pId)
+                        if (!provider) return null
+                        const modelConfig = provider.models.find((m) => m.id === mId)
+                        if (!modelConfig) return null
+                        const modelFlatIndex = flatItems.findIndex(
+                          (fi) => fi.providerId === pId && fi.modelConfig.id === mId,
+                        )
+                        const isHighlighted = modelFlatIndex === highlightedIndex
+                        return (
+                          <div key={favKey} ref={isHighlighted ? highlightedRef : undefined}>
+                            <ModelEntryRow
+                              providerId={pId}
+                              modelConfig={modelConfig}
+                              isActive={isSessionActive(pId, mId)}
+                              isDefault={isDefault(pId, mId)}
+                              isFavorite
+                              disabled={loadingModels === 'activating'}
+                              hasSession={!!currentSession}
+                              settingDefault={settingDefault}
+                              highlighted={isHighlighted}
+                              onModelClick={handleModelClick}
+                              onSetDefault={handleSetDefault}
+                              onToggleFavorite={handleToggleFavorite}
+                              onEditModel={handleEditModel}
+                              reasoningEfforts={modelConfig.reasoningEfforts}
+                              selectedEffort={effortForModel(pId, mId)}
+                              onSelectEffort={handleModelClick}
+                            />
+                          </div>
+                        )
+                      })}
+                    </ScrollArea>
+                  )}
+                </div>
+              )}
               {visibleGroups.map((group) => {
                 const isExpanded = searchQuery.trim().length > 0 || expandedProviderIds.includes(group.provider.id)
                 return (
@@ -710,40 +867,20 @@ export function ProviderSelector() {
                         >
                           {group.provider.name}
                         </span>
-                        <span className="text-xs text-text-muted truncate">
-                          {group.provider.backend !== 'unknown' && getBackendDisplayName(group.provider.backend)}
-                        </span>
+                        {!group.provider.authAdapter &&
+                          !group.provider.transportAdapter &&
+                          group.provider.backend !== 'unknown' && (
+                            <span className="text-xs text-text-muted truncate">
+                              {getBackendDisplayName(group.provider.backend)}
+                            </span>
+                          )}
                       </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        {Boolean(group.provider.authAdapter) &&
-                          (authStates[group.provider.id] === 'connected' || group.provider.credentialRef ? (
-                            <button
-                              type="button"
-                              onClick={(event) => handleDisconnectAccount(event, group.provider.id)}
-                              disabled={authBusy === group.provider.id}
-                              className="text-[10px] px-1.5 py-0.5 rounded border border-accent-success/40 text-accent-success hover:bg-accent-success/10 disabled:opacity-50"
-                              title="Disconnect provider account"
-                            >
-                              Connected
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={(event) => handleConnectAccount(event, group.provider.id)}
-                              disabled={authBusy === group.provider.id}
-                              className="text-[10px] px-1.5 py-0.5 rounded border border-accent-primary/40 text-accent-primary hover:bg-accent-primary/10 disabled:opacity-50"
-                              title="Connect provider account"
-                            >
-                              {authBusy === group.provider.id
-                                ? 'Starting…'
-                                : authStates[group.provider.id] === 'error' ||
-                                    authStates[group.provider.id] === 'expired'
-                                  ? 'Retry'
-                                  : 'Connect'}
-                            </button>
-                          ))}
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
                         {group.provider.id === effectiveProviderId ? (
-                          <span className="text-accent-success" title="Active provider">
+                          <span
+                            className="text-accent-success"
+                            title={t({ en: 'Active provider', fr: 'Fournisseur actif' })}
+                          >
                             <CheckIcon className="w-4 h-4" />
                           </span>
                         ) : (
@@ -753,10 +890,25 @@ export function ProviderSelector() {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation()
+                            handleEditProvider(group.provider)
+                          }}
+                          className="p-0.5 hover:bg-bg-tertiary rounded transition-colors"
+                          title={t({ en: 'Edit provider', fr: 'Modifier le fournisseur' })}
+                          aria-label={t({
+                            en: `Edit provider ${group.provider.name}`,
+                            fr: `Modifier le fournisseur ${group.provider.name}`,
+                          })}
+                        >
+                          <EditSmallIcon className="w-4 h-4 text-text-muted" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
                             handleRefreshClick(e, group.provider.id)
                           }}
                           className="p-0.5 hover:bg-bg-tertiary rounded transition-colors"
-                          title="Refresh models"
+                          title={t({ en: 'Refresh models', fr: 'Actualiser les modèles' })}
                         >
                           <ReloadIcon
                             className={`w-4 h-4 ${loadingModels === group.provider.id ? 'animate-spin' : ''} ${
@@ -764,6 +916,39 @@ export function ProviderSelector() {
                             }`}
                           />
                         </button>
+                        {Boolean(group.provider.authAdapter) &&
+                          (authStates[group.provider.id] === 'connected' || group.provider.credentialRef ? (
+                            <button
+                              type="button"
+                              onClick={(event) => handleDisconnectAccount(event, group.provider.id)}
+                              disabled={authBusy === group.provider.id}
+                              className="text-[9px] leading-tight px-1 py-0.5 rounded border border-accent-success/40 text-accent-success hover:bg-accent-success/10 disabled:opacity-50"
+                              title={t({
+                                en: 'Disconnect provider account',
+                                fr: 'Déconnecter le compte du fournisseur',
+                              })}
+                            >
+                              {t({ en: 'Connected', fr: 'Connecté' })}
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(event) => handleConnectAccount(event, group.provider.id)}
+                              disabled={authBusy === group.provider.id}
+                              className="text-[9px] leading-tight px-1 py-0.5 rounded border border-accent-primary/40 text-accent-primary hover:bg-accent-primary/10 disabled:opacity-50"
+                              title={t({
+                                en: 'Connect provider account',
+                                fr: 'Connecter le compte du fournisseur',
+                              })}
+                            >
+                              {authBusy === group.provider.id
+                                ? t({ en: 'Starting…', fr: 'Démarrage…' })
+                                : authStates[group.provider.id] === 'error' ||
+                                    authStates[group.provider.id] === 'expired'
+                                  ? t({ en: 'Retry', fr: 'Réessayer' })
+                                  : t({ en: 'Connect', fr: 'Connecter' })}
+                            </button>
+                          ))}
                         <button
                           type="button"
                           onClick={(e) => {
@@ -771,7 +956,7 @@ export function ProviderSelector() {
                             handleChevronClick(group.provider)
                           }}
                           className="p-0.5 hover:bg-bg-tertiary rounded transition-colors"
-                          title="Show models"
+                          title={t({ en: 'Show models', fr: 'Afficher les modèles' })}
                         >
                           <ChevronDownIcon
                             className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''} ${
@@ -783,9 +968,15 @@ export function ProviderSelector() {
                     </div>
 
                     {isExpanded && (
-                      <ScrollArea className="bg-bg-primary border-t border-border max-h-40">
+                      <ScrollArea
+                        className={`bg-bg-primary border-t border-border ${
+                          isAllScreenHigh ? 'max-h-none' : 'max-h-40'
+                        }`}
+                      >
                         {loadingModels === group.provider.id ? (
-                          <div className="px-4 py-2 text-xs text-text-muted">Loading models...</div>
+                          <div className="px-4 py-2 text-xs text-text-muted">
+                            {t({ en: 'Loading models…', fr: 'Chargement des modèles…' })}
+                          </div>
                         ) : group.models.length > 0 ? (
                           group.models.map((modelConfig) => {
                             const modelFlatIndex = flatItems.findIndex(
@@ -802,12 +993,14 @@ export function ProviderSelector() {
                                   modelConfig={modelConfig}
                                   isActive={isSessionActive(group.provider.id, modelConfig.id)}
                                   isDefault={isDefault(group.provider.id, modelConfig.id)}
+                                  isFavorite={favoriteKeys.includes(`${group.provider.id}/${modelConfig.id}`)}
                                   disabled={loadingModels === 'activating'}
                                   hasSession={!!currentSession}
                                   settingDefault={settingDefault}
                                   highlighted={isHighlighted}
                                   onModelClick={handleModelClick}
                                   onSetDefault={handleSetDefault}
+                                  onToggleFavorite={handleToggleFavorite}
                                   onEditModel={handleEditModel}
                                   reasoningEfforts={modelConfig.reasoningEfforts}
                                   selectedEffort={effortForModel(group.provider.id, modelConfig.id)}
@@ -817,7 +1010,9 @@ export function ProviderSelector() {
                             )
                           })
                         ) : (
-                          <div className="px-4 py-2 text-xs text-text-muted">No models available</div>
+                          <div className="px-4 py-2 text-xs text-text-muted">
+                            {t({ en: 'No models available', fr: 'Aucun modèle disponible' })}
+                          </div>
                         )}
                       </ScrollArea>
                     )}
@@ -825,50 +1020,70 @@ export function ProviderSelector() {
                 )
               })}
               {visibleGroups.length === 0 && searchQuery.trim() && (
-                <div className="px-4 py-3 text-sm text-text-muted text-center">No models match your search</div>
+                <div className="px-4 py-3 text-sm text-text-muted text-center">
+                  {t({ en: 'No models match your search', fr: 'Aucun modèle ne correspond à votre recherche' })}
+                </div>
               )}
             </div>
           </ScrollArea>
-          <div
-            className={`border-t border-border px-3 py-2 flex items-center justify-between gap-2 ${
-              isManageHighlighted ? 'bg-bg-tertiary' : ''
-            } flex-shrink-0`}
-          >
-            {isEffortPinned && (
-              <button
-                type="button"
-                onClick={handleUnpinEffort}
-                className="text-xs text-text-muted hover:text-text-primary hover:underline"
-                title="Stop pinning the reasoning effort so agent overrides and session picks apply again"
-              >
-                Unpin reasoning effort
-              </button>
-            )}
-            {hasSessionPreference && (
-              <button
-                type="button"
-                onClick={handleResetProvider}
-                className="text-xs text-text-muted hover:text-text-primary hover:underline"
-                title="Clear this session's manually picked model so agent overrides and the global default apply again"
-              >
-                Reset to default
-              </button>
-            )}
-            <button
-              onClick={() => {
-                setIsOpen(false)
-                setShowManageProviders(true)
-              }}
-              className="text-xs text-accent-primary hover:underline"
+          <PluginZone id="model.picker.footer" className="w-full">
+            <div
+              className={`border-t border-border px-3 py-2 flex items-center justify-between gap-2 ${
+                isManageHighlighted ? 'bg-bg-tertiary' : ''
+              } flex-shrink-0`}
             >
-              Manage providers
-            </button>
-          </div>
-        </div>
+              {isEffortPinned && (
+                <button
+                  type="button"
+                  onClick={handleUnpinEffort}
+                  className="text-xs text-text-muted hover:text-text-primary hover:underline"
+                  title={t({
+                    en: 'Stop pinning the reasoning effort so agent overrides and session picks apply again',
+                    fr: 'Arrêter d’épingler le niveau de raisonnement pour que les remplacements d’agent et les choix de session s’appliquent à nouveau',
+                  })}
+                >
+                  {t({ en: 'Unpin reasoning effort', fr: 'Désépingler le niveau de raisonnement' })}
+                </button>
+              )}
+              {hasSessionPreference && (
+                <button
+                  type="button"
+                  onClick={handleResetProvider}
+                  className="text-xs text-text-muted hover:text-text-primary hover:underline"
+                  title={t({
+                    en: "Clear this session's manually picked model so agent overrides and the global default apply again",
+                    fr: "Effacer le modèle choisi manuellement pour cette session afin que les remplacements d'agent et le défaut global s'appliquent à nouveau",
+                  })}
+                >
+                  {t({ en: 'Reset to default', fr: 'Réinitialiser au défaut' })}
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  setIsOpen(false)
+                  setShowManageProviders(true)
+                }}
+                className="text-xs text-accent-primary hover:underline"
+              >
+                {t({ en: 'Manage providers', fr: 'Gérer les fournisseurs' })}
+              </button>
+            </div>
+          </PluginZone>
+        </DropdownPanel>
       )}
       {deviceChallenge && (
-        <Modal isOpen onClose={closeDeviceChallenge} title="Connect provider" size="md">
-          <p className="text-sm text-text-muted">Follow the provider instructions to complete authorization.</p>
+        <Modal
+          isOpen
+          onClose={closeDeviceChallenge}
+          title={t({ en: 'Connect provider', fr: 'Connecter le fournisseur' })}
+          size="md"
+        >
+          <p className="text-sm text-text-muted">
+            {t({
+              en: 'Follow the provider instructions to complete authorization.',
+              fr: 'Suivez les instructions du fournisseur pour finaliser l’autorisation.',
+            })}
+          </p>
 
           {deviceChallenge.mode !== 'browser' ? (
             <>
@@ -876,13 +1091,15 @@ export function ProviderSelector() {
                 type="button"
                 onClick={copyDeviceCode}
                 className="mt-6 w-full select-all rounded-lg border border-accent-primary/40 bg-bg-primary px-4 py-5 font-mono text-3xl font-semibold tracking-[0.2em] text-accent-primary hover:bg-bg-tertiary"
-                title="Copy code"
+                title={t({ en: 'Copy code', fr: 'Copier le code' })}
               >
-                {deviceChallenge.userCode ?? 'Continue'}
+                {deviceChallenge.userCode ?? t({ en: 'Continue', fr: 'Continuer' })}
               </button>
 
               <div className="mt-3 text-center text-xs text-text-muted">
-                {codeCopied ? 'Copied to clipboard' : 'Click the code to copy it'}
+                {codeCopied
+                  ? t({ en: 'Copied to clipboard', fr: 'Copié dans le presse-papiers' })
+                  : t({ en: 'Click the code to copy it', fr: 'Cliquez sur le code pour le copier' })}
               </div>
 
               <div className="mt-6 flex gap-3">
@@ -891,21 +1108,29 @@ export function ProviderSelector() {
                   onClick={copyDeviceCode}
                   className="flex-1 rounded-lg border border-border px-4 py-2 text-sm text-text-primary hover:bg-bg-tertiary"
                 >
-                  {codeCopied ? 'Copied' : 'Copy code'}
+                  {codeCopied ? t({ en: 'Copied', fr: 'Copié' }) : t({ en: 'Copy code', fr: 'Copier le code' })}
                 </button>
                 <button
                   type="button"
                   onClick={openDeviceAuthorization}
                   className="flex-1 rounded-lg bg-accent-primary px-4 py-2 text-sm font-medium text-text-primary hover:bg-accent-primary/90"
                 >
-                  {devicePageOpened ? 'Reopen authorization' : 'Open authorization'}
+                  {devicePageOpened
+                    ? t({ en: 'Reopen authorization', fr: 'Rouvrir l’autorisation' })
+                    : t({ en: 'Open authorization', fr: 'Ouvrir l’autorisation' })}
                 </button>
               </div>
 
               <p className="mt-4 text-center text-xs text-text-muted">
                 {devicePageOpened
-                  ? 'If the browser blocked or closed the tab, reopen authorization.'
-                  : 'OpenFox stays open while you complete authorization in the other tab.'}
+                  ? t({
+                      en: 'If the browser blocked or closed the tab, reopen authorization.',
+                      fr: 'Si le navigateur a bloqué ou fermé l’onglet, rouvrez l’autorisation.',
+                    })
+                  : t({
+                      en: 'OpenFox stays open while you complete authorization in the other tab.',
+                      fr: 'OpenFox reste ouvert pendant que vous finalisez l’autorisation dans l’autre onglet.',
+                    })}
               </p>
             </>
           ) : (
@@ -920,7 +1145,9 @@ export function ProviderSelector() {
                   onClick={openDeviceAuthorization}
                   className="w-full rounded-lg bg-accent-primary px-4 py-2 text-sm font-medium text-text-primary hover:bg-accent-primary/90"
                 >
-                  {devicePageOpened ? 'Reopen authorization' : 'Open authorization'}
+                  {devicePageOpened
+                    ? t({ en: 'Reopen authorization', fr: 'Rouvrir l’autorisation' })
+                    : t({ en: 'Open authorization', fr: 'Ouvrir l’autorisation' })}
                 </button>
               </div>
             </>
@@ -928,26 +1155,26 @@ export function ProviderSelector() {
         </Modal>
       )}
 
-      {editingModel && showProviderModal && (
+      {showProviderModal && modalProvider && (
         <ProviderModal
           isOpen={true}
           onClose={handleCloseEditModal}
           onSave={handleProviderModalSave}
           initialStep={2}
           editProvider={{
-            id: editingModel.providerId,
-            name: editingProvider?.name ?? '',
-            url: editingProvider?.url ?? '',
-            backend: editingProvider?.backend ?? 'unknown',
-            apiKey: editingProvider?.apiKey,
-            isLocal: editingProvider?.isLocal,
-            thinkingField: editingProvider?.thinkingField,
-            sendReasoningInMessages: editingProvider?.sendReasoningInMessages,
-            authAdapter: editingProvider?.authAdapter,
-            transportAdapter: editingProvider?.transportAdapter,
-            models: editingProvider?.models,
+            id: modalProvider.id,
+            name: modalProvider.name ?? '',
+            url: modalProvider.url ?? '',
+            backend: modalProvider.backend ?? 'unknown',
+            apiKey: modalProvider.apiKey,
+            isLocal: modalProvider.isLocal,
+            thinkingField: modalProvider.thinkingField,
+            sendReasoningInMessages: modalProvider.sendReasoningInMessages,
+            authAdapter: modalProvider.authAdapter,
+            transportAdapter: modalProvider.transportAdapter,
+            models: modalProvider.models,
           }}
-          editModelId={editingModel.model.id}
+          editModelId={editingModel?.model.id}
         />
       )}
 

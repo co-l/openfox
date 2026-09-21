@@ -2,7 +2,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { EmptyProjectView } from './EmptyProjectView'
-import { useProjectStore } from '../stores/project'
+import { useCurrentProject } from '../hooks/useCurrentProject'
 import { useSessionStore } from '../stores/session'
 import { useLocation } from 'wouter'
 
@@ -12,8 +12,8 @@ vi.mock('wouter', () => ({
     `<a href="${href}" class="${className}">${children}</a>`,
 }))
 
-vi.mock('../stores/project', () => ({
-  useProjectStore: vi.fn(),
+vi.mock('../hooks/useCurrentProject', () => ({
+  useCurrentProject: vi.fn(),
 }))
 
 vi.mock('../stores/session', () => ({
@@ -48,17 +48,7 @@ describe('EmptyProjectView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
 
-    vi.mocked(useProjectStore).mockReturnValue({
-      currentProject: mockProject,
-      loadProject: vi.fn(),
-      createProject: vi.fn(),
-      updateProject: vi.fn(),
-      deleteProject: vi.fn(),
-      clearProject: vi.fn(),
-      listProjects: vi.fn(),
-      handleServerMessage: vi.fn(),
-      projects: [],
-    })
+    vi.mocked(useCurrentProject).mockReturnValue(mockProject)
 
     vi.mocked(useSessionStore).mockReturnValue({
       currentSession: mockSession,

@@ -2,6 +2,7 @@ import { createServer } from '../server/index.js'
 import { loadConfig } from '../server/config.js'
 import { logger } from '../server/utils/logger.js'
 import { displayStartupBanner } from '../server/utils/network.js'
+import { detectProviderDefaultsFromUrl } from '../server/llm/backend.js'
 import { loadGlobalConfig, getActiveProvider, getDefaultModel } from './config.js'
 import { getDatabasePath, getGlobalConfigPath, ensureDataDirExists } from './paths.js'
 import open from 'open'
@@ -41,6 +42,11 @@ export async function runServe(options: ServeOptions): Promise<void> {
   const providerUrl = activeProvider?.url ?? envUrl
   const defaultModel = getDefaultModel(globalConfig) ?? envModel
   const providerBackend = (activeProvider?.backend ?? envBackend) as LlmBackend
+  // The active provider's reasoning echo field: explicit config first, then the
+  // URL-derived default (e.g. reasoning_content for the DeepSeek API).
+  const envThinkingField = env.llm.thinkingField
+  const providerThinkingField =
+    activeProvider?.thinkingField ?? detectProviderDefaultsFromUrl(activeProvider?.url ?? '')?.thinkingField
 
   const merged = {
     ...env,
@@ -53,6 +59,11 @@ export async function runServe(options: ServeOptions): Promise<void> {
       idleTimeout: isEnvIdleTimeoutExplicit
         ? env.llm.idleTimeout
         : (globalConfig.llm?.idleTimeout ?? env.llm.idleTimeout),
+      ...(envThinkingField !== undefined
+        ? { thinkingField: envThinkingField }
+        : providerThinkingField
+          ? { thinkingField: providerThinkingField }
+          : {}),
     },
     server: {
       ...env.server,

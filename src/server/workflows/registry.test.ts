@@ -198,6 +198,7 @@ describe('loadDefaultWorkflows', () => {
       expect(setupStep.agentId).toBe('builder')
       expect(setupStep.phase).toBe('build')
       expect(setupStep.transitions).toEqual([{ when: { type: 'always' }, goto: 'build' }])
+      expect(setupStep.prompt).toContain('Do not use an existing workspace')
     }
 
     const stepIds = wf!.steps.map((s) => s.id)

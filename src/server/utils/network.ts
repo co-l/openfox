@@ -1,6 +1,7 @@
 import os from 'node:os'
 import { statSync } from 'node:fs'
 import { VERSION } from '../../constants.js'
+import { serverT } from '../i18n.js'
 
 export interface NetworkInterface {
   ip: string
@@ -102,34 +103,40 @@ export function displayStartupBanner(config: {
 
   if (isLocalhost) {
     // eslint-disable-next-line no-console
-    console.log(`  🌐 Server: http://localhost:${port}`)
+    console.log(`  🌐 ${serverT({ en: `Server: http://localhost:${port}`, fr: `Serveur : http://localhost:${port}` })}`)
     // eslint-disable-next-line no-console
-    console.log('  🔒 Access: Localhost only')
+    console.log(`  🔒 ${serverT({ en: 'Access: Localhost only', fr: 'Accès : localhost uniquement' })}`)
   } else {
     const ips = getValidIPv4Addresses()
 
     if (ips.length === 0) {
       // eslint-disable-next-line no-console
-      console.log(`  🌐 Server: http://0.0.0.0:${port}`)
+      console.log(`  🌐 ${serverT({ en: `Server: http://0.0.0.0:${port}`, fr: `Serveur : http://0.0.0.0:${port}` })}`)
 
-      console.warn('  ⚠️  Warning: No valid network interfaces detected')
+      console.warn(
+        `  ⚠️  ${serverT({ en: 'Warning: No valid network interfaces detected', fr: 'Avertissement : aucune interface réseau valide détectée' })}`,
+      )
     } else {
       // eslint-disable-next-line no-console
-      console.log('  🌐 Server:')
+      console.log(`  🌐 ${serverT({ en: 'Server:', fr: 'Serveur :' })}`)
       for (const ip of ips) {
         // eslint-disable-next-line no-console
         console.log(`     • http://${ip}:${port}`)
       }
       // eslint-disable-next-line no-console
-      console.log('  🌍 Access: Local network')
+      console.log(`  🌍 ${serverT({ en: 'Access: Local network', fr: 'Accès : réseau local' })}`)
     }
   }
 
   const size = getDatabaseSize(databasePath)
   // eslint-disable-next-line no-console
-  console.log(`  💾 Database: ${databasePath} (${size})`)
+  console.log(
+    `  💾 ${serverT({ en: `Database: ${databasePath} (${size})`, fr: `Base de données : ${databasePath} (${size})` })}`,
+  )
   // eslint-disable-next-line no-console
-  console.log(`  ⚙️  Config:  ${configPath}`)
+  console.log(`  ⚙️  ${serverT({ en: `Config:  ${configPath}`, fr: `Config :  ${configPath}` })}`)
   // eslint-disable-next-line no-console
-  console.log('\n💡 Tip: Press Ctrl+C to stop the server\n')
+  console.log(
+    `\n💡 ${serverT({ en: 'Tip: Press Ctrl+C to stop the server', fr: 'Astuce : appuyez sur Ctrl+C pour arrêter le serveur' })}\n`,
+  )
 }

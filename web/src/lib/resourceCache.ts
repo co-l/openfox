@@ -29,6 +29,7 @@ export interface Resource<Data, Args extends unknown[]> {
   fetch: (...args: Args) => Promise<Data>
   refresh: (...args: Args) => Promise<Data | undefined>
   invalidate: (...args: Args) => void
+  write: (data: Data, ...args: Args) => void
   maxAgeMs: number
 }
 
@@ -180,6 +181,22 @@ export function invalidate(key: string): void {
   emit()
 }
 
+/**
+ * Write-through for WS-pushed payloads (or optimistic updates): replace the
+ * entry data and bump the version so subscribers re-render, WITHOUT issuing a
+ * fetch. Fetch fills the cache, push updates it — both pipelines converge on
+ * the same key with no refetch storm.
+ */
+export function write<Data>(key: string, data: Data): void {
+  const e = entry<Data>(key)
+  e.data = data
+  e.error = undefined
+  e.fetchedAt = Date.now()
+  e.loading = false
+  e.promise = null
+  emit()
+}
+
 /** Build a resource descriptor so a resolver and its invalidation stay colocated. */
 export function resource<Data, Args extends unknown[]>(opts: ResourceOptions<Data, Args>): Resource<Data, Args> {
   const { key, fetch, maxAgeMs = 0 } = opts
@@ -188,6 +205,7 @@ export function resource<Data, Args extends unknown[]>(opts: ResourceOptions<Dat
     fetch,
     refresh: (...args: Args) => refresh(key(...args), () => fetch(...args)),
     invalidate: (...args: Args) => invalidate(key(...args)),
+    write: (data: Data, ...args: Args) => write(key(...args), data),
     maxAgeMs,
   }
 }

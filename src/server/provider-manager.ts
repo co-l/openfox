@@ -3,10 +3,18 @@ import type { ProviderRegistry } from './providers/plugins/registry.js'
 import { createTransportLLMClient } from './providers/adapters/transport-client.js'
 import { createLLMClient, clearModelCache, getModelProfile, type LLMClientWithModel } from './llm/index.js'
 import { logger } from './utils/logger.js'
+
 import { parseLmStudioModels } from './providers/lmstudio.js'
 import { ensureVersionPrefix, stripVersionPrefix, buildModelsUrl } from './llm/url-utils.js'
 import { getCatalogEntry } from './providers/model-catalog.js'
-import { resolveEffortForModel } from '../shared/reasoning-effort.js'
+import { hasVisionEvidence } from './providers/vision.js'
+import {
+  detectBackendFromUrl,
+  detectProviderDefaultsFromUrl,
+  getBackendCapabilities,
+  type Backend,
+} from './llm/backend.js'
+import { resolveEffortForModel, resolveModeModelId } from '../shared/reasoning-effort.js'
 
 /**
  * num_ctx is the context window we request from Ollama's native /api/chat
@@ -25,7 +33,7 @@ function normalizeModelId(s: string): string {
 async function fetchModelsFromBackend(
   url: string,
   apiKey?: string,
-): Promise<{ id: string; contextWindow: number | undefined }[]> {
+): Promise<{ id: string; contextWindow: number | undefined; supportsVision?: boolean | undefined }[]> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (apiKey) {
     headers['Authorization'] = `Bearer ${apiKey}`
@@ -37,11 +45,20 @@ async function fetchModelsFromBackend(
       logger.debug('Failed to fetch models', { url, status: response.status })
       return []
     }
-    const data = (await response.json()) as { data?: { id: string; max_model_len?: number }[] }
+    const data = (await response.json()) as {
+      data?: Array<{
+        id: string
+        max_model_len?: number
+        context_length?: number
+        capabilities?: { vision?: boolean }
+        input_modalities?: string[]
+      }>
+    }
     if (data.data && Array.isArray(data.data)) {
       return data.data.map((m) => ({
         id: m.id,
-        contextWindow: m.max_model_len ?? undefined,
+        contextWindow: m.max_model_len ?? m.context_length ?? undefined,
+        supportsVision: m.capabilities?.vision || m.input_modalities?.includes('image') ? true : undefined,
       }))
     }
     return []
@@ -55,6 +72,14 @@ function enrichWithProfileDefaults(model: ModelConfig): ModelConfig {
   const profile = getModelProfile(model.id)
   return {
     ...model,
+    // Only fill supportsVision from the profile when the model lacks it —
+    // a backend-detected value (e.g. Ollama /api/show, a transport plugin's
+    // listModels) must win over the static profile default.
+    ...(model.supportsVision !== undefined
+      ? {}
+      : profile.supportsVision !== undefined
+        ? { supportsVision: profile.supportsVision }
+        : {}),
     defaultTemperature: profile.temperature,
     defaultTopP: profile.topP,
     ...(profile.topK !== undefined && { defaultTopK: profile.topK }),
@@ -86,7 +111,22 @@ function mergeModelsWithUserOverrides(
 ): ModelConfig[] {
   const normalizedUserIdMap = new Map(userModels.map((m) => [normalizeModelId(m.id), m]))
 
-  const updatedModels = backendModels.map((backendModel) => {
+  // A user model with `modes` is a merged mode-chip model that represents
+  // multiple concrete backend catalog ids (its modes' apiModelIds). Hide
+  // those suffixed backend variants so they don't reappear alongside the
+  // merged model on refresh.
+  const claimedByMergedModes = new Set<string>()
+  for (const userModel of userModels) {
+    if (!userModel.modes?.length) continue
+    claimedByMergedModes.add(normalizeModelId(userModel.id))
+    for (const mode of userModel.modes) {
+      if (mode.apiModelId) claimedByMergedModes.add(normalizeModelId(mode.apiModelId))
+    }
+  }
+
+  const filteredBackendModels = backendModels.filter((m) => !claimedByMergedModes.has(normalizeModelId(m.id)))
+
+  const updatedModels = filteredBackendModels.map((backendModel) => {
     const existingUserModel = normalizedUserIdMap.get(normalizeModelId(backendModel.id))
     if (existingUserModel) {
       return enrichWithProfileDefaults({ ...backendModel, ...existingUserModel, id: backendModel.id })
@@ -95,7 +135,7 @@ function mergeModelsWithUserOverrides(
   })
 
   if (preserveMissingUserModels) {
-    const normalizedBackendIds = new Set(backendModels.map((m) => normalizeModelId(m.id)))
+    const normalizedBackendIds = new Set(filteredBackendModels.map((m) => normalizeModelId(m.id)))
     for (const userModel of userModels) {
       if (!normalizedBackendIds.has(normalizeModelId(userModel.id))) {
         updatedModels.push(enrichWithProfileDefaults(userModel))
@@ -116,7 +156,7 @@ export async function fetchAvailableModelsFromBackend(baseUrl: string, apiKey?: 
 export async function fetchModelsWithContext(
   baseUrl: string,
   apiKey?: string,
-  backend?: 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'lmstudio' | 'unknown',
+  backend?: Backend,
 ): Promise<ModelConfig[]> {
   logger.info('fetchModelsWithContext called', { baseUrl, apiKey: !!apiKey, backend })
 
@@ -148,6 +188,7 @@ export async function fetchModelsWithContext(
   return models.map((m) => ({
     id: m.id,
     contextWindow: m.contextWindow ?? 200000,
+    ...(m.supportsVision !== undefined && { supportsVision: m.supportsVision }),
     source: m.contextWindow ? 'backend' : ('default' as const),
   }))
 }
@@ -189,14 +230,24 @@ async function fetchOllamaModelsWithContext(baseUrl: string, _apiKey?: string): 
             model_info?: {
               llama?: { context_length?: number }
               context_length?: number
+              vision_start_token_id?: unknown
+              [key: string]: unknown
             }
           }
 
-          const contextLength =
-            showData.model_info?.llama?.context_length ?? showData.model_info?.context_length ?? 200000
+          const mi = showData.model_info
+          const contextLength = mi?.llama?.context_length ?? mi?.context_length ?? 200000
+          // vision_start_token_id and known vision modality keys are positive
+          // evidence. Emit `undefined` when there is no such evidence so a
+          // model-profile default can still apply later (enrichWithProfileDefaults
+          // only fills when the value is undefined) — an explicit false would
+          // permanently block the profile from rescuing a vision model whose
+          // heuristic indicator is absent.
+          const isVisionModel = hasVisionEvidence(mi ?? {})
           modelsWithContext.push({
             id: model.name,
             contextWindow: contextLength,
+            ...(isVisionModel ? { supportsVision: true } : {}),
             source: contextLength !== 200000 ? 'backend' : ('default' as const),
           })
         } else {
@@ -403,26 +454,58 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
     return effort ? { reasoningEffort: effort } : {}
   }
 
+  function resolveThinkingField(provider: Provider): string | undefined {
+    // Explicit provider config wins; otherwise fall back to the URL-derived
+    // default (rescues configs saved before the behavior existed, e.g. the
+    // DeepSeek reasoning_content contract).
+    if (provider.thinkingField) return provider.thinkingField
+    return detectProviderDefaultsFromUrl(provider.url)?.thinkingField
+  }
+
+  function resolveSendReasoningInMessages(provider: Provider): boolean | undefined {
+    // Unlike thinkingField, the URL default OVERRIDES the persisted value: the
+    // provider edit modal stamps sendReasoningInMessages=true on new providers,
+    // and hosts like opencode.ai reject the echo outright — the persisted flag
+    // is exactly the foot-gun being rescued here.
+    return detectProviderDefaultsFromUrl(provider.url)?.sendReasoningInMessages ?? provider.sendReasoningInMessages
+  }
+
   function createConfigForProvider(provider: Provider, model: string, reasoningEffort?: string): Config {
     // An explicit effort (session pick, pin, or agent override) wins over the
     // model's configured default, clamped to the model's advertised preset
     // list; otherwise the model default applies (override, else thinkingLevel).
     const modelThinking = resolveModelThinkingConfig(provider, model, reasoningEffort)
+    // A merged mode model maps the resolved effort to a concrete provider model
+    // id (e.g. OmniRoute "gemini-3.6-flash-high"). Send that id so the mode is
+    // applied via the catalog's distinct model entries, not a reasoning_effort.
+    const configureModel = provider.models.find((m) => m.id === model)
+    const send = resolveModeModelId(
+      configureModel?.modes,
+      modelThinking.reasoningEffort,
+      configureModel?.apiModelId,
+      model,
+    )
+    const thinkingField = resolveThinkingField(provider)
+    const sendReasoningInMessages = resolveSendReasoningInMessages(provider)
     return {
       ...config,
       llm: {
         ...config.llm,
         baseUrl: ensureVersionPrefix(provider.url),
-        model,
-        backend: provider.backend as LlmBackend,
+        model: send.modelId,
+        backend: resolveBackend(provider),
         ...(provider.apiKey && { apiKey: provider.apiKey }),
-        ...(provider.thinkingField && { thinkingField: provider.thinkingField }),
-        ...(provider.sendReasoningInMessages !== undefined
-          ? { sendReasoningInMessages: provider.sendReasoningInMessages }
-          : {}),
-        ...(modelThinking.reasoningEffort && { reasoningEffort: modelThinking.reasoningEffort }),
+        ...(thinkingField ? { thinkingField } : {}),
+        ...(sendReasoningInMessages !== undefined ? { sendReasoningInMessages } : {}),
+        ...(modelThinking.reasoningEffort &&
+          !send.suppressEffort && { reasoningEffort: modelThinking.reasoningEffort }),
       },
     }
+  }
+
+  function resolveBackend(provider: Provider): Backend {
+    if (provider.backend !== 'unknown') return provider.backend
+    return detectBackendFromUrl(provider.url) ?? 'unknown'
   }
 
   function resolveTransportAdapter(provider: Provider): string | undefined {
@@ -460,10 +543,7 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
     const transport = options.adapters?.getTransport(resolveTransportAdapter(provider))
     return transport
       ? createTransportLLMClient(provider, resolvedModel, transport, reasoningEffort)
-      : createLLMClient(
-          createConfigForProvider(provider, resolvedModel, reasoningEffort),
-          provider.backend as import('./llm/backend.js').Backend,
-        )
+      : createLLMClient(createConfigForProvider(provider, resolvedModel, reasoningEffort), resolveBackend(provider))
   }
 
   async function fetchProviderModels(provider: Provider): Promise<ModelConfig[]> {
@@ -475,7 +555,7 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
       })
     }
 
-    const backend = provider.backend as 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'unknown'
+    const backend = resolveBackend(provider)
     return fetchModelsWithContext(provider.url, provider.apiKey, backend)
   }
 
@@ -569,7 +649,8 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
         clearModelCache(cacheUrl)
 
         // Refetch models from backend when switching providers
-        const backend = provider.backend as 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'lmstudio' | 'unknown'
+        const backend = provider.backend as
+          'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'lmstudio' | 'unsloth' | 'unknown'
         logger.info('activateProvider fetching models', {
           providerId,
           providerName: provider.name,
@@ -814,6 +895,11 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
         id: modelId,
         contextWindow: settings.contextWindow ?? existingModel?.contextWindow ?? 200000,
         source: 'user',
+        ...(existingModel?.name !== undefined && { name: existingModel.name }),
+        ...(existingModel?.apiModelId !== undefined && { apiModelId: existingModel.apiModelId }),
+        ...(existingModel?.requestBody !== undefined && { requestBody: existingModel.requestBody }),
+        ...(existingModel?.modes !== undefined && { modes: existingModel.modes }),
+        ...(existingModel?.selected !== undefined && { selected: existingModel.selected }),
         ...(finalTemp !== undefined && { temperature: finalTemp }),
         ...(finalTopP !== undefined && { topP: finalTopP }),
         ...(finalTopK !== undefined && { topK: finalTopK }),
@@ -886,7 +972,7 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
     getModelSettings(providerId: string, modelId: string, mode: 'thinking' | 'non-thinking' = 'thinking') {
       const provider = providers.find((p) => p.id === providerId)
       const model = provider?.models.find((m) => m.id === modelId)
-      if (!model) return undefined
+      if (!provider || !model) return undefined
 
       const baseSettings: Record<string, unknown> = {}
       if (model['temperature'] !== undefined) baseSettings['temperature'] = model['temperature']
@@ -904,12 +990,18 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
         return { ...baseSettings, queryParams: JSON.parse(rawQueryParams) as Record<string, unknown> }
       }
 
-      // Generate sensible defaults when mode is enabled
+      // Generate sensible defaults when mode is enabled. chat_template_kwargs
+      // is a vLLM/SGLang/llama.cpp concept — never inject it for backends that
+      // reject it (OpenAI/Anthropic expect reasoning_effort instead, which the
+      // request builder derives from the thinking config).
       const modeEnabled = mode === 'thinking' ? model.thinkingEnabled : model.nonThinkingEnabled
       if (modeEnabled) {
-        return {
-          ...baseSettings,
-          chatTemplateKwargs: mode === 'thinking' ? { enable_thinking: true } : { enable_thinking: false },
+        const capabilities = getBackendCapabilities(resolveBackend(provider))
+        if (capabilities.supportsChatTemplateKwargs) {
+          return {
+            ...baseSettings,
+            chatTemplateKwargs: mode === 'thinking' ? { enable_thinking: true } : { enable_thinking: false },
+          }
         }
       }
 
@@ -938,7 +1030,7 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
         return { success: false, error: 'Provider not found' }
       }
 
-      const backend = provider.backend as 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'lmstudio' | 'unknown'
+      const backend = provider.backend as 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'lmstudio' | 'unsloth' | 'unknown'
       logger.info('refreshProviderModels fetching models', {
         providerId,
         providerName: provider.name,

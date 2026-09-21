@@ -3,6 +3,7 @@ import { useThemeStore, THEME_PRESETS, THEME_TOKENS, ThemeToken, UserThemePreset
 import type { ThemePreset } from '../../stores/theme'
 import { XCloseIcon } from '../shared/icons'
 import { Modal } from '../shared/Modal'
+import { useT } from '../../hooks/useT'
 
 function hexToRgb(hex: string): string {
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
@@ -54,13 +55,14 @@ function ThemeEditorModal({
     setName(defaultName)
   }, [initialTokens, defaultName])
 
+  const t = useT()
   const handleTokenChange = (key: string, value: string) => {
     const rgbValue = value.startsWith('#') ? hexToRgb(value) : value
     setLocalTokens((prev) => ({ ...prev, [key]: rgbValue }))
   }
 
   const handleSave = () => {
-    onSave(name.trim() || 'Untitled', { ...localTokens }, mode)
+    onSave(name.trim() || t({ en: 'Untitled', fr: 'Sans titre' }), { ...localTokens }, mode)
   }
 
   const groupedTokens = THEME_TOKENS.reduce(
@@ -74,11 +76,11 @@ function ThemeEditorModal({
   )
 
   const categoryLabels: Record<string, string> = {
-    background: 'Backgrounds',
-    surface: 'Surfaces',
-    text: 'Text',
-    accent: 'Accents',
-    border: 'Border',
+    background: t({ en: 'Backgrounds', fr: 'Arrière-plans' }),
+    surface: t({ en: 'Surfaces', fr: 'Surfaces' }),
+    text: t({ en: 'Text', fr: 'Texte' }),
+    accent: t({ en: 'Accents', fr: 'Accents' }),
+    border: t({ en: 'Border', fr: 'Bordures' }),
   }
 
   const basePreset = THEME_PRESETS.find((p) => p.id === basePresetId)
@@ -88,7 +90,7 @@ function ThemeEditorModal({
       isOpen={isOpen}
       onClose={onClose}
       size="lg"
-      title={isNew ? 'New Theme' : 'Edit Theme'}
+      title={isNew ? t({ en: 'New Theme', fr: 'Nouveau thème' }) : t({ en: 'Edit Theme', fr: 'Modifier le thème' })}
       closeOnBackdropClick={true}
       closeOnEscape={true}
       footer={
@@ -98,14 +100,14 @@ function ThemeEditorModal({
             onClick={onClose}
             className="px-4 py-2 border border-border rounded text-sm text-text-primary hover:bg-bg-tertiary transition-colors"
           >
-            Cancel
+            {t({ en: 'Cancel', fr: 'Annuler' })}
           </button>
           <button
             type="button"
             onClick={handleSave}
             className="px-4 py-2 bg-accent-primary text-white rounded hover:bg-accent-primary/80 transition-colors text-sm"
           >
-            Save
+            {t({ en: 'Save', fr: 'Enregistrer' })}
           </button>
         </div>
       }
@@ -113,7 +115,7 @@ function ThemeEditorModal({
       <div className="space-y-4">
         <div className="flex items-center gap-4">
           <div className="flex-1">
-            <label className="text-xs text-text-muted block mb-1">Name</label>
+            <label className="text-xs text-text-muted block mb-1">{t({ en: 'Name', fr: 'Nom' })}</label>
             <input
               type="text"
               value={name}
@@ -122,7 +124,7 @@ function ThemeEditorModal({
             />
           </div>
           <div>
-            <label className="text-xs text-text-muted block mb-1">Mode</label>
+            <label className="text-xs text-text-muted block mb-1">{t({ en: 'Mode', fr: 'Mode' })}</label>
             <div className="flex rounded overflow-hidden border border-border">
               <button
                 type="button"
@@ -133,7 +135,7 @@ function ThemeEditorModal({
                     : 'bg-bg-tertiary text-text-muted hover:text-text-primary'
                 }`}
               >
-                Dark
+                {t({ en: 'Dark', fr: 'Sombre' })}
               </button>
               <button
                 type="button"
@@ -144,14 +146,14 @@ function ThemeEditorModal({
                     : 'bg-bg-tertiary text-text-muted hover:text-text-primary'
                 }`}
               >
-                Light
+                {t({ en: 'Light', fr: 'Clair' })}
               </button>
             </div>
           </div>
         </div>
         {!isNew && (
           <div className="text-xs text-text-muted">
-            Based on <span className="text-text-primary">{basePreset?.name}</span>
+            {t({ en: 'Based on', fr: 'Basé sur' })} <span className="text-text-primary">{basePreset?.name}</span>
           </div>
         )}
 
@@ -215,6 +217,7 @@ function PresetButton({
   onEdit?: () => void
   onDelete?: (e: React.MouseEvent) => void
 }) {
+  const t = useT()
   return (
     <div className="relative group">
       <button
@@ -260,7 +263,7 @@ function PresetButton({
             onNewFrom()
           }}
           className="absolute top-1 right-1 w-6 h-6 rounded bg-bg-tertiary border border-border flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:border-text-muted"
-          title="Create custom theme based on this"
+          title={t({ en: 'Create custom theme based on this', fr: 'Créer un thème personnalisé basé sur celui-ci' })}
         >
           <span className="text-xs">✎</span>
         </button>
@@ -273,7 +276,7 @@ function PresetButton({
             onEdit()
           }}
           className="absolute top-1 right-1 w-6 h-6 rounded bg-bg-tertiary border border-border flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:border-text-muted"
-          title="Edit"
+          title={t({ en: 'Edit', fr: 'Modifier' })}
         >
           <span className="text-xs">✎</span>
         </button>
@@ -292,6 +295,7 @@ function PresetButton({
 }
 
 export function ThemeEditor() {
+  const t = useT()
   const [editorState, setEditorState] = useState<ThemeEditorState | null>(null)
 
   const currentPreset = useThemeStore((state) => state.currentPreset)
@@ -335,7 +339,7 @@ export function ThemeEditor() {
       type: 'new',
       presetIndex: userPresets.length,
       basePresetId: presetId,
-      presetName: preset.name + ' Copy',
+      presetName: preset.name + ' ' + t({ en: 'Copy', fr: 'Copie' }),
       mode: preset.mode ?? 'dark',
       tokens: { ...preset.tokens },
     })
@@ -433,11 +437,13 @@ export function ThemeEditor() {
 
   return (
     <div className="space-y-4">
-      <h3 className="text-sm font-medium text-text-primary">Theme</h3>
+      <h3 className="text-sm font-medium text-text-primary">{t({ en: 'Theme', fr: 'Thème' })}</h3>
 
       {/* System theme toggle */}
       <label className="flex items-center justify-between gap-3 cursor-pointer">
-        <span className="text-sm text-text-primary font-medium">Follow system theme</span>
+        <span className="text-sm text-text-primary font-medium">
+          {t({ en: 'Follow system theme', fr: 'Suivre le thème système' })}
+        </span>
         <button
           type="button"
           onClick={handleSystemToggle}
@@ -454,8 +460,8 @@ export function ThemeEditor() {
       </label>
 
       {[
-        { title: 'Dark Themes', mode: 'dark' as const },
-        { title: 'Light Themes', mode: 'light' as const },
+        { title: t({ en: 'Dark Themes', fr: 'Thèmes sombres' }), mode: 'dark' as const },
+        { title: t({ en: 'Light Themes', fr: 'Thèmes clairs' }), mode: 'light' as const },
       ].map(({ title, mode }) => {
         const builtins = mode === 'dark' ? darkPresets : lightPresets
         const users = userPresets.filter((p) => {

@@ -1,8 +1,9 @@
 import { Router } from 'express'
-import type { Request } from 'express'
+import type { Request, Response } from 'express'
 import { spawn } from 'node:child_process'
 import { VERSION } from '../../constants.js'
 import { logger } from '../utils/logger.js'
+import { serverT } from '../i18n.js'
 
 export interface AutoUpdateRoutesOptions {
   requireAuth?: (req: Request) => Promise<boolean>
@@ -45,6 +46,13 @@ async function checkAuth(req: Request, opts: AutoUpdateRoutesOptions): Promise<b
     }
   }
   return true
+}
+
+/** Reject the request with a 401 when auth is required and fails. */
+async function requireAuth(req: Request, res: Response, opts: AutoUpdateRoutesOptions): Promise<boolean> {
+  if (await checkAuth(req, opts)) return true
+  res.status(401).json({ error: serverT({ en: 'Unauthorized', fr: 'Non autorisé' }) })
+  return false
 }
 
 function isDevMode(): boolean {
@@ -200,13 +208,12 @@ export function createAutoUpdateRoutes(options: AutoUpdateRoutesOptions = {}): R
   })
 
   router.post('/', async (req, res) => {
-    if (!(await checkAuth(req, options))) {
-      res.status(401).json({ error: 'Unauthorized' })
-      return
-    }
+    if (!(await requireAuth(req, res, options))) return
 
     if (updateInProgress) {
-      res.status(409).json({ error: 'Update already in progress' })
+      res
+        .status(409)
+        .json({ error: serverT({ en: 'Update already in progress', fr: 'Une mise à jour est déjà en cours' }) })
       return
     }
 
@@ -243,25 +250,30 @@ export function createAutoUpdateRoutes(options: AutoUpdateRoutesOptions = {}): R
       clearTimeout(timeout)
 
       if (exitCode === 0) {
-        const versionMatch = stdout.match(/Updated: ([\d.]+)/)
+        const versionMatch = stdout.match(/(?:Updated|Mis à jour) ?: ([\d.]+)/)
         const version = versionMatch?.[1] ?? VERSION
         res.json({ success: true, version, isService })
       } else {
-        const error = exitCode === null ? 'Update timed out' : stderr || stdout || 'Update failed'
+        const error =
+          exitCode === null
+            ? serverT({ en: 'Update timed out', fr: 'Mise à jour expirée' })
+            : stderr || stdout || serverT({ en: 'Update failed', fr: 'Échec de la mise à jour' })
         res.json({ success: false, error, isService })
       }
     } catch (err) {
-      res.status(500).json({ error: err instanceof Error ? err.message : 'Update failed to start' })
+      res.status(500).json({
+        error:
+          err instanceof Error
+            ? err.message
+            : serverT({ en: 'Update failed to start', fr: 'Échec du démarrage de la mise à jour' }),
+      })
     } finally {
       updateInProgress = false
     }
   })
 
   router.post('/restart', async (req, res) => {
-    if (!(await checkAuth(req, options))) {
-      res.status(401).json({ error: 'Unauthorized' })
-      return
-    }
+    if (!(await requireAuth(req, res, options))) return
 
     try {
       const child = spawn('openfox service restart', {
@@ -273,7 +285,12 @@ export function createAutoUpdateRoutes(options: AutoUpdateRoutesOptions = {}): R
       child.unref()
       res.json({ success: true })
     } catch (err) {
-      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to trigger restart' })
+      res.status(500).json({
+        error:
+          err instanceof Error
+            ? err.message
+            : serverT({ en: 'Failed to trigger restart', fr: 'Échec du déclenchement du redémarrage' }),
+      })
     }
   })
 

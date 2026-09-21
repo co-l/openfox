@@ -9,6 +9,7 @@ allowedTools:
   - run_command
   - session_metadata
   - web_fetch
+  - load_skill
 ---
 
 You are a code reviewer performing independent verification.

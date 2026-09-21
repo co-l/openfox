@@ -4,6 +4,7 @@ import { access } from 'node:fs/promises'
 import stripAnsi from 'strip-ansi'
 import { OUTPUT_LIMITS } from './types.js'
 import { createTool, requestUserConfirmation } from './tool-helpers.js'
+import { serverT } from '../i18n.js'
 import { checkAborted, spawnShellProcess } from '../utils/shell.js'
 import { decodeUtf8, createUtf8StreamDecoder } from '../utils/utf8.js'
 import {
@@ -117,18 +118,33 @@ export const runCommandTool = createTool<RunCommandArgs>(
 
     if (hasBackgroundAmpersand(args.command)) {
       return helpers.error(
-        'Use background_process tool (action: "start") for background/long-running commands instead of \'&\'. See the tool description for details.',
+        serverT({
+          en: 'Use background_process tool (action: "start") for background/long-running commands instead of \'&\'. See the tool description for details.',
+          fr: 'Utilisez l’outil background_process (action : « start ») pour les commandes d’arrière-plan ou de longue durée au lieu de « & ». Consultez la description de l’outil pour plus de détails.',
+        }),
       )
     }
 
     // Detect Git mutations (checkout, switch, branch creation, etc.)
     const mutationMatch = detectGitMutation(args.command)
     if (mutationMatch) {
-      const desc = `Command "${args.command}" modifies Git state (${mutationMatch}). Allow this Git operation?`
+      const desc = serverT(
+        {
+          en: 'Command "{{cmd}}" modifies Git state ({{mutation}}). Allow this Git operation?',
+          fr: 'La commande « {{cmd}} » modifie l’état Git ({{mutation}}). Autoriser cette opération Git ?',
+        },
+        { cmd: args.command, mutation: mutationMatch },
+      )
       const approved = await requestUserConfirmation(context, 'command', desc)
       if (!approved) {
         return helpers.error(
-          `User denied: "${mutationMatch}" modifies Git state. Use the workspace tool to switch workspaces or branches.`,
+          serverT(
+            {
+              en: 'User denied: "{{mutation}}" modifies Git state. Use the workspace tool to switch workspaces or branches.',
+              fr: 'Refusé par l’utilisateur : « {{mutation}} » modifie l’état Git. Utilisez l’outil workspace pour changer de workspace ou de branche.',
+            },
+            { mutation: mutationMatch },
+          ),
         )
       }
     }
@@ -208,7 +224,14 @@ export const runCommandTool = createTool<RunCommandArgs>(
 
     return helpers.success(output, truncated, {
       success: result.exitCode === 0,
-      ...(result.exitCode !== 0 && !wasInterrupted ? { error: `Command exited with code ${result.exitCode}` } : {}),
+      ...(result.exitCode !== 0 && !wasInterrupted
+        ? {
+            error: serverT(
+              { en: 'Command exited with code {{code}}', fr: 'La commande s’est terminée avec le code {{code}}' },
+              { code: result.exitCode },
+            ),
+          }
+        : {}),
     })
   },
 )
@@ -264,16 +287,51 @@ function executeCommand(
     let stderr = ''
     let timedOut = false
     let aborted = false
+    let exitCode: number | null = null
     let exited = false
+    let settled = false
+    let graceTimer: ReturnType<typeof setTimeout> | undefined
+
+    // A detached child (setsid, ssh -f, ...) moves to its own session and
+    // process group, so a process-group kill cannot reach it. It then holds
+    // the write-ends of the stdio pipes open long after the shell has
+    // exited, and Node's 'close' event never fires. To keep the tool call
+    // from hanging, wait for 'close' this long after the shell has exited,
+    // then settle with the shell's real exit code.
+    const ZOMBIE_PIPE_GRACE_MS = 2000
+
+    const settle = (code: number, appendix?: string) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      if (graceTimer !== undefined) clearTimeout(graceTimer)
+      signal?.removeEventListener('abort', onAbort)
+      const out = (stdout + stdoutDecoder.end()).trim()
+      resolve({
+        stdout: appendix ? (out ? `${out}\n\n${appendix}` : appendix) : out,
+        stderr: (stderr + stderrDecoder.end()).trim(),
+        exitCode: code,
+      })
+    }
 
     const timer = setTimeout(() => {
       timedOut = true
+      // The shell already exited and a detached child is holding the pipes:
+      // there is nothing left to kill, so settle immediately.
+      if (exited) {
+        settle(124, `[Exit code: 124]\n[Process timed out after ${timeout}ms]`)
+        return
+      }
       void terminateProcessTree(proc, { exited: () => exited })
     }, timeout)
 
     const onAbort = () => {
       if (!timedOut && !aborted) {
         aborted = true
+        if (exited) {
+          settle(130, '[interrupted by user]')
+          return
+        }
         void terminateProcessTree(proc, { exited: () => exited, immediate: true })
       }
     }
@@ -291,41 +349,36 @@ function executeCommand(
       onProgress?.(`[stderr] ${text}`)
     })
 
-    // The 'exit' event fires when the process terminates, regardless of
-    // whether stdio streams have closed.  This is critical for commands
-    // that use '&' to background processes: the shell may exit (or be
-    // killed) while a backgrounded child still holds the pipe write-ends
-    // open, which would prevent 'close' from ever firing.
-    //
-    // When we initiated the abort/timeout ourselves, resolve immediately
-    // on 'exit' instead of waiting for 'close'.
-    const settle = (exitCode: number, appendix?: string) => {
-      const out = (stdout + stdoutDecoder.end()).trim()
-      resolve({
-        stdout: appendix ? (out ? `${out}\n\n${appendix}` : appendix) : out,
-        stderr: (stderr + stderrDecoder.end()).trim(),
-        exitCode,
-      })
-    }
-
-    proc.on('exit', () => {
+    // The 'exit' event fires when the shell terminates, regardless of
+    // whether stdio streams have closed.  'close' only follows once every
+    // pipe write-end is closed — which never happens when a detached child
+    // outlives the shell.  When we initiated the abort/timeout ourselves we
+    // resolve immediately on 'exit'; on a normal exit we wait for 'close'
+    // with a bounded grace instead of forever.
+    proc.on('exit', (code) => {
+      exitCode = code
+      exited = true
       if (aborted) {
-        clearTimeout(timer)
-        signal?.removeEventListener('abort', onAbort)
         settle(130, '[interrupted by user]')
-      } else if (timedOut) {
-        clearTimeout(timer)
-        signal?.removeEventListener('abort', onAbort)
-        settle(124, `[Exit code: 124]\n[Process timed out after ${timeout}ms]`)
+        return
       }
+      if (timedOut) {
+        settle(124, `[Exit code: 124]\n[Process timed out after ${timeout}ms]`)
+        return
+      }
+      graceTimer = setTimeout(() => {
+        settle(
+          exitCode ?? 1,
+          '[Shell exited, but a background process still held the output pipes open, so output may be incomplete]',
+        )
+      }, ZOMBIE_PIPE_GRACE_MS)
     })
 
     proc.on('close', (code) => {
       exited = true
-      clearTimeout(timer)
-      signal?.removeEventListener('abort', onAbort)
+      if (graceTimer !== undefined) clearTimeout(graceTimer)
 
-      // Promise may already be settled by 'exit' handler above — resolve is a no-op if so.
+      // Promise may already be settled by 'exit' handler above — settle is a no-op if so.
       if (timedOut) {
         settle(124, `[Exit code: 124]\n[Process timed out after ${timeout}ms]`)
         return
@@ -336,11 +389,12 @@ function executeCommand(
         return
       }
 
-      settle(code ?? 1)
+      settle(code ?? exitCode ?? 1)
     })
 
     proc.on('error', (error) => {
       clearTimeout(timer)
+      if (graceTimer !== undefined) clearTimeout(graceTimer)
       signal?.removeEventListener('abort', onAbort)
       reject(error)
     })

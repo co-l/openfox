@@ -2,7 +2,7 @@
 name: browser
 description: Interactive browser control via playwright-cli commands (open, snapshot, click, fill, screenshot, etc.)
 metadata:
-  version: 1.1.0
+  version: 1.2.0
   openfox:
     displayName: Browser
 ---
@@ -37,6 +37,25 @@ npx -y @playwright/cli screenshot
 # Close the browser when done — leaving it open leaks CPU
 npx -y @playwright/cli close
 ```
+
+## Local files
+
+`@playwright/cli` cannot open `file://` URLs — `open file:///path/to/index.html` will not work. To inspect a local HTML file, serve it over HTTP from a background process, then open the URL:
+
+```bash
+# Serve the current directory (default port 3000)
+npx -y serve
+# Serve a specific folder on a custom port
+npx -y serve ./dist -p 8080
+```
+
+Launch it with the `background_process` tool (not `run_command`, which would block until the server exits), then open the address in the browser:
+
+```bash
+npx -y @playwright/cli open http://localhost:3000
+```
+
+Stop the background process when you're done with it.
 
 ## Cleaning up
 

@@ -1,17 +1,23 @@
 import { create } from 'zustand'
 import { authFetch } from '../lib/api'
+import { projectsResource, projectResource } from '../lib/resources'
 import type { Project } from '@shared/types.js'
 
 interface ProjectState {
-  // Projects
-  projects: Project[]
-  currentProject: Project | null
-  loading: boolean
+  /**
+   * Which project is open — local UI state layered on top of the resources.
+   * The project data itself lives in projectsResource (list) and
+   * projectResource(projectId) (detail); the store never holds server data.
+   */
+  currentProjectId: string | null
+  setCurrentProjectId: (id: string | null) => void
+  clearProject: () => void
 
-  // Actions
-  listProjects: () => Promise<void>
-  createProject: (name: string, workdir: string) => Promise<Project | null>
-  loadProject: (projectId: string) => Promise<Project | null>
+  // Mutations delegating to the resource cache so all subscribers converge.
+  createProject: (
+    name: string,
+    workdir: string,
+  ) => Promise<Project | { error: { code: string; path?: string; message?: string } } | null>
   updateProject: (
     projectId: string,
     updates: {
@@ -23,25 +29,14 @@ interface ProjectState {
   ) => Promise<Project | null>
   deleteProject: (projectId: string) => Promise<boolean>
   toggleStar: (projectId: string, isStarred: boolean) => Promise<boolean>
-  clearProject: () => void
 }
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
-  projects: [],
-  currentProject: null,
-  loading: false,
+  currentProjectId: null,
 
-  listProjects: async () => {
-    set({ loading: true })
-    try {
-      const res = await authFetch('/api/projects')
-      const data = await res.json()
-      set({ projects: data.projects ?? [], loading: false })
-    } catch (error) {
-      console.error('Failed to load projects:', error)
-      set({ loading: false })
-    }
-  },
+  setCurrentProjectId: (id) => set({ currentProjectId: id }),
+
+  clearProject: () => set({ currentProjectId: null }),
 
   createProject: async (name, workdir) => {
     try {
@@ -52,27 +47,13 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        return { error: { code: data.code || 'UNKNOWN', path: data.path, message: data.error } } as const
+        return {
+          error: { code: data.code || 'UNKNOWN', path: data.path, message: data.error },
+        } as const
       }
       const data = await res.json()
-      // Refresh project list
-      await get().listProjects()
-      return data.project
-    } catch {
-      return null
-    }
-  },
-
-  loadProject: async (projectId) => {
-    try {
-      const res = await authFetch(`/api/projects/${projectId}`)
-      if (!res.ok) return null
-      const data = await res.json()
-      set({ currentProject: data.project })
-      if (get().projects.length === 0) {
-        await get().listProjects()
-      }
-      return data.project
+      await projectsResource.refresh()
+      return (data.project as Project) ?? null
     } catch {
       return null
     }
@@ -87,13 +68,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       })
       if (!res.ok) return null
       const data = await res.json()
-      // Update current project if it's the one being updated
-      if (get().currentProject?.id === projectId) {
-        set({ currentProject: data.project })
-      }
-      // Refresh project list
-      await get().listProjects()
-      return data.project
+      await Promise.all([projectsResource.refresh(), projectResource.refresh(projectId)])
+      return (data.project as Project) ?? null
     } catch {
       return null
     }
@@ -103,11 +79,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     try {
       const res = await authFetch(`/api/projects/${projectId}`, { method: 'DELETE' })
       if (!res.ok) return false
-      // Refresh project list
-      await get().listProjects()
-      // Clear current project if it was deleted
-      if (get().currentProject?.id === projectId) {
-        set({ currentProject: null })
+      await projectsResource.refresh()
+      projectResource.invalidate(projectId)
+      if (get().currentProjectId === projectId) {
+        set({ currentProjectId: null })
       }
       return true
     } catch {
@@ -123,20 +98,13 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         body: JSON.stringify({ isStarred }),
       })
       if (!res.ok) return false
-      // Update current project if it's the one being starred
-      if (get().currentProject?.id === projectId) {
-        const data = await res.json()
-        set({ currentProject: data.project })
+      await projectsResource.refresh()
+      if (get().currentProjectId === projectId) {
+        await projectResource.refresh(projectId)
       }
-      // Refresh project list
-      await get().listProjects()
       return true
     } catch {
       return false
     }
-  },
-
-  clearProject: () => {
-    set({ currentProject: null })
   },
 }))

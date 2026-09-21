@@ -1,7 +1,18 @@
-import { describe, expect, it, beforeEach } from 'vitest'
+import { describe, expect, it, beforeEach, vi } from 'vitest'
 import type { StoredEvent } from '../events/types.js'
-import { type TopLevelScope, type SubAgentScope, buildContextMessages } from './conversation-history.js'
+import {
+  type TopLevelScope,
+  type SubAgentScope,
+  buildContextMessages,
+  getConversationMessages,
+  ensureRequestNotEndingWithAssistant,
+} from './conversation-history.js'
 import { buildContextMessagesFromEventHistory } from '../events/folding.js'
+import { getEventStore } from '../events/store.js'
+
+vi.mock('../events/store.js', () => ({
+  getEventStore: vi.fn(),
+}))
 
 const baseEvent = {
   seq: 1,
@@ -632,6 +643,86 @@ describe('buildContextMessages', () => {
       })
       expect(subAgentResult).toHaveLength(2)
       expect(subAgentResult[0]!.content).toBe('Sub-agent prompt')
+    })
+  })
+
+  describe('assistant-ending normalization (post-compaction shape)', () => {
+    beforeEach(() => {
+      resetSeq()
+    })
+
+    it('appends a user continuation message when the request ends with an assistant message', () => {
+      const messages = [
+        { role: 'user' as const, content: 'Hello', source: 'history' as const },
+        { role: 'assistant' as const, content: '## Conversation Summary\n...', source: 'history' as const },
+      ]
+      const result = ensureRequestNotEndingWithAssistant(messages)
+      expect(result).toHaveLength(3)
+      expect(result[2]!.role).toBe('user')
+      expect(result[2]!.content.length).toBeGreaterThan(0)
+      expect(result[2]!.source).toBe('history')
+    })
+
+    it('leaves a request unchanged when it does not end with an assistant message', () => {
+      const messages = [
+        { role: 'user' as const, content: 'Hello', source: 'history' as const },
+        { role: 'tool' as const, content: 'result', source: 'history' as const },
+      ]
+      const result = ensureRequestNotEndingWithAssistant(messages)
+      expect(result).toHaveLength(2)
+      expect(result).toBe(messages)
+    })
+
+    it('applies to the real post-compaction sub-agent context built from events', () => {
+      const events: StoredEvent[] = [
+        makeEvent({
+          seq: nextSeq(),
+          type: 'session.initialized',
+          data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
+        }),
+        makeEvent({
+          seq: nextSeq(),
+          type: 'context.compacted',
+          data: {
+            closedWindowId: 'window-1',
+            newWindowId: 'window-1',
+            beforeTokens: 50000,
+            afterTokens: 0,
+            summary: 'sub summary',
+            subAgentId: 'sub-1',
+            subAgentType: 'verifier',
+          },
+        }),
+        makeEvent({
+          seq: nextSeq(),
+          type: 'message.start',
+          data: {
+            messageId: 'm-summary',
+            role: 'assistant',
+            content: '## Conversation Summary',
+            contextWindowId: 'window-1',
+            isCompactionSummary: true,
+            subAgentId: 'sub-1',
+            subAgentType: 'verifier',
+          },
+        }),
+        makeEvent({ seq: nextSeq(), type: 'message.done', data: { messageId: 'm-summary' } }),
+      ]
+      ;(getEventStore as ReturnType<typeof vi.fn>).mockReturnValue({
+        getEvents: () => events,
+      })
+
+      const scope: SubAgentScope = {
+        type: 'subagent',
+        sessionId: 'session-1',
+        subAgentId: 'sub-1',
+        subAgentType: 'verifier',
+      }
+      const result = getConversationMessages(scope)
+      expect(result.length).toBeGreaterThanOrEqual(2)
+      expect(result[result.length - 1]!.role).toBe('user')
+      expect(result[result.length - 1]!.source).toBe('history')
+      expect(result[result.length - 2]!.role).toBe('assistant')
     })
   })
 })

@@ -1,4 +1,4 @@
-import type { Message, Attachment } from '../../shared/types.js'
+import type { Message, Attachment, StatsSource } from '../../shared/types.js'
 import type { StoredEvent, TurnEvent, SessionSnapshot, SnapshotMessage } from './types.js'
 import { applyEvents } from './apply-events.js'
 import stripAnsi from 'strip-ansi'
@@ -56,57 +56,84 @@ function snapshotMessageToMessage(message: SnapshotMessage): Message {
   })
 }
 
-export function shouldIncludeContextMessage(
-  message: Pick<SnapshotMessage, 'role' | 'contextWindowId' | 'subAgentType' | 'subAgentId'>,
-  windowId?: string,
-  options?: ContextMessageBuildOptions,
-): boolean {
-  const includeVerifier = options?.includeVerifier ?? true
-  return (
-    message.role !== 'system' &&
-    (windowId === undefined || message.contextWindowId === windowId) &&
-    (includeVerifier || message.subAgentType !== 'verifier') &&
-    !message.subAgentId
-  )
-}
+/**
+ * Reconstruct snapshot messages as synthetic events so they can be folded
+ * through the exact same `buildContextMessagesFromStoredEvents` machinery as
+ * live events. A snapshot is a compressed event log — consumers must never
+ * re-implement the fold (that was the source of the tool-result parity bug).
+ *
+ * Synthetic events carry full tool results (including metadata) so the
+ * canonical fold applies identically whether a message came from raw events
+ * or from a snapshot replay.
+ */
+export function snapshotMessagesToEvents(messages: SnapshotMessage[], sessionId = ''): StoredEvent[] {
+  const events: StoredEvent[] = []
+  let syntheticSeq = -1
+  const nextSeq = (): number => syntheticSeq--
 
-export function appendSnapshotMessageContext(result: ContextMessage[], message: SnapshotMessage): void {
-  const contextMsg: ContextMessage = {
-    role: message.role as 'user' | 'assistant',
-    content: message.content,
-  }
-  if (message.thinkingContent) {
-    contextMsg.thinkingContent = message.thinkingContent
-  }
-  if (message.toolCalls && message.toolCalls.length > 0) {
-    const fulfilledToolCalls = message.toolCalls.filter((tc) => tc.result)
-    if (fulfilledToolCalls.length > 0) {
-      contextMsg.toolCalls = fulfilledToolCalls.map((toolCall) => ({
-        id: toolCall.id,
-        name: toolCall.name,
-        arguments: toolCall.arguments,
-      }))
+  for (const message of messages) {
+    events.push({
+      seq: nextSeq(),
+      timestamp: message.timestamp,
+      sessionId,
+      type: 'message.start',
+      data: {
+        messageId: message.id,
+        role: message.role as 'user' | 'assistant' | 'system',
+        // Only the fields the context fold consumes (window/subagent filtering,
+        // content, attachments) are carried — the rest are UI-only concerns.
+        ...(message.content !== undefined && { content: message.content }),
+        ...(message.contextWindowId !== undefined && { contextWindowId: message.contextWindowId }),
+        ...(message.subAgentId !== undefined && { subAgentId: message.subAgentId }),
+        ...(message.subAgentType !== undefined && { subAgentType: message.subAgentType }),
+        ...(message.attachments !== undefined && { attachments: message.attachments }),
+      },
+    })
+
+    if (message.thinkingContent) {
+      events.push({
+        seq: nextSeq(),
+        timestamp: message.timestamp,
+        sessionId: '',
+        type: 'message.thinking',
+        data: { messageId: message.id, content: message.thinkingContent },
+      })
     }
-  }
-  if (message.attachments !== undefined) {
-    contextMsg.attachments = message.attachments
-  }
-  result.push(contextMsg)
-  if (!message.toolCalls) return
-  for (const toolCall of message.toolCalls) {
-    if (!toolCall.result) continue
-    result.push({
-      role: 'tool',
-      content: stripAnsi(
-        toolCall.result.success
-          ? (toolCall.result.output ?? 'Success')
-          : toolCall.result.output
-            ? `${toolCall.result.output}\n\nError: ${toolCall.result.error}`
-            : `Error: ${toolCall.result.error}`,
-      ),
-      toolCallId: toolCall.id,
+
+    for (const toolCall of message.toolCalls ?? []) {
+      events.push({
+        seq: nextSeq(),
+        timestamp: message.timestamp,
+        sessionId: '',
+        type: 'tool.call',
+        data: {
+          messageId: message.id,
+          toolCall: { id: toolCall.id, name: toolCall.name, arguments: toolCall.arguments },
+        },
+      })
+    }
+
+    for (const toolCall of message.toolCalls ?? []) {
+      if (!toolCall.result) continue
+      events.push({
+        seq: nextSeq(),
+        timestamp: message.timestamp,
+        sessionId: '',
+        type: 'tool.result',
+        data: { messageId: message.id, toolCallId: toolCall.id, result: toolCall.result },
+      })
+    }
+
+    events.push({
+      seq: nextSeq(),
+      timestamp: message.timestamp,
+      sessionId: '',
+      type: 'message.done',
+      data: { messageId: message.id },
     })
   }
+
+  return events
 }
 
 function applyStoredMessageEvents(initialMessages: Message[], events: StoredEvent[]): Message[] {
@@ -121,6 +148,63 @@ export function applyTurnEventsToSnapshotMessages(
     timestampAsNumber: true,
   }) as unknown as SnapshotMessage[]
   return messages.map((msg) => ({ ...msg, isStreaming: msg.isStreaming ?? true }))
+}
+
+/**
+ * Extract compact per-response stats (id + timestamp + MessageStats) for the
+ * WHOLE session, across every context window, without rebuilding messages.
+ *
+ * Source of truth is the latest snapshot's messages — they retain per-message
+ * stats even after compaction and after cleanupOldEvents purged the raw
+ * chat.done/message.done events (verified: a compacted session with 132
+ * stat-bearing responses had 0 raw stat events left). message.done events
+ * after the snapshot are appended (and may overwrite a snapshot entry when a
+ * message finished after the snapshot was taken). Sessions with no snapshot
+ * yet fall back to walking raw message.done events.
+ */
+export function buildSessionStatsMessages(events: StoredEvent[]): StatsSource[] {
+  const statsById = new Map<string, StatsSource>()
+  const snapshotEvent = [...events].reverse().find((event) => event.type === 'turn.snapshot')
+  const snapshotSeq = snapshotEvent?.seq ?? 0
+
+  if (snapshotEvent) {
+    const snapshot = snapshotEvent.data as SessionSnapshot
+    for (const msg of snapshot.messages) {
+      if (msg.stats) {
+        statsById.set(msg.id, {
+          id: msg.id,
+          timestamp: new Date(msg.timestamp).toISOString(),
+          stats: msg.stats,
+        })
+      }
+    }
+  }
+
+  const startTimestamps = new Map<string, number>()
+  for (const event of events) {
+    if (event.seq <= snapshotSeq) continue
+    switch (event.type) {
+      case 'message.start': {
+        const data = event.data as Extract<TurnEvent, { type: 'message.start' }>['data']
+        startTimestamps.set(data.messageId, event.timestamp)
+        break
+      }
+      case 'message.done': {
+        const data = event.data as Extract<TurnEvent, { type: 'message.done' }>['data']
+        if (data.stats) {
+          const timestamp = startTimestamps.get(data.messageId) ?? event.timestamp
+          statsById.set(data.messageId, {
+            id: data.messageId,
+            timestamp: new Date(timestamp).toISOString(),
+            stats: data.stats,
+          })
+        }
+        break
+      }
+    }
+  }
+
+  return Array.from(statsById.values())
 }
 
 export function buildMessagesFromStoredEvents(
@@ -395,13 +479,25 @@ export function buildContextMessagesFromEventHistory(
     return buildContextMessagesFromStoredEvents(events, windowId, options)
   }
   const snapshot = snapshotEvent.data as SessionSnapshot
-  const snapshotMessages = snapshot.messages.reduce<ContextMessage[]>((result, message) => {
-    if (!shouldIncludeContextMessage(message, windowId, options)) return result
-    appendSnapshotMessageContext(result, message)
-    return result
-  }, [])
-  const laterEvents = events.filter((event) => event.seq > snapshotEvent.seq)
-  return [...snapshotMessages, ...buildContextMessagesFromStoredEvents(laterEvents, windowId, options)]
+
+  // The snapshot is a point-in-time capture of complete messages. Later events
+  // belong to subsequent turns and carry their own messageIds. Events targeting
+  // a messageId already covered by the snapshot (only conceivable after an
+  // abort-snapshot) are dropped, exactly as the pre-unification fold did — the
+  // snapshot content stays authoritative and synthetic events can never be
+  // double-appended by a later delta/thinking/tool.result.
+  const snapshotMessageIds = new Set(snapshot.messages.map((message) => message.id))
+  const laterEvents = events.filter(
+    (event) =>
+      event.seq > snapshotEvent.seq &&
+      !('messageId' in event.data && snapshotMessageIds.has((event.data as { messageId: string }).messageId)),
+  )
+
+  return buildContextMessagesFromStoredEvents(
+    [...snapshotMessagesToEvents(snapshot.messages, snapshotEvent.sessionId), ...laterEvents],
+    windowId,
+    options,
+  )
 }
 
 export function foldTurnEventsToSnapshotMessages(events: EventLike[]): SnapshotMessage[] {
@@ -415,14 +511,6 @@ export function foldTurnEventsToSnapshotMessagesFromInitial(
   return applyTurnEventsToSnapshotMessages(initialMessages, events)
 }
 
-export function getMessagesForWindow(messages: SnapshotMessage[], windowId: string): SnapshotMessage[] {
-  return messages.filter((m) => m.contextWindowId === windowId)
-}
-
 export function buildContextMessagesFromMessages(messages: SnapshotMessage[], windowId: string): ContextMessage[] {
-  return getMessagesForWindow(messages, windowId).reduce<ContextMessage[]>((result, message) => {
-    if (!shouldIncludeContextMessage(message, windowId)) return result
-    appendSnapshotMessageContext(result, message)
-    return result
-  }, [])
+  return buildContextMessagesFromStoredEvents(snapshotMessagesToEvents(messages), windowId)
 }

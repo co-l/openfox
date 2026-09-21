@@ -17,7 +17,7 @@ function render(props: {
   onCriteriaSidebarToggle?: () => void
 }) {
   return renderToStaticMarkup(
-    <SessionLayout messages={[]} {...props}>
+    <SessionLayout {...props}>
       <div data-testid="feed">feed</div>
     </SessionLayout>,
   )

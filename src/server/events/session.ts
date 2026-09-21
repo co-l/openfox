@@ -260,7 +260,7 @@ export function emitUserMessage(
     attachments?: Attachment[] // Optional image attachments
     subAgentId?: string
     subAgentType?: string
-    metadata?: { type: string; name: string; color: string }
+    metadata?: { type: string; name: string; color: string; kind?: 'definition' | 'reminder' }
   },
 ): string {
   const eventStore = getEventStore()

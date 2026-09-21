@@ -1,61 +1,25 @@
-import { useState, useEffect } from 'react'
-import { authFetch } from '../lib/api'
+import { useEffect } from 'react'
+import { branchResource } from '../lib/resources'
+import { useResource } from './useResource'
 
-interface BranchResponse {
-  branch: string | null
-  workdir: string
-  error?: string
-}
-
+/**
+ * Current git branch for a workdir, polled every 3s. The resource cache keeps
+ * the value shareable; the interval only refreshes the owning key.
+ */
 export function useCurrentBranch(workdir?: string) {
-  const [branch, setBranch] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  // Use provided workdir or empty string (will skip fetching)
-  const resolvedWorkdir = workdir || ''
+  const { data, loading, error, refresh } = useResource(branchResource, workdir ?? '')
 
   useEffect(() => {
-    // Skip if no workdir provided
-    if (!resolvedWorkdir) {
-      setLoading(false)
-      return
-    }
+    if (!workdir) return
+    const pollTimer = setInterval(() => {
+      void refresh()
+    }, 3000)
+    return () => clearInterval(pollTimer)
+  }, [workdir, refresh])
 
-    let mounted = true
-    let pollTimer: ReturnType<typeof setInterval> | null = null
-
-    const fetchBranch = async () => {
-      try {
-        const response = await authFetch(`/api/branch?workdir=${encodeURIComponent(resolvedWorkdir)}`)
-        const data: BranchResponse = await response.json()
-
-        if (mounted) {
-          setBranch(data.branch)
-          setError(data.error || null)
-          setLoading(false)
-        }
-      } catch (err) {
-        if (mounted) {
-          setError(err instanceof Error ? err.message : 'Failed to fetch branch')
-          setLoading(false)
-        }
-      }
-    }
-
-    // Initial fetch
-    fetchBranch()
-
-    // Poll every 3 seconds to keep branch info fresh
-    pollTimer = setInterval(fetchBranch, 3000)
-
-    return () => {
-      mounted = false
-      if (pollTimer) {
-        clearInterval(pollTimer)
-      }
-    }
-  }, [resolvedWorkdir])
-
-  return { branch, loading, error }
+  return {
+    branch: workdir ? (data?.branch ?? null) : null,
+    loading,
+    error: error ? (error instanceof Error ? error.message : 'Failed to fetch branch') : null,
+  }
 }

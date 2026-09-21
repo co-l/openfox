@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
-import { useSettingsStore, SETTINGS_KEYS } from '../stores/settings'
+import { SETTINGS_KEYS } from '../lib/resources'
+import { useSetting } from './useSetting'
 import {
   parseKeybindings,
   type KeybindingsConfig,
@@ -41,8 +42,8 @@ function matchChord(e: KeyboardEvent, binding: ChordBinding): boolean {
   )
 }
 
-export function useKeybindings(): KeybindingsConfig {
-  const raw = useSettingsStore((s) => s.settings[SETTINGS_KEYS.KEYBINDINGS])
+export function useKeybindings(enabled = true): KeybindingsConfig {
+  const raw = useSetting(SETTINGS_KEYS.KEYBINDINGS, '', enabled).value
   return parseKeybindings(raw)
 }
 

@@ -2,7 +2,9 @@ import { ScrollArea } from '../shared/ScrollArea'
 import type { OverlayScrollbarsComponentRef } from 'overlayscrollbars-react'
 import { useState, useEffect, useRef, memo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { useDevServerStore, useDevServerEntry } from '../../stores/dev-server'
+import { useDevServerStore } from '../../stores/dev-server'
+import { useDevServer } from '../../hooks/useDevServer'
+import { useT } from '../../hooks/useT'
 import { GearIcon, StopIcon, OpenExternalIcon } from '../shared/icons'
 import { DevServerConfigModal } from './DevServerConfigModal'
 import { LogViewer } from './LogViewer'
@@ -130,16 +132,16 @@ export const DevServerFooter = memo(function DevServerFooter({
   onExpand,
   onConfigure,
 }: DevServerFooterProps) {
-  const { status, config, logs } = useDevServerEntry(workdir)
+  const t = useT()
+  const { status, config, logs } = useDevServer(workdir)
   const start = useDevServerStore((s) => s.start)
   const stop = useDevServerStore((s) => s.stop)
-  const fetchLogs = useDevServerStore((s) => s.fetchLogs)
   const clearLogs = useDevServerStore((s) => s.clearLogs)
   const insertMarker = useDevServerStore((s) => s.insertMarker)
 
   const handleClearLogs = () => {
     if (!workdir) return
-    if (window.confirm('Clear all dev server logs?')) {
+    if (window.confirm(t({ en: 'Clear all dev server logs?', fr: 'Effacer tous les journaux du serveur de dev ?' }))) {
       clearLogs(workdir)
     }
   }
@@ -172,20 +174,6 @@ export const DevServerFooter = memo(function DevServerFooter({
   const hasConfig = config !== null
   const isAlive = state === 'running' || state === 'warning'
 
-  // Fetch status and config for this pane's workdir
-  useEffect(() => {
-    if (!workdir) return
-    void useDevServerStore.getState().fetchStatus(workdir)
-    void useDevServerStore.getState().fetchConfig(workdir)
-  }, [workdir])
-
-  // Fetch full log buffer when server starts
-  useEffect(() => {
-    if (isAlive && workdir) {
-      fetchLogs(workdir)
-    }
-  }, [isAlive, fetchLogs, workdir])
-
   const handleAction = () => {
     if (!workdir) return
     if (isAlive) {
@@ -211,7 +199,7 @@ export const DevServerFooter = memo(function DevServerFooter({
                     : 'bg-text-muted'
             }`}
           />
-          <h3 className="text-sm font-semibold text-text-primary">Dev Server</h3>
+          <h3 className="text-sm font-semibold text-text-primary">{t({ en: 'Dev Server', fr: 'Serveur de dev' })}</h3>
         </div>
         <button
           onClick={() => {
@@ -219,7 +207,7 @@ export const DevServerFooter = memo(function DevServerFooter({
             else setShowConfigModal(true)
           }}
           className="p-1.5 rounded hover:bg-bg-tertiary transition-colors text-text-muted"
-          title="Configure dev server"
+          title={t({ en: 'Configure dev server', fr: 'Configurer le serveur de dev' })}
         >
           <GearIcon />
         </button>
@@ -235,7 +223,7 @@ export const DevServerFooter = memo(function DevServerFooter({
                 className="flex-1 flex items-center justify-center gap-1.5 rounded font-medium text-sm px-3 py-1.5 bg-bg-tertiary text-text-primary hover:bg-border transition-colors"
               >
                 <StopIcon />
-                Stop
+                {t({ en: 'Stop', fr: 'Arrêter' })}
               </button>
               {status?.url && (
                 <button
@@ -244,7 +232,7 @@ export const DevServerFooter = memo(function DevServerFooter({
                   title={status.url}
                 >
                   <OpenExternalIcon />
-                  Open
+                  {t({ en: 'Open', fr: 'Ouvrir' })}
                 </button>
               )}
             </div>
@@ -254,7 +242,7 @@ export const DevServerFooter = memo(function DevServerFooter({
               onClick={handleAction}
               className="w-full rounded font-medium text-sm px-3 py-1.5 bg-accent-primary/25 text-text-primary hover:bg-accent-primary/40 transition-colors"
             >
-              Start
+              {t({ en: 'Start', fr: 'Démarrer' })}
             </button>
           )}
         </>
@@ -266,7 +254,7 @@ export const DevServerFooter = memo(function DevServerFooter({
           }}
           className="w-full rounded font-medium text-sm px-3 py-1.5 bg-bg-tertiary text-text-muted hover:bg-border transition-colors"
         >
-          Configure
+          {t({ en: 'Configure', fr: 'Configurer' })}
         </button>
       )}
 
@@ -310,7 +298,7 @@ export const DevServerFooter = memo(function DevServerFooter({
                 onClick={() => (compact ? onExpand?.() : setShowExpandModal(true))}
                 className="px-2 py-0.5 rounded text-xs font-medium bg-accent-primary/30 text-text-primary hover:bg-accent-primary/50 transition-colors"
               >
-                Expand
+                {t({ en: 'Expand', fr: 'Développer' })}
               </button>
             </div>
 
@@ -338,7 +326,7 @@ export const DevServerFooter = memo(function DevServerFooter({
 
       {showExpandModal && (
         <LogViewer
-          title="Dev Server Logs"
+          title={t({ en: 'Dev Server Logs', fr: 'Journaux du serveur de dev' })}
           logs={logs}
           onClose={() => setShowExpandModal(false)}
           onClear={handleClearLogs}

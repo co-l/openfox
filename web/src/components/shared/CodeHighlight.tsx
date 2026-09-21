@@ -1,6 +1,6 @@
 import { memo, useEffect, useState, useRef } from 'react'
 import { highlightCode, useShikiTheme } from '../../lib/syntax-highlighter'
-import { useDisplaySettings } from '../../stores/settings'
+import { useDisplaySettings } from '../../hooks/useDisplaySettings'
 
 interface CodeHighlightProps {
   code: string

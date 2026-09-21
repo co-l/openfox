@@ -1,3 +1,4 @@
+import { serverT } from '../i18n.js'
 import { createTool } from './tool-helpers.js'
 import { devServerManager } from '../dev-server/manager.js'
 
@@ -93,9 +94,19 @@ export const devServerTool = createTool<DevServerArgs>(
 
     if (!status.config) {
       return helpers.error(
-        'No .openfox/dev.json config found. Create one in the project root:\n\n' +
-          '{\n  "command": "npm run dev",\n  "url": "http://localhost:3000",\n  "hotReload": true,\n  "disableInspect": false\n}\n\n' +
-          '(Worktrees inherit the project root config automatically.)',
+        serverT(
+          {
+            en: 'No .openfox/dev.json config found. Create one in the project root:\n\n{{config}}\n\n(Worktrees inherit the project root config automatically.)',
+            fr: 'Aucun fichier .openfox/dev.json trouvé. Créez-en un à la racine du projet :\n\n{{config}}\n\n(Les worktrees héritent automatiquement de la configuration du projet.)',
+          },
+          {
+            config: JSON.stringify(
+              { command: 'npm run dev', url: 'http://localhost:3000', hotReload: true, disableInspect: false },
+              null,
+              2,
+            ),
+          },
+        ),
       )
     }
 

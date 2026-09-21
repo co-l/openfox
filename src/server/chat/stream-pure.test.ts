@@ -12,6 +12,7 @@ import {
   hasRecentLLMFailure,
   recordLLMFailure,
   streamLLMPure,
+  extractTopLevelPathArg,
 } from './stream-pure.js'
 
 function createMockClient(events: LLMStreamEvent[]) {
@@ -84,6 +85,7 @@ describe('stream-pure', () => {
     expect(result).toEqual({
       content: 'I will help.',
       thinkingContent: 'Need to inspect files',
+      thinkingDurationMs: expect.any(Number),
       toolCalls: [{ id: 'call-1', name: 'read_file', arguments: { path: 'src/index.ts' } }],
       segments: [
         { type: 'thinking', content: 'Need to inspect files' },
@@ -132,6 +134,24 @@ describe('stream-pure', () => {
     expect(result.modelParams).toHaveProperty('topP')
   })
 
+  it('omits thinkingDurationMs when the model did not think', async () => {
+    const client = createMockClient([
+      { type: 'text_delta', content: 'hi' },
+      { type: 'done', response: mockResponse },
+    ])
+
+    const gen = streamLLMPure({
+      messageId: 'msg-nothink',
+      systemPrompt: 'system',
+      llmClient: client,
+      messages: [{ role: 'user', content: 'hi' }],
+    })
+
+    const result = await consumeStreamGenerator(gen, () => {})
+
+    expect(result).not.toHaveProperty('thinkingDurationMs')
+  })
+
   it('streams partial arguments for run_command', async () => {
     const client = createMockClient([
       { type: 'tool_call_delta', index: 0, name: 'run_command' },
@@ -167,6 +187,171 @@ describe('stream-pure', () => {
     expect(preparingEvents[0]!).toMatchObject({ data: { name: 'run_command' } })
     expect(preparingEvents[1]!).toMatchObject({ data: { name: 'run_command', arguments: '{"command":"echo' } })
     expect(preparingEvents[2]!).toMatchObject({ data: { name: 'run_command', arguments: '{"command":"echo hello"}' } })
+  })
+
+  it('streams partial arguments for session_metadata', async () => {
+    const client = createMockClient([
+      { type: 'tool_call_delta', index: 0, name: 'session_metadata' },
+      {
+        type: 'tool_call_delta',
+        index: 0,
+        arguments: '{"action":"add","key":"criteria","id":"criterion-1","description":"Implement',
+      },
+      { type: 'tool_call_delta', index: 0, arguments: ' the thing"}' },
+      {
+        type: 'done',
+        response: {
+          id: 'resp-1',
+          content: '',
+          toolCalls: [
+            {
+              id: 'call-1',
+              name: 'session_metadata',
+              arguments: { action: 'add', key: 'criteria', id: 'criterion-1', description: 'Implement the thing' },
+            },
+          ],
+          finishReason: 'tool_calls',
+          usage: { promptTokens: 10, completionTokens: 10, totalTokens: 20 },
+        },
+      },
+    ])
+
+    const gen = streamLLMPure({
+      messageId: 'msg-meta',
+      systemPrompt: 'system',
+      llmClient: client,
+      messages: [{ role: 'user', content: 'add criterion' }],
+      tools: [{ type: 'function', function: { name: 'session_metadata', description: 'Metadata', parameters: {} } }],
+    })
+
+    const events: Array<{ type: string; data: unknown }> = []
+    await consumeStreamGenerator(gen, (event) => {
+      events.push(event)
+    })
+
+    const preparingEvents = events.filter((e) => e.type === 'tool.preparing')
+    expect(preparingEvents).toHaveLength(3)
+    expect(preparingEvents[0]!).toMatchObject({ data: { name: 'session_metadata' } })
+    expect(preparingEvents[1]!).toMatchObject({
+      data: {
+        name: 'session_metadata',
+        arguments: '{"action":"add","key":"criteria","id":"criterion-1","description":"Implement',
+      },
+    })
+    expect(preparingEvents[2]!).toMatchObject({
+      data: {
+        name: 'session_metadata',
+        arguments: '{"action":"add","key":"criteria","id":"criterion-1","description":"Implement the thing"}',
+      },
+    })
+  })
+
+  it('streams partial arguments for write_file', async () => {
+    const client = createMockClient([
+      { type: 'tool_call_delta', index: 0, name: 'write_file' },
+      { type: 'tool_call_delta', index: 0, arguments: '{"path":"src/app.ts","content":"const x = 1' },
+      { type: 'tool_call_delta', index: 0, arguments: ';\\n' },
+      { type: 'tool_call_delta', index: 0, arguments: 'export default x"}' },
+      {
+        type: 'done',
+        response: {
+          id: 'resp-1',
+          content: '',
+          toolCalls: [
+            {
+              id: 'call-1',
+              name: 'write_file',
+              arguments: { path: 'src/app.ts', content: 'const x = 1;\nexport default x' },
+            },
+          ],
+          finishReason: 'tool_calls',
+          usage: { promptTokens: 10, completionTokens: 10, totalTokens: 20 },
+        },
+      },
+    ])
+
+    const gen = streamLLMPure({
+      messageId: 'msg-write',
+      systemPrompt: 'system',
+      llmClient: client,
+      messages: [{ role: 'user', content: 'write' }],
+      tools: [{ type: 'function', function: { name: 'write_file', description: 'Write', parameters: {} } }],
+    })
+
+    const events: Array<{ type: string; data: unknown }> = []
+    await consumeStreamGenerator(gen, (event) => {
+      events.push(event)
+    })
+
+    const preparingEvents = events.filter((e) => e.type === 'tool.preparing')
+    expect(preparingEvents).toHaveLength(4)
+    expect(preparingEvents[0]!).toMatchObject({ data: { name: 'write_file' } })
+    expect(preparingEvents[1]!).toMatchObject({
+      data: { name: 'write_file', arguments: '{"path":"src/app.ts","content":"const x = 1' },
+    })
+    expect(preparingEvents[2]!).toMatchObject({
+      data: { name: 'write_file', arguments: '{"path":"src/app.ts","content":"const x = 1;\\n' },
+    })
+    expect(preparingEvents[3]!).toMatchObject({
+      data: { name: 'write_file', arguments: '{"path":"src/app.ts","content":"const x = 1;\\nexport default x"}' },
+    })
+  })
+
+  it('streams partial arguments for edit_file', async () => {
+    const client = createMockClient([
+      { type: 'tool_call_delta', index: 0, name: 'edit_file' },
+      {
+        type: 'tool_call_delta',
+        index: 0,
+        arguments: '{"path":"src/app.ts","old_string":"const x = 1","new_string":"const x',
+      },
+      { type: 'tool_call_delta', index: 0, arguments: ' = 2"}' },
+      {
+        type: 'done',
+        response: {
+          id: 'resp-1',
+          content: '',
+          toolCalls: [
+            {
+              id: 'call-1',
+              name: 'edit_file',
+              arguments: { path: 'src/app.ts', old_string: 'const x = 1', new_string: 'const x = 2' },
+            },
+          ],
+          finishReason: 'tool_calls',
+          usage: { promptTokens: 10, completionTokens: 10, totalTokens: 20 },
+        },
+      },
+    ])
+
+    const gen = streamLLMPure({
+      messageId: 'msg-edit',
+      systemPrompt: 'system',
+      llmClient: client,
+      messages: [{ role: 'user', content: 'edit' }],
+      tools: [{ type: 'function', function: { name: 'edit_file', description: 'Edit', parameters: {} } }],
+    })
+
+    const events: Array<{ type: string; data: unknown }> = []
+    await consumeStreamGenerator(gen, (event) => {
+      events.push(event)
+    })
+
+    const preparingEvents = events.filter((e) => e.type === 'tool.preparing')
+    expect(preparingEvents).toHaveLength(3)
+    expect(preparingEvents[0]!).toMatchObject({ data: { name: 'edit_file' } })
+    expect(preparingEvents[1]!).toMatchObject({
+      data: {
+        name: 'edit_file',
+        arguments: '{"path":"src/app.ts","old_string":"const x = 1","new_string":"const x',
+      },
+    })
+    expect(preparingEvents[2]!).toMatchObject({
+      data: {
+        name: 'edit_file',
+        arguments: '{"path":"src/app.ts","old_string":"const x = 1","new_string":"const x = 2"}',
+      },
+    })
   })
 
   it('treats AbortError as an aborted result', async () => {
@@ -442,6 +627,30 @@ describe('stream-pure', () => {
     })
   })
 
+  it('includes accumulated thinking time in stats when thinking was recorded', () => {
+    const metrics = new TurnMetrics()
+    metrics.addThinkingTime(2_400)
+    metrics.addThinkingTime(1_600)
+
+    const stats = metrics.buildStats(
+      { providerId: 'p', providerName: 'Local vLLM', backend: 'vllm', model: 'm' },
+      'builder',
+    )
+
+    expect(stats.thinkingDuration).toBe(4)
+  })
+
+  it('omits thinkingDuration from stats when no thinking time was recorded', () => {
+    const metrics = new TurnMetrics()
+
+    const stats = metrics.buildStats(
+      { providerId: 'p', providerName: 'Local vLLM', backend: 'vllm', model: 'm' },
+      'builder',
+    )
+
+    expect(stats.thinkingDuration).toBeUndefined()
+  })
+
   it('creates event helper objects with optional fields only when present', () => {
     expect(createMessageStartEvent('msg-1', 'assistant')).toEqual({
       type: 'message.start',
@@ -655,6 +864,356 @@ describe('stream-pure', () => {
       const now = 1_000_000
       expect(evaluateLLMRetry(39, now, now, policy)).toEqual({ retry: true, delayMs: 60_000, attempt: 40 })
       expect(evaluateLLMRetry(40, now, now, policy)).toEqual({ retry: false })
+    })
+  })
+
+  describe('preflight fast-fail', () => {
+    it('aborts write_file stream early when preflight rejects the path', async () => {
+      const client = createMockClient([
+        { type: 'tool_call_delta', index: 0, id: 'call-1', name: 'write_file' },
+        { type: 'tool_call_delta', index: 0, arguments: '{"path":"src/app.ts","content":"const x = 1' },
+        { type: 'tool_call_delta', index: 0, arguments: ';\\n' },
+        { type: 'tool_call_delta', index: 0, arguments: 'export default x"}' },
+        { type: 'done', response: mockResponse },
+      ])
+
+      const preflight = vi.fn(async (path: string) =>
+        path === 'src/app.ts' ? 'File "src/app.ts" must be read before writing' : undefined,
+      )
+
+      const gen = streamLLMPure({
+        messageId: 'msg-write',
+        systemPrompt: 'system',
+        llmClient: client,
+        messages: [{ role: 'user', content: 'write' }],
+        tools: [{ type: 'function', function: { name: 'write_file', description: 'Write', parameters: {} } }],
+        preflight,
+      })
+
+      const events: Array<{ type: string; data: unknown }> = []
+      const result = await consumeStreamGenerator(gen, (event) => {
+        events.push(event)
+      })
+
+      expect(preflight).toHaveBeenCalledTimes(1)
+      expect(preflight).toHaveBeenCalledWith('src/app.ts')
+      expect(result.toolCalls).toEqual([
+        {
+          id: 'call-1',
+          name: 'write_file',
+          arguments: { path: 'src/app.ts' },
+          preflightError: 'File "src/app.ts" must be read before writing',
+        },
+      ])
+      expect(result.content).toBe('')
+      expect(result.usage).toEqual({ promptTokens: 0, completionTokens: 0 })
+      expect(result.aborted).toBe(false)
+      expect(result.finishReason).toBe('stop')
+    })
+
+    it('aborts edit_file stream early when preflight rejects the path', async () => {
+      const client = createMockClient([
+        { type: 'tool_call_delta', index: 0, id: 'call-1', name: 'edit_file' },
+        { type: 'tool_call_delta', index: 0, arguments: '{"path":"src/app.ts","old_string":"a","new_string":"b"}' },
+        { type: 'done', response: mockResponse },
+      ])
+
+      const preflight = vi.fn(async () => 'File "src/app.ts" must be read before writing')
+
+      const gen = streamLLMPure({
+        messageId: 'msg-edit',
+        systemPrompt: 'system',
+        llmClient: client,
+        messages: [{ role: 'user', content: 'edit' }],
+        tools: [{ type: 'function', function: { name: 'edit_file', description: 'Edit', parameters: {} } }],
+        preflight,
+      })
+
+      const result = await consumeStreamGenerator(gen, () => {})
+
+      expect(preflight).toHaveBeenCalledTimes(1)
+      expect(result.toolCalls).toEqual([
+        {
+          id: 'call-1',
+          name: 'edit_file',
+          arguments: { path: 'src/app.ts' },
+          preflightError: 'File "src/app.ts" must be read before writing',
+        },
+      ])
+      expect(result.usage).toEqual({ promptTokens: 0, completionTokens: 0 })
+    })
+
+    it('does not abort when preflight allows the path', async () => {
+      const client = createMockClient([
+        { type: 'tool_call_delta', index: 0, id: 'call-1', name: 'write_file' },
+        { type: 'tool_call_delta', index: 0, arguments: '{"path":"src/new.ts","content":"const x = 1' },
+        { type: 'tool_call_delta', index: 0, arguments: '"}' },
+        {
+          type: 'done',
+          response: {
+            id: 'resp-1',
+            content: '',
+            toolCalls: [
+              { id: 'call-1', name: 'write_file', arguments: { path: 'src/new.ts', content: 'const x = 1' } },
+            ],
+            finishReason: 'tool_calls',
+            usage: { promptTokens: 10, completionTokens: 10, totalTokens: 20 },
+          },
+        },
+      ])
+
+      const preflight = vi.fn(async () => undefined)
+
+      const gen = streamLLMPure({
+        messageId: 'msg-new',
+        systemPrompt: 'system',
+        llmClient: client,
+        messages: [{ role: 'user', content: 'write' }],
+        tools: [{ type: 'function', function: { name: 'write_file', description: 'Write', parameters: {} } }],
+        preflight,
+      })
+
+      const result = await consumeStreamGenerator(gen, () => {})
+
+      expect(preflight).toHaveBeenCalledTimes(1)
+      expect(preflight).toHaveBeenCalledWith('src/new.ts')
+      expect(result.toolCalls[0]!.arguments).toEqual({ path: 'src/new.ts', content: 'const x = 1' })
+      expect(result.usage.completionTokens).toBe(10)
+    })
+
+    it('does not invoke preflight for non path-based tools', async () => {
+      const client = createMockClient([
+        { type: 'tool_call_delta', index: 0, id: 'call-1', name: 'read_file' },
+        { type: 'tool_call_delta', index: 0, arguments: '{"path":"src/index.ts"}' },
+        { type: 'done', response: mockResponse },
+      ])
+
+      const preflight = vi.fn(async () => 'rejected')
+
+      const gen = streamLLMPure({
+        messageId: 'msg-read',
+        systemPrompt: 'system',
+        llmClient: client,
+        messages: [{ role: 'user', content: 'read' }],
+        tools: [{ type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } }],
+        preflight,
+      })
+
+      const result = await consumeStreamGenerator(gen, () => {})
+
+      expect(preflight).not.toHaveBeenCalled()
+      expect(result.toolCalls).toEqual([{ id: 'call-1', name: 'read_file', arguments: { path: 'src/index.ts' } }])
+    })
+
+    it('extracts the top-level path, ignoring lookalikes inside the content string', async () => {
+      const client = createMockClient([
+        { type: 'tool_call_delta', index: 0, id: 'call-1', name: 'write_file' },
+        {
+          type: 'tool_call_delta',
+          index: 0,
+          arguments: '{"content":"{\\"path\\":\\"/fake\\"}","path": "src/app.ts","content":"x',
+        },
+        { type: 'tool_call_delta', index: 0, arguments: '"}' },
+        { type: 'done', response: mockResponse },
+      ])
+
+      const preflight = vi.fn(async () => 'rejected')
+
+      const gen = streamLLMPure({
+        messageId: 'msg-lookalike',
+        systemPrompt: 'system',
+        llmClient: client,
+        messages: [{ role: 'user', content: 'write' }],
+        tools: [{ type: 'function', function: { name: 'write_file', description: 'Write', parameters: {} } }],
+        preflight,
+      })
+
+      await consumeStreamGenerator(gen, () => {})
+
+      expect(preflight).toHaveBeenCalledTimes(1)
+      expect(preflight).toHaveBeenCalledWith('src/app.ts')
+    })
+
+    it('waits for the complete path value before invoking preflight', async () => {
+      const client = createMockClient([
+        { type: 'tool_call_delta', index: 0, id: 'call-1', name: 'write_file' },
+        { type: 'tool_call_delta', index: 0, arguments: '{"path":"src/ap' },
+        { type: 'tool_call_delta', index: 0, arguments: 'p.ts","content":"x"}' },
+        {
+          type: 'done',
+          response: {
+            id: 'resp-1',
+            content: '',
+            toolCalls: [{ id: 'call-1', name: 'write_file', arguments: { path: 'src/app.ts', content: 'x' } }],
+            finishReason: 'tool_calls',
+            usage: { promptTokens: 10, completionTokens: 10, totalTokens: 20 },
+          },
+        },
+      ])
+
+      const preflight = vi.fn(async () => undefined)
+
+      const gen = streamLLMPure({
+        messageId: 'msg-partial',
+        systemPrompt: 'system',
+        llmClient: client,
+        messages: [{ role: 'user', content: 'write' }],
+        tools: [{ type: 'function', function: { name: 'write_file', description: 'Write', parameters: {} } }],
+        preflight,
+      })
+
+      const result = await consumeStreamGenerator(gen, () => {})
+
+      expect(preflight).toHaveBeenCalledTimes(1)
+      expect(preflight).toHaveBeenCalledWith('src/app.ts')
+      expect(result.toolCalls[0]!.arguments).toEqual({ path: 'src/app.ts', content: 'x' })
+    })
+
+    it('falls back to normal streaming when preflight throws', async () => {
+      const client = createMockClient([
+        { type: 'tool_call_delta', index: 0, id: 'call-1', name: 'write_file' },
+        { type: 'tool_call_delta', index: 0, arguments: '{"path":"src/app.ts","content":"const x = 1"}' },
+        {
+          type: 'done',
+          response: {
+            id: 'resp-1',
+            content: '',
+            toolCalls: [
+              { id: 'call-1', name: 'write_file', arguments: { path: 'src/app.ts', content: 'const x = 1' } },
+            ],
+            finishReason: 'tool_calls',
+            usage: { promptTokens: 10, completionTokens: 10, totalTokens: 20 },
+          },
+        },
+      ])
+
+      const preflight = vi.fn(async () => {
+        throw new Error('boom')
+      })
+
+      const gen = streamLLMPure({
+        messageId: 'msg-throw',
+        systemPrompt: 'system',
+        llmClient: client,
+        messages: [{ role: 'user', content: 'write' }],
+        tools: [{ type: 'function', function: { name: 'write_file', description: 'Write', parameters: {} } }],
+        preflight,
+      })
+
+      const result = await consumeStreamGenerator(gen, () => {})
+
+      expect(preflight).toHaveBeenCalledTimes(1)
+      expect(result.toolCalls[0]!.arguments).toEqual({ path: 'src/app.ts', content: 'const x = 1' })
+    })
+
+    it('preserves fully-streamed sibling tool calls when preflight aborts', async () => {
+      const client = createMockClient([
+        { type: 'tool_call_delta', index: 0, id: 'call-read', name: 'read_file' },
+        { type: 'tool_call_delta', index: 0, arguments: '{"path":"src/other.ts"}' },
+        { type: 'tool_call_delta', index: 1, id: 'call-edit', name: 'edit_file' },
+        {
+          type: 'tool_call_delta',
+          index: 1,
+          arguments: '{"path":"src/math.ts","old_string":"add","new_string":"sum"}',
+        },
+        { type: 'done', response: mockResponse },
+      ])
+
+      const preflight = vi.fn(async () => 'File "src/math.ts" must be read before writing')
+
+      const gen = streamLLMPure({
+        messageId: 'msg-pair',
+        systemPrompt: 'system',
+        llmClient: client,
+        messages: [{ role: 'user', content: 'read then edit' }],
+        tools: [
+          { type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } },
+          { type: 'function', function: { name: 'edit_file', description: 'Edit', parameters: {} } },
+        ],
+        preflight,
+      })
+
+      const result = await consumeStreamGenerator(gen, () => {})
+
+      // read_file keeps its full args, the rejected edit_file is reduced to path only
+      expect(result.toolCalls).toEqual([
+        { id: 'call-read', name: 'read_file', arguments: { path: 'src/other.ts' } },
+        {
+          id: 'call-edit',
+          name: 'edit_file',
+          arguments: { path: 'src/math.ts' },
+          preflightError: 'File "src/math.ts" must be read before writing',
+        },
+      ])
+    })
+
+    it('does not fail fast when a sibling read_file targets the same path', async () => {
+      const client = createMockClient([
+        { type: 'tool_call_delta', index: 0, id: 'call-read', name: 'read_file' },
+        { type: 'tool_call_delta', index: 0, arguments: '{"path":"src/math.ts"}' },
+        { type: 'tool_call_delta', index: 1, id: 'call-edit', name: 'edit_file' },
+        {
+          type: 'tool_call_delta',
+          index: 1,
+          arguments: '{"path":"src/math.ts","old_string":"add","new_string":"sum"}',
+        },
+        {
+          type: 'done',
+          response: {
+            id: 'resp-1',
+            content: '',
+            toolCalls: [
+              { id: 'call-read', name: 'read_file', arguments: { path: 'src/math.ts' } },
+              {
+                id: 'call-edit',
+                name: 'edit_file',
+                arguments: { path: 'src/math.ts', old_string: 'add', new_string: 'sum' },
+              },
+            ],
+            finishReason: 'tool_calls',
+            usage: { promptTokens: 10, completionTokens: 10, totalTokens: 20 },
+          },
+        },
+      ])
+
+      const preflight = vi.fn(async () => 'File "src/math.ts" must be read before writing')
+
+      const gen = streamLLMPure({
+        messageId: 'msg-readedit',
+        systemPrompt: 'system',
+        llmClient: client,
+        messages: [{ role: 'user', content: 'read then edit' }],
+        tools: [
+          { type: 'function', function: { name: 'read_file', description: 'Read', parameters: {} } },
+          { type: 'function', function: { name: 'edit_file', description: 'Edit', parameters: {} } },
+        ],
+        preflight,
+      })
+
+      const result = await consumeStreamGenerator(gen, () => {})
+
+      // Preflight is consulted but the sibling read makes the flow legitimate:
+      // the stream completes normally and the edit keeps its full args.
+      expect(preflight).toHaveBeenCalledTimes(1)
+      expect(result.toolCalls).toEqual([
+        { id: 'call-read', name: 'read_file', arguments: { path: 'src/math.ts' } },
+        {
+          id: 'call-edit',
+          name: 'edit_file',
+          arguments: { path: 'src/math.ts', old_string: 'add', new_string: 'sum' },
+        },
+      ])
+      expect(result.usage.completionTokens).toBe(10)
+    })
+
+    it('extracts the top-level path from partial JSON', () => {
+      expect(extractTopLevelPathArg('{"path":"src/app.ts"')).toBe('src/app.ts')
+      expect(extractTopLevelPathArg('{"content":"x","path": "src/a b.ts","c"')).toBe('src/a b.ts')
+      expect(extractTopLevelPathArg('{\n  "path": "src/app.ts",')).toBe('src/app.ts')
+      expect(extractTopLevelPathArg('{"content":"{\\"path\\":\\"/fake\\"}"')).toBeUndefined()
+      expect(extractTopLevelPathArg('{"path":"src/ap')).toBeUndefined()
+      expect(extractTopLevelPathArg('{"command":"echo hi"}')).toBeUndefined()
+      expect(extractTopLevelPathArg('{"path":"src/caf\\u00e9.ts","x"')).toBe('src/caf\u00e9.ts')
     })
   })
 

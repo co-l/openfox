@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
 import { ChevronDownIcon, CheckIcon } from '../shared/icons'
-import { getAgentColor } from '../../stores/agents'
+import { getAgentColor } from '../../lib/agents-actions'
+import { useT } from '../../hooks/useT'
 import { AgentsModal } from '../settings/AgentsModal'
 import { useKeybindings } from '../../hooks/useKeybindings'
 import { useClickOutside } from '../../hooks/useClickOutside'
@@ -11,6 +12,7 @@ import { useResource } from '../../hooks/useResource'
 import { agentsResource } from '../../lib/resources'
 
 export function AgentSelector() {
+  const t = useT()
   const sessionId = useSessionScope()
   const currentMode = useScopedPaneState(
     sessionId,
@@ -59,7 +61,7 @@ export function AgentSelector() {
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-bg-tertiary transition-colors"
-        title="Switch agent"
+        title={t({ en: 'Switch agent', fr: 'Changer d’agent' })}
       >
         <span className="text-sm font-medium" style={{ color: currentColor }}>
           {displayName}
@@ -113,7 +115,7 @@ export function AgentSelector() {
               }}
               className="w-full text-left px-3 py-1.5 rounded text-sm text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors"
             >
-              Manage Agents...
+              {t({ en: 'Manage Agents...', fr: 'Gérer les agents…' })}
             </button>
           </div>
         </div>

@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { pathExists, findFileByInternalId } from '../shared/item-loader.js'
 import { normalizeWorkflowScope } from '../workflows/registry.js'
 import type { WorkflowLaunchScope, WorkflowScope } from '../../shared/types.js'
+import { serverT } from '../i18n.js'
 
 export function computeOverrideIds<T extends { metadata: { id: string } }>(defaults: T[], userItems: T[]): string[] {
   return userItems.filter((u) => defaults.some((d) => d.metadata.id === u.metadata.id)).map((u) => u.metadata.id)
@@ -50,8 +51,16 @@ const ID_REGEX = /^[a-z0-9-]+$/
 
 export function validateNameIdPrompt(body: Record<string, unknown>): string | null {
   const meta = body['metadata'] as Record<string, unknown> | undefined
-  if (!meta?.['name'] || !body['prompt']) return 'Missing required fields: metadata.name, prompt'
-  if (meta['id'] && !ID_REGEX.test(String(meta['id']))) return 'ID must be lowercase alphanumeric with hyphens only'
+  if (!meta?.['name'] || !body['prompt'])
+    return serverT({
+      en: 'Missing required fields: metadata.name, prompt',
+      fr: 'Champs requis manquants : metadata.name, prompt',
+    })
+  if (meta['id'] && !ID_REGEX.test(String(meta['id'])))
+    return serverT({
+      en: 'ID must be lowercase alphanumeric with hyphens only',
+      fr: 'L’ID doit être en minuscules alphanumériques, avec des tirets uniquement',
+    })
   return null
 }
 
@@ -133,7 +142,7 @@ export function createCrudRoutes<T extends { metadata: { id: string; name: strin
     const allDefaults = await config.loadDefaults()
     const item = allDefaults.find((d) => d.metadata.id === id)
     if (!item) {
-      return res.status(404).json({ error: 'Default not found' })
+      return res.status(404).json({ error: serverT({ en: 'Default not found', fr: 'Élément par défaut introuvable' }) })
     }
     res.json(item)
   })
@@ -143,6 +152,10 @@ export function createCrudRoutes<T extends { metadata: { id: string; name: strin
     res.json({ ids })
   })
 
+  // Register extra routes before the /:id bucket so static sub-paths
+  // (e.g. GET /template-variables) are not shadowed by the id wildcard.
+  config.extraRoutes?.(router)
+
   router.get('/:id', async (req, res) => {
     const { id } = req.params
     const effectiveProjectDir = resolveProjectDir(req, projectDir)
@@ -150,7 +163,7 @@ export function createCrudRoutes<T extends { metadata: { id: string; name: strin
     const items = await loadItemsForScope(config, configDir, effectiveProjectDir, scope)
     const item = config.findById(id, items)
     if (!item) {
-      return res.status(404).json({ error: 'Not found' })
+      return res.status(404).json({ error: serverT({ en: 'Not found', fr: 'Introuvable' }) })
     }
     res.json(item)
   })
@@ -160,17 +173,23 @@ export function createCrudRoutes<T extends { metadata: { id: string; name: strin
     const meta = body['metadata'] as Record<string, unknown> | undefined
     const customError = config.validateCreate?.(body)
     if (!meta?.['id'] || customError) {
-      return res.status(400).json({ error: customError ?? 'Missing required fields' })
+      return res
+        .status(400)
+        .json({ error: customError ?? serverT({ en: 'Missing required fields', fr: 'Champs requis manquants' }) })
     }
     const id = String(meta['id'])
     const destination = (body['destination'] as 'project' | 'user') ?? 'user'
     const effectiveProjectDir = resolveProjectDir(req, projectDir)
     if (destination === 'project' && !effectiveProjectDir) {
-      return res.status(400).json({ error: 'No project directory configured' })
+      return res
+        .status(400)
+        .json({ error: serverT({ en: 'No project directory configured', fr: 'Aucun répertoire de projet configuré' }) })
     }
     const exists = await config.exists(configDir, id, effectiveProjectDir)
     if (exists) {
-      return res.status(409).json({ error: 'An item with this ID already exists' })
+      return res.status(409).json({
+        error: serverT({ en: 'An item with this ID already exists', fr: 'Un élément avec cet ID existe déjà' }),
+      })
     }
     if (destination === 'project') {
       await config.saveToProject(effectiveProjectDir!, body as unknown as T)
@@ -186,7 +205,7 @@ export function createCrudRoutes<T extends { metadata: { id: string; name: strin
     const items = await config.loadAll(configDir, effectiveProjectDir)
     const existing = config.findById(id, items)
     if (!existing) {
-      return res.status(404).json({ error: 'Not found' })
+      return res.status(404).json({ error: serverT({ en: 'Not found', fr: 'Introuvable' }) })
     }
     const body = req.body as Record<string, unknown>
     const meta = body['metadata'] as Record<string, unknown> | undefined
@@ -224,7 +243,10 @@ export function createCrudRoutes<T extends { metadata: { id: string; name: strin
       target === 'project' ? await config.deleteProject(effectiveProjectDir!, id) : await config.delete(configDir, id)
     if (!result.success) {
       return res.status(target === 'project' ? 500 : 403).json({
-        error: target === 'project' ? 'Failed to delete project item' : (result.reason ?? 'Cannot delete this item'),
+        error:
+          target === 'project'
+            ? serverT({ en: 'Failed to delete project item', fr: 'Échec de suppression de l’élément de projet' })
+            : (result.reason ?? serverT({ en: 'Cannot delete this item', fr: 'Impossible de supprimer cet élément' })),
       })
     }
     res.json({ success: true })
@@ -236,7 +258,7 @@ export function createCrudRoutes<T extends { metadata: { id: string; name: strin
     const items = await config.loadAll(configDir, effectiveProjectDir)
     const source = config.findById(id, items)
     if (!source) {
-      return res.status(404).json({ error: 'Not found' })
+      return res.status(404).json({ error: serverT({ en: 'Not found', fr: 'Introuvable' }) })
     }
     const newId = `${id}-copy-${Date.now()}`
     const duplicated = {
@@ -245,15 +267,16 @@ export function createCrudRoutes<T extends { metadata: { id: string; name: strin
     } as unknown as T
     const destination = (req.body as { destination?: 'project' | 'user' }).destination ?? 'user'
     if (destination === 'project') {
-      if (!effectiveProjectDir) return res.status(400).json({ error: 'No project directory configured' })
+      if (!effectiveProjectDir)
+        return res.status(400).json({
+          error: serverT({ en: 'No project directory configured', fr: 'Aucun répertoire de projet configuré' }),
+        })
       await config.saveToProject(effectiveProjectDir, duplicated)
     } else {
       await config.save(configDir, duplicated)
     }
     res.status(201).json(duplicated)
   })
-
-  config.extraRoutes?.(router)
 
   return router
 }

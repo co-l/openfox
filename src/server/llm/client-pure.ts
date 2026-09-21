@@ -22,6 +22,7 @@ import {
   extractPdfBlocksFromDataUrl,
   formatVisionFallbackDescription,
 } from './resolve-attachments.js'
+import { sanitizeToolSchema } from './schema-sanitizer.js'
 
 import type { ContentPart } from './resolve-attachments.js'
 export { resolveAttachmentsInMessages } from './resolve-attachments.js'
@@ -89,9 +90,16 @@ async function buildAttachmentContent(
 
 type MinimalCapabilities = Pick<
   BackendCapabilities,
-  'supportsTopK' | 'supportsChatTemplateKwargs' | 'supportsNumCtx' | 'routesEffortViaChatTemplateKwargs'
+  | 'supportsTopK'
+  | 'supportsChatTemplateKwargs'
+  | 'supportsNumCtx'
+  | 'routesEffortViaChatTemplateKwargs'
+  | 'usesMaxCompletionTokens'
 >
-type MinimalProfile = Pick<ModelProfile, 'temperature' | 'defaultMaxTokens' | 'topP' | 'topK' | 'supportsVision'>
+type MinimalProfile = Pick<
+  ModelProfile,
+  'temperature' | 'defaultMaxTokens' | 'topP' | 'topK' | 'supportsVision' | 'apiProtocol'
+>
 
 function convertToolCalls(
   toolCalls: { id: string; name: string; arguments: Record<string, unknown> }[],
@@ -121,6 +129,7 @@ function buildAssistantMessage(
   msg: LLMMessage,
   thinkingField?: string,
   sendReasoningInMessages?: boolean,
+  inlineThinking?: boolean,
 ): Record<string, unknown> {
   const result: Record<string, unknown> = {
     role: 'assistant',
@@ -129,8 +138,25 @@ function buildAssistantMessage(
   if (msg.toolCalls?.length) {
     result['tool_calls'] = convertToolCalls(msg.toolCalls)
   }
-  if (msg.thinkingContent && sendReasoningInMessages !== false) {
-    result[thinkingField ?? 'reasoning'] = msg.thinkingContent
+  if (sendReasoningInMessages === false) return result
+
+  const echoField = thinkingField ?? 'reasoning'
+  // DeepSeek-style providers (reasoning_content) reject tool-call continuations
+  // when the reasoning field is absent, even empty. Only they get the empty
+  // echo — default 'reasoning' providers keep their prior wire contract.
+  const isReasoningContentProvider = thinkingField === 'reasoning_content'
+
+  if (msg.thinkingContent) {
+    if (inlineThinking && isReasoningContentProvider && !msg.toolCalls?.length) {
+      // Providers like the DeepSeek API ignore the reasoning field in requests
+      // without tools (it is not concatenated into context). Inline the CoT into
+      // the assistant content so the model retains it across turns.
+      result['content'] = `${msg.thinkingContent}\n\n${msg.content || ''}`.trim() || ' '
+    } else {
+      result[echoField] = msg.thinkingContent
+    }
+  } else if (isReasoningContentProvider && msg.toolCalls?.length) {
+    result[echoField] = ''
   }
   return result
 }
@@ -169,6 +195,7 @@ export async function convertMessages(
   modelSupportsVision: boolean,
   thinkingField?: string,
   sendReasoningInMessages?: boolean,
+  inlineThinking?: boolean,
 ): Promise<ChatCompletionMessageParam[]> {
   const filtered = messages.filter((msg) => {
     if (msg.role !== 'assistant') return true
@@ -200,7 +227,12 @@ export async function convertMessages(
       }
     } else if (msg.role === 'assistant') {
       result.push(
-        buildAssistantMessage(msg, thinkingField, sendReasoningInMessages) as unknown as ChatCompletionMessageParam,
+        buildAssistantMessage(
+          msg,
+          thinkingField,
+          sendReasoningInMessages,
+          inlineThinking,
+        ) as unknown as ChatCompletionMessageParam,
       )
     } else if (msg.role === 'user' && msg.attachments && msg.attachments.length > 0) {
       const content = await buildAttachmentContent(msg.content, msg.attachments, modelSupportsVision)
@@ -224,7 +256,7 @@ export function convertTools(tools: LLMToolDefinition[]): ChatCompletionTool[] {
     function: {
       name: tool.function.name,
       description: tool.function.description,
-      parameters: tool.function.parameters,
+      parameters: sanitizeToolSchema(tool.function.parameters),
     },
   }))
 }
@@ -238,17 +270,23 @@ async function buildChatCompletionCreateParams(
   isStreaming: boolean,
   thinkingField?: string,
   sendReasoningInMessages?: boolean,
+  apiProtocol?: 'chat-completions' | 'responses',
 ): Promise<{
   params: ChatCompletionCreateParamsNonStreaming | ChatCompletionCreateParamsStreaming
   modelParams: ModelParams
 }> {
   const userVisionOverride = request.modelSettings?.supportsVision
   const modelSupportsVision = userVisionOverride ?? profile.supportsVision ?? false
+  // DeepSeek-style providers (reasoning_content) only concatenate the reasoning
+  // field into context when the request carries tools. Without tools, inline
+  // the CoT into the assistant content so the model retains it across turns.
+  const inlineThinking = thinkingField === 'reasoning_content' && !request.tools?.length
   const convertedMessages = await convertMessages(
     request.messages,
     modelSupportsVision,
     thinkingField,
     sendReasoningInMessages,
+    inlineThinking,
   )
 
   const temperature = request.modelSettings?.temperature ?? request.temperature ?? profile.temperature
@@ -262,8 +300,8 @@ async function buildChatCompletionCreateParams(
     ...(request.tools?.length ? { tools: convertTools(request.tools) } : {}),
     ...(request.toolChoice ? { tool_choice: request.toolChoice as ChatCompletionToolChoiceOption } : {}),
     temperature,
-    max_tokens: maxTokens,
-    top_p: topP,
+    ...(capabilities.usesMaxCompletionTokens ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens }),
+    ...(topP !== undefined && { top_p: topP }),
     stream: isStreaming,
     ...(isStreaming ? { stream_options: { include_usage: true } } : {}),
   }
@@ -280,7 +318,15 @@ async function buildChatCompletionCreateParams(
     ;(params as unknown as Record<string, unknown>)['num_ctx'] = request.modelSettings.numCtx
   }
 
-  const resolvedEffort = reasoningEffort ?? request.reasoningEffort
+  let resolvedEffort = reasoningEffort ?? request.reasoningEffort
+  // Responses-class models (e.g. OpenAI gpt-5) reject any reasoning_effort
+  // other than "none" when the request carries function tools — but only on
+  // /v1/chat/completions; the Responses API supports tools + effort together.
+  // When such a model is bound for chat completions (non-openai backend or an
+  // explicit override), clamp the effort so agentic (tool-using) calls work.
+  if (request.tools?.length && apiProtocol !== 'responses' && profile.apiProtocol === 'responses') {
+    resolvedEffort = 'none'
+  }
 
   const queryParams = request.modelSettings?.queryParams as Record<string, unknown> | undefined
   const hasQueryParams = queryParams && Object.keys(queryParams).length > 0
@@ -375,10 +421,20 @@ async function buildCreateParamsFromInput<
     reasoningEffort?: ReasoningEffort
     thinkingField?: string
     sendReasoningInMessages?: boolean
+    apiProtocol?: 'chat-completions' | 'responses'
   },
   isStreaming: boolean,
 ): Promise<{ params: T; modelParams: ModelParams }> {
-  const { model, request, profile, capabilities, reasoningEffort, thinkingField, sendReasoningInMessages } = input
+  const {
+    model,
+    request,
+    profile,
+    capabilities,
+    reasoningEffort,
+    thinkingField,
+    sendReasoningInMessages,
+    apiProtocol,
+  } = input
   return buildChatCompletionCreateParams(
     model,
     request,
@@ -388,6 +444,7 @@ async function buildCreateParamsFromInput<
     isStreaming,
     thinkingField,
     sendReasoningInMessages,
+    apiProtocol,
   ) as Promise<{ params: T; modelParams: ModelParams }>
 }
 

@@ -1,0 +1,34 @@
+{
+  "name": "openfox-hello-plugin",
+  "version": "1.0.0",
+  "description": "Reference OpenFox plugin: tools, commands, UI, settings, hooks, RPC and workflow transitions",
+  "type": "module",
+  "main": "./src/index.js",
+  "files": [
+    "src"
+  ],
+  "openfox": {
+    "apiVersion": 2,
+    "entry": "./src/index.js",
+    "displayName": "Hello Plugin",
+    "description": "Reference plugin demonstrating every contribution point.",
+    "capabilities": [
+      "tools",
+      "commands",
+      "ui",
+      "settings",
+      "hooks",
+      "rpc",
+      "workflows",
+      "notifications"
+    ],
+    "timeoutMs": 15000
+  },
+  "scripts": {
+    "typecheck": "tsc",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "openfox": ">=2.0.140"
+  }
+}

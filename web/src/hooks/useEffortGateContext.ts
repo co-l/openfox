@@ -1,7 +1,8 @@
 import { useCallback } from 'react'
 import { useSessionScope, useScopedPaneState } from '../stores/session/session-scope'
 import { useSessionStore } from '../stores/session'
-import { useConfigStore } from '../stores/config'
+import { useProviders } from './useProviders'
+import { useConfig } from './useConfig'
 import { useResource } from './useResource'
 import { agentsResource } from '../lib/resources'
 import { useEffortChangeGate } from '../components/plan/EffortChangeGate'
@@ -33,8 +34,8 @@ export function useEffortGateContext(explicitSessionId?: string | null | undefin
   )
   const gate = useEffortChangeGate()
 
-  const providers = useConfigStore((s) => s.providers)
-  const defaultModelSelection = useConfigStore((s) => s.defaultModelSelection)
+  const { providers } = useProviders()
+  const defaultModelSelection = useConfig().config?.defaultModelSelection ?? null
   // Agent overrides come from the agents resource cache, scoped to the
   // session's workdir so project-scoped overrides resolve correctly.
   const { data } = useResource(agentsResource, currentSession?.workdir)

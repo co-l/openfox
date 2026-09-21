@@ -137,6 +137,34 @@ describe('Auto Update Routes', () => {
         expect(typeof body.error).toBe('string')
       }
     })
+
+    it('parses the version from English CLI output', async () => {
+      mockSpawn.mockImplementation((cmd: unknown, args: unknown) => {
+        if (cmd === 'npm view openfox version' || (cmd === 'npm' && Array.isArray(args) && args[0] === 'view')) {
+          return makeMockChild({ stdout: '1.2.3\n' })
+        }
+        return makeMockChild({ stdout: 'Updated: 1.2.3\n' })
+      })
+      const res = await fetch(`${baseUrl}/api/auto-update`, { method: 'POST' })
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as { success: boolean; version?: string }
+      expect(body.success).toBe(true)
+      expect(body.version).toBe('1.2.3')
+    })
+
+    it('parses the version from French CLI output', async () => {
+      mockSpawn.mockImplementation((cmd: unknown, args: unknown) => {
+        if (cmd === 'npm view openfox version' || (cmd === 'npm' && Array.isArray(args) && args[0] === 'view')) {
+          return makeMockChild({ stdout: '1.2.3\n' })
+        }
+        return makeMockChild({ stdout: 'Mis à jour : 1.2.3\n' })
+      })
+      const res = await fetch(`${baseUrl}/api/auto-update`, { method: 'POST' })
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as { success: boolean; version?: string }
+      expect(body.success).toBe(true)
+      expect(body.version).toBe('1.2.3')
+    })
   })
 })
 

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useT } from '../../hooks/useT'
 import { useSessionStore } from '../../stores/session'
 import { useSessionScope, useScopedPaneState } from '../../stores/session/session-scope'
 
 export function WorkflowBar() {
+  const t = useT()
   const sessionId = useSessionScope()
   const activeWorkflowExecution = useScopedPaneState(
     sessionId,
@@ -48,7 +50,7 @@ export function WorkflowBar() {
           disabled={exiting}
           className="text-xs px-2 py-0.5 rounded text-text-tool-error hover:bg-text-tool-error/10 transition-colors disabled:opacity-50"
         >
-          {exiting ? 'Exiting...' : '✕ Exit'}
+          {exiting ? t({ en: 'Exiting...', fr: 'Sortie…' }) : t({ en: '✕ Exit', fr: '✕ Quitter' })}
         </button>
       </div>
     </div>

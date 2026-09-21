@@ -3,9 +3,10 @@ import { OptionalScrollArea } from './OptionalScrollArea'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { highlightCode, useShikiTheme } from '../../lib/syntax-highlighter'
-import { useDisplaySettings } from '../../stores/settings'
+import { useDisplaySettings } from '../../hooks/useDisplaySettings'
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
 import { CheckIcon, CopyIcon } from './icons'
+import { useT } from '../../hooks/useT'
 
 interface MarkdownProps {
   content: string
@@ -65,6 +66,7 @@ const CodeBlock = memo(function CodeBlock({
   showSyntaxHighlighting: boolean
   deferHighlight: boolean
 }) {
+  const t = useT()
   const { copied, copy } = useCopyToClipboard()
   const [html, setHtml] = useState<string | null>(null)
   const shikiTheme = useShikiTheme()
@@ -97,7 +99,7 @@ const CodeBlock = memo(function CodeBlock({
             copy(codeString)
           }}
           className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-text-primary p-0.5"
-          title="Copy code"
+          title={t({ en: 'Copy code', fr: 'Copier le code' })}
         >
           {copied ? <CheckIcon /> : <CopyIcon />}
         </button>
@@ -120,7 +122,7 @@ function createMarkdownComponents(muted: boolean, showSyntaxHighlighting: boolea
   const strongColor = muted ? 'text-text-secondary' : 'text-text-bold'
 
   return {
-    code({ className, children, ...props }: React.ComponentPropsWithoutRef<'code'>) {
+    code({ className, children, node: _node, ...props }: React.ComponentPropsWithoutRef<'code'> & { node?: unknown }) {
       const match = /language-(\w+)/.exec(className || '')
       const isInline = !match && !String(children).includes('\n')
 
@@ -155,8 +157,12 @@ function createMarkdownComponents(muted: boolean, showSyntaxHighlighting: boolea
       return <ul className="list-disc list-inside mb-1.5 space-y-0.5">{children}</ul>
     },
 
-    ol({ children }: { children?: React.ReactNode }) {
-      return <ol className="list-decimal list-inside mb-1.5 space-y-0.5">{children}</ol>
+    ol({ start, children }: { start?: number; children?: React.ReactNode }) {
+      return (
+        <ol start={start} className="list-decimal list-inside mb-1.5 space-y-0.5">
+          {children}
+        </ol>
+      )
     },
 
     li({ children }: { children?: React.ReactNode }) {
@@ -364,7 +370,41 @@ function preprocessMarkdown(content: string): string {
   // Strip line numbers added by read_file tool (format: "123|content")
   processed = processed.replace(/^\d+\|/gm, '')
 
+  // Separate numbered lists that continue a previous section without a blank line.
+  // CommonMark only lets "1." interrupt a paragraph — a list continuing at "3."
+  // right after a paragraph line would otherwise collapse into it (renders inline).
+  processed = separateDetachedNumberedLists(processed)
+
   return processed
+}
+
+/**
+ * Insert a blank line before numbered list markers that follow a paragraph line.
+ * CommonMark only allows "1." to interrupt a paragraph; a list continuing at
+ * "3." (or any N > 1) directly after a paragraph would merge into that
+ * paragraph and render inline. Lines inside fenced code blocks are left alone.
+ */
+function separateDetachedNumberedLists(content: string): string {
+  // Early-out: most content has no line-start numbered marker, so skip the
+  // split/scan/join pass entirely (it would otherwise run on every streaming frame).
+  if (!/^\d+[.)] /m.test(content)) return content
+  const lines = content.split('\n')
+  let inFence = false
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (line === undefined) continue
+    if (/^(```|~~~)/.test(line)) {
+      inFence = !inFence
+      continue
+    }
+    if (inFence || i === 0) continue
+    const prev = lines[i - 1]
+    if (prev === undefined) continue
+    if (/^\d+[.)] /.test(line) && prev.trim() !== '' && !/^\s*(?:[-*+]\s|\d+[.)] )/.test(prev)) {
+      lines[i - 1] = prev + '\n'
+    }
+  }
+  return lines.join('\n')
 }
 
 function countCodeFences(content: string): number {

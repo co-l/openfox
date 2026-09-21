@@ -53,7 +53,13 @@ describe('loadDefaultAgents', () => {
     expect(verifier.metadata.name).toBe('Verifier')
     expect(verifier.metadata.description).toBe('Verifies completed criteria against actual code changes')
     expect(verifier.metadata.subagent).toBe(true)
-    expect(verifier.metadata.allowedTools).toEqual(['read_file', 'run_command', 'session_metadata', 'web_fetch'])
+    expect(verifier.metadata.allowedTools).toEqual([
+      'read_file',
+      'run_command',
+      'session_metadata',
+      'web_fetch',
+      'load_skill',
+    ])
     expect(verifier.prompt).toContain('independent verification')
   })
 

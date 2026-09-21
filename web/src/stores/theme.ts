@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { SETTINGS_KEYS } from './settings'
+import { SETTINGS_KEYS, setSetting } from '../lib/resources'
 import themeData from './theme-presets.json'
 
 export interface ThemeToken {
@@ -252,8 +252,7 @@ export const useThemeStore = create<ThemeState>((set, get) => {
 
     saveTheme: async (themeJson: string) => {
       localStorage.setItem('openfox:theme', themeJson)
-      const { useSettingsStore } = await import('./settings')
-      await useSettingsStore.getState().setSetting(SETTINGS_KEYS.DISPLAY_THEME, themeJson)
+      await setSetting(SETTINGS_KEYS.DISPLAY_THEME, themeJson)
     },
 
     clearCustomTheme: () => {
@@ -263,9 +262,7 @@ export const useThemeStore = create<ThemeState>((set, get) => {
 
     setFollowSystemTheme: (enabled: boolean) => {
       set({ followSystemTheme: enabled })
-      import('./settings').then(({ useSettingsStore, SETTINGS_KEYS }) => {
-        useSettingsStore.getState().setSetting(SETTINGS_KEYS.DISPLAY_FOLLOW_SYSTEM_THEME, String(enabled))
-      })
+      void setSetting(SETTINGS_KEYS.DISPLAY_FOLLOW_SYSTEM_THEME, String(enabled))
     },
 
     initSystemThemeListener: () => {
@@ -348,12 +345,7 @@ export const useThemeStore = create<ThemeState>((set, get) => {
     saveUserPresets: () => {
       localStorage.setItem('openfox:userPresets', JSON.stringify(get().userPresets))
       // Fire-and-forget sync to server
-      import('./settings').then(({ useSettingsStore }) => {
-        useSettingsStore
-          .getState()
-          .setSetting(SETTINGS_KEYS.DISPLAY_USER_PRESETS, JSON.stringify(get().userPresets))
-          .catch(() => {})
-      })
+      void setSetting(SETTINGS_KEYS.DISPLAY_USER_PRESETS, JSON.stringify(get().userPresets)).catch(() => {})
     },
 
     setSystemDarkPreset: (presetId: string) => {
@@ -362,14 +354,10 @@ export const useThemeStore = create<ThemeState>((set, get) => {
         'openfox:systemThemePrefs',
         JSON.stringify({ darkPreset: presetId, lightPreset: get().systemLightPreset }),
       )
-      import('./settings').then(({ useSettingsStore, SETTINGS_KEYS }) => {
-        useSettingsStore
-          .getState()
-          .setSetting(
-            SETTINGS_KEYS.DISPLAY_SYSTEM_THEME_PREFS,
-            JSON.stringify({ darkPreset: presetId, lightPreset: get().systemLightPreset }),
-          )
-      })
+      void setSetting(
+        SETTINGS_KEYS.DISPLAY_SYSTEM_THEME_PREFS,
+        JSON.stringify({ darkPreset: presetId, lightPreset: get().systemLightPreset }),
+      )
       if (get().isSystem) {
         get().applyPreset('system')
       }
@@ -381,14 +369,10 @@ export const useThemeStore = create<ThemeState>((set, get) => {
         'openfox:systemThemePrefs',
         JSON.stringify({ darkPreset: get().systemDarkPreset, lightPreset: presetId }),
       )
-      import('./settings').then(({ useSettingsStore, SETTINGS_KEYS }) => {
-        useSettingsStore
-          .getState()
-          .setSetting(
-            SETTINGS_KEYS.DISPLAY_SYSTEM_THEME_PREFS,
-            JSON.stringify({ darkPreset: get().systemDarkPreset, lightPreset: presetId }),
-          )
-      })
+      void setSetting(
+        SETTINGS_KEYS.DISPLAY_SYSTEM_THEME_PREFS,
+        JSON.stringify({ darkPreset: get().systemDarkPreset, lightPreset: presetId }),
+      )
       if (get().isSystem) {
         get().applyPreset('system')
       }

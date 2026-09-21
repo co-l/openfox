@@ -24,6 +24,7 @@ import {
   createProjectListMessage,
   createProjectStateMessage,
   createSessionListMessage,
+  createSessionPauseMessage,
   createSessionRunningMessage,
   createSessionStateMessage,
   parseClientMessage,
@@ -231,6 +232,24 @@ describe('ws/protocol', () => {
     })
   })
 
+  describe('createSessionPauseMessage', () => {
+    it('builds a session.pause message with the pause state', () => {
+      expect(createSessionPauseMessage('paused')).toEqual({
+        type: 'session.pause',
+        payload: { pauseState: 'paused' },
+      })
+    })
+
+    it('covers all pause states', () => {
+      for (const pauseState of ['none', 'pending', 'paused', 'resuming'] as const) {
+        expect(createSessionPauseMessage(pauseState)).toEqual({
+          type: 'session.pause',
+          payload: { pauseState },
+        })
+      }
+    })
+  })
+
   describe('createChatToolOutputMessage', () => {
     it('creates correct message structure for stdout', () => {
       const msg = createChatToolOutputMessage('msg-1', 'call-1', 'hello world', 'stdout')
@@ -348,6 +367,35 @@ describe('ws/protocol', () => {
       expect(parsed.payload.index).toBe(0)
       expect(parsed.payload.name).toBe('read_file')
     })
+
+    it('includes the live edit context when provided', () => {
+      const editContext = [
+        {
+          startLine: 3,
+          endLine: 3,
+          beforeContext: [{ lineNumber: 2, content: 'line two' }],
+          afterContext: [{ lineNumber: 4, content: 'line four' }],
+          oldContent: 'a',
+          newContent: 'b',
+          edits: [{ startLine: 3, endLine: 3, oldContent: 'a', newContent: 'b' }],
+        },
+      ]
+      const msg = createChatToolPreparingMessage('msg-1', 0, 'edit_file', '{"path":"a.ts"}', editContext)
+
+      expect(msg.payload).toMatchObject({
+        messageId: 'msg-1',
+        index: 0,
+        name: 'edit_file',
+        arguments: '{"path":"a.ts"}',
+        editContext,
+      })
+    })
+
+    it('omits editContext when empty', () => {
+      const msg = createChatToolPreparingMessage('msg-1', 0, 'edit_file', undefined, [])
+
+      expect(msg.payload).not.toHaveProperty('editContext')
+    })
   })
 
   describe('tool message ordering', () => {
@@ -390,9 +438,9 @@ describe('ws/protocol', () => {
         type: 'chat.format_retry',
         payload: { attempt: 2, maxAttempts: 10 },
       })
-      expect(createChatLLMRetryMessage(2, 4000)).toEqual({
+      expect(createChatLLMRetryMessage(2, 4000, 'LLM boom')).toEqual({
         type: 'chat.llm_retry',
-        payload: { attempt: 2, retryInMs: 4000 },
+        payload: { attempt: 2, retryInMs: 4000, error: 'LLM boom' },
       })
       expect(createChatLLMRetryFailedMessage('LLM boom', 3)).toEqual({
         type: 'chat.llm_retry_failed',

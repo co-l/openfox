@@ -20,7 +20,9 @@ import {
   getThinking,
   parseToolArguments,
 } from './client-pure.js'
+import { resolveApiProtocol } from './responses-routing.js'
 import { OpenAIHttpClient } from './http-client.js'
+import { OpenAIResponsesHttpClient } from './responses-native.js'
 import { OllamaHttpClient } from './ollama-native.js'
 
 /**
@@ -50,8 +52,31 @@ export interface LLMClientWithModel extends LLMClient {
   getProfile(): ModelProfile
   getBackend(): Backend
   setBackend(backend: Backend): void
+  /** True when the active model is routed to the OpenAI Responses API. */
+  usesResponsesApi?(): boolean
   /** The reasoning effort this client was created with (if any). */
   getReasoningEffort?(): string | undefined
+}
+
+/**
+ * opencode.ai endpoints (Zen / Go) require a stable per-conversation
+ * x-opencode-session header; see https://opencode.ai/docs/go/.
+ */
+function isOpenCodeEndpoint(baseUrl: string): boolean {
+  try {
+    const url = new URL(baseUrl)
+    return url.protocol === 'https:' && url.hostname.replace(/\.$/, '') === 'opencode.ai'
+  } catch {
+    return false
+  }
+}
+
+function openCodeSessionHeaders(sessionId: string): Record<string, string> {
+  return {
+    'x-opencode-session': sessionId,
+    'x-opencode-client': 'openfox',
+    'User-Agent': 'openfox',
+  }
 }
 
 export function createLLMClient(
@@ -59,6 +84,7 @@ export function createLLMClient(
   initialBackend: Backend = config.llm.backend ?? 'unknown',
 ): LLMClientWithModel {
   const baseURL = ensureVersionPrefix(config.llm.baseUrl)
+  const isOpencode = isOpenCodeEndpoint(baseURL)
 
   const httpClient = new OpenAIHttpClient({
     baseURL,
@@ -69,8 +95,21 @@ export function createLLMClient(
   // options.num_ctx). Dispatched per request based on the current backend.
   const ollamaHttpClient = new OllamaHttpClient({
     baseURL: stripVersionPrefix(baseURL),
+    ...(config.llm.apiKey ? { apiKey: config.llm.apiKey } : {}),
   })
-  const httpFor = (b: Backend) => (b === 'ollama' ? ollamaHttpClient : httpClient)
+  // Some models (OpenCode Go: gpt-5.6-luna, grok-4.6, muse-spark-1.2-…; OpenAI
+  // gpt-5 family) are served through OpenAI's Responses API rather than
+  // /chat/completions — see responses-routing.ts. Routing is per model +
+  // backend, evaluated against the current model on every request.
+  const responsesHttpClient = new OpenAIResponsesHttpClient({
+    baseURL,
+    apiKey: config.llm.apiKey ?? 'not-needed',
+  })
+  const httpFor = (b: Backend) => {
+    if (b === 'ollama') return ollamaHttpClient
+    if (currentApiProtocol() === 'responses') return responsesHttpClient
+    return httpClient
+  }
 
   let model = config.llm.model
   let profile = getModelProfile(model)
@@ -81,11 +120,21 @@ export function createLLMClient(
   const sendReasoningInMessages = config.llm.sendReasoningInMessages
   const idleTimeout = config.llm.idleTimeout ?? 120_000
 
+  /**
+   * The API protocol the active model speaks on the current backend — derived
+   * from the model profile (gpt-5 family → responses on openai) plus the
+   * OpenCode Go curated table. Re-evaluated on every use so setModel /
+   * setBackend switches take effect.
+   */
+  const currentApiProtocol = (): 'chat-completions' | 'responses' =>
+    resolveApiProtocol({ model, backend, profileApiProtocol: profile.apiProtocol })
+
   function buildExtraParams(resolvedEffort: ReasoningEffort | undefined) {
     return {
       ...(resolvedEffort ? { reasoningEffort: resolvedEffort } : {}),
       ...(thinkingField ? { thinkingField } : {}),
       ...(sendReasoningInMessages !== undefined ? { sendReasoningInMessages } : {}),
+      apiProtocol: currentApiProtocol(),
     }
   }
 
@@ -93,6 +142,8 @@ export function createLLMClient(
     getModel() {
       return model
     },
+
+    usesResponsesApi: () => currentApiProtocol() === 'responses',
 
     getProfile() {
       return profile
@@ -146,6 +197,7 @@ export function createLLMClient(
           createParams,
           {
             signal: request.signal,
+            ...(request.sessionId && isOpencode && { headers: openCodeSessionHeaders(request.sessionId) }),
           },
           request.returnRaw,
         )
@@ -253,6 +305,7 @@ export function createLLMClient(
 
         const stream = httpFor(backend).createChatCompletionStream(streamingParams, {
           signal: streamSignal,
+          ...(request.sessionId && isOpencode && { headers: openCodeSessionHeaders(request.sessionId) }),
         })
 
         let fullContent = ''

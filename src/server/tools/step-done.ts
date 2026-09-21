@@ -8,6 +8,7 @@
  */
 
 import type { Tool, ToolResult, ToolContext } from './types.js'
+import { serverT } from '../i18n.js'
 
 export const stepDoneTool: Tool = {
   name: 'step_done',
@@ -27,7 +28,7 @@ export const stepDoneTool: Tool = {
   async execute(_args: Record<string, unknown>, _context: ToolContext): Promise<ToolResult> {
     return {
       success: true,
-      output: 'Step completion signal recorded.',
+      output: serverT({ en: 'Step completion signal recorded.', fr: 'Signal de fin d’étape enregistré.' }),
       durationMs: 0,
       truncated: false,
     }

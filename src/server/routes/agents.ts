@@ -17,6 +17,7 @@ import { createCrudRoutes, type CrudRouteConfig } from './crud-helpers.js'
 import { getAgentModelOverride, setAgentModelOverride, getAgentModelOverrides } from '../agents/model-overrides.js'
 import { isReasoningEffortValue } from '../providers/model-catalog.js'
 import { logger } from '../utils/logger.js'
+import { serverT } from '../i18n.js'
 
 // Pre-load default agent IDs at module init for fast synchronous validation.
 // In practice the server is fully initialized before accepting requests,
@@ -81,7 +82,12 @@ const config: CrudRouteConfig<AgentDefinition> = {
         reasoningEffort?: string
       }
       if (reasoningEffort !== undefined && !isReasoningEffortValue(reasoningEffort)) {
-        return res.status(400).json({ error: `Unsupported reasoningEffort: ${reasoningEffort}` })
+        return res.status(400).json({
+          error: serverT(
+            { en: 'Unsupported reasoningEffort: {{value}}', fr: 'reasoningEffort non pris en charge : {{value}}' },
+            { value: String(reasoningEffort) },
+          ),
+        })
       }
       if (providerId && model) {
         setAgentModelOverride(id, {

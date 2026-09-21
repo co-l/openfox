@@ -1,7 +1,18 @@
 import { useState, useRef, useEffect, useMemo, type RefObject } from 'react'
-import { CheckIcon, EditSmallIcon, StarIcon, StarFilledIcon, WarningIcon } from '../shared/icons'
+import {
+  CheckIcon,
+  EditSmallIcon,
+  EyeIcon,
+  HeartIcon,
+  HeartFilledIcon,
+  StarIcon,
+  StarFilledIcon,
+  WarningIcon,
+} from '../shared/icons'
 import type { Provider } from '../../stores/config'
 import { isSmallContext } from '../../lib/context-warning'
+import { useT } from '../../hooks/useT'
+import { PluginModelMeta } from '../plugins/PluginModelMeta'
 
 export function formatContextWindow(context: number): string {
   if (context >= 1000000) return `${(context / 1000000).toFixed(1)}M`
@@ -14,10 +25,12 @@ export interface ModelWithConfig {
   name?: string
   contextWindow: number
   source: 'backend' | 'user' | 'default'
+  supportsVision?: boolean
   reasoningEfforts?: string[]
   reasoningEffortOverride?: string
   thinkingLevel?: string
   thinkingEnabled?: boolean
+  pluginMetadata?: import('@shared/plugin.js').PluginModelMetadataView
 }
 
 export function modelMatchesQuery(model: { name?: string; id: string }, query: string): boolean {
@@ -31,16 +44,27 @@ export function modelMatchesQuery(model: { name?: string; id: string }, query: s
 export function getVisibleModels(provider: Provider): ModelWithConfig[] {
   const hasSelected = provider.models.some((m) => m.selected)
   const source = hasSelected ? provider.models.filter((m) => m.selected) : provider.models
-  return source.map((m) => ({
-    id: m.id,
-    ...(m.name !== undefined ? { name: m.name } : {}),
-    contextWindow: m.contextWindow,
-    source: m.source ?? 'default',
-    ...(m.reasoningEfforts?.length ? { reasoningEfforts: m.reasoningEfforts } : {}),
-    ...(m.reasoningEffortOverride ? { reasoningEffortOverride: m.reasoningEffortOverride } : {}),
-    ...(m.thinkingLevel ? { thinkingLevel: m.thinkingLevel } : {}),
-    ...(m.thinkingEnabled !== undefined ? { thinkingEnabled: m.thinkingEnabled } : {}),
-  }))
+  return source.map((m) => {
+    // A merged mode model exposes its levels via `modes`; surface them as
+    // reasoning efforts so the picker renders mode chips.
+    const reasoningEfforts = m.reasoningEfforts?.length
+      ? m.reasoningEfforts
+      : m.modes?.length
+        ? m.modes.map((mode) => mode.level)
+        : undefined
+    return {
+      id: m.id,
+      ...(m.name !== undefined ? { name: m.name } : {}),
+      contextWindow: m.contextWindow,
+      source: m.source ?? 'default',
+      ...(m.supportsVision !== undefined ? { supportsVision: m.supportsVision } : {}),
+      ...(reasoningEfforts?.length ? { reasoningEfforts } : {}),
+      ...(m.reasoningEffortOverride ? { reasoningEffortOverride: m.reasoningEffortOverride } : {}),
+      ...(m.thinkingLevel ? { thinkingLevel: m.thinkingLevel } : {}),
+      ...(m.thinkingEnabled !== undefined ? { thinkingEnabled: m.thinkingEnabled } : {}),
+      ...(m.pluginMetadata ? { pluginMetadata: m.pluginMetadata } : {}),
+    }
+  })
 }
 
 // ============================================================================
@@ -54,10 +78,12 @@ export interface ModelEntryRowProps {
   highlighted: boolean
   onModelClick: (providerId: string, modelId: string) => void
   isDefault?: boolean
+  isFavorite?: boolean
   disabled?: boolean
   hasSession?: boolean
   settingDefault?: boolean
   onSetDefault?: (e: React.MouseEvent, providerId: string, modelId: string) => void
+  onToggleFavorite?: (e: React.MouseEvent, providerId: string, modelId: string) => void
   onEditModel?: (providerId: string, model: ModelWithConfig) => void
   /** Available reasoning efforts for this model (shown as compact chips). */
   reasoningEfforts?: string[]
@@ -71,17 +97,20 @@ export function ModelEntryRow({
   modelConfig,
   isActive,
   isDefault: isDef,
+  isFavorite,
   disabled,
   hasSession,
   settingDefault,
   highlighted,
   onModelClick,
   onSetDefault,
+  onToggleFavorite,
   onEditModel,
   reasoningEfforts,
   selectedEffort,
   onSelectEffort,
 }: ModelEntryRowProps) {
+  const t = useT()
   const showEfforts = (reasoningEfforts?.length ?? 0) > 0 && !!onSelectEffort
   return (
     <div
@@ -101,15 +130,48 @@ export function ModelEntryRow({
           {modelConfig.name ?? modelConfig.id.split('/').pop()?.replace(/-/g, ' ') ?? modelConfig.id}
         </button>
         <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+          {modelConfig.supportsVision && (
+            <span
+              data-vision
+              className="text-text-muted flex-shrink-0"
+              title={t({ en: 'Vision model', fr: 'Modèle vision' })}
+              aria-label={t({ en: 'Vision model', fr: 'Modèle vision' })}
+            >
+              <EyeIcon className="w-3.5 h-3.5" />
+            </span>
+          )}
           <span className="text-xs text-text-muted">{formatContextWindow(modelConfig.contextWindow)}</span>
+          <PluginModelMeta metadata={modelConfig.pluginMetadata} />
           {isSmallContext(modelConfig.contextWindow) && (
             <span
               data-small-context
               className="text-accent-warning"
-              title="Small context window — agent prompts may be truncated by the provider"
+              title={t({
+                en: 'Small context window — agent prompts may be truncated by the provider',
+                fr: 'Fenêtre de contexte réduite — les invites de l’agent peuvent être tronquées par le fournisseur',
+              })}
             >
               <WarningIcon className="w-3.5 h-3.5" />
             </span>
+          )}
+          {onToggleFavorite && (
+            <button
+              type="button"
+              onClick={(e) => onToggleFavorite(e, providerId, modelConfig.id)}
+              disabled={disabled}
+              className="p-0.5 hover:bg-bg-tertiary rounded transition-colors"
+              title={
+                isFavorite
+                  ? t({ en: 'Remove from favorites', fr: 'Retirer des favoris' })
+                  : t({ en: 'Add to favorites', fr: 'Ajouter aux favoris' })
+              }
+            >
+              {isFavorite ? (
+                <HeartFilledIcon className="w-3.5 h-3.5 text-rose-500" />
+              ) : (
+                <HeartIcon className="w-3.5 h-3.5 text-text-muted hover:text-rose-500" />
+              )}
+            </button>
           )}
           {hasSession && onSetDefault && (
             <button
@@ -117,7 +179,11 @@ export function ModelEntryRow({
               onClick={(e) => onSetDefault(e, providerId, modelConfig.id)}
               disabled={settingDefault}
               className="p-0.5 hover:bg-bg-tertiary rounded transition-colors disabled:opacity-40"
-              title={isDef ? 'Default model' : 'Set as default model'}
+              title={
+                isDef
+                  ? t({ en: 'Default model', fr: 'Modèle par défaut' })
+                  : t({ en: 'Set as default model', fr: 'Définir comme modèle par défaut' })
+              }
             >
               {isDef ? (
                 <StarFilledIcon className="w-3.5 h-3.5 text-accent-warning" />
@@ -134,13 +200,16 @@ export function ModelEntryRow({
                 onEditModel(providerId, modelConfig)
               }}
               className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-bg-tertiary rounded transition-opacity"
-              title="Edit model context"
+              title={t({ en: 'Edit model context', fr: 'Modifier le contexte du modèle' })}
             >
               <EditSmallIcon className="w-3 h-3 text-text-muted" />
             </button>
           )}
           {isActive && (
-            <span className="text-accent-success flex-shrink-0" title="Session model">
+            <span
+              className="text-accent-success flex-shrink-0"
+              title={t({ en: 'Session model', fr: 'Modèle de session' })}
+            >
               <CheckIcon className="w-3.5 h-3.5" />
             </span>
           )}
@@ -149,7 +218,10 @@ export function ModelEntryRow({
       {showEfforts && (
         <div
           className="flex flex-wrap items-center gap-1 px-4 pb-1.5"
-          aria-label={`Reasoning efforts for ${modelConfig.id}`}
+          aria-label={t({
+            en: `Reasoning efforts for ${modelConfig.id}`,
+            fr: `Niveaux de raisonnement pour ${modelConfig.id}`,
+          })}
         >
           {reasoningEfforts!.map((effort) => {
             const isEffortActive = selectedEffort === effort

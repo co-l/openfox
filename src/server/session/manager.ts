@@ -16,6 +16,7 @@ import type {
   Criterion,
   ContextState,
   Attachment,
+  PauseState,
 } from '../../shared/types.js'
 import type { QueuedMessage } from '../../shared/protocol.js'
 import {
@@ -36,6 +37,7 @@ import {
   updateSessionWorkdir,
   updateSessionBranch,
   updateSessionMessageCount,
+  setSessionMessageCount,
   getSessionCachedPrompt,
   createWorkflowExecution,
   updateWorkflowExecutionStatus,
@@ -45,6 +47,12 @@ import {
   type DangerLevel,
 } from '../db/sessions.js'
 import { getProject } from '../db/projects.js'
+import {
+  initSessionMcpOverrides,
+  clearSessionOverrides,
+  getSessionDisabledServers,
+  setSessionDisabledServers,
+} from '../mcp/session-overrides.js'
 import {
   ensureWorkspace,
   resolveAndValidateSourceBranch,
@@ -81,9 +89,11 @@ import {
   emitMetadataSet,
   emitContextState,
   getCurrentContextWindowId,
+  getCurrentWindowMessages,
 } from '../events/index.js'
 import type { Message, CriterionStatus } from '../../shared/types.js'
 import { isInDangerZone, canCompact } from '../context/tokenizer.js'
+import { serverT } from '../i18n.js'
 
 // ============================================================================
 // Event Types (for backward compatibility with existing subscribers)
@@ -96,6 +106,7 @@ export type SessionEvent =
   | { type: 'mode_changed'; sessionId: string; from: SessionMode; to: SessionMode }
   | { type: 'phase_changed'; sessionId: string; phase: SessionPhase }
   | { type: 'running_changed'; sessionId: string; isRunning: boolean }
+  | { type: 'pause_changed'; sessionId: string; pauseState: PauseState }
   | { type: 'criteria_updated'; sessionId: string; criteria: Criterion[] }
   | {
       type: 'metadata_updated'
@@ -116,14 +127,20 @@ type SessionEvents = {
 }
 
 // A workspace's origin is the original local repo (a --shared clone). Pushing a
-// branch the original repo has checked out is refused (receive.denyCurrentBranch);
-// a branch it is NOT on pushes directly. This recipe lands workspace commits there.
+// branch the original repo has checked out is refused (receive.denyCurrentBranch),
+// so the recipe always lands on a temporary branch — unconditional and
+// deterministic. After the work is merged back into the original repo the
+// workspace is deleted (it can be recreated at any time), then the remote is
+// reached from the original repo.
 const WORKSPACE_COMMIT_RECIPE = `
-To land changes from this workspace into the original repo (its origin is the local repo itself):
+To land changes from this workspace when the user asks to commit and push:
 1. Commit your work.
-2. If the original repo has this branch checked out, a direct push is refused — push to a temp branch, then in the original repo merge it back and clean up: \`git push origin HEAD:<feature-slug>\` then \`git merge --ff-only <feature-slug> && git branch -d <feature-slug>\`
-3. If the original repo is on a different branch, push directly instead: \`git push origin <branch>\`
-4. To reach the remote, push from the original repo: \`git push origin <branch>\``
+2. Push to the original repo on a temporary branch (its origin is the local repo itself): \`git push origin HEAD:<feature-slug>\`
+3. Switch back to the original project: \`workspace switch original\`
+4. Merge the temporary branch and delete it: \`git merge --ff-only <feature-slug> && git branch -d <feature-slug>\`
+5. Verify the work is present in the original repo.
+6. Delete the workspace — it can be recreated at any time: \`workspace delete <name> force=true\`
+7. Push to the remote from the original repo: \`git push origin <branch>\``
 
 // ============================================================================
 // Session Manager
@@ -135,9 +152,23 @@ export class SessionManager {
   private providerManager: import('../provider-manager.js').ProviderManager
   private dynamicContextChangedStore = new Map<string, boolean>()
   private debugDumpStore = new Map<string, { cachedPrompt: string; cachedTools: string[]; liveTools: string[] }>()
+  private announcedPromptHashStore = new Map<string, string>()
+  private announcedToolFingerprintStore = new Map<string, string>()
   private warmedUpSessions = new Set<string>()
+  // Sessions already warned about an unresolvable provider — getContextState runs on every
+  // turn, and the warning is only worth one line per session.
+  private unknownProviderWarned = new Set<string>()
+  private subAgentContextSizes = new Map<string, number>()
+  // The sub-agent currently running per session (last-wins when parallel).
+  // Used to scope system-generated events (drift reminders) to the sub-agent
+  // window instead of the main session.
+  private activeSubAgents = new Map<string, { subAgentId: string; subAgentType: string }>()
   private switchLocks = new Map<string, Promise<unknown>>()
   private workspaceCreationLocks = new Map<string, Promise<void>>()
+  // Cooperative pause: in-memory only (a pause is only meaningful for a live,
+  // running turn — it never survives a process restart).
+  private pauseStates = new Map<string, PauseState>()
+  private pauseWaiters = new Map<string, Set<(outcome: 'released' | 'aborted') => void>>()
 
   constructor(providerManager: import('../provider-manager.js').ProviderManager) {
     this.providerManager = providerManager
@@ -393,6 +424,13 @@ export class SessionManager {
     // Build full session object
     const session = this.buildSessionFromDb(dbSession)
 
+    // Initialize MCP overrides from project settings / global defaults
+    try {
+      initSessionMcpOverrides(session.id, projectId, project.mcpOverrides)
+    } catch {
+      // Non-critical — session works without MCP overrides
+    }
+
     // Persist the current branch asynchronously — the session is valid without it.
     getGitBranch(effectiveWorkdir)
       .then((branch) => {
@@ -438,8 +476,20 @@ export class SessionManager {
     const state = getSessionState(originalSessionId)
     if (!state) throw new Error(`Session ${originalSessionId} has no state`)
 
-    const msgIndex = state.messages.findIndex((m) => m.id === messageId)
-    if (msgIndex === -1) throw new Error(`Message ${messageId} not found`)
+    // Fork only the latest context window: compacted sessions keep every
+    // historical window in state.messages, but the LLM prefix only covers the
+    // current window. Copying all of them would change the forked session's
+    // request prefix and defeat the provider-side prefix cache.
+    const windowMessages = getCurrentWindowMessages(originalSessionId)
+    const msgIndex = windowMessages.findIndex((m) => m.id === messageId)
+    if (msgIndex === -1) {
+      if (state.messages.some((m) => m.id === messageId)) {
+        throw new Error(
+          `Message ${messageId} belongs to a compacted context window; only the latest context window can be forked`,
+        )
+      }
+      throw new Error(`Message ${messageId} not found`)
+    }
 
     const newSession = this.createSession(
       projectId,
@@ -450,7 +500,7 @@ export class SessionManager {
     )
     const newWindowId = getCurrentContextWindowId(newSession.id) ?? crypto.randomUUID()
 
-    const messages = state.messages.slice(0, msgIndex + 1)
+    const messages = windowMessages.slice(0, msgIndex + 1)
 
     const snapshot: import('../events/types.js').SessionSnapshot = {
       mode: state.mode,
@@ -489,13 +539,139 @@ export class SessionManager {
 
     const cached = getSessionCachedPrompt(originalSessionId)
     if (cached) {
-      updateSessionCachedPrompt(newSession.id, cached.systemPrompt, cached.tools, cached.hash)
+      updateSessionCachedPrompt(newSession.id, cached.systemPrompt, cached.tools, cached.hash, cached.promptHash)
       this.markWarmedUp(newSession.id)
+    }
+
+    // Preserve parent session MCP disabled servers in the forked session
+    const parentDisabledServers = getSessionDisabledServers(originalSessionId)
+    if (parentDisabledServers.length > 0) {
+      setSessionDisabledServers(newSession.id, parentDisabledServers)
     }
 
     this.emit({ type: 'session_updated', session: this.requireSession(newSession.id) })
 
     return this.requireSession(newSession.id)
+  }
+
+  /**
+   * Import a session from an export document into a target project.
+   *
+   * The cached layout (system prompt, tools, hash) is restored verbatim so the
+   * provider-side prefix cache stays valid, and the event history is replayed
+   * as-is. Drift between the original environment's cached layout and the
+   * target environment (system prompt, tools) is announced via injected
+   * <system-reminder> messages, followed by an import marker reminder.
+   *
+   * @param projectId - Target project (the session is created there)
+   * @param rawPayload - Exported session document (validated)
+   * @returns The imported session
+   * @throws Error for invalid payloads or unknown project
+   */
+  async importSession(projectId: string, rawPayload: unknown): Promise<Session> {
+    const { parseSessionExport, IMPORTED_SESSION_REMINDER, SESSION_EXPORT_VERSION } = await import('./export-import.js')
+    const { injectContextDriftReminders, getToolSetFingerprint } = await import('../chat/dynamic-context.js')
+    const { loadAllAgentsDefault, resolveDefaultAgentId } = await import('../agents/registry.js')
+
+    const payload = parseSessionExport(rawPayload)
+    if (payload.version !== SESSION_EXPORT_VERSION) {
+      throw new Error(`Unsupported session export version: ${payload.version}`)
+    }
+
+    const project = getProject(projectId)
+    if (!project) {
+      throw new Error(`Project not found: ${projectId}`)
+    }
+
+    if (!payload.events.some((event) => event.type === 'session.initialized')) {
+      throw new Error('Invalid session export: missing session.initialized event')
+    }
+
+    // Provider resolution: keep the exported sticky pick when the provider
+    // exists in the target environment. When it does not, match by backend +
+    // base URL so the same inference server is reused even under a different
+    // provider label (team scenario). Only when neither matches do we fall
+    // back to the environment defaults.
+    const providers = this.providerManager.getProviders()
+    const providerId = payload.session.providerId ?? null
+    const providerModel = payload.session.providerModel ?? null
+    let resolvedProviderId: string | null = null
+    let resolvedProviderModel: string | null = null
+    if (providerId && providers.some((p) => p.id === providerId)) {
+      resolvedProviderId = providerId
+      resolvedProviderModel = providerModel
+    } else if (providerId && payload.source?.providerBackend && payload.source.providerUrl) {
+      const normalizeUrl = (url: string) => url.replace(/\/+$/, '')
+      const sourceBackend = payload.source.providerBackend
+      const sourceUrl = normalizeUrl(payload.source.providerUrl)
+      const urlMatch = providers.find(
+        (p) =>
+          p.backend === sourceBackend &&
+          p.url !== undefined &&
+          normalizeUrl(p.url) === sourceUrl &&
+          providerModel !== null &&
+          p.models.some((m) => m.id === providerModel || m.apiModelId === providerModel),
+      )
+      if (urlMatch) {
+        resolvedProviderId = urlMatch.id
+        resolvedProviderModel = providerModel
+      }
+    }
+
+    const session = dbCreateSession(
+      projectId,
+      project.workdir,
+      payload.session.title,
+      resolvedProviderId,
+      resolvedProviderModel,
+    )
+
+    const eventStore = getEventStore()
+    eventStore.importEvents(session.id, payload.events as unknown as import('../events/types.js').StoredEvent[])
+
+    // Mode fallback: the restored source mode is only kept when the agent
+    // exists in the target environment; otherwise fall back to the project's
+    // default agent.
+    const agents = await loadAllAgentsDefault(project.workdir)
+    const restoredMode = getSessionState(session.id)?.mode ?? session.mode
+    if (!agents.some((agent) => agent.metadata.id === restoredMode)) {
+      this.setMode(session.id, resolveDefaultAgentId(projectId))
+    }
+
+    if (payload.cachedLayout) {
+      updateSessionCachedPrompt(
+        session.id,
+        payload.cachedLayout.systemPrompt,
+        payload.cachedLayout.tools,
+        payload.cachedLayout.hash,
+        payload.cachedLayout.promptHash,
+      )
+      this.setAnnouncedPromptHash(session.id, payload.cachedLayout.promptHash ?? payload.cachedLayout.hash)
+      this.setAnnouncedToolFingerprint(session.id, getToolSetFingerprint(payload.cachedLayout.tools))
+      // The imported prefix is a known-good cache prefix — mark the session
+      // warmed up so it behaves like a forked session.
+      this.markWarmedUp(session.id)
+    }
+
+    // Announce any drift between the original environment's cached layout and
+    // the target environment (system prompt, tools) exactly once.
+    await injectContextDriftReminders(this, session.id)
+
+    // Import marker: the latest system reminders are authoritative.
+    emitUserMessage(session.id, IMPORTED_SESSION_REMINDER, {
+      isSystemGenerated: true,
+      messageKind: 'auto-prompt',
+      metadata: { type: 'session-import', name: 'Session Imported', color: '#6b7280', kind: 'reminder' },
+    })
+
+    const state = getSessionState(session.id)
+    if (state) {
+      setSessionMessageCount(session.id, state.messages.length)
+    }
+
+    this.emit({ type: 'session_created', session: this.requireSession(session.id) })
+
+    return this.requireSession(session.id)
   }
 
   /**
@@ -529,11 +705,11 @@ export class SessionManager {
   }
 
   /**
-   * Lightweight homepage list: the N most recently updated sessions per
-   * project, summaries only (no prompt extraction, no snapshot parsing).
+   * Lightweight homepage list: the 20 most recently updated sessions across
+   * all projects, summaries only (no prompt extraction, no snapshot parsing).
    */
-  listHomeSessions(sessionsPerProject = 5): SessionSummary[] {
-    return dbListHomeSessions(sessionsPerProject)
+  listHomeSessions(limit = 20): SessionSummary[] {
+    return dbListHomeSessions(limit)
   }
 
   /**
@@ -574,8 +750,17 @@ export class SessionManager {
     // Clear message queue to prevent memory leak
     this.messageQueues.delete(id)
 
+    // Release any blocked pause gate and drop the pause state
+    this.clearPauseState(id)
+
     // Clean up warmup state
     this.warmedUpSessions.delete(id)
+    this.announcedPromptHashStore.delete(id)
+    this.announcedToolFingerprintStore.delete(id)
+    this.unknownProviderWarned.delete(id)
+
+    // Clean up session MCP overrides
+    clearSessionOverrides(id)
 
     // Delete session from DB
     dbDeleteSession(id)
@@ -709,11 +894,154 @@ export class SessionManager {
     updateSessionRunning(sessionId, isRunning)
     emitRunningChanged(sessionId, isRunning)
 
+    // A pause is only meaningful while a turn is running. A transition to
+    // !isRunning (turn ended, aborted, or stopped) clears any stale pause
+    // state and releases blocked gates.
+    if (!isRunning) {
+      this.clearPauseState(sessionId)
+    }
+
     const updatedSession = this.requireSession(sessionId)
     this.emit({ type: 'session_updated', session: updatedSession })
     this.emit({ type: 'running_changed', sessionId, isRunning })
 
     return updatedSession
+  }
+
+  // ============================================================================
+  // Cooperative pause
+  //
+  // A pause never aborts the in-flight LLM request: it only gates the NEXT one.
+  // The agent loop calls enterPauseGate() before every top-level LLM request;
+  // the gate blocks until the user resumes (or the session aborts).
+  //
+  //   none --requestPause--> pending --gate reached--> paused
+  //   pending --requestResume--> none (cancel, no interruption)
+  //   paused --requestResume--> resuming --gate released--> none
+  // ============================================================================
+
+  /** Current pause state ('none' when the session has no pause in flight). */
+  getPauseState(sessionId: string): PauseState {
+    return this.pauseStates.get(sessionId) ?? 'none'
+  }
+
+  /** Request a pause. Succeeds only from 'none'. Returns false otherwise. */
+  requestPause(sessionId: string): boolean {
+    if (this.getPauseState(sessionId) !== 'none') {
+      return false
+    }
+    this.transitionPauseState(sessionId, 'pending')
+    return true
+  }
+
+  /**
+   * Request resume. From 'pending' this cancels the pause (the running turn is
+   * left alone); from 'paused' it releases the blocked gate. Returns false
+   * when there is nothing to resume.
+   */
+  requestResume(sessionId: string): boolean {
+    const state = this.getPauseState(sessionId)
+    if (state === 'pending') {
+      this.transitionPauseState(sessionId, 'none')
+      return true
+    }
+    if (state === 'paused') {
+      this.transitionPauseState(sessionId, 'resuming')
+      this.wakePauseWaiters(sessionId, 'released')
+      return true
+    }
+    return false
+  }
+
+  /**
+   * Pause gate — call before each top-level LLM request. Resolves 'released'
+   * when the request may proceed (no pause, or the user resumed) and 'aborted'
+   * when the session was aborted while paused. Concurrent gates (parent +
+   * sub-agent loops) all block on a single pause and all release on resume.
+   */
+  async enterPauseGate(sessionId: string, signal?: AbortSignal): Promise<'released' | 'aborted'> {
+    const state = this.getPauseState(sessionId)
+    if (state === 'none') {
+      return 'released'
+    }
+    if (state === 'resuming') {
+      // Stale (e.g. the gate that set it never ran) — clear and proceed.
+      this.transitionPauseState(sessionId, 'none')
+      return 'released'
+    }
+    if (state === 'pending') {
+      // The agent reached the boundary the user asked to pause at.
+      this.transitionPauseState(sessionId, 'paused')
+    }
+
+    const outcome = await new Promise<'released' | 'aborted'>((resolve) => {
+      let waiters = this.pauseWaiters.get(sessionId)
+      if (!waiters) {
+        waiters = new Set()
+        this.pauseWaiters.set(sessionId, waiters)
+      }
+      const onWake = (o: 'released' | 'aborted') => {
+        cleanup()
+        resolve(o)
+      }
+      const onAbort = () => {
+        cleanup()
+        resolve('aborted')
+      }
+      const cleanup = () => {
+        waiters.delete(onWake)
+        signal?.removeEventListener('abort', onAbort)
+        if (waiters.size === 0) {
+          this.pauseWaiters.delete(sessionId)
+        }
+      }
+      waiters.add(onWake)
+      if (signal?.aborted) {
+        cleanup()
+        resolve('aborted')
+        return
+      }
+      signal?.addEventListener('abort', onAbort, { once: true })
+    })
+
+    // Whether released or aborted, the pause is over — clear it.
+    this.transitionPauseState(sessionId, 'none')
+    return outcome
+  }
+
+  /**
+   * Clear any pause state and wake blocked gates with 'aborted'. Used by the
+   * stop/abort paths and session deletion so a paused gate never hangs.
+   */
+  clearPauseState(sessionId: string): void {
+    if (this.getPauseState(sessionId) !== 'none') {
+      this.transitionPauseState(sessionId, 'none')
+    }
+    this.wakePauseWaiters(sessionId, 'aborted')
+  }
+
+  private transitionPauseState(sessionId: string, next: PauseState): void {
+    if (this.getPauseState(sessionId) === next) {
+      return
+    }
+    logger.debug('Changing session pause state', { sessionId, from: this.getPauseState(sessionId), to: next })
+    this.pauseStates.set(sessionId, next)
+    this.emit({ type: 'pause_changed', sessionId, pauseState: next })
+  }
+
+  private wakePauseWaiters(sessionId: string, outcome: 'released' | 'aborted'): void {
+    const waiters = this.pauseWaiters.get(sessionId)
+    if (!waiters) {
+      return
+    }
+    this.pauseWaiters.delete(sessionId)
+    for (const wake of waiters) {
+      try {
+        wake(outcome)
+      } catch (error) {
+        logger.error('Pause waiter wake error', { sessionId, error })
+      }
+    }
   }
 
   /**
@@ -733,6 +1061,8 @@ export class SessionManager {
     if (providerId === null || providerManual === true) {
       this.clearSessionPinnedEffort(sessionId)
     }
+    // The pin changed, so a later unresolvable one is worth warning about again.
+    this.unknownProviderWarned.delete(sessionId)
 
     const updatedSession = this.requireSession(sessionId)
     this.emit({ type: 'session_updated', session: updatedSession })
@@ -1234,8 +1564,13 @@ export class SessionManager {
     const state = getSessionState(sessionId, this.getCurrentModelContext(sessionId))
     const maxTokens = this.getCurrentModelContext(sessionId)
     const currentTokens = promptTokens + completionTokens
-    const compactionCount = state?.contextState.compactionCount ?? 0
+    // Sub-agent runs happen in a fresh, never-compacted scoped context, so
+    // their context.state must never inherit the main session's count.
+    const compactionCount = subAgentId ? 0 : (state?.contextState.compactionCount ?? 0)
     const dynamicContextChanged = this.getDynamicContextChanged(sessionId)
+    if (subAgentId) {
+      this.subAgentContextSizes.set(subAgentId, currentTokens)
+    }
 
     emitContextState(
       sessionId,
@@ -1249,6 +1584,25 @@ export class SessionManager {
     )
 
     logger.debug('Context state updated', { sessionId, promptTokens, maxTokens, subAgentId })
+  }
+
+  /** Tokens used by a sub-agent's own scoped context (fresh, never-compacted). */
+  getSubAgentContextTokens(subAgentId: string): number | undefined {
+    return this.subAgentContextSizes.get(subAgentId)
+  }
+
+  /** Record the sub-agent currently running for a session (undefined clears it). */
+  setActiveSubAgent(sessionId: string, subAgent: { subAgentId: string; subAgentType: string } | undefined): void {
+    if (subAgent) {
+      this.activeSubAgents.set(sessionId, subAgent)
+    } else {
+      this.activeSubAgents.delete(sessionId)
+    }
+  }
+
+  /** The sub-agent currently running for a session, if any. */
+  getActiveSubAgent(sessionId: string): { subAgentId: string; subAgentType: string } | undefined {
+    return this.activeSubAgents.get(sessionId)
   }
 
   // ============================================================================
@@ -1542,14 +1896,17 @@ export class SessionManager {
     systemPrompt: string,
     tools: import('../llm/types.js').LLMToolDefinition[],
     hash: string,
+    promptHash?: string,
   ): void {
-    updateSessionCachedPrompt(sessionId, systemPrompt, tools, hash)
+    updateSessionCachedPrompt(sessionId, systemPrompt, tools, hash, promptHash)
     this.resetWarmup(sessionId)
   }
 
   getCachedPrompt(
     sessionId: string,
-  ): { systemPrompt: string; tools: import('../llm/types.js').LLMToolDefinition[]; hash: string } | undefined {
+  ):
+    | { systemPrompt: string; tools: import('../llm/types.js').LLMToolDefinition[]; hash: string; promptHash?: string }
+    | undefined {
     const result = getSessionCachedPrompt(sessionId)
     return result ?? undefined
   }
@@ -1571,6 +1928,31 @@ export class SessionManager {
   }
 
   /**
+   * The instructions/skills/model hash last announced to the model via a
+   * system-prompt-change reminder. Drives exactly-once prompt-drift reminders.
+   */
+  getAnnouncedPromptHash(sessionId: string): string | undefined {
+    return this.announcedPromptHashStore.get(sessionId)
+  }
+
+  setAnnouncedPromptHash(sessionId: string, hash: string): void {
+    this.announcedPromptHashStore.set(sessionId, hash)
+  }
+
+  /**
+   * The tool fingerprint last announced to the model via a tool-change
+   * reminder. Drives exactly-once tool-drift reminders WITHOUT mutating the
+   * cached prefix (the cached tools stay frozen until a manual rebase).
+   */
+  getAnnouncedToolFingerprint(sessionId: string): string | undefined {
+    return this.announcedToolFingerprintStore.get(sessionId)
+  }
+
+  setAnnouncedToolFingerprint(sessionId: string, fingerprint: string): void {
+    this.announcedToolFingerprintStore.set(sessionId, fingerprint)
+  }
+
+  /**
    * @deprecated Use addTokensUsed instead
    */
   incrementTokenCount(sessionId: string, tokens: number): void {
@@ -1589,10 +1971,24 @@ export class SessionManager {
 
     // Get maxTokens from the session's effective model if resolvable, otherwise use global
     const { providerId, model } = this.resolveEffectiveProviderModel(sessionId)
-    const maxTokens =
-      providerId && model
-        ? (this.resolveModelContext(providerId, model) ?? providerManager.getCurrentModelContext())
-        : providerManager.getCurrentModelContext()
+    let maxTokens = providerManager.getCurrentModelContext()
+    if (providerId && model) {
+      const resolved = this.resolveModelContext(providerId, model)
+      if (resolved !== undefined) {
+        maxTokens = resolved
+      } else {
+        // The pinned provider/model is gone: the context window below is the
+        // global one, not the one this session was configured with, so the
+        // reported budget is a guess.
+        if (!this.unknownProviderWarned.has(sessionId)) {
+          this.unknownProviderWarned.add(sessionId)
+          logger.warn('Session references an unknown provider, falling back to the global context window', {
+            sessionId,
+            providerId,
+          })
+        }
+      }
+    }
 
     const state = getSessionState(sessionId, maxTokens)
     const dynamicContextChanged = this.getDynamicContextChanged(sessionId)
@@ -1653,13 +2049,33 @@ export class SessionManager {
             }
           } catch (innerErr) {
             throw new Error(
-              `Failed to create branch "${branch}" in workspace "${workspaceName}": ${innerErr instanceof Error ? innerErr.message : String(innerErr)}`,
+              serverT(
+                {
+                  en: 'Failed to create branch "{{branch}}" in workspace "{{workspace}}": {{reason}}',
+                  fr: 'Échec de création de la branche « {{branch}} » dans le workspace « {{workspace}} » : {{reason}}',
+                },
+                {
+                  branch,
+                  workspace: workspaceName,
+                  reason: innerErr instanceof Error ? innerErr.message : String(innerErr),
+                },
+              ),
             )
           }
         })
       } catch (err) {
         throw new Error(
-          `Failed to apply branch "${branch}" to workspace "${workspaceName}": ${err instanceof Error ? err.message : String(err)}`,
+          serverT(
+            {
+              en: 'Failed to apply branch "{{branch}}" to workspace "{{workspace}}": {{reason}}',
+              fr: 'Échec d’application de la branche « {{branch}} » au workspace « {{workspace}} » : {{reason}}',
+            },
+            {
+              branch,
+              workspace: workspaceName,
+              reason: err instanceof Error ? err.message : String(err),
+            },
+          ),
         )
       }
     }
@@ -1936,6 +2352,7 @@ export class SessionManager {
         mode: dbSession.mode,
         phase: 'plan',
         isRunning: dbSession.isRunning,
+        pauseState: this.getPauseState(dbSession.id),
         messages: [],
         criteria: [],
         contextWindows: [],
@@ -1976,6 +2393,7 @@ export class SessionManager {
       mode: eventState.mode,
       phase: eventState.phase,
       isRunning,
+      pauseState: this.getPauseState(dbSession.id),
       messages,
       criteria: eventState.criteria,
       metadataEntries: eventState.metadataEntries,

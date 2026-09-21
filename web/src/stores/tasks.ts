@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { authFetch } from '../lib/api'
-import type { ProjectTask, ProjectTaskCounts, ProjectTaskSettings, TaskGateConfig, TaskStatus } from '@shared/types.js'
+import { boardResource, summariesResource, readBoard, EMPTY_TASK_COUNTS } from '../lib/resources'
+import type { ProjectTask, ProjectTaskSettings, TaskGateConfig, TaskStatus } from '@shared/types.js'
 import type { TasksUpdatePayload } from '@shared/protocol.js'
 
 export interface TaskCreateInput {
@@ -9,6 +10,7 @@ export interface TaskCreateInput {
   agentId?: string
   providerId?: string
   model?: string
+  schedule?: import('@shared/types.js').TaskSchedule
 }
 
 export interface TaskMoveResult {
@@ -24,21 +26,13 @@ export interface TaskMoveOptions {
 }
 
 interface TasksState {
-  tasks: ProjectTask[]
-  settings: ProjectTaskSettings
-  counts: ProjectTaskCounts
-  gates: TaskGateConfig[]
-  loading: boolean
-  activeProjectId: string | null
+  /** Local UI state only — board data lives in boardResource (per project). */
   lastError: string | null
   lastAutoLaunch: { taskId: string; taskTitle: string; sessionId: string; projectId: string } | null
 
-  loadBoard: (projectId: string) => Promise<void>
-  loadCounts: (projectId: string) => Promise<void>
-  loadGates: (projectId: string) => Promise<void>
-  /** Per-project task state counts for list views (e.g. the homepage), keyed by project id. */
-  summaries: Record<string, ProjectTaskCounts>
-  loadSummaries: (projectIds: string[]) => Promise<void>
+  /** WS write-through entry point: pushes update the cache directly (no fetch). */
+  handleTasksUpdate: (payload: TasksUpdatePayload) => void
+
   createTask: (projectId: string, input: TaskCreateInput) => Promise<ProjectTask | null>
   updateTask: (
     projectId: string,
@@ -47,6 +41,7 @@ interface TasksState {
       agentId?: string | null
       providerId?: string | null
       model?: string | null
+      schedule?: import('@shared/types.js').TaskSchedule | null
     },
   ) => Promise<ProjectTask | null>
   deleteTask: (projectId: string, taskId: string) => Promise<boolean>
@@ -61,111 +56,40 @@ interface TasksState {
   setGateConfig: (projectId: string, gates: TaskGateConfig[]) => Promise<boolean>
   setSettings: (projectId: string, settings: Partial<ProjectTaskSettings>) => Promise<boolean>
   reorderTask: (projectId: string, taskId: string, status: TaskStatus, index: number) => Promise<boolean>
-  clearBoard: () => void
   clearAutoLaunch: () => void
-  handleTasksUpdate: (payload: TasksUpdatePayload) => void
+  clearError: () => void
 }
 
-const EMPTY_COUNTS: ProjectTaskCounts = { open: 0, todo: 0, inProgress: 0, running: 0, queued: 0, done: 0 }
-
-function applyBoard(
-  set: (fn: (state: TasksState) => Partial<TasksState>) => void,
-  projectId: string,
-  data: {
-    tasks?: ProjectTask[]
-    settings?: ProjectTaskSettings
-    counts?: ProjectTaskCounts
-    gates?: TaskGateConfig[]
-  },
-) {
-  set((_state) => ({
-    ...(data.tasks ? { tasks: data.tasks } : {}),
-    ...(data.settings ? { settings: data.settings } : {}),
-    ...(data.counts ? { counts: data.counts } : {}),
-    ...(data.gates ? { gates: data.gates } : {}),
-    activeProjectId: projectId,
-    lastError: null,
-  }))
+async function refreshBoard(projectId: string): Promise<void> {
+  await boardResource.refresh(projectId)
 }
 
-export const useTasksStore = create<TasksState>((set, get) => ({
-  tasks: [],
-  settings: { slotLimit: 1, queuePaused: false },
-  counts: EMPTY_COUNTS,
-  gates: [],
-  summaries: {},
-  loading: false,
-  activeProjectId: null,
+export const useTasksStore = create<TasksState>((set) => ({
   lastError: null,
   lastAutoLaunch: null,
 
-  loadBoard: async (projectId) => {
-    set({ loading: true })
-    try {
-      const res = await authFetch(`/api/projects/${projectId}/tasks`)
-      if (!res.ok) {
-        set({ loading: false })
-        return
-      }
-      const data = await res.json()
-      applyBoard(set, projectId, data)
-      set({ loading: false })
-    } catch {
-      set({ loading: false })
+  handleTasksUpdate: (payload) => {
+    // Summaries (homepage chips) follow every project's board, even the one
+    // that isn't open — write-through into the per-project counts resource.
+    if (payload.counts) {
+      summariesResource.write({ counts: payload.counts }, payload.projectId)
     }
-  },
-
-  loadCounts: async (projectId) => {
-    try {
-      const res = await authFetch(`/api/projects/${projectId}/tasks/count`)
-      if (!res.ok) return
-      const data = await res.json()
-      set((state) => ({
-        counts: data.counts ?? state.counts,
-        activeProjectId: projectId,
-      }))
-    } catch {
-      /* badge stays stale */
+    const existing = readBoard(payload.projectId) ?? {
+      tasks: [],
+      settings: { slotLimit: 1, queuePaused: false },
+      counts: EMPTY_TASK_COUNTS,
+      gates: [],
     }
-  },
-
-  loadGates: async (projectId) => {
-    try {
-      const res = await authFetch(`/api/projects/${projectId}/tasks/gates`)
-      if (!res.ok) return
-      const data = await res.json()
-      set({ gates: data.gates ?? [] })
-    } catch {
-      /* board still usable without gates */
-    }
-  },
-
-  loadSummaries: async (projectIds) => {
-    await Promise.all(
-      projectIds.map(async (projectId) => {
-        try {
-          const res = await authFetch(`/api/projects/${projectId}/tasks/count`)
-          if (!res.ok) return
-          const data = await res.json()
-          const counts = data?.counts as ProjectTaskCounts | undefined
-          if (!counts) return
-          // Skip the state write when nothing changed — guards against callers
-          // that refire this (e.g. an effect) turning into a render loop.
-          const current = get().summaries[projectId]
-          if (
-            current &&
-            Object.keys(counts).every(
-              (k) => current[k as keyof ProjectTaskCounts] === counts[k as keyof ProjectTaskCounts],
-            )
-          ) {
-            return
-          }
-          set((state) => ({ summaries: { ...state.summaries, [projectId]: counts } }))
-        } catch {
-          /* a project with a stale/empty summary degrades to "no chips" */
-        }
-      }),
+    boardResource.write(
+      {
+        tasks: payload.tasks ?? existing.tasks,
+        settings: payload.settings ?? existing.settings,
+        counts: payload.counts ?? existing.counts,
+        gates: payload.gates ?? existing.gates,
+      },
+      payload.projectId,
     )
+    if (payload.autoLaunched) set({ lastAutoLaunch: payload.autoLaunched })
   },
 
   createTask: async (projectId, input) => {
@@ -180,7 +104,7 @@ export const useTasksStore = create<TasksState>((set, get) => ({
         set({ lastError: data.error ?? 'Failed to create task' })
         return null
       }
-      await get().loadBoard(projectId)
+      await refreshBoard(projectId)
       return data.task
     } catch {
       set({ lastError: 'Failed to create task' })
@@ -200,7 +124,7 @@ export const useTasksStore = create<TasksState>((set, get) => ({
         set({ lastError: data.error ?? 'Failed to update task' })
         return null
       }
-      await get().loadBoard(projectId)
+      await refreshBoard(projectId)
       return data.task
     } catch {
       set({ lastError: 'Failed to update task' })
@@ -212,7 +136,7 @@ export const useTasksStore = create<TasksState>((set, get) => ({
     try {
       const res = await authFetch(`/api/projects/${projectId}/tasks/${taskId}`, { method: 'DELETE' })
       if (!res.ok) return false
-      await get().loadBoard(projectId)
+      await refreshBoard(projectId)
       return true
     } catch {
       return false
@@ -224,7 +148,7 @@ export const useTasksStore = create<TasksState>((set, get) => ({
       const res = await authFetch(`/api/projects/${projectId}/tasks/${taskId}/duplicate`, { method: 'POST' })
       const data = await res.json()
       if (!res.ok) return null
-      await get().loadBoard(projectId)
+      await refreshBoard(projectId)
       return data.task
     } catch {
       return null
@@ -250,7 +174,7 @@ export const useTasksStore = create<TasksState>((set, get) => ({
       set({ lastError: null })
       if (data.autoLaunched) set({ lastAutoLaunch: data.autoLaunched })
       // Live updates arrive over WS; refetch defensively to stay canonical.
-      await get().loadBoard(projectId)
+      await refreshBoard(projectId)
       return data as TaskMoveResult
     } catch {
       set({ lastError: 'Failed to move task' })
@@ -270,7 +194,7 @@ export const useTasksStore = create<TasksState>((set, get) => ({
         set({ lastError: data.error ?? 'Failed to set gate value' })
         return null
       }
-      await get().loadBoard(projectId)
+      await refreshBoard(projectId)
       return data.task
     } catch {
       set({ lastError: 'Failed to set gate value' })
@@ -286,7 +210,7 @@ export const useTasksStore = create<TasksState>((set, get) => ({
         body: JSON.stringify({ gates }),
       })
       if (!res.ok) return false
-      set({ gates })
+      await refreshBoard(projectId)
       return true
     } catch {
       return false
@@ -294,11 +218,14 @@ export const useTasksStore = create<TasksState>((set, get) => ({
   },
 
   setSettings: async (projectId, settings) => {
-    // Apply optimistically: the stepper must respond instantly instead of
-    // waiting for the server broadcast round-trip (which can lag or drop,
-    // making +/− feel dead on rapid clicks). The server stays authoritative —
-    // its push reconciles any disagreement.
-    set((state) => (state.activeProjectId === projectId ? { settings: { ...state.settings, ...settings } } : {}))
+    // Apply optimistically via write-through: the stepper must respond
+    // instantly instead of waiting for the server broadcast round-trip (which
+    // can lag or drop, making +/− feel dead on rapid clicks). The server stays
+    // authoritative — its push reconciles any disagreement.
+    const existing = readBoard(projectId)
+    if (existing) {
+      boardResource.write({ ...existing, settings: { ...existing.settings, ...settings } }, projectId)
+    }
     try {
       const res = await authFetch(`/api/projects/${projectId}/tasks/settings`, {
         method: 'PUT',
@@ -320,41 +247,13 @@ export const useTasksStore = create<TasksState>((set, get) => ({
         body: JSON.stringify({ status, index }),
       })
       if (!res.ok) return false
+      await refreshBoard(projectId)
       return true
     } catch {
       return false
     }
   },
 
-  clearBoard: () => {
-    set({
-      tasks: [],
-      gates: [],
-      settings: { slotLimit: 1, queuePaused: false },
-      counts: EMPTY_COUNTS,
-      activeProjectId: null,
-    })
-  },
-
   clearAutoLaunch: () => set({ lastAutoLaunch: null }),
-
-  // Streaming/fetch parity: pushed updates have the same shape as GET /tasks.
-  handleTasksUpdate: (payload) => {
-    // Summaries (homepage chips) follow every project's board, even the one
-    // that isn't open — unlike the single-board state below.
-    if (payload.counts) {
-      set((state) => ({ summaries: { ...state.summaries, [payload.projectId]: payload.counts } }))
-    }
-    if (payload.projectId !== get().activeProjectId) return
-    set((state) => {
-      const tasks = payload.tasks ?? state.tasks
-      return {
-        tasks,
-        settings: payload.settings ?? state.settings,
-        counts: payload.counts ?? state.counts,
-        ...(payload.gates ? { gates: payload.gates } : {}),
-        ...(payload.autoLaunched ? { lastAutoLaunch: payload.autoLaunched } : {}),
-      }
-    })
-  },
+  clearError: () => set({ lastError: null }),
 }))

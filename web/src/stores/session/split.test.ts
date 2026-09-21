@@ -505,11 +505,16 @@ describe('split view store', () => {
     useSessionStore.getState().handleServerMessage({
       type: 'chat.llm_retry',
       sessionId: 's2',
-      payload: { attempt: 1, retryInMs: 4000 },
+      payload: { attempt: 1, retryInMs: 4000, error: 'boom' },
     })
 
     const state = useSessionStore.getState()
-    expect(state.panes['s2']?.llmRetry).toEqual({ status: 'retrying', attempt: 1, retryInMs: 4000 })
+    expect(state.panes['s2']?.llmRetry).toEqual({
+      status: 'retrying',
+      attempt: 1,
+      retryInMs: 4000,
+      error: 'boom',
+    })
     // Focused sibling and flat aliases stay clean
     expect(state.panes['s1']?.llmRetry).toBeNull()
     expect(state.llmRetry).toBeNull()
@@ -525,12 +530,17 @@ describe('split view store', () => {
     useSessionStore.getState().handleServerMessage({
       type: 'chat.llm_retry',
       sessionId: 's1',
-      payload: { attempt: 2, retryInMs: 8000 },
+      payload: { attempt: 2, retryInMs: 8000, error: 'boom' },
     })
 
     const state = useSessionStore.getState()
-    expect(state.panes['s1']?.llmRetry).toEqual({ status: 'retrying', attempt: 2, retryInMs: 8000 })
-    expect(state.llmRetry).toEqual({ status: 'retrying', attempt: 2, retryInMs: 8000 })
+    expect(state.panes['s1']?.llmRetry).toEqual({
+      status: 'retrying',
+      attempt: 2,
+      retryInMs: 8000,
+      error: 'boom',
+    })
+    expect(state.llmRetry).toEqual({ status: 'retrying', attempt: 2, retryInMs: 8000, error: 'boom' })
     expect(state.panes['s2']?.llmRetry).toBeNull()
   })
 
@@ -544,7 +554,7 @@ describe('split view store', () => {
     useSessionStore.getState().handleServerMessage({
       type: 'chat.llm_retry',
       sessionId: 's1',
-      payload: { attempt: 1, retryInMs: 90_000 },
+      payload: { attempt: 1, retryInMs: 90_000, error: 'boom' },
     })
     useSessionStore.getState().handleServerMessage({
       type: 'chat.llm_retry_failed',
@@ -556,6 +566,7 @@ describe('split view store', () => {
       status: 'retrying',
       attempt: 1,
       retryInMs: 90_000,
+      error: 'boom',
     })
     expect(useSessionStore.getState().panes['s2']?.llmRetry).toEqual({ status: 'failed', error: 'boom' })
 
@@ -567,7 +578,13 @@ describe('split view store', () => {
       status: 'retrying',
       attempt: 1,
       retryInMs: 90_000,
+      error: 'boom',
     })
-    expect(useSessionStore.getState().llmRetry).toEqual({ status: 'retrying', attempt: 1, retryInMs: 90_000 })
+    expect(useSessionStore.getState().llmRetry).toEqual({
+      status: 'retrying',
+      attempt: 1,
+      retryInMs: 90_000,
+      error: 'boom',
+    })
   })
 })

@@ -5,10 +5,12 @@ import type {
   Criterion,
   Todo,
   Message,
+  MessageStats,
   ContextState,
   Attachment,
   WorkflowLaunchScope,
   WorkflowExecution,
+  SessionStatsSummary,
 } from '@shared/types.js'
 import type { ServerMessage, QueuedMessage, ChoiceOption } from '@shared/protocol.js'
 import type { ConnectionStatus } from '../../lib/ws'
@@ -31,7 +33,7 @@ export interface PendingQuestion {
 
 /** Live status of an LLM failure: backing off before a retry, or the window exhausted. */
 export type LLMRetryState =
-  { status: 'retrying'; attempt: number; retryInMs: number } | { status: 'failed'; error: string }
+  { status: 'retrying'; attempt: number; retryInMs: number; error: string } | { status: 'failed'; error: string }
 
 export interface StreamingBuffer {
   messageId: string | null
@@ -77,6 +79,10 @@ export interface SessionPane {
   error: { code: string; message: string } | null
   /** Live status of an LLM failure: backing off before a retry, or the window exhausted. */
   llmRetry: LLMRetryState | null
+  /** Cumulative turn stats streamed while a turn is running; null when idle. */
+  liveTurnStats: MessageStats | null
+  /** Server-computed headline stats for the whole session (all context windows). Null when no response has stats yet. */
+  sessionStats: SessionStatsSummary | null
 }
 
 export interface SessionState {
@@ -105,6 +111,10 @@ export interface SessionState {
   error: { code: string; message: string } | null
   /** Live status of an LLM failure: backing off before a retry, or the window exhausted. */
   llmRetry: LLMRetryState | null
+  /** Cumulative turn stats streamed while a turn is running; null when idle. */
+  liveTurnStats: MessageStats | null
+  /** Server-computed headline stats for the whole session (all context windows). Null when no response has stats yet. */
+  sessionStats: SessionStatsSummary | null
   sessionsHasMore: boolean
   sessionsPaginationLoading: boolean
   pendingSessionCreate: boolean | string
@@ -115,6 +125,7 @@ export interface SessionState {
   connect: () => Promise<void>
   reconnect: () => void
   disconnect: () => void
+  logout: () => Promise<void>
   submitPassword: (password: string) => Promise<void>
   cancelPassword: () => void
   createSession: (projectId: string, title?: string) => Promise<Session | null>
@@ -144,6 +155,10 @@ export interface SessionState {
   ) => void
   stopGeneration: (sessionId: string) => void
   continueGeneration: (sessionId: string) => void
+  /** Request a cooperative pause (takes effect before the next LLM request). */
+  pauseGeneration: (sessionId: string) => void
+  /** Cancel a pending pause, or release a paused agent. */
+  resumeGeneration: (sessionId: string) => void
   launchWorkflow: (
     sessionId: string,
     content?: string,
@@ -161,7 +176,7 @@ export interface SessionState {
   retryLLM: (sessionId: string) => void
   exitWorkflow: (sessionId: string) => void
   switchMode: (sessionId: string, mode: SessionMode) => void
-  switchDangerLevel: (sessionId: string, dangerLevel: 'normal' | 'dangerous') => void
+  switchDangerLevel: (sessionId: string, dangerLevel: 'normal' | 'dangerous') => Promise<boolean>
   editCriteria: (sessionId: string, criteria: Criterion[]) => void
   compactContext: (sessionId: string) => void
   setSessionProvider: (

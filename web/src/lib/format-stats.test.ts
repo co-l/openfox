@@ -1,5 +1,10 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { formatTime, formatTokens, formatSpeed } from './format-stats.js'
+import { setLocale } from '@shared/i18n/index.js'
+
+beforeEach(() => {
+  setLocale('en')
+})
 
 describe('formatTime', () => {
   it('formats sub-10-second values with one decimal', () => {
@@ -70,6 +75,12 @@ describe('formatTokens', () => {
     expect(formatTokens(1000)).toBe('1 000')
     expect(formatTokens(125000)).toBe('125 000')
     expect(formatTokens(1000000)).toBe('1 000 000')
+  })
+
+  it('normalizes the group separator to a space in fr too', () => {
+    setLocale('fr')
+    expect(formatTokens(125000)).toBe('125 000')
+    expect(formatTokens(1000)).toBe('1 000')
   })
 })
 

@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { readdir } from 'node:fs/promises'
 import { resolve, join, dirname, basename } from 'node:path'
 import { isDirectoryEntry } from '../utils/fs.js'
+import { serverT } from '../i18n.js'
 
 export function createDirectoryRoutes(): Router {
   const router = Router()
@@ -36,7 +37,7 @@ export function createDirectoryRoutes(): Router {
       })
     } catch {
       res.status(400).json({
-        error: 'Cannot read directory',
+        error: serverT({ en: 'Cannot read directory', fr: 'Impossible de lire le répertoire' }),
         current: DEFAULT_BASE_PATH,
         parent: null,
         directories: [],

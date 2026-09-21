@@ -4,13 +4,14 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import type { Mock } from 'vitest'
 import { SessionSidebar } from './SessionSidebar'
 import { SessionScopeProvider } from '../../stores/session/session-scope'
+import { computeSessionStatsSummary } from '@shared/stats.js'
+import type { Message } from '@shared/types.js'
 
 /* ------------------------------------------------------------------ */
 /*  Store mocks — shared across all tests                             */
 /* ------------------------------------------------------------------ */
 
 const mockSessionStore = vi.fn() as Mock
-const mockSettingsStore = vi.fn() as Mock
 const mockConfigStore = vi.fn() as Mock
 const mockUpdateStore = vi.fn() as Mock
 
@@ -19,10 +20,8 @@ vi.mock('../../stores/session', () => ({
     selector ? selector(mockSessionStore()) : mockSessionStore(),
 }))
 
-vi.mock('../../stores/settings', () => ({
-  useSettingsStore: (selector?: (s: unknown) => unknown) =>
-    selector ? selector(mockSettingsStore()) : mockSettingsStore(),
-  SETTINGS_KEYS: { DISPLAY_SHOW_OPEN_IN_EDITOR: 'display.showOpenInEditor' },
+vi.mock('../../hooks/useSetting', () => ({
+  useSetting: (_key: string, fallback = '') => ({ value: fallback, loading: false }),
 }))
 
 vi.mock('../../stores/config', () => ({
@@ -39,15 +38,11 @@ vi.mock('../../hooks/useGitStatus', () => ({
   useGitStatus: (...args: unknown[]) => mockUseGitStatus(...args),
 }))
 
-vi.mock('../../hooks/useSessionStats', () => ({
-  useSessionStats: vi.fn(() => null),
-}))
-
 /* ------------------------------------------------------------------ */
 /*  Child component mocks                                             */
 /* ------------------------------------------------------------------ */
 
-vi.mock('./StatsModal', () => ({ default: () => null }))
+vi.mock('./StatsModal', () => ({ StatsModal: () => null }))
 vi.mock('./CriteriaEditor', () => ({ CriteriaEditor: () => null }))
 vi.mock('../shared/MetadataEntries', () => ({
   MetadataEntries: () => null,
@@ -77,7 +72,6 @@ beforeEach(() => {
     currentSession: { id: 's1', projectId: 'p1', metadataEntries: {}, workdir: '/tmp/project' },
   })
 
-  mockSettingsStore.mockReturnValue({ settings: {} })
   mockConfigStore.mockReturnValue({ version: '1.0.0' })
   mockUpdateStore.mockReturnValue({ status: 'idle', check: vi.fn() })
 })
@@ -86,7 +80,7 @@ describe('SessionSidebar — git repo guards', () => {
   it('[AUTOMATED] shows workspace and branch Edit buttons when project is a git repository', () => {
     mockUseGitStatus.mockReturnValue({ branch: 'main', diff: { files: [], loading: false, error: null } })
 
-    const html = renderToStaticMarkup(<SessionSidebar messages={[]} />)
+    const html = renderToStaticMarkup(<SessionSidebar />)
 
     expect(html).toContain('Edit')
     const editCount = (html.match(/Edit/g) ?? []).length
@@ -96,7 +90,7 @@ describe('SessionSidebar — git repo guards', () => {
   it('[AUTOMATED] hides Edit buttons when project is not a git repository', () => {
     mockUseGitStatus.mockReturnValue({ branch: null, diff: { files: [], loading: false, error: null } })
 
-    const html = renderToStaticMarkup(<SessionSidebar messages={[]} />)
+    const html = renderToStaticMarkup(<SessionSidebar />)
 
     expect(html).not.toContain('Edit')
   })
@@ -113,7 +107,7 @@ describe('SessionSidebar — git repo guards', () => {
       },
     })
 
-    const html = renderToStaticMarkup(<SessionSidebar messages={[]} />)
+    const html = renderToStaticMarkup(<SessionSidebar />)
 
     expect(html).toContain('my-app')
     expect(html).not.toContain('C:\\Users\\me\\projects\\my-app')
@@ -156,11 +150,72 @@ describe('SessionSidebar — split view pane isolation', () => {
 
     const html = renderToStaticMarkup(
       <SessionScopeProvider value="A">
-        <SessionSidebar messages={[]} />
+        <SessionSidebar />
       </SessionScopeProvider>,
     )
 
     expect(html).toContain('workspace-a')
     expect(html).not.toContain('workspace-b')
+  })
+})
+
+describe('SessionSidebar — live turn stats', () => {
+  it('merges live cumulative stats into the server summary while a turn is running', () => {
+    mockUseGitStatus.mockReturnValue({ branch: null, diff: { files: [], loading: false, error: null } })
+    // One already-finished response (aiTime 7) plus the live turn (aiTime 10)
+    // → merged aiTime 17s, shown live while the turn is running.
+    const previousMessage: Message = {
+      id: 'prev',
+      role: 'assistant',
+      content: 'done',
+      timestamp: '2024-01-01T10:00:00Z',
+      stats: {
+        providerId: 'p',
+        providerName: 'P',
+        backend: 'ollama',
+        model: 'm',
+        mode: 'planner',
+        totalTime: 8,
+        toolTime: 1,
+        prefillTokens: 40000,
+        prefillSpeed: 10000,
+        generationTokens: 400,
+        generationSpeed: 100,
+      },
+    }
+    const summary = computeSessionStatsSummary([previousMessage])
+    mockSessionStore.mockReturnValue({
+      currentSession: { id: 's1', projectId: 'p1', metadataEntries: {}, workdir: '/tmp/project' },
+      panes: {
+        s1: {
+          session: { id: 's1', projectId: 'p1', metadataEntries: {}, workdir: '/tmp/project' },
+          sessionStats: summary,
+          liveTurnStats: {
+            providerId: 'p',
+            providerName: 'P',
+            backend: 'ollama',
+            model: 'm',
+            mode: 'builder',
+            totalTime: 12,
+            toolTime: 2,
+            prefillTokens: 60000,
+            prefillSpeed: 20000,
+            generationTokens: 600,
+            generationSpeed: 150,
+          },
+        },
+      },
+    })
+
+    const html = renderToStaticMarkup(
+      <SessionScopeProvider value="s1">
+        <SessionSidebar />
+      </SessionScopeProvider>,
+    )
+
+    expect(html).toContain('17s')
+    // Weighted averages across both responses: prefill 100k/7s ≈ 14.3k, gen 1000/8s = 125
+    expect(html).toContain('14.3k')
+    expect(html).toContain('125.0')
   })
 })

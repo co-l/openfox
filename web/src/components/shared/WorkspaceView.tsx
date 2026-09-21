@@ -1,5 +1,7 @@
 import { OptionalScrollArea } from './OptionalScrollArea'
 import { memo } from 'react'
+import { useT } from '../../hooks/useT'
+import type { Translation } from '@shared/i18n/index.js'
 
 interface WorkspaceViewProps {
   result: string
@@ -24,6 +26,7 @@ interface ActionResultData {
 }
 
 export const WorkspaceView = memo(function WorkspaceView({ result, action }: WorkspaceViewProps) {
+  const t = useT()
   let parsed: Record<string, unknown>
   try {
     parsed = JSON.parse(result) as Record<string, unknown>
@@ -37,10 +40,10 @@ export const WorkspaceView = memo(function WorkspaceView({ result, action }: Wor
 
   switch (action) {
     case 'list':
-      return renderList(parsed as ListData)
+      return renderList(parsed as ListData, t)
     case 'switch':
     case 'delete':
-      return renderActionResult(parsed as ActionResultData)
+      return renderActionResult(parsed as ActionResultData, t)
     default:
       return (
         <OptionalScrollArea horizontal className="max-h-[60vh]">
@@ -50,21 +53,29 @@ export const WorkspaceView = memo(function WorkspaceView({ result, action }: Wor
   }
 })
 
-function renderList(data: ListData) {
+type TFunc = (tx: Translation, vars?: Record<string, string | number>) => string
+
+function renderList(data: ListData, t: TFunc) {
   const workspaces = data.workspaces ?? []
   if (workspaces.length === 0) {
-    return <div className="text-xs text-text-muted italic">No workspaces found</div>
+    return (
+      <div className="text-xs text-text-muted italic">
+        {t({ en: 'No workspaces found', fr: 'Aucun workspace trouvé' })}
+      </div>
+    )
   }
 
   return (
     <div className="space-y-1 text-xs">
-      <div className="text-text-muted mb-1">Workspaces:</div>
+      <div className="text-text-muted mb-1">{t({ en: 'Workspaces:', fr: 'Workspaces :' })}</div>
       {workspaces.map((ws) => (
         <div key={ws.name} className="flex items-center gap-2 font-mono">
           <span className={ws.active ? 'text-accent-success' : 'text-text-muted'}>{ws.active ? '●' : '○'}</span>
           <span className={ws.active ? 'text-text-primary font-medium' : 'text-text-secondary'}>{ws.name}</span>
           {ws.branch && <span className="text-text-muted">· {ws.branch}</span>}
-          {ws.active && <span className="text-[10px] text-accent-primary">(current)</span>}
+          {ws.active && (
+            <span className="text-[10px] text-accent-primary">{t({ en: '(current)', fr: '(actuel)' })}</span>
+          )}
         </div>
       ))}
     </div>
@@ -80,13 +91,13 @@ function FieldRow({ label, value, mono }: { label: string; value: string; mono?:
   )
 }
 
-function renderActionResult(data: ActionResultData) {
+function renderActionResult(data: ActionResultData, t: TFunc) {
   return (
     <div className="space-y-2 text-xs">
       {data.message && <div className="text-text-primary">{data.message}</div>}
-      {data.workspace && <FieldRow label="Name" value={data.workspace} mono />}
-      {data.path && <FieldRow label="Path" value={data.path} mono />}
-      {data.branch && <FieldRow label="Branch" value={data.branch} mono />}
+      {data.workspace && <FieldRow label={t({ en: 'Name', fr: 'Nom' })} value={data.workspace} mono />}
+      {data.path && <FieldRow label={t({ en: 'Path', fr: 'Chemin' })} value={data.path} mono />}
+      {data.branch && <FieldRow label={t({ en: 'Branch', fr: 'Branche' })} value={data.branch} mono />}
     </div>
   )
 }

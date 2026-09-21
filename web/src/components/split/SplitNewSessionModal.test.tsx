@@ -3,11 +3,10 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { SplitNewSessionModal } from './SplitNewSessionModal'
 
-const { createSessionMock, openPaneMock, resetPendingSessionCreateMock, listProjectsMock } = vi.hoisted(() => ({
+const { createSessionMock, openPaneMock, resetPendingSessionCreateMock } = vi.hoisted(() => ({
   createSessionMock: vi.fn(),
   openPaneMock: vi.fn(async () => undefined),
   resetPendingSessionCreateMock: vi.fn(),
-  listProjectsMock: vi.fn(async () => undefined),
 }))
 
 let projects: Array<Record<string, unknown>>
@@ -21,12 +20,8 @@ vi.mock('../../stores/session', () => ({
     }),
 }))
 
-vi.mock('../../stores/project', () => ({
-  useProjectStore: (selector: (state: unknown) => unknown) =>
-    selector({
-      projects,
-      listProjects: listProjectsMock,
-    }),
+vi.mock('../../hooks/useProjects', () => ({
+  useProjects: () => ({ projects, refresh: vi.fn(), loading: false }),
 }))
 
 interface ProjectFixture {

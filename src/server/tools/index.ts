@@ -3,6 +3,7 @@ import type { Tool, ToolRegistry, ToolContext } from './types.js'
 import type { AgentDefinition } from '../agents/types.js'
 import { getSessionDisabledServers } from '../mcp/session-overrides.js'
 import { readFileTool } from './read.js'
+import { describeImageTool } from './describe-image.js'
 import { writeFileTool } from './write.js'
 import { editFileTool } from './edit.js'
 import { runCommandTool } from './shell.js'
@@ -42,6 +43,7 @@ function getBuiltInTools(): Tool[] {
   if (!_builtInTools) {
     _builtInTools = [
       readFileTool,
+      describeImageTool,
       writeFileTool,
       editFileTool,
       runCommandTool,
@@ -297,15 +299,21 @@ export function createRegistryFromTools(
 // All tools by name for dynamic registry creation
 // Lazy initialization to avoid circular dependency issues during module load
 let mcpToolsOverride: Tool[] = []
+let pluginToolsOverride: Tool[] = []
 
 export function setMcpTools(tools: Tool[]): void {
   mcpToolsOverride = tools
 }
 
+export function setPluginTools(tools: Tool[]): void {
+  pluginToolsOverride = tools
+}
+
 function getAllToolsMap(): Map<string, Tool> {
   const builtInEntries: [string, Tool][] = getBuiltInTools().map((t) => [t.name, t])
   const mcpEntries: [string, Tool][] = mcpToolsOverride.map((t) => [t.name, t])
-  return new Map<string, Tool>([...builtInEntries, ...mcpEntries])
+  const pluginEntries: [string, Tool][] = pluginToolsOverride.map((t) => [t.name, t])
+  return new Map<string, Tool>([...builtInEntries, ...mcpEntries, ...pluginEntries])
 }
 
 /**
@@ -435,6 +443,7 @@ export {
   PathAccessDeniedError,
   requestPathAccess,
   cancelPathConfirmationsForSession,
+  autoApprovePendingConfirmationsForSession,
   providePathConfirmation,
   getConfirmationSessionId,
 } from './path-security.js'

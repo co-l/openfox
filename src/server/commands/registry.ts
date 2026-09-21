@@ -41,10 +41,16 @@ export async function loadDefaultCommands(): Promise<CommandDefinition[]> {
 }
 
 export async function loadUserCommands(configDir: string): Promise<CommandDefinition[]> {
-  return loadItemsFromDir<CommandDefinition>(getCommandsDir(configDir), {
+  const userCommands = await loadItemsFromDir<CommandDefinition>(getCommandsDir(configDir), {
     extension: COMMAND_EXTENSION,
     logName: 'command',
   })
+  if (pluginCommandsOverride.length === 0) return userCommands
+  const byId = new Map(userCommands.map((command) => [command.metadata.id, command]))
+  for (const command of pluginCommandsOverride) {
+    if (!byId.has(command.metadata.id)) byId.set(command.metadata.id, command)
+  }
+  return [...byId.values()]
 }
 
 export async function loadProjectCommands(projectDir: string): Promise<CommandDefinition[]> {
@@ -52,6 +58,12 @@ export async function loadProjectCommands(projectDir: string): Promise<CommandDe
     extension: COMMAND_EXTENSION,
     logName: 'command',
   })
+}
+
+let pluginCommandsOverride: CommandDefinition[] = []
+
+export function setPluginCommands(commands: CommandDefinition[]): void {
+  pluginCommandsOverride = commands
 }
 
 export async function loadAllCommands(configDir: string, projectDir?: string): Promise<CommandDefinition[]> {
@@ -70,6 +82,10 @@ export async function loadAllCommands(configDir: string, projectDir?: string): P
     for (const cmd of projectCommands) {
       commandMap.set(cmd.metadata.id, cmd)
     }
+  }
+
+  for (const cmd of pluginCommandsOverride) {
+    commandMap.set(cmd.metadata.id, cmd)
   }
 
   return Array.from(commandMap.values())

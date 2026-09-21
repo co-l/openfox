@@ -71,11 +71,16 @@ export default {
           '0%': { opacity: '0', transform: 'translateY(-4px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
         },
+        'pause-pulse': {
+          '0%, 100%': { backgroundColor: 'rgb(var(--color-accent-warning) / 0.2)' },
+          '50%': { backgroundColor: 'rgb(var(--color-accent-warning) / 0.5)' },
+        },
       },
       animation: {
         'slide-down': 'slide-down 0.2s ease-out forwards',
         'highlight-fade': 'highlight-fade 3s ease-out forwards',
         'fade-in': 'fade-in 0.2s ease-out forwards',
+        'pause-pulse': 'pause-pulse 1.2s ease-in-out infinite',
       },
     },
   },

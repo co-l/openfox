@@ -4,8 +4,10 @@ import type { DisplayItem } from './groupMessages.js'
 import { ChatMessage } from './ChatMessage'
 import { AssistantMessage } from './AssistantMessage'
 import { SubAgentContainer } from './SubAgentContainer'
+import { FeedDivider } from './FeedDivider'
 import { FEED_REVEAL_EVENT } from './feed-window'
-import { useDisplaySettings } from '../../stores/settings'
+import { useDisplaySettings } from '../../hooks/useDisplaySettings'
+import { useT } from '../../hooks/useT'
 
 const ITEM_CONTAINMENT_STYLE = { contentVisibility: 'auto', containIntrinsicSize: 'auto 200px' } as const
 const PLACEHOLDER_STYLE = { contentVisibility: 'auto', containIntrinsicSize: '160px', minHeight: '160px' } as const
@@ -52,6 +54,7 @@ export const ChatFeedItems = memo(function ChatFeedItems({
   showAgentDefinitions = true,
   showWorkflowBars = true,
 }: ChatFeedItemsProps) {
+  const t = useT()
   const totalItems = displayItems.length
   const { feedVirtualization } = useDisplaySettings()
   const virtualizationEnabled = feedVirtualization || paginatedHistory
@@ -65,11 +68,11 @@ export const ChatFeedItems = memo(function ChatFeedItems({
   const userScrolledRef = useRef(false)
   const previousScrollTopRef = useRef(0)
   const displayStart = virtualizationEnabled ? startIndex : 0
-  // Only virtualized feeds get content-visibility containment. Off-screen it
+  // Only explicitly enabled experimental feeds get containment. Off-screen it
   // freezes element heights at the last-known intrinsic size, so applying it to
   // dynamically-mutating content (streaming LLM output) leaves stale phantom
-  // gaps below messages. Non-virtualized feeds render at natural height.
-  const itemContainmentStyle = virtualizationEnabled ? ITEM_CONTAINMENT_STYLE : undefined
+  // gaps below messages. Automatic paginated feeds retain natural heights.
+  const itemContainmentStyle = feedVirtualization ? ITEM_CONTAINMENT_STYLE : undefined
 
   // Reset the virtual window when switching sessions.
   useEffect(() => {
@@ -205,7 +208,16 @@ export const ChatFeedItems = memo(function ChatFeedItems({
             className="flex items-center justify-center gap-2 py-3 text-xs text-text-muted"
             data-testid="feed-unmounted-hint"
           >
-            Scroll up to load {displayStart} older item{displayStart !== 1 ? 's' : ''}
+            {t(
+              {
+                en: { one: 'Scroll up to load {{count}} older item', other: 'Scroll up to load {{count}} older items' },
+                fr: {
+                  one: 'Faites défiler vers le haut pour charger {{count}} élément plus ancien',
+                  other: 'Faites défiler vers le haut pour charger {{count}} éléments plus anciens',
+                },
+              },
+              { count: displayStart },
+            )}
           </div>
           {Array.from({ length: displayStart }, (_, i) => (
             <div key={`ph-${i}`} data-item-index={i} data-placeholder style={PLACEHOLDER_STYLE} />
@@ -217,14 +229,8 @@ export const ChatFeedItems = memo(function ChatFeedItems({
         const displayIndex = displayStart + index
         if (item.type === 'context-divider') {
           return (
-            <div
-              key={itemKey(item)}
-              data-item-index={displayIndex}
-              className="flex items-center gap-2 feed-item px-2 @md:px-4"
-            >
-              <div className="flex-1 border-t border-border" />
-              <span className="text-[10px] text-text-muted font-medium px-2">Earlier context summarized</span>
-              <div className="flex-1 border-t border-border" />
+            <div key={itemKey(item)} data-item-index={displayIndex} className="feed-item px-2 @md:px-4">
+              <FeedDivider label={t({ en: 'Earlier context summarized', fr: 'Contexte antérieur résumé' })} />
             </div>
           )
         }

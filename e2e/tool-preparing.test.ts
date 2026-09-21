@@ -106,6 +106,48 @@ describe('Tool Preparing Events', () => {
     }
   })
 
+  it('emits chat.tool_preparing with write_file arguments for the live preview', async () => {
+    await client.send('chat.send', {
+      content: 'Create a new file at src/newfile.ts',
+    })
+
+    const events = await collectChatEvents(client)
+    assertNoErrors(events)
+
+    const preparingEvents = events.get<ChatToolPreparingPayload>('chat.tool_preparing')
+    // The first write_file preparing event may be emitted before any arguments
+    // have streamed in — pick one that actually carries the JSON fragment.
+    const writePreparing = preparingEvents.find(
+      (e) => e.payload.name === 'write_file' && typeof e.payload.arguments === 'string',
+    )
+
+    expect(writePreparing).toBeDefined()
+    expect(typeof writePreparing!.payload.arguments).toBe('string')
+    const parsed = JSON.parse(writePreparing!.payload.arguments!) as { path?: string; content?: string }
+    expect(parsed.path).toBe('src/newfile.ts')
+    expect(typeof parsed.content).toBe('string')
+    expect(parsed.content!.length).toBeGreaterThan(0)
+  })
+
+  it('streams the live edit context for edit_file preparing events', async () => {
+    await client.send('chat.send', {
+      content: 'Read src/math.ts, then use edit_file to change the function name "add" to "sum"',
+    })
+
+    const events = await collectChatEvents(client)
+    assertNoErrors(events)
+
+    const preparingEvents = events.get<ChatToolPreparingPayload>('chat.tool_preparing')
+    const editPreparing = preparingEvents.find(
+      (e) => e.payload.name === 'edit_file' && e.payload.editContext && e.payload.editContext.length > 0,
+    )
+
+    expect(editPreparing).toBeDefined()
+    expect(editPreparing!.payload.editContext!.length).toBeGreaterThan(0)
+    const region = editPreparing!.payload.editContext![0]!
+    expect(region.oldContent).toContain('add')
+  })
+
   it('emits preparing events for multiple tool calls', async () => {
     await client.send('chat.send', {
       content: 'First use glob to find all .ts files, then read src/index.ts',

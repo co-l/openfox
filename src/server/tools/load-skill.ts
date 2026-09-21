@@ -10,6 +10,7 @@ import { loadAllSkills, findSkillById, isSkillEnabled } from '../skills/registry
 import { getRuntimeConfig } from '../runtime-config.js'
 import { getGlobalConfigDir } from '../../cli/paths.js'
 import type { SkillDefinition } from '../skills/types.js'
+import { serverT } from '../i18n.js'
 
 interface LoadSkillArgs {
   skillId: string
@@ -24,11 +25,18 @@ const handler: ToolHandler<LoadSkillArgs> = async (args, context, helpers): Prom
   const { skillId } = args
 
   if (!skillId) {
-    return helpers.error('Missing required parameter: skillId')
+    return helpers.error(
+      serverT({ en: 'Missing required parameter: skillId', fr: 'Paramètre requis manquant : skillId' }),
+    )
   }
 
   if (!isSkillEnabled(skillId)) {
-    return helpers.error(`Skill "${skillId}" is not enabled.`)
+    return helpers.error(
+      serverT(
+        { en: 'Skill "{{id}}" is not enabled.', fr: 'La compétence « {{id}} » n’est pas activée.' },
+        { id: skillId },
+      ),
+    )
   }
 
   const config = getRuntimeConfig()
@@ -38,7 +46,15 @@ const handler: ToolHandler<LoadSkillArgs> = async (args, context, helpers): Prom
 
   if (!skill) {
     const available = allSkills.map((s) => s.metadata.id).join(', ')
-    return helpers.error(`Skill "${skillId}" not found. Available skills: ${available}`)
+    return helpers.error(
+      serverT(
+        {
+          en: 'Skill "{{id}}" not found. Available skills: {{available}}',
+          fr: 'Compétence « {{id}} » introuvable. Compétences disponibles : {{available}}',
+        },
+        { id: skillId, available },
+      ),
+    )
   }
 
   return helpers.success(formatSkillPrompt(skill))

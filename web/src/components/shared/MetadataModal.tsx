@@ -5,6 +5,7 @@ import { shouldAutofocus } from '../../lib/device'
 import { Modal } from './Modal'
 import { MetadataStatusIcon, decodeHtmlEntities } from './MetadataStatusIcon'
 import { PlusIcon, XCloseIcon } from './icons'
+import { useT } from '../../hooks/useT'
 
 const STATUS_CYCLES: Record<string, string[]> = {
   criteria: ['pending', 'completed', 'passed', 'failed'],
@@ -42,6 +43,7 @@ export function MetadataModal({
   isOpen,
   onClose,
 }: MetadataModalProps) {
+  const t = useT()
   const [entries, setEntries] = useState<MetadataEntry[]>(initialEntries)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editDescription, setEditDescription] = useState('')
@@ -166,7 +168,7 @@ export function MetadataModal({
             <button
               onClick={() => handleStartEdit(entry.id, entry.description)}
               className="text-sm text-text-primary text-left hover:text-accent-primary transition-colors w-full cursor-pointer"
-              title="Click to edit"
+              title={t({ en: 'Click to edit', fr: 'Cliquez pour modifier' })}
             >
               <span className="text-text-muted">[{entry.id}]</span> <span>{decodeHtmlEntities(entry.description)}</span>
             </button>
@@ -195,7 +197,7 @@ export function MetadataModal({
               <button
                 onClick={() => handleCycleStatus(entry.id)}
                 className="flex-shrink-0 cursor-pointer hover:opacity-70 transition-opacity mt-0.5"
-                title="Click to cycle status"
+                title={t({ en: 'Click to cycle status', fr: 'Cliquez pour faire défiler le statut' })}
               >
                 <MetadataStatusIcon status={entry.status} />
               </button>
@@ -203,7 +205,7 @@ export function MetadataModal({
               <button
                 onClick={() => handleDelete(entry.id)}
                 className="flex-shrink-0 text-text-muted hover:text-accent-error transition-colors cursor-pointer mt-0.5 ml-auto"
-                title="Delete entry"
+                title={t({ en: 'Delete entry', fr: 'Supprimer l’entrée' })}
               >
                 <span className="flex">
                   <XCloseIcon className="w-4 h-4" />
@@ -212,7 +214,11 @@ export function MetadataModal({
             </li>
           )
         })}
-        {entries.length === 0 && <p className="text-sm text-text-muted italic text-center py-4">No entries yet.</p>}
+        {entries.length === 0 && (
+          <p className="text-sm text-text-muted italic text-center py-4">
+            {t({ en: 'No entries yet.', fr: 'Aucune entrée pour l’instant.' })}
+          </p>
+        )}
       </ul>
 
       <div className="mt-4 pt-3 border-t border-border">
@@ -223,16 +229,16 @@ export function MetadataModal({
             value={newDescription}
             onChange={(e) => setNewDescription(e.target.value)}
             onKeyDown={handleAddKeyDown}
-            placeholder="New entry..."
+            placeholder={t({ en: 'New entry...', fr: 'Nouvelle entrée...' })}
             className="flex-1 bg-bg-tertiary text-text-primary text-sm px-2 py-1 rounded border border-border focus:outline-none focus:border-accent-primary placeholder-text-muted"
           />
           <button
             onClick={handleAdd}
             className="flex items-center gap-1 text-sm text-accent-primary hover:text-accent-primary/70 transition-colors cursor-pointer"
-            title="Add entry"
+            title={t({ en: 'Add entry', fr: 'Ajouter une entrée' })}
           >
             <PlusIcon className="w-4 h-4" />
-            Add
+            {t({ en: 'Add', fr: 'Ajouter' })}
           </button>
         </div>
       </div>

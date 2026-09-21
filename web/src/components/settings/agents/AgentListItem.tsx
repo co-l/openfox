@@ -1,5 +1,6 @@
-import type { AgentInfo } from '../../../stores/agents'
+import type { AgentInfo } from '../../../lib/agents-actions'
 import { CRUDListItem } from '../CRUDListItem'
+import { useT } from '../../../hooks/useT'
 
 export function AgentListItem({
   agent,
@@ -24,6 +25,7 @@ export function AgentListItem({
   onDelete?: () => void
   onCancelDelete?: () => void
 }) {
+  const t = useT()
   const displayTools = agent.allowedTools.filter((t) => !alwaysAllowedNames?.has(t))
   const shortModel = model ? model.split('/').pop()?.replace(/-/g, ' ') : undefined
   return (
@@ -44,7 +46,9 @@ export function AgentListItem({
         <span className="text-text-primary text-sm font-medium">{agent.name}</span>
         <span className="text-text-muted text-xs font-mono">{agent.id}</span>
         {isBuiltIn && (
-          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-bg-primary text-text-muted">Built-in</span>
+          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-bg-primary text-text-muted">
+            {t({ en: 'Built-in', fr: 'Intégré' })}
+          </span>
         )}
         {shortModel && (
           <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-accent-primary/10 text-accent-primary">
@@ -60,7 +64,9 @@ export function AgentListItem({
           </span>
         ))}
         {displayTools.length > 5 && (
-          <span className="text-[10px] text-text-muted">+{displayTools.length - 5} more</span>
+          <span className="text-[10px] text-text-muted">
+            {t({ en: '+{{count}} more', fr: '+{{count}} de plus' }, { count: displayTools.length - 5 })}
+          </span>
         )}
       </div>
     </CRUDListItem>

@@ -2,6 +2,7 @@ import { ScrollArea } from '../shared/ScrollArea'
 import { useEffect, useRef, useState, useCallback, type ReactNode } from 'react'
 import { ChevronDownIcon } from '../shared/icons'
 import { shouldAutofocus } from '../../lib/device'
+import { useT } from '../../hooks/useT'
 
 interface UseSearchableMenuOptions<T> {
   items: T[]
@@ -174,7 +175,12 @@ interface EmptyMessageProps {
 }
 
 export function EmptyMessage({ hasItems, message }: EmptyMessageProps) {
-  return <div className="px-3 py-2 text-text-muted text-sm">{hasItems ? 'No matches' : message}</div>
+  const t = useT()
+  return (
+    <div className="px-3 py-2 text-text-muted text-sm">
+      {hasItems ? t({ en: 'No matches', fr: 'Aucun résultat' }) : message}
+    </div>
+  )
 }
 
 interface ManageButtonProps {

@@ -6,6 +6,7 @@ import { ModelPicker } from '../../shared/ModelPicker'
 import { Toggle } from '../../shared/Toggle'
 import { parseAllowedTools, serializeTools } from './tools'
 import type { Provider } from '../../../stores/config'
+import { useT } from '../../../hooks/useT'
 
 interface AgentFormProps {
   formName: string
@@ -52,6 +53,7 @@ export function AgentForm({
   onModelChange,
   onPromptChange,
 }: AgentFormProps) {
+  const t = useT()
   const granularTools = parseAllowedTools(formTools)
   const filteredTools = availableTools.filter((t) => !(formSubagent && t.topLevelOnly) && !t.isMcp)
   const mcpTools = availableTools.filter((t) => t.isMcp && !(formSubagent && t.topLevelOnly))
@@ -98,33 +100,33 @@ export function AgentForm({
 
         <div className="grid grid-cols-2 gap-3">
           <FormField
-            label="Name"
+            label={t({ en: 'Name', fr: 'Nom' })}
             value={formName}
             onChange={onNameChange}
-            placeholder="My Agent"
+            placeholder={t({ en: 'My Agent', fr: 'Mon agent' })}
             readOnly={isReadOnly}
           />
           <FormField
-            label="ID"
+            label={t({ en: 'ID', fr: 'ID' })}
             value={formId}
             onChange={onIdChange}
             readOnly={true}
             placeholder="my_agent"
-            hint="(read-only)"
+            hint={t({ en: '(read-only)', fr: '(lecture seule)' })}
             mono
           />
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <FormField
-            label="Description"
+            label={t({ en: 'Description', fr: 'Description' })}
             value={formDescription}
             onChange={onDescriptionChange}
-            placeholder="What this agent does"
+            placeholder={t({ en: 'What this agent does', fr: 'Ce que fait cet agent' })}
             readOnly={isReadOnly}
           />
           <div>
-            <label className="block text-xs text-text-secondary mb-1">Type</label>
+            <label className="block text-xs text-text-secondary mb-1">{t({ en: 'Type', fr: 'Type' })}</label>
             <div className="flex items-center gap-3 h-[34px]">
               <button
                 onClick={() => !isReadOnly && onSubagentChange(false)}
@@ -134,7 +136,7 @@ export function AgentForm({
                     : 'bg-bg-tertiary text-text-muted hover:text-text-secondary'
                 } ${isReadOnly ? 'pointer-events-none opacity-60' : ''}`}
               >
-                Agent
+                {t({ en: 'Agent', fr: 'Agent' })}
               </button>
               <button
                 onClick={() => !isReadOnly && onSubagentChange(true)}
@@ -144,10 +146,10 @@ export function AgentForm({
                     : 'bg-bg-tertiary text-text-muted hover:text-text-secondary'
                 } ${isReadOnly ? 'pointer-events-none opacity-60' : ''}`}
               >
-                Sub-agent
+                {t({ en: 'Sub-agent', fr: 'Sous-agent' })}
               </button>
               <div className="flex items-center gap-1.5 ml-auto">
-                <label className="text-xs text-text-secondary">Color</label>
+                <label className="text-xs text-text-secondary">{t({ en: 'Color', fr: 'Couleur' })}</label>
                 <input
                   type="color"
                   value={formColor}
@@ -162,21 +164,26 @@ export function AgentForm({
 
         {!isReadOnly && (
           <div>
-            <label className="block text-xs text-text-secondary mb-1">Model override</label>
+            <label className="block text-xs text-text-secondary mb-1">
+              {t({ en: 'Model override', fr: 'Remplacement du modèle' })}
+            </label>
             <ModelPicker
               providers={providers}
               value={formModel}
               onChange={onModelChange}
-              defaultLabel="Default (global model)"
+              defaultLabel={t({ en: 'Default (global model)', fr: 'Défaut (modèle global)' })}
             />
             <p className="text-[10px] text-text-muted mt-0.5">
-              When set, this model will be used when this agent is active (overrides the session model).
+              {t({
+                en: 'When set, this model will be used when this agent is active (overrides the session model).',
+                fr: 'Lorsqu’il est défini, ce modèle sera utilisé quand cet agent est actif (remplace le modèle de session).',
+              })}
             </p>
           </div>
         )}
 
         <div>
-          <label className="block text-xs text-text-secondary mb-1">Tools</label>
+          <label className="block text-xs text-text-secondary mb-1">{t({ en: 'Tools', fr: 'Outils' })}</label>
           <ScrollArea className="flex flex-wrap gap-1.5 p-2 bg-bg-tertiary border border-border rounded max-h-32">
             {filteredTools.map((tool) => {
               const isSelected = granularTools.has(tool.name)
@@ -245,7 +252,9 @@ export function AgentForm({
                       closeOnClick: false,
                     })),
                     {
-                      label: isSelected ? 'Deselect all' : 'Select all',
+                      label: isSelected
+                        ? t({ en: 'Deselect all', fr: 'Tout désélectionner' })
+                        : t({ en: 'Select all', fr: 'Tout sélectionner' }),
                       closeOnClick: false,
                       onClick: () => {
                         if (isSelected) {
@@ -292,7 +301,10 @@ export function AgentForm({
             return (
               <div>
                 <label className="block text-xs text-text-secondary mb-1">
-                  MCP Tools <span className="text-text-muted font-normal">— from connected MCP servers</span>
+                  {t({ en: 'MCP Tools', fr: 'Outils MCP' })}{' '}
+                  <span className="text-text-muted font-normal">
+                    {t({ en: '— from connected MCP servers', fr: '— issus des serveurs MCP connectés' })}
+                  </span>
                 </label>
                 <div className="bg-bg-tertiary border border-border rounded overflow-hidden">
                   <div className="flex items-center gap-4 px-3 py-1.5">
@@ -310,7 +322,11 @@ export function AgentForm({
                           className="w-3 h-3 accent-accent-primary"
                         />
                         <span className={mcpMode === mode ? 'text-text-primary font-medium' : 'text-text-muted'}>
-                          {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                          {mode === 'all'
+                            ? t({ en: 'All', fr: 'Tous' })
+                            : mode === 'none'
+                              ? t({ en: 'None', fr: 'Aucun' })
+                              : t({ en: 'Partial', fr: 'Partiel' })}
                           {mode === 'partial' && allMcpToolNames.size > 0 && (
                             <span className="ml-1 text-text-muted font-normal">
                               ({[...granularTools.keys()].filter((k) => allMcpToolNames.has(k)).length}/
@@ -363,7 +379,7 @@ export function AgentForm({
                                 setFocusIdx(0)
                               }}
                               onKeyDown={handleKeyDown}
-                              placeholder="Search MCP tools..."
+                              placeholder={t({ en: 'Search MCP tools...', fr: 'Rechercher des outils MCP...' })}
                               className="w-full px-2 py-1 text-xs bg-bg-primary border border-border rounded font-mono focus:outline-none focus:ring-1 focus:ring-accent-primary"
                             />
                           </div>
@@ -395,7 +411,12 @@ export function AgentForm({
                                 )
                               })}
                               {filtered.length === 0 && (
-                                <div className="px-3 py-2 text-xs text-text-muted">No MCP tools match your search.</div>
+                                <div className="px-3 py-2 text-xs text-text-muted">
+                                  {t({
+                                    en: 'No MCP tools match your search.',
+                                    fr: 'Aucun outil MCP ne correspond à votre recherche.',
+                                  })}
+                                </div>
                               )}
                             </div>
                           </ScrollArea>
@@ -409,12 +430,12 @@ export function AgentForm({
       </div>
 
       <div className="flex-1 min-h-[150px] pt-3 flex flex-col">
-        <label className="block text-xs text-text-secondary mb-1">Prompt</label>
+        <label className="block text-xs text-text-secondary mb-1">{t({ en: 'Prompt', fr: 'Invite' })}</label>
         <textarea
           value={formPrompt}
           onChange={(e) => !isReadOnly && onPromptChange(e.target.value)}
           readOnly={isReadOnly}
-          placeholder="Instructions for this agent..."
+          placeholder={t({ en: 'Instructions for this agent...', fr: 'Instructions pour cet agent...' })}
           className={`h-80 w-full px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono resize-y focus:outline-none focus:ring-1 focus:ring-accent-primary ${isReadOnly ? 'opacity-60' : ''}`}
         />
       </div>

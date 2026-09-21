@@ -10,14 +10,19 @@ import type { Config, ModelConfig, ProviderBackend } from '../shared/types.js'
 import type { ServerHandle } from './context.js'
 import type { VisionBackend } from './llm/vision-fallback.js'
 import { initDatabase } from './db/index.js'
-import { initEventStore } from './events/index.js'
+import { getProject, deleteProject } from './db/projects.js'
+import { initEventStore, getEventStore, combineEventsWithSnapshot } from './events/index.js'
+import { buildMessagesFromStoredEvents } from './events/folding.js'
+import { provideAnswer, getPendingQuestionsForSession } from './tools/ask.js'
+import { providePathConfirmation, getPendingConfirmationsBySession } from './tools/path-security.js'
 import './llm/proxy.js'
 import { detectModel, getLlmStatus, getBackendDisplayName } from './llm/index.js'
+import { detectBackendFromUrl } from './llm/backend.js'
 import { buildModelsUrl } from './llm/url-utils.js'
 
 import { createMockLLMClient } from './llm/mock.js'
 import { createProviderManager, parseDefaultModelSelection } from './provider-manager.js'
-import { isReasoningEffortValue } from './providers/model-catalog.js'
+import { isReasoningEffortValidForModel } from '../shared/reasoning-effort.js'
 import { createToolRegistry, setMcpTools, getBuiltInToolNames } from './tools/index.js'
 import { ALWAYS_ALLOWED, ALWAYS_ALLOWED_FOR_SUBAGENTS, TOP_LEVEL_ONLY_TOOLS } from './tools/tool-policy.js'
 import { McpManager, createMcpTools } from './mcp/index.js'
@@ -26,6 +31,7 @@ import {
   setMcpConfigMode,
   setMcpConfigPath,
   setNotifyMcpServersChanged,
+  setMcpBootstrapForTools,
 } from './tools/mcp-config.js'
 import { getSessionDisabledServers, setSessionDisabledServers } from './mcp/session-overrides.js'
 import { setMcpOAuthStoreMode, setMcpOAuthStorePath } from './mcp/oauth-store.js'
@@ -34,6 +40,7 @@ import { createServerMessage } from '../shared/protocol.js'
 import { createContextStateMessage } from './ws/protocol.js'
 import { createWebSocketServer } from './ws/index.js'
 import { SessionManager } from './session/manager.js'
+import { clearSessionsForDeletedProvider, reconcileSessionProviders } from './session/provider-reconcile.js'
 import { toClientSession } from './session/client-session.js'
 import { setRuntimeConfig } from './runtime-config.js'
 import { createSkillRoutes } from './routes/skills.js'
@@ -41,6 +48,10 @@ import { createCommandRoutes } from './routes/commands.js'
 import { createAgentRoutes } from './routes/agents.js'
 import { loadAllAgentsDefault, getTopLevelAgents } from './agents/registry.js'
 import { createWorkflowRoutes } from './routes/workflows.js'
+import { listAvailableWorkflows } from './workflows/registry.js'
+import { createOpenFoxMcpRouter, extractSessionToken } from './mcp/server/endpoint.js'
+import { buildOpenFoxMcpBootstrap } from './mcp/server/bootstrap.js'
+import type { OpenFoxMcpToolDeps } from './mcp/server/types.js'
 import { createDevServerRoutes } from './routes/dev-server.js'
 import { createWorkspaceConfigRoutes } from './routes/workspace-config.js'
 import { createTerminalRoutes } from './routes/terminals.js'
@@ -51,8 +62,11 @@ import { createAutoUpdateRoutes } from './routes/auto-update.js'
 import { createProviderAuthRoutes } from './routes/provider-auth.js'
 import { devServerManager } from './dev-server/manager.js'
 import { getGlobalConfigDir } from '../cli/paths.js'
-import { ProviderRegistry, loadProviderPlugins } from './providers/plugins/index.js'
+import { ProviderRegistry } from './providers/plugins/index.js'
+import { PluginHost } from './plugins/host.js'
 import { createPluginRoutes } from './routes/plugins.js'
+import { createNotificationRoutes } from './routes/notifications.js'
+import { pluginAssetToken } from './plugins/asset-auth.js'
 import { registerSessionFavoriteRoute } from './routes/session-favorite.js'
 import { logger, setLogLevel } from './utils/logger.js'
 import { VERSION } from '../constants.js'
@@ -64,9 +78,20 @@ import {
   verifyPassword,
   isValidToken,
   tokenFromPassword,
+  currentSessionToken,
 } from './auth.js'
 import { detectWsl, type WslInfo } from './utils/wsl.js'
 const __dirname = dirname(fileURLToPath(import.meta.url))
+
+/**
+ * Inject tool/system-prompt change <system-reminder>s immediately at the point
+ * of contention (after a UI-side MCP change, model pick, etc.) so the agent
+ * sees what changed on its next model call. Best-effort — never throws.
+ */
+async function announceContextDrift(sessionManager: SessionManager, sessionIds: string[]): Promise<void> {
+  const { injectContextDriftRemindersForSessions } = await import('./chat/dynamic-context.js')
+  await injectContextDriftRemindersForSessions(sessionManager, sessionIds)
+}
 
 /**
  * Create a server handle that can be started on any port.
@@ -99,17 +124,12 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     payload: import('../shared/protocol.js').TasksUpdatePayload,
   ) => void = () => {}
 
-  // Deferred workflow launcher for slash-workflow tasks. Same rationale: the
-  // launcher needs the WebSocket broadcaster + LLM client, which only exist
-  // after createWebSocketServer below.
+  // Deferred workflow launcher for slash-workflow tasks and the MCP server.
+  // Same rationale: the launcher needs the WebSocket broadcaster + LLM
+  // client, which only exist after createWebSocketServer below.
   let deferTasksLaunchWorkflow: (
     sessionId: string,
-    launch: {
-      workflowId: string
-      params?: Record<string, string>
-      scope?: import('../shared/types.js').WorkflowLaunchScope
-      attachments?: import('../shared/types.js').Attachment[]
-    },
+    launch: import('./runner/launch.js').WorkflowLaunchPayload,
   ) => void = () => {}
 
   // Get config directory for loading user items
@@ -120,16 +140,30 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     mode: config.mode === 'development' ? 'development' : 'production',
     configDirectory: configDir,
   })
-  const pluginDiagnostics = await loadProviderPlugins({ registry: providerAdapters, configDirectory: configDir })
+  const pluginHost = new PluginHost({
+    configDirectory: configDir,
+    mode: config.mode === 'development' ? 'development' : 'production',
+    logger,
+    registry: providerAdapters,
+  })
+  const pluginDiagnostics = await pluginHost.start()
   for (const diagnostic of pluginDiagnostics) {
-    if (!diagnostic.loaded) logger.warn('Provider plugin failed to load', { ...diagnostic })
+    if (!diagnostic.loaded) logger.warn('Plugin failed to load', { ...diagnostic })
   }
+  pluginHost.attachEventStore(getEventStore())
 
   // Hydrate concise preset-backed provider entries after plugins are loaded.
   config.providers = providerAdapters.resolveProviders(config.providers ?? [])
 
   // Create Provider Manager (handles LLM client lifecycle)
   const providerManager = createProviderManager(config, { adapters: providerAdapters })
+
+  // Repair sessions still pinned to a provider that is gone (deleted before the delete
+  // cascade existed, or dropped from a hand-edited config).
+  const repairedSessions = reconcileSessionProviders(providerManager.getProviders().map((p) => p.id))
+  if (repairedSessions > 0) {
+    logger.warn('Cleared unknown provider from sessions', { sessions: repairedSessions })
+  }
 
   // Create SessionManager instance (not singleton!)
   const sessionManager = new SessionManager(providerManager)
@@ -215,19 +249,27 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     },
   })
   setMcpManagerForTools(mcpManager)
+  const { setGlobalMcpServersProvider } = await import('./mcp/session-overrides.js')
+  setGlobalMcpServersProvider(() =>
+    mcpManager.getAllServers().map((s) => ({ name: s.name, disabled: s.config.disabled })),
+  )
   setMcpConfigMode(config.mode ?? 'production')
   setMcpConfigPath(config.globalConfigPath)
   setMcpOAuthStoreMode(config.mode ?? 'production')
   // OAuth credentials live next to the config they belong to, never inside it.
   setMcpOAuthStorePath(config.globalConfigPath ? join(dirname(config.globalConfigPath), 'mcp-auth.json') : undefined)
   const mcpServers = (config.mcpServers ?? {}) as Record<string, import('./mcp/types.js').McpServerConfig>
-  Promise.all(
-    Object.entries(mcpServers).map(([name, serverConfig]) =>
-      mcpManager.addServer(name, serverConfig).catch((err) => {
-        logger.warn('Failed to connect MCP server on startup', { name, error: String(err) })
-      }),
-    ),
-  ).then(async () => {
+  // Connect configured MCP servers only once the HTTP server is listening:
+  // a self-referencing server (OpenFox as its own MCP client) would otherwise
+  // race the listen and land in an error state. Invoked from start() below.
+  async function connectMcpServers(): Promise<void> {
+    await Promise.all(
+      Object.entries(mcpServers).map(([name, serverConfig]) =>
+        mcpManager.addServer(name, serverConfig).catch((err) => {
+          logger.warn('Failed to connect MCP server on startup', { name, error: String(err) })
+        }),
+      ),
+    )
     const mcpTools = createMcpTools(mcpManager)
     if (mcpTools.length > 0) {
       setMcpTools(mcpTools)
@@ -236,7 +278,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
     const { signalMcpReady } = await import('./ws/server.js')
     signalMcpReady()
-  })
+  }
 
   const app = express()
 
@@ -256,7 +298,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
     const authConfig = getAuthConfig()
     if (authConfig?.strategy === 'network' && authConfig.encryptedPassword) {
-      const token = req.headers['x-session-token'] as string
+      const headerToken = req.headers['x-session-token'] as string | undefined
+      const token = headerToken ?? pluginAssetToken(req)
       if (!token || !(await isValidToken(token))) {
         res.status(401).json({ error: 'Unauthorized' })
         return
@@ -267,6 +310,29 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   app.use('/api', authMiddleware)
   app.use(express.json({ limit: '75mb' }))
+
+  // Streamable HTTP MCP endpoint. Mounted before the SPA catch-all so /mcp is
+  // never swallowed; tool deps are resolved lazily per request and filled in
+  // once the WebSocket/queue plumbing exists below (requests only flow after start()).
+  let mcpToolDeps: OpenFoxMcpToolDeps | null = null
+  const mcpAuth = {
+    isAuthRequired: (): boolean => {
+      const cfg = getAuthConfig()
+      return cfg?.strategy === 'network' && cfg.encryptedPassword != null
+    },
+    isAuthorized: async (req: express.Request): Promise<boolean> => {
+      const token = extractSessionToken(req)
+      return token ? isValidToken(token) : false
+    },
+  }
+  app.use(
+    '/mcp',
+    createOpenFoxMcpRouter({
+      resolveDeps: () => mcpToolDeps,
+      isAuthRequired: mcpAuth.isAuthRequired,
+      isAuthorized: mcpAuth.isAuthorized,
+    }),
+  )
 
   // Health check (public)
   app.get('/api/health', (_req, res) => {
@@ -349,9 +415,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     if (!name || !workdir) {
       return res.status(400).json({ error: 'name and workdir are required' })
     }
-    const { createDirectoryWithGit } = await import('./utils/project-creator.js')
+    const { createProjectDirectory } = await import('./utils/project-creator.js')
     try {
-      const project = await createDirectoryWithGit(name, workdir)
+      const project = await createProjectDirectory(name, workdir)
       res.status(201).json({ project })
     } catch (err) {
       const eaccError = err as Error & { code?: string; cause?: unknown }
@@ -490,6 +556,11 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     launchWorkflow: (sessionId, launch) => deferTasksLaunchWorkflow(sessionId, launch),
   })
   setTasksService(tasksService)
+  // Periodic tick for scheduled tasks: runs once at boot (catch-up for tasks
+  // missed while OpenFox was off) then every 30s. Stopped in close().
+  const { createTaskScheduler } = await import('./tasks/scheduler.js')
+  const taskScheduler = createTaskScheduler({ run: () => tasksService.runScheduled() })
+  taskScheduler.start()
   const tasksRouter = express.Router()
   registerTaskRoutes(tasksRouter, tasksService)
   app.use('/api', tasksRouter)
@@ -763,8 +834,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   })
 
   /**
-   * Lightweight homepage list. Returns only the N most recently updated
-   * sessions per project (summaries only — no recentUserPrompts, no pending
+   * Lightweight homepage list. Returns the 20 most recently updated sessions
+   * across all projects (summaries only — no recentUserPrompts, no pending
    * confirmations), so a fresh load never parses session snapshots.
    * Registered before /api/sessions/:id so 'home' is not treated as an id.
    */
@@ -772,46 +843,13 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     res.json({ sessions: sessionManager.listHomeSessions() })
   })
 
-  app.post('/api/sessions', async (req, res) => {
-    const { projectId, title } = req.body
-    if (!projectId) {
-      return res.status(400).json({ error: 'projectId is required' })
-    }
-
-    const project = sessionManager.getProject(projectId)
-    if (!project) {
-      return res.status(404).json({ error: 'Project not found' })
-    }
-
-    // Inherit provider/model from defaultModelSelection config
-    const { providerId, model } = parseDefaultModelSelection(config.defaultModelSelection)
-
-    // maxTokens is no longer passed - it comes from providerManager.getCurrentModelContext() at query time
-    const session = sessionManager.createSession(projectId, title, providerId ?? null, model ?? null)
-
-    // Inherit MCP overrides from project for new sessions
-    try {
-      let disabledServers: string[] = []
-      if (project.mcpOverrides) {
-        disabledServers = Object.entries(project.mcpOverrides)
-          .filter(([, override]) => override.disabled)
-          .map(([name]) => name)
-      } else {
-        // No project overrides — inherit from global config
-        disabledServers = mcpManager
-          .getAllServers()
-          .filter((s) => s.config.disabled)
-          .map((s) => s.name)
-      }
-      if (disabledServers.length > 0) {
-        const { setSessionDisabledServers } = await import('./mcp/session-overrides.js')
-        setSessionDisabledServers(session.id, disabledServers)
-      }
-    } catch {
-      // Non-critical — session works without MCP overrides
-    }
-    wssExports.broadcastForProject(projectId, session.id, {
-      type: 'session.created',
+  /**
+   * Build the session.created broadcast message shared by the create and
+   * import routes, so the payload shape cannot drift between them.
+   */
+  function buildSessionCreatedMessage(session: import('../shared/types.js').Session) {
+    return {
+      type: 'session.created' as const,
       sessionId: session.id,
       payload: {
         session: {
@@ -832,7 +870,27 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
           messageCount: session.messageCount ?? session.messages.length,
         },
       },
-    })
+    }
+  }
+
+  app.post('/api/sessions', async (req, res) => {
+    const { projectId, title } = req.body
+    if (!projectId) {
+      return res.status(400).json({ error: 'projectId is required' })
+    }
+
+    const project = sessionManager.getProject(projectId)
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' })
+    }
+
+    // Inherit provider/model from defaultModelSelection config
+    const { providerId, model } = parseDefaultModelSelection(config.defaultModelSelection)
+
+    // maxTokens is no longer passed - it comes from providerManager.getCurrentModelContext() at query time
+    const session = sessionManager.createSession(projectId, title, providerId ?? null, model ?? null)
+
+    wssExports.broadcastAll(buildSessionCreatedMessage(session))
     res.status(201).json({ session: toClientSession(session) })
   })
 
@@ -922,7 +980,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   app.get('/api/sessions/:id', async (req, res) => {
     const { getEventStore, combineEventsWithSnapshot } = await import('./events/index.js')
-    const { buildMessagesFromStoredEvents, foldPendingConfirmations } = await import('./events/folding.js')
+    const { buildMessagesFromStoredEvents, buildSessionStatsMessages, foldPendingConfirmations } =
+      await import('./events/folding.js')
+    const { computeSessionStatsSummary } = await import('../shared/stats.js')
     const { getPendingQuestionsForSession } = await import('./tools/index.js')
     const { getMaxVisibleItems } = await import('./db/settings.js')
     const { paginateMessages } = await import('./session/message-pagination.js')
@@ -944,6 +1004,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const maxVisibleItems = fullHistory || recentHistory ? undefined : getMaxVisibleItems() || undefined
     const folded = buildMessagesFromStoredEvents(events, maxVisibleItems)
     const { messages, hiddenCount } = recentHistory ? paginateMessages(folded.messages) : folded
+    const sessionStats = computeSessionStatsSummary(buildSessionStatsMessages(events))
     const contextState = sessionManager.getContextState(req.params.id)
     const queueState = sessionManager.getQueueState(req.params.id)
     const pendingQuestions = getPendingQuestionsForSession(req.params.id)
@@ -954,6 +1015,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       session: toClientSession(session!),
       messages,
       hiddenCount,
+      sessionStats,
       contextState,
       queueState,
       pendingQuestions,
@@ -998,6 +1060,16 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     })
 
     res.json(status)
+  })
+
+  // Full session stats (headline + per-response and per-call progression) for
+  // the StatsModal's on-demand detail load. Cheap: extracted from snapshot
+  // messages + later message.done events, no message rebuild. The always-on
+  // session payload only carries the lean summary; this endpoint is hit once
+  // when the user asks to see the full response log.
+  app.get('/api/sessions/:id/stats', async (req, res) => {
+    const { handleGetSessionStats } = await import('./routes/session-stats.js')
+    await handleGetSessionStats(sessionManager, req, res)
   })
 
   app.delete('/api/sessions/:id', async (req, res) => {
@@ -1061,12 +1133,17 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     if (!providerId) {
       return res.status(400).json({ error: 'providerId is required' })
     }
-    if (reasoningEffort !== undefined && reasoningEffort !== null && !isReasoningEffortValue(reasoningEffort)) {
+    // Resolve model: use provided model, or first model from provider, or fallback
+    const provider = providerManager.getProviders().find((p) => p.id === providerId)
+    const targetModel = provider?.models.find((m) => m.id === model)
+    if (
+      reasoningEffort !== undefined &&
+      reasoningEffort !== null &&
+      !isReasoningEffortValidForModel(reasoningEffort, targetModel)
+    ) {
       return res.status(400).json({ error: `Unsupported reasoningEffort: ${reasoningEffort}` })
     }
 
-    // Resolve model: use provided model, or first model from provider, or fallback
-    const provider = providerManager.getProviders().find((p) => p.id === providerId)
     const resolvedModel = model ?? provider?.models?.[0]?.id ?? 'auto'
 
     // Set provider for session only — does NOT touch global defaultModelSelection.
@@ -1074,6 +1151,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     // any agent override for this session (agent config is never mutated).
     sessionManager.setSessionProvider(sessionId, providerId, resolvedModel, true, reasoningEffort)
     sessionManager.setSessionProviderActive(sessionId, true)
+    await announceContextDrift(sessionManager, [sessionId])
 
     // Get updated context state
     const contextState = sessionManager.getContextState(sessionId)
@@ -1104,6 +1182,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
     sessionManager.setSessionProvider(sessionId, null, null, false, null)
     sessionManager.setSessionProviderActive(sessionId, true)
+    await announceContextDrift(sessionManager, [sessionId])
 
     const eventStore = getEventStore()
     const { snapshot, events: eventsSinceSnapshot } = eventStore.getEventsSinceSnapshot(sessionId)
@@ -1126,7 +1205,12 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
 
     const { effort } = req.body as { effort?: string }
-    if (!effort || !isReasoningEffortValue(effort)) {
+    const sessionModel = session.providerModel
+    const targetModel = providerManager
+      .getProviders()
+      .flatMap((p) => p.models)
+      .find((m) => m.id === sessionModel)
+    if (!effort || !isReasoningEffortValidForModel(effort, targetModel)) {
       return res.status(400).json({ error: `Unsupported reasoningEffort: ${effort}` })
     }
 
@@ -1310,6 +1394,22 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
 
     sessionManager.setDangerLevel(sessionId, dangerLevel)
+
+    // Entering dangerous mode resolves every pending confirmation for the
+    // session (except git_no_verify, which always requires explicit consent),
+    // so sibling tool calls of the same batch continue without prompting again.
+    if (dangerLevel === 'dangerous') {
+      const { autoApprovePendingConfirmationsForSession } = await import('./tools/index.js')
+      const approvedCallIds = autoApprovePendingConfirmationsForSession(sessionId)
+      for (const callId of approvedCallIds) {
+        wssExports.broadcastForSession(sessionId, {
+          type: 'session.confirmation_resolved',
+          sessionId,
+          payload: { sessionId, callId },
+        })
+      }
+    }
+
     const updatedSession = sessionManager.getSession(sessionId)
 
     res.json({ session: toClientSession(updatedSession!) })
@@ -1337,7 +1437,15 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       return res.status(400).json({ error: 'disabledServers must be an array of strings' })
     }
     setSessionDisabledServers(sessionId, disabledServers)
-    sessionManager.setDynamicContextChanged(sessionId, true)
+    const messages = session.messages ?? []
+    if (messages.length === 0) {
+      const { applyDynamicContext } = await import('./chat/dynamic-context.js')
+      const modelName = session.providerModel ?? providerManager.getCurrentModel()
+      await applyDynamicContext(sessionManager, sessionId, modelName)
+    } else {
+      sessionManager.setDynamicContextChanged(sessionId, true)
+    }
+    await announceContextDrift(sessionManager, [sessionId])
     const state = sessionManager.getContextState(sessionId)
     wssExports.broadcastForSession(sessionId, createContextStateMessage(state))
     res.json({ disabledServers: getSessionDisabledServers(sessionId) })
@@ -1595,6 +1703,42 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     res.json({ success: true, queuedMessages })
   })
 
+  // Chat pause (cooperative — pauses the NEXT LLM request, never aborts the current one)
+  app.post('/api/sessions/:id/pause', async (req, res) => {
+    const sessionId = req.params.id
+    const session = sessionManager.getSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+
+    if (!session.isRunning) {
+      return res.status(409).json({ error: 'Session is not running' })
+    }
+
+    const ok = sessionManager.requestPause(sessionId)
+    if (!ok) {
+      return res.status(409).json({ error: 'A pause is already in progress' })
+    }
+
+    res.json({ success: true, pauseState: sessionManager.getPauseState(sessionId) })
+  })
+
+  // Chat resume (cancels a pending pause, or releases a paused agent)
+  app.post('/api/sessions/:id/resume', async (req, res) => {
+    const sessionId = req.params.id
+    const session = sessionManager.getSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+
+    const ok = sessionManager.requestResume(sessionId)
+    if (!ok) {
+      return res.status(409).json({ error: 'Nothing to resume' })
+    }
+
+    res.json({ success: true, pauseState: sessionManager.getPauseState(sessionId) })
+  })
+
   // Truncate session messages at a given index
   app.post('/api/sessions/:id/truncate', async (req, res) => {
     const sessionId = req.params.id as string
@@ -1688,6 +1832,49 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         return res.status(404).json({ error: message })
       }
       return res.status(500).json({ error: message })
+    }
+  })
+
+  // Export: download a session as a self-contained JSON document
+  app.get('/api/sessions/:id/export', async (req, res) => {
+    const sessionId = req.params.id as string
+    const session = sessionManager.getSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+
+    try {
+      const { buildSessionExport } = await import('./session/export-import.js')
+      const payload = buildSessionExport(sessionManager, sessionId)
+      const filename = `${(payload.session.title ?? 'session').replace(/[^a-zA-Z0-9-_]/g, '_')}.openfox-session.json`
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+      return res.json(payload)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      return res.status(500).json({ error: message })
+    }
+  })
+
+  // Import: create a session in a project from an export document
+  app.post('/api/sessions/import', async (req, res) => {
+    const { projectId, payload } = req.body
+    if (typeof projectId !== 'string' || !projectId) {
+      return res.status(400).json({ error: 'projectId is required' })
+    }
+    if (payload === undefined || payload === null) {
+      return res.status(400).json({ error: 'payload is required' })
+    }
+
+    try {
+      const newSession = await sessionManager.importSession(projectId, payload)
+      wssExports.broadcastForProject(projectId, newSession.id, buildSessionCreatedMessage(newSession))
+      return res.status(201).json({ session: toClientSession(newSession) })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (message.includes('Project not found')) {
+        return res.status(404).json({ error: message })
+      }
+      return res.status(400).json({ error: message })
     }
   })
 
@@ -1839,6 +2026,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       defaultModelSelection: config.defaultModelSelection,
       visionFallback,
       platform: platformInfo,
+      locale: (await import('./db/settings.js')).getSetting('display.locale') ?? 'automatic',
     })
   })
 
@@ -1886,6 +2074,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       ...(m.requestBody !== undefined && { requestBody: m.requestBody }),
       ...(m.reasoningEfforts !== undefined && { reasoningEfforts: m.reasoningEfforts }),
       ...(m.reasoningEffortOverride !== undefined && { reasoningEffortOverride: m.reasoningEffortOverride }),
+      ...(m.modes !== undefined && { modes: m.modes }),
       ...(m.supportsVision !== undefined && { supportsVision: m.supportsVision }),
       ...(m.thinkingEnabled !== undefined && { thinkingEnabled: m.thinkingEnabled }),
       ...(m.thinkingLevel !== undefined && { thinkingLevel: m.thinkingLevel }),
@@ -1941,7 +2130,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       res.json({
         success: true,
         url,
-        backend: reqBackend || 'unknown',
+        backend: reqBackend !== 'unknown' && reqBackend ? reqBackend : (detectBackendFromUrl(url) ?? 'unknown'),
         model,
       })
     } catch (error) {
@@ -2050,7 +2239,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       const models = await fetchModelsWithContext(
         url,
         apiKey,
-        backend as 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'lmstudio' | 'unknown' | undefined,
+        backend as 'ollama' | 'vllm' | 'sglang' | 'llamacpp' | 'lmstudio' | 'unsloth' | 'unknown' | undefined,
       )
       if (models.length === 0) {
         return res.status(404).json({ error: `No models found at ${buildModelsUrl(url)}`, url })
@@ -2062,6 +2251,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
           return {
             id: m.id,
             contextWindow: m.contextWindow,
+            supportsVision: m.supportsVision ?? profile.supportsVision,
             defaultTemperature: profile.temperature,
             defaultTopP: profile.topP,
             defaultTopK: profile.topK,
@@ -2175,7 +2365,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         modelSettings['queryParams'] = JSON.parse(rawQP) as Record<string, unknown>
       } else {
         const modeEnabled = mode === 'thinking' ? modelConfig?.thinkingEnabled : modelConfig?.nonThinkingEnabled
-        if (modeEnabled) {
+        if (modeEnabled && capabilities.supportsChatTemplateKwargs) {
           modelSettings['chatTemplateKwargs'] =
             mode === 'thinking' ? { enable_thinking: true } : { enable_thinking: false }
         }
@@ -2257,7 +2447,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         await import('../cli/config.js')
       const globalConfig = await loadGlobalConfig(config.mode ?? 'production', config.globalConfigPath)
 
-      const providerBackend = backend as ProviderBackend
+      const providerBackend = (
+        backend === 'unknown' ? (detectBackendFromUrl(url) ?? 'unknown') : backend
+      ) as ProviderBackend
 
       const providerModels: ModelConfig[] = modelConfigs?.length
         ? buildModelConfigs(modelConfigs as ModelConfigInput[])
@@ -2456,20 +2648,23 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
   })
 
-  app.use('/api/plugins', createPluginRoutes({ config, providerAdapters, pluginDiagnostics, logger }))
-  app.get('/api/plugins', (_req, res) => res.json({ plugins: pluginDiagnostics }))
-  app.get('/api/provider-presets', (_req, res) => res.json({ presets: providerAdapters.getPresets() }))
+  app.use('/api/plugins', createPluginRoutes({ config, host: pluginHost, logger }))
+  app.get('/api/plugins', (_req, res) => res.json({ plugins: pluginHost.getDiagnostics() }))
+  app.use('/api/notifications', createNotificationRoutes(pluginHost.notifications))
+  app.get('/api/provider-presets', (_req, res) => res.json({ presets: pluginHost.registry.getPresets() }))
   app.get('/api/provider-adapters', (_req, res) =>
     res.json({
-      authAdapters: providerAdapters.listAuthAdapters(),
-      transportAdapters: providerAdapters.listTransportAdapters(),
+      authAdapters: pluginHost.registry.listAuthAdapters(),
+      transportAdapters: pluginHost.registry.listTransportAdapters(),
     }),
   )
   app.use('/api/provider-auth', createProviderAuthRoutes(config, providerManager, providerAdapters))
 
   // Provider endpoints
-  app.get('/api/providers', (_req, res) => {
-    const providers = providerManager.getProviders().map((p) => ({
+  app.get('/api/providers', async (_req, res) => {
+    const { enrichProvidersWithPluginMetadata } = await import('./plugins/model-metadata.js')
+    const enriched = await enrichProvidersWithPluginMetadata(providerManager.getProviders())
+    const providers = enriched.map((p) => ({
       ...p,
       status: providerManager.getProviderStatus(p.id),
     }))
@@ -2525,6 +2720,15 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
     providerManager.setProviders(updatedConfig.providers, updatedConfig.defaultModelSelection ?? undefined)
     config.defaultModelSelection = updatedConfig.defaultModelSelection
+
+    // Sessions pinned to this provider would keep an id that no longer resolves.
+    const clearedSessions = clearSessionsForDeletedProvider(id)
+    if (clearedSessions > 0) {
+      logger.info('Cleared provider from sessions of deleted provider', { providerId: id, sessions: clearedSessions })
+    }
+
+    const { pruneFavoriteModels } = await import('./db/settings.js')
+    pruneFavoriteModels(updatedConfig.providers)
 
     res.json({ success: true })
   })
@@ -2601,6 +2805,10 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       await saveGlobalConfig(config.mode ?? 'production', updatedConfig, config.globalConfigPath)
       providerManager.setProviders(updatedConfig.providers, updatedConfig.defaultModelSelection ?? undefined)
       config.defaultModelSelection = updatedConfig.defaultModelSelection
+
+      const { pruneFavoriteModels } = await import('./db/settings.js')
+      pruneFavoriteModels(updatedConfig.providers)
+
       res.json({ success: true, provider: updatedConfig.providers.find((p) => p.id === id) })
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to update provider' })
@@ -2621,9 +2829,6 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       thinkingLevel?: string
       thinkingEnabled?: boolean
     }
-    if (thinkingLevel !== undefined && !isReasoningEffortValue(thinkingLevel)) {
-      return res.status(400).json({ error: `Invalid reasoning effort '${thinkingLevel}'` })
-    }
     if (thinkingEnabled !== undefined && typeof thinkingEnabled !== 'boolean') {
       return res.status(400).json({ error: 'thinkingEnabled must be a boolean' })
     }
@@ -2635,8 +2840,12 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         return res.status(404).json({ error: 'Provider not found' })
       }
       const models = provider.models ?? []
-      if (!models.some((m) => m.id === modelId)) {
+      const targetModel = models.find((m) => m.id === modelId)
+      if (!targetModel) {
         return res.status(404).json({ error: 'Model not found' })
+      }
+      if (thinkingLevel !== undefined && !isReasoningEffortValidForModel(thinkingLevel, targetModel)) {
+        return res.status(400).json({ error: `Invalid reasoning effort '${thinkingLevel}'` })
       }
       const updatedModels = models.map((m) =>
         m.id === modelId
@@ -2821,6 +3030,10 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         for (const s of sessions) {
           sessionManager.setDynamicContextChanged(s.id, true)
         }
+        await announceContextDrift(
+          sessionManager,
+          sessions.map((s) => s.id),
+        )
       }
 
       const allServers = mcpManager.getAllServers()
@@ -2925,6 +3138,10 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       for (const s of sessions) {
         sessionManager.setDynamicContextChanged(s.id, true)
       }
+      await announceContextDrift(
+        sessionManager,
+        sessions.map((s) => s.id),
+      )
       wssExports.broadcastAll(createServerMessage('mcp.servers.changed', { servers: mcpManager.getAllServers() }))
       res.json({ server: mcpManager.getServer(name) })
     } catch (error) {
@@ -2965,6 +3182,10 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     for (const s of sessions) {
       sessionManager.setDynamicContextChanged(s.id, true)
     }
+    await announceContextDrift(
+      sessionManager,
+      sessions.map((s) => s.id),
+    )
 
     wssExports.broadcastAll(createServerMessage('mcp.servers.changed', { servers: mcpManager.getAllServers() }))
 
@@ -2973,7 +3194,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   /** Rendered on the OAuth callback. The message is always one of ours, never anything the caller sent. */
   function oauthCallbackPage(message: string): string {
-    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>OpenFox</title></head><body style="font-family:system-ui;padding:2rem"><p>${message}</p></body></html>`
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>OpenFox</title></head><body style="font-family:system-ui;padding:2rem"><p>${message}</p><script>try{new BroadcastChannel('openfox-oauth').postMessage({type:'oauth-callback-complete'})}catch{}</script></body></html>`
   }
 
   /** Accepts the whole callback URL or just its query string. Anything else yields no state and is refused. */
@@ -2993,9 +3214,14 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   async function applyMcpOAuthResult(name: string): Promise<void> {
     await mcpManager.connectServer(name)
     await rebuildMcpTools()
-    for (const s of sessionManager.listSessions()) {
+    const sessions = sessionManager.listSessions()
+    for (const s of sessions) {
       sessionManager.setDynamicContextChanged(s.id, true)
     }
+    await announceContextDrift(
+      sessionManager,
+      sessions.map((s) => s.id),
+    )
     wssExports.broadcastAll(createServerMessage('mcp.servers.changed', { servers: mcpManager.getAllServers() }))
   }
 
@@ -3042,8 +3268,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
     try {
       const { auth } = await import('@modelcontextprotocol/sdk/client/auth.js')
-      const { McpOAuthProvider } = await import('./mcp/oauth-provider.js')
+      const { McpOAuthProvider, rejectStaleOAuthClient } = await import('./mcp/oauth-provider.js')
       const provider = new McpOAuthProvider(name, server.config.url)
+      await rejectStaleOAuthClient(provider)
       const result = await auth(provider, { serverUrl: server.config.url })
       if (result === 'AUTHORIZED') {
         await applyMcpOAuthResult(name)
@@ -3164,6 +3391,10 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       for (const s of sessions) {
         sessionManager.setDynamicContextChanged(s.id, true)
       }
+      await announceContextDrift(
+        sessionManager,
+        sessions.map((s) => s.id),
+      )
 
       wssExports.broadcastAll(createServerMessage('mcp.servers.changed', { servers: mcpManager.getAllServers() }))
 
@@ -3419,9 +3650,16 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   )
   const wss = wssExports.wss
 
+  // Point the plugin host at the live WebSocket broadcaster now that it exists.
+  pluginHost.setBroadcaster((message) => wssExports.broadcastAll(message))
+
   // Point the tasks service at the live WebSocket broadcaster now that it exists.
-  deferTasksBroadcast = (projectId, payload) =>
-    wssExports.broadcastForProject(projectId, '', { type: 'tasks.update', payload })
+  // Broadcast to ALL clients (not just the project's active session): a task
+  // board can be open in a window with no session loaded (homepage) or in
+  // another project's session — those windows must see live updates too. The
+  // payload carries projectId; clients write through into their per-project
+  // board cache, so unaffected boards are untouched.
+  deferTasksBroadcast = (_projectId, payload) => wssExports.broadcastAll({ type: 'tasks.update', payload })
 
   // Point the tasks service at the workflow launcher. Task-seeded workflows run
   // through the same shared launcher as runner.launch (src/server/runner/launch.ts).
@@ -3457,9 +3695,14 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         broadcastForSession: wssExports.broadcastForSession,
       },
       {
-        workflowId: launch.workflowId,
+        ...(launch.workflowId ? { workflowId: launch.workflowId } : {}),
         ...(launch.params && Object.keys(launch.params).length > 0 ? { params: launch.params } : {}),
+        ...(launch.subGroup ? { subGroup: launch.subGroup } : {}),
         ...(launch.scope ? { scope: launch.scope } : {}),
+        ...(launch.resumeFrom ? { resumeFrom: launch.resumeFrom } : {}),
+        ...(launch.stepOutput ? { stepOutput: launch.stepOutput } : {}),
+        ...(launch.userChoice ? { userChoice: launch.userChoice } : {}),
+        ...(launch.content ? { content: launch.content } : {}),
         ...(launch.attachments && launch.attachments.length > 0 ? { attachments: launch.attachments } : {}),
       },
     )
@@ -3485,6 +3728,27 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   })
   queueProcessor.start()
 
+  // Opt-in boot auto-continuation (Settings > Advanced): sessions that were
+  // running when the server stopped get a continuation turn queued through the
+  // standard queue → turn machinery. Mid-generation sessions receive the same
+  // "stream interrupted" reminder as the LLM-drop retry mechanism.
+  const { getSetting, SETTINGS_KEYS } = await import('./db/settings.js')
+  if (getSetting(SETTINGS_KEYS.AUTO_CONTINUE_ON_BOOT) === 'true') {
+    const { getStaleRunningSessionIds } = await import('./events/store.js')
+    const { runBootAutoContinuations } = await import('./session/auto-continue.js')
+    const staleIds = getStaleRunningSessionIds()
+    if (staleIds.length > 0) {
+      const continued = runBootAutoContinuations(staleIds, {
+        getEvents: (sessionId) => getEventStore().getEvents(sessionId),
+        hasActiveWorkflow: (sessionId) => sessionManager.getActiveWorkflowExecution(sessionId) !== null,
+        appendEvent: (sessionId, event) => getEventStore().append(sessionId, event),
+        queueMessage: (sessionId, content) =>
+          sessionManager.queueMessage(sessionId, 'asap', content, undefined, 'auto-prompt'),
+      })
+      logger.info('Boot auto-continuation queued', { sessions: staleIds.length, continued })
+    }
+  }
+
   const abortSession = (sessionId: string) => {
     const wsAborted = wssExports.abortSession(sessionId)
     const qpAborted = queueProcessor.abortSession(sessionId)
@@ -3498,6 +3762,82 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   }
 
   // Note: /stop endpoint uses abortSession below
+
+  mcpToolDeps = {
+    sessionManager,
+    listProjects: () => listProjects(),
+    createProject: async (name, workdir) => {
+      const { createProjectDirectory } = await import('./utils/project-creator.js')
+      return createProjectDirectory(name, workdir)
+    },
+    deleteProject: (projectId) => {
+      const project = getProject(projectId)
+      if (!project) return false
+      deleteProject(projectId)
+      return true
+    },
+    listWorkflows: (projectDir) => listAvailableWorkflows(getGlobalConfigDir(config.mode ?? 'production'), projectDir),
+    topLevelAgentIds: async (workdir) => {
+      const agents = await loadAllAgentsDefault(workdir)
+      return getTopLevelAgents(agents).map((a) => a.metadata.id)
+    },
+    launchWorkflow: (sessionId, launch) => deferTasksLaunchWorkflow(sessionId, launch),
+    stopSession: (sessionId) => {
+      void (async () => {
+        const { stopSessionExecution } = await import('./session/chat-handler.js')
+        const { cancelQuestionsForSession, cancelPathConfirmationsForSession } = await import('./tools/index.js')
+        sessionManager.clearMessageQueue(sessionId)
+        stopSessionExecution(sessionId, sessionManager)
+        abortSession(sessionId)
+        cancelQuestionsForSession(sessionId, 'Session stopped by user')
+        cancelPathConfirmationsForSession(sessionId, 'Session stopped by user')
+        getEventStore().append(sessionId, { type: 'running.changed', data: { isRunning: false } })
+      })().catch((error) => {
+        logger.error(`MCP stopSession failed for ${sessionId}`, {
+          error: error instanceof Error ? error.message : String(error),
+        })
+      })
+    },
+    stopWorkflow: (sessionId) => {
+      const runningAborted = abortRunnerRun(sessionId)
+      if (runningAborted) return { aborted: 'running' }
+      const execution = sessionManager.getActiveWorkflowExecution(sessionId)
+      if (execution && execution.status === 'waiting') {
+        sessionManager.cancelWorkflow(
+          sessionId,
+          execution.id,
+          execution.workflowId,
+          execution.workflowName,
+          execution.workflowColor,
+        )
+        return { aborted: 'paused' }
+      }
+      return null
+    },
+    answerQuestion: (callId, answer, skip) => provideAnswer(callId, answer, skip),
+    pendingQuestions: (sessionId) => getPendingQuestionsForSession(sessionId),
+    confirmPath: (callId, approved, alwaysAllow) => providePathConfirmation(callId, approved, alwaysAllow).found,
+    pendingConfirmations: (sessionId) => getPendingConfirmationsBySession()[sessionId] ?? [],
+    setMetadataEntries: (sessionId, key, entries) => sessionManager.setMetadataEntries(sessionId, key, entries),
+    recentMessages: (sessionId, limit) => {
+      const eventStore = getEventStore()
+      const { snapshot, events } = eventStore.getEventsSinceSnapshot(sessionId)
+      const combined = combineEventsWithSnapshot(sessionId, snapshot, events)
+      return buildMessagesFromStoredEvents(combined, Math.max(1, Math.min(limit, 50)))
+    },
+  }
+
+  let mcpActualPort: number | null = null
+  setMcpBootstrapForTools(async () => {
+    const authRequired = mcpAuth.isAuthRequired()
+    const sessionToken = authRequired ? await currentSessionToken() : null
+    return buildOpenFoxMcpBootstrap({
+      host: config.server.host ?? '127.0.0.1',
+      port: mcpActualPort ?? config.server.port,
+      authRequired,
+      sessionToken,
+    })
+  })
 
   // Return the handle with start/close methods
   return {
@@ -3513,9 +3853,23 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
           const addr = httpServer.address()
           const actualPort = typeof addr === 'object' && addr ? addr.port : listenPort
           setMcpOAuthServerPort(actualPort)
+          mcpActualPort = actualPort
+          // The /mcp endpoint is only reachable once we're listening, so start
+          // MCP client connections now — a self-referencing server (OpenFox as
+          // its own MCP client) would otherwise race the listen and fail.
+          // The very first requests may arrive before MCP tools register;
+          // connectMcpServers settles shortly after, then signals MCP readiness.
+          connectMcpServers().catch((err) => {
+            logger.error('MCP server startup connection failed', {
+              error: err instanceof Error ? err.message : String(err),
+            })
+          })
           const client = getLLMClient()
           logger.info(`OpenFox server running at http://${host}:${actualPort}`)
           logger.info(`WebSocket available at ws://${host}:${actualPort}/ws`)
+          logger.info(
+            `MCP endpoint available at http://${host}:${actualPort}/mcp — run 'openfox mcp' for a paste-ready client config`,
+          )
           logger.info(`LLM backend: ${client.getBackend()}, model: ${client.getModel()}, url: ${config.llm.baseUrl}`)
           resolve({ port: actualPort })
         })
@@ -3529,6 +3883,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         void (async () => {
           await devServerManager.stopAll()
           await mcpManager.disconnectAll()
+          taskScheduler.stop()
           const { stopAllInspectProxies } = await import('./dev-server/inspect-proxy.js')
           stopAllInspectProxies()
           const { cleanupAllProcesses } = await import('./tools/background-process/store.js')

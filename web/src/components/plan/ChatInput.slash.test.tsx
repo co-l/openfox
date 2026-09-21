@@ -1,8 +1,10 @@
 // @vitest-environment happy-dom
-import { describe, expect, it, vi, afterEach } from 'vitest'
+import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { parseSlashCommand, extractTemplateParams } from '../../lib/parse-slash-command'
 import { ChatInput } from './ChatInput'
+import { clearCache } from '../../lib/resourceCache'
+import { commandsResource, workflowsResource } from '../../lib/resources'
 import type { WorkflowInfo, CommandInfo } from '../../lib/parse-slash-command'
 
 // ============================================================================
@@ -113,12 +115,7 @@ describe('parseSlashCommand with commands', () => {
 const mockSendMessage = vi.fn()
 const mockLaunchWorkflow = vi.fn()
 
-const mockWorkflowState: {
-  defaults: WorkflowInfo[]
-  userItems: WorkflowInfo[]
-  projectItems: WorkflowInfo[]
-  fetchWorkflows: ReturnType<typeof vi.fn>
-} = {
+const defaultWorkflows = {
   defaults: [
     {
       id: 'pr-review',
@@ -133,24 +130,41 @@ const mockWorkflowState: {
   ],
   userItems: [],
   projectItems: [],
-  fetchWorkflows: vi.fn(),
 }
 
-const mockFetchCommand = vi.fn()
-const mockCommandState = {
-  defaults: [{ id: 'review', name: 'Review', agentMode: 'builder' }],
-  userItems: [],
-  projectItems: [],
-  fetchCommands: vi.fn(),
-  fetchCommand: (...args: unknown[]) => mockFetchCommand(...args),
-}
-
-vi.mock('../../stores/commands', () => ({
-  useCommandsStore: Object.assign(
-    (selector?: (state: unknown) => unknown) => (selector ? selector(mockCommandState) : mockCommandState),
-    { getState: () => mockCommandState },
-  ),
+const { authFetchMock } = vi.hoisted(() => ({
+  authFetchMock: vi.fn(),
 }))
+
+vi.mock('../../lib/api', () => ({
+  authFetch: authFetchMock,
+}))
+
+authFetchMock.mockImplementation((url: string) => {
+  if (url === '/api/commands' || url.startsWith('/api/commands?')) {
+    return Promise.resolve({
+      ok: true,
+      json: async () => ({
+        defaults: [{ id: 'review', name: 'Review', agentMode: 'builder' }],
+        userItems: [],
+        projectItems: [],
+      }),
+    })
+  }
+  if (url.startsWith('/api/commands/review')) {
+    return Promise.resolve({
+      ok: true,
+      json: async () => ({
+        metadata: { id: 'review', name: 'Review', agentMode: 'builder' },
+        prompt: 'Please review PR {{pr_number}}',
+      }),
+    })
+  }
+  if (url === '/api/workflows' || url.startsWith('/api/workflows?')) {
+    return Promise.resolve({ ok: true, json: async () => defaultWorkflows })
+  }
+  return Promise.resolve({ ok: true, json: async () => ({}) })
+})
 
 vi.mock('../../stores/session', () => ({
   useSessionStore: (selector: (state: unknown) => unknown) =>
@@ -166,23 +180,6 @@ vi.mock('../../stores/session', () => ({
     }),
   useIsRunning: () => false,
   useQueuedMessages: () => [],
-}))
-
-vi.mock('../../stores/workflows', () => ({
-  useWorkflowsStore: Object.assign(
-    (selector?: (state: unknown) => unknown) => (selector ? selector(mockWorkflowState) : mockWorkflowState),
-    { getState: () => mockWorkflowState },
-  ),
-  selectAllWorkflows: (state: { defaults: unknown[]; userItems: unknown[]; projectItems: unknown[] }) => [
-    ...state.defaults,
-    ...state.userItems,
-    ...state.projectItems,
-  ],
-  useAllWorkflows: () => [
-    ...mockWorkflowState.defaults,
-    ...mockWorkflowState.userItems,
-    ...mockWorkflowState.projectItems,
-  ],
 }))
 
 vi.mock('../../hooks/useScrolledSend', () => ({
@@ -204,14 +201,9 @@ vi.mock('../../components/plan/EffortChangeGate', () => ({
   useEffortChangeGate: () => ({ requestEffortSwitch: vi.fn() }),
 }))
 
-vi.mock('../../stores/settings', async (importOriginal) => {
-  const actual = (await importOriginal()) as Record<string, unknown>
-  return {
-    ...actual,
-    useSettingsStore: (selector: (state: unknown) => unknown) =>
-      selector({ settings: { 'features.perSessionMcp': 'false' } }),
-  }
-})
+vi.mock('../../hooks/useSetting', () => ({
+  useSetting: (_key: string, fallback = '') => ({ value: fallback, loading: false }),
+}))
 
 function renderChatInput(overrides: Record<string, unknown> = {}) {
   const defaultProps = {
@@ -249,9 +241,17 @@ function renderChatInput(overrides: Record<string, unknown> = {}) {
 }
 
 describe('ChatInput slash command integration', () => {
+  beforeEach(async () => {
+    // Seed the resource caches so slash resolution sees data on the first render
+    // (implicit loadership would otherwise resolve asynchronously).
+    await commandsResource.refresh('/tmp')
+    await workflowsResource.refresh('/tmp')
+  })
+
   afterEach(() => {
     cleanup()
     vi.clearAllMocks()
+    clearCache()
   })
 
   it('sends plain text via sendMessage', () => {
@@ -309,10 +309,7 @@ describe('ChatInput slash command integration', () => {
   })
 
   it('applies the command agent mode when launched via slash', async () => {
-    mockFetchCommand.mockResolvedValue({
-      metadata: { id: 'review', name: 'Review', agentMode: 'builder' },
-      prompt: 'Please review PR {{pr_number}}',
-    })
+    await commandsResource.refresh('/tmp')
     const setInput = vi.fn()
     const onSendCommand = vi.fn()
     renderChatInput({ input: '/review 123', setInput, onSendCommand })
@@ -360,25 +357,36 @@ describe('ChatInput slash command integration', () => {
     expect(mockSendMessage).not.toHaveBeenCalled()
   })
 
-  it('validates typed slash params against the effective (project) definition', () => {
+  it('validates typed slash params against the effective (project) definition', async () => {
     // Same id in multiple scopes: project wins for unselected input.
-    mockWorkflowState.defaults = [{ id: 'pr-review', name: 'PR Review', scope: 'builtin' }]
-    mockWorkflowState.userItems = [
-      {
-        id: 'pr-review',
-        name: 'PR Review',
-        scope: 'user',
-        parameters: [{ id: 'legacy_param', label: 'Legacy', position: 0, required: true }],
-      },
-    ]
-    mockWorkflowState.projectItems = [
-      {
-        id: 'pr-review',
-        name: 'PR Review',
-        scope: 'project',
-        parameters: [{ id: 'pr_number', label: 'PR Number', position: 0, required: true }],
-      },
-    ]
+    authFetchMock.mockImplementation((url: string) => {
+      if (url === '/api/workflows' || url.startsWith('/api/workflows?')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            defaults: [{ id: 'pr-review', name: 'PR Review', scope: 'builtin' }],
+            userItems: [
+              {
+                id: 'pr-review',
+                name: 'PR Review',
+                scope: 'user',
+                parameters: [{ id: 'legacy_param', label: 'Legacy', position: 0, required: true }],
+              },
+            ],
+            projectItems: [
+              {
+                id: 'pr-review',
+                name: 'PR Review',
+                scope: 'project',
+                parameters: [{ id: 'pr_number', label: 'PR Number', position: 0, required: true }],
+              },
+            ],
+          }),
+        })
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) })
+    })
+    await workflowsResource.refresh('/tmp')
     const setErrorMessage = vi.fn()
     renderChatInput({ input: '/pr-review', setErrorMessage })
 

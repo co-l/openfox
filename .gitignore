@@ -50,6 +50,10 @@ e2e/**/.openfox-test/
 *.log
 logs/
 
+# V8 profiler output (--heap-prof / --cpu-prof)
+*.cpuprofile
+*.heapprofile
+
 # Test
 coverage/
 test-results/
@@ -59,4 +63,4 @@ e2e-test-project/
 tmp/
 worktrees/
 
-plugins/
+/plugins/

@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
 import { Modal } from '../shared/SelfContainedModal'
+import { useT } from '../../hooks/useT'
 
 export type EffortGateChoice = 'apply' | 'keep'
 
@@ -24,6 +25,7 @@ interface Pending {
 }
 
 export function EffortChangeGateProvider({ children }: { children: ReactNode }) {
+  const t = useT()
   const [pending, setPending] = useState<Pending | null>(null)
 
   const requestEffortSwitch = useCallback(
@@ -47,29 +49,41 @@ export function EffortChangeGateProvider({ children }: { children: ReactNode }) 
     <EffortChangeGateContext.Provider value={value}>
       {children}
       {pending && (
-        <Modal isOpen={true} onClose={() => choose('keep')} title="Reasoning effort change" size="sm">
+        <Modal
+          isOpen={true}
+          onClose={() => choose('keep')}
+          title={t({ en: 'Reasoning effort change', fr: 'Changement d’effort de raisonnement' })}
+          size="sm"
+        >
           <p className="text-sm text-text-secondary">
             {pending.info.contextLabel ? (
               <>
-                <span className="text-text-primary font-medium">{pending.info.contextLabel}</span> runs with reasoning
-                effort <code className="text-accent-primary">{pending.info.toEffort}</code>
-                {currentEffortClause(pending.info)}.
+                <span className="text-text-primary font-medium">{pending.info.contextLabel}</span>{' '}
+                {t({ en: 'runs with reasoning effort', fr: 's’exécute avec un effort de raisonnement' })}{' '}
+                <code className="text-accent-primary">{pending.info.toEffort}</code>
+                {currentEffortClause(pending.info, t)}.
               </>
             ) : (
               <>
-                Switching the reasoning effort to <code className="text-accent-primary">{pending.info.toEffort}</code>
-                {currentEffortClause(pending.info)}.
+                {t({ en: 'Switching the reasoning effort to', fr: 'Passage de l’effort de raisonnement à' })}{' '}
+                <code className="text-accent-primary">{pending.info.toEffort}</code>
+                {currentEffortClause(pending.info, t)}.
               </>
             )}{' '}
-            This may invalidate the LLM prefix cache — if it does, the next response will take longer while the context
-            is reprocessed.
+            {t({
+              en: 'This may invalidate the LLM prefix cache — if it does, the next response will take longer while the context is reprocessed.',
+              fr: 'Cela peut invalider le cache de préfixe du LLM — si c’est le cas, la prochaine réponse prendra plus de temps pendant que le contexte est retraité.',
+            })}
           </p>
           <div className="flex justify-end gap-2 mt-4">
             <ModalButton onClick={() => choose('keep')} variant="secondary">
-              Keep current reasoning effort
+              {t({ en: 'Keep current reasoning effort', fr: 'Conserver l’effort de raisonnement actuel' })}
             </ModalButton>
             <ModalButton onClick={() => choose('apply')} variant="danger">
-              Apply the reasoning effort (invalidates cache)
+              {t({
+                en: 'Apply the reasoning effort (invalidates cache)',
+                fr: 'Appliquer l’effort de raisonnement (invalide le cache)',
+              })}
             </ModalButton>
           </div>
         </Modal>
@@ -100,12 +114,16 @@ function ModalButton({
   )
 }
 
-function currentEffortClause(info: EffortGateInfo): ReactNode {
+function currentEffortClause(
+  info: EffortGateInfo,
+  t: (tx: { en: string | Record<string, string>; fr: string | Record<string, string> }) => string,
+): ReactNode {
   if (!info.fromEffort || info.fromEffort === info.toEffort) return null
   return (
     <>
       {' '}
-      (currently <code className="text-text-primary">{info.fromEffort}</code>)
+      {t({ en: '(currently', fr: '(actuellement' })} <code className="text-text-primary">{info.fromEffort}</code>
+      {')'}
     </>
   )
 }

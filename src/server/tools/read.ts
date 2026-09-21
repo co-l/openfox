@@ -6,6 +6,7 @@ import { computeFileHash } from './file-tracker.js'
 import { detectEncoding, decodeContent } from '../utils/encoding.js'
 import { fileTypeFromBuffer } from 'file-type'
 import { isPdfBuffer, extractPdfText, processPdfContent, formatPdfErrorMessage } from './pdf-utils.js'
+import { serverT } from '../i18n.js'
 
 interface ReadFileArgs {
   path: string
@@ -18,7 +19,7 @@ interface ReadFileArgs {
  * For SVG files, falls back to content-based detection since file-type
  * may identify them as generic XML.
  */
-async function detectImageType(buffer: Buffer, filePath: string): Promise<string | null> {
+export async function detectImageType(buffer: Buffer, filePath: string): Promise<string | null> {
   const fileType = await fileTypeFromBuffer(buffer)
 
   // Only accept known image MIME types
@@ -132,18 +133,32 @@ export const readFileTool = createTool<ReadFileArgs>(
       // General file size safety cap (checked before type-specific limits)
       if (stats.size > OUTPUT_LIMITS.read_file.maxFileBytes) {
         return helpers.error(
-          `File size (${stats.size} bytes) exceeds maximum file size (20MB). Use shell command to process large files.`,
+          serverT(
+            {
+              en: 'File size ({{size}} bytes) exceeds maximum file size (20MB). Use shell command to process large files.',
+              fr: 'La taille du fichier ({{size}} octets) dépasse la taille maximale (20 Mo). Utilisez une commande shell pour traiter les fichiers volumineux.',
+            },
+            { size: stats.size },
+          ),
         )
       }
 
       // Check image size limit before reading
       if (stats.size > OUTPUT_LIMITS.read_file.maxImageBytes) {
         return helpers.error(
-          `File size (${stats.size} bytes) exceeds image size limit (2MB). Use shell command to process large files.`,
+          serverT(
+            {
+              en: 'File size ({{size}} bytes) exceeds image size limit (2MB). Use shell command to process large files.',
+              fr: 'La taille du fichier ({{size}} octets) dépasse la limite pour les images (2 Mo). Utilisez une commande shell pour traiter les fichiers volumineux.',
+            },
+            { size: stats.size },
+          ),
         )
       }
     } catch {
-      return helpers.error(`File not found: ${args.path}`)
+      return helpers.error(
+        serverT({ en: 'File not found: {{path}}', fr: 'Fichier introuvable : {{path}}' }, { path: args.path }),
+      )
     }
 
     // Read file as binary first to detect type
@@ -168,15 +183,22 @@ export const readFileTool = createTool<ReadFileArgs>(
         )
       }
 
-      return helpers.success(`[Image: ${args.path} (${mimeType}, ${rawBuffer.length} bytes)]`, false, {
-        metadata: {
-          mimeType,
-          size: rawBuffer.length,
-          base64Data,
-          dataUrl,
-          path: fullPath,
+      return helpers.success(
+        serverT(
+          { en: '[Image: {{path}} ({{mime}}, {{size}} bytes)]', fr: '[Image : {{path}} ({{mime}}, {{size}} octets)]' },
+          { path: args.path, mime: mimeType, size: rawBuffer.length },
+        ),
+        false,
+        {
+          metadata: {
+            mimeType,
+            size: rawBuffer.length,
+            base64Data,
+            dataUrl,
+            path: fullPath,
+          },
         },
-      })
+      )
     }
 
     // Detect if this is a PDF file

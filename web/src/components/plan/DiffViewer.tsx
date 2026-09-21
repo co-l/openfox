@@ -1,7 +1,9 @@
 import { ScrollArea } from '../shared/ScrollArea'
 import { useGitStatus } from '../../hooks/useGitStatus'
+import { useT } from '../../hooks/useT'
 import { useScopedContext } from '../../stores/session/session-scope'
-import { useSettingsStore, SETTINGS_KEYS } from '../../stores/settings'
+import { SETTINGS_KEYS } from '../../lib/resources'
+import { useSetting } from '../../hooks/useSetting'
 import { buildEditorUrl } from '../../lib/editor-link'
 import { truncateMiddle } from '../../lib/path'
 
@@ -19,6 +21,7 @@ interface DiffRowProps {
 }
 
 function DiffRow({ file, showEditorLink, workdir }: DiffRowProps) {
+  const t = useT()
   const displayPath = truncateMiddle(file.path, 28)
 
   const textColor =
@@ -59,7 +62,7 @@ function DiffRow({ file, showEditorLink, workdir }: DiffRowProps) {
       <a
         href={href}
         className="flex items-center justify-between gap-1 py-0.5 text-xs min-w-0 hover:bg-bg-tertiary rounded px-1 transition-colors no-underline"
-        title={`Open ${file.path} in VSCode`}
+        title={t({ en: 'Open {{path}} in VSCode', fr: 'Ouvrir {{path}} dans VSCode' }, { path: file.path })}
       >
         {content}
       </a>
@@ -70,8 +73,9 @@ function DiffRow({ file, showEditorLink, workdir }: DiffRowProps) {
 }
 
 export function DiffViewer() {
+  const t = useT()
   const { diff } = useGitStatus()
-  const showEditorLink = useSettingsStore((s) => s.settings[SETTINGS_KEYS.DISPLAY_SHOW_OPEN_IN_EDITOR]) === 'true'
+  const showEditorLink = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_OPEN_IN_EDITOR).value === 'true'
   const { currentSession: session } = useScopedContext()
   const workdir = session?.workspace ?? session?.workdir
 
@@ -80,7 +84,7 @@ export function DiffViewer() {
       <div className="mt-3">
         <div className="flex items-center gap-1.5 text-xs text-text-muted">
           <span className="w-3 h-3 border border-border border-t-accent-primary rounded-full animate-spin" />
-          <span>Checking changes...</span>
+          <span>{t({ en: 'Checking changes...', fr: 'Vérification des changements…' })}</span>
         </div>
       </div>
     )
@@ -89,7 +93,7 @@ export function DiffViewer() {
   if (diff.files.length === 0) {
     return (
       <div className="mt-3">
-        <p className="text-xs text-text-muted text-center">No changes</p>
+        <p className="text-xs text-text-muted text-center">{t({ en: 'No changes', fr: 'Aucun changement' })}</p>
       </div>
     )
   }

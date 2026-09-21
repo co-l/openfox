@@ -191,6 +191,38 @@ describe('executeTools', () => {
     expect(result.toolMessages[0]?.content).toContain('Failed to parse')
   })
 
+  it('short-circuits preflight-rejected calls without calling tool registry', async () => {
+    const append = vi.fn()
+    const execute = vi.fn()
+
+    const toolCalls: ToolCall[] = [
+      {
+        id: 'call-1',
+        name: 'write_file',
+        arguments: { path: 'src/app.ts' },
+        preflightError: 'File "src/app.ts" must be read before writing',
+      },
+    ]
+
+    const result = await executeTools(
+      'msg-1',
+      toolCalls,
+      { ...makeCtx(), toolRegistry: { tools: [], execute, definitions: [] } as any },
+      append,
+    )
+
+    expect(execute).not.toHaveBeenCalled()
+    expect(result.toolMessages).toHaveLength(1)
+    expect(result.toolMessages[0]?.content).toContain('must be read before writing')
+
+    const resultEvents = append.mock.calls.filter((args: unknown[]) => (args[0] as TurnEvent).type === 'tool.result')
+    expect(resultEvents).toHaveLength(1)
+    expect((resultEvents[0]![0] as TurnEvent).data).toMatchObject({
+      toolCallId: 'call-1',
+      result: { success: false, error: 'File "src/app.ts" must be read before writing' },
+    })
+  })
+
   it('throws Aborted when signal is aborted before tool calls are emitted', async () => {
     const append = vi.fn()
     const controller = new AbortController()
@@ -448,6 +480,119 @@ describe('executeTools', () => {
         subAgentType: 'explorer',
         prompt: 'find the entry point',
       })
+    })
+  })
+
+  describe('sub-agent execution ordering', () => {
+    type ExecutionTrace = Array<{ id: string; phase: 'start' | 'end' }>
+
+    function makeOrderingMock() {
+      const trace: ExecutionTrace = []
+      mockToolRegistry.execute = vi.fn().mockImplementation(async (_name: string, args: any) => {
+        const id = args.id as string
+        const delay = (args.delay as number) ?? 0
+        trace.push({ id, phase: 'start' })
+        await new Promise((resolve) => setTimeout(resolve, delay))
+        trace.push({ id, phase: 'end' })
+        return { success: true, output: `${id} done`, durationMs: delay, truncated: false }
+      })
+      return trace
+    }
+
+    it('runs sub-agent calls sequentially by default', async () => {
+      const append = vi.fn()
+      const trace = makeOrderingMock()
+
+      const toolCalls: ToolCall[] = [
+        {
+          id: 'sub-1',
+          name: 'call_sub_agent',
+          arguments: { id: 'sub-1', subAgentType: 'explorer', prompt: 'a', delay: 30 },
+        } as any,
+        {
+          id: 'sub-2',
+          name: 'call_sub_agent',
+          arguments: { id: 'sub-2', subAgentType: 'verifier', prompt: 'b', delay: 10 },
+        } as any,
+        {
+          id: 'sub-3',
+          name: 'call_sub_agent',
+          arguments: { id: 'sub-3', subAgentType: 'explorer', prompt: 'c', delay: 10 },
+        } as any,
+      ]
+
+      const result = await executeTools('msg-1', toolCalls, makeCtx(), append)
+
+      expect(trace).toEqual([
+        { id: 'sub-1', phase: 'start' },
+        { id: 'sub-1', phase: 'end' },
+        { id: 'sub-2', phase: 'start' },
+        { id: 'sub-2', phase: 'end' },
+        { id: 'sub-3', phase: 'start' },
+        { id: 'sub-3', phase: 'end' },
+      ])
+      expect(result.toolMessages.map((m) => m.content)).toEqual(['sub-1 done', 'sub-2 done', 'sub-3 done'])
+    })
+
+    it('runs sub-agent calls in parallel when allowParallelSubAgents is enabled', async () => {
+      const append = vi.fn()
+      const trace = makeOrderingMock()
+
+      const toolCalls: ToolCall[] = [
+        {
+          id: 'sub-1',
+          name: 'call_sub_agent',
+          arguments: { id: 'sub-1', subAgentType: 'explorer', prompt: 'a', delay: 30 },
+        } as any,
+        {
+          id: 'sub-2',
+          name: 'call_sub_agent',
+          arguments: { id: 'sub-2', subAgentType: 'verifier', prompt: 'b', delay: 10 },
+        } as any,
+        {
+          id: 'sub-3',
+          name: 'call_sub_agent',
+          arguments: { id: 'sub-3', subAgentType: 'explorer', prompt: 'c', delay: 10 },
+        } as any,
+      ]
+
+      await executeTools('msg-1', toolCalls, makeCtx({ allowParallelSubAgents: true }), append)
+
+      expect(
+        trace
+          .slice(0, 3)
+          .map((e) => e.id)
+          .sort(),
+      ).toEqual(['sub-1', 'sub-2', 'sub-3'])
+      expect(trace.slice(0, 3).every((e) => e.phase === 'start')).toBe(true)
+    })
+
+    it('keeps non-sub-agent tools in parallel with sequential sub-agents', async () => {
+      const append = vi.fn()
+      const trace = makeOrderingMock()
+
+      const toolCalls: ToolCall[] = [
+        { id: 'cmd', name: 'run_command', arguments: { id: 'cmd', command: 'echo hi', delay: 10 } } as any,
+        {
+          id: 'sub-1',
+          name: 'call_sub_agent',
+          arguments: { id: 'sub-1', subAgentType: 'explorer', prompt: 'a', delay: 30 },
+        } as any,
+        {
+          id: 'sub-2',
+          name: 'call_sub_agent',
+          arguments: { id: 'sub-2', subAgentType: 'verifier', prompt: 'b', delay: 10 },
+        } as any,
+      ]
+
+      await executeTools('msg-1', toolCalls, makeCtx(), append)
+
+      const starts = trace.slice(0, 2)
+      expect(starts.map((e) => e.id).sort()).toEqual(['cmd', 'sub-1'])
+      expect(starts.every((e) => e.phase === 'start')).toBe(true)
+      expect(trace[2]).toEqual({ id: 'cmd', phase: 'end' })
+      expect(trace[3]).toEqual({ id: 'sub-1', phase: 'end' })
+      expect(trace[4]).toEqual({ id: 'sub-2', phase: 'start' })
     })
   })
 

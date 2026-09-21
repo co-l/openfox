@@ -9,18 +9,12 @@ vi.mock('../../lib/api', () => ({
   authFetch: vi.fn(() => Promise.resolve(new Response(null, { status: 200 }))),
 }))
 
-vi.mock('../../stores/agents', () => ({
-  useAgentsStore: vi.fn(
-    (selector: (state: { defaults: unknown[]; userItems: unknown[]; projectItems: unknown[] }) => unknown) =>
-      selector({ defaults: [], userItems: [], projectItems: [] }),
-  ),
-  getAgentColor: vi.fn(() => '#000000'),
+vi.mock('../../hooks/useWorkflows', () => ({
+  useWorkflows: () => ({ workflows: [], refresh: vi.fn() }),
 }))
 
-vi.mock('../../stores/workflows', () => ({
-  useWorkflowsStore: vi.fn((selector: (state: { defaults: unknown[]; userItems: unknown[] }) => unknown) =>
-    selector({ defaults: [], userItems: [] }),
-  ),
+vi.mock('../../hooks/useSessionWorkdir', () => ({
+  useSessionWorkdir: () => undefined,
 }))
 
 const mockedAuthFetch = vi.mocked(authFetch)

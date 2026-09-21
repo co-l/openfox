@@ -536,6 +536,82 @@ describe('project tasks service', () => {
       })
       expect(service.get(projectId, task.id)!.status).toBe('todo')
     })
+
+    it('a scheduled trigger blocked by ready gates does not abort the tick (other projects still run)', async () => {
+      service.setGateConfig(
+        projectId,
+        [
+          {
+            id: 'design',
+            name: 'Design approved',
+            description: 'sign-off before work',
+            required: true,
+            variant: 'ready',
+          },
+        ],
+        { actor: 'human' },
+      )
+      const blocked = create('Blocked scheduled', {
+        schedule: { type: 'once', runAt: '2020-01-01T09:00:00' },
+      })
+
+      // A due task in another project (no gates there) must still trigger.
+      const otherRoot = await mkdtemp(join(tmpdir(), 'openfox-tasks-other-'))
+      const otherProjectId = createProject('Other', otherRoot).id
+      const otherTask = service.create(
+        otherProjectId,
+        { prompt: 'Plain due', schedule: { type: 'once', runAt: '2020-01-01T09:00:00' } },
+        { actor: 'human' },
+      )
+
+      await expect(service.runScheduled()).resolves.toBeUndefined()
+
+      // The blocked task remains todo with its schedule (retries next tick)…
+      const stillBlocked = service.get(projectId, blocked.id)!
+      expect(stillBlocked.status).toBe('todo')
+      expect(stillBlocked.schedule?.type).toBe('once')
+      // …while the sibling project's due task still triggered.
+      expect(service.get(otherProjectId, otherTask.id)!.status).toBe('in_progress')
+    })
+
+    it('a recurring template blocked by ready gates never spawns orphan clones', async () => {
+      service.setGateConfig(
+        projectId,
+        [
+          {
+            id: 'design',
+            name: 'Design approved',
+            description: 'sign-off before work',
+            required: true,
+            variant: 'ready',
+          },
+        ],
+        { actor: 'human' },
+      )
+      const template = create('Recurring blocked', {
+        schedule: {
+          type: 'recurring',
+          freq: 'day',
+          interval: 1,
+          startAt: '2020-01-01T09:00:00',
+          end: { kind: 'never' },
+          occurrencesDone: 0,
+          nextRunAt: '2020-01-01T09:00:00',
+        },
+      })
+
+      // Several ticks: no clone may ever be left behind.
+      await service.runScheduled()
+      await service.runScheduled()
+      await service.runScheduled()
+
+      const tasks = service.list(projectId)
+      expect(tasks).toHaveLength(1) // only the template
+      const fresh = service.get(projectId, template.id)!
+      expect(fresh.status).toBe('todo')
+      const sched = fresh.schedule as Extract<NonNullable<typeof fresh.schedule>, { type: 'recurring' }>
+      expect(sched.occurrencesDone).toBe(0) // not advanced, still due
+    })
   })
 
   describe('concurrency', () => {
@@ -740,6 +816,197 @@ describe('project tasks service', () => {
       // The task still launches (raw prompt) so no slot is wedged on a dead run.
       expect(result.task.runState).toBe('running')
       expect(sm.queued[0]?.content).toBe('/reqwf')
+    })
+  })
+
+  describe('scheduled tasks', () => {
+    const once = (runAt: string) => ({ type: 'once' as const, runAt })
+    const recurring = (
+      over: {
+        startAt?: string
+        end?: { kind: 'never' } | { kind: 'until'; until: string } | { kind: 'count'; count: number }
+        occurrencesDone?: number
+        freq?: 'day' | 'week' | 'month' | 'year'
+        weekdays?: number[]
+      } = {},
+    ) => ({
+      type: 'recurring' as const,
+      freq: over.freq ?? 'day',
+      interval: 1,
+      ...(over.weekdays ? { weekdays: over.weekdays } : {}),
+      startAt: over.startAt ?? '2030-01-01T09:00:00',
+      end: over.end ?? { kind: 'never' },
+      occurrencesDone: over.occurrencesDone ?? 0,
+      nextRunAt: over.startAt ?? '2030-01-01T09:00:00',
+    })
+
+    it('creates a one-off scheduled task', () => {
+      const task = create('Once', { schedule: once('2030-01-01T09:00:00') })
+      expect(task.schedule).toMatchObject({ type: 'once', runAt: '2030-01-01T09:00:00' })
+    })
+
+    it('rejects an invalid once runAt', () => {
+      expect(() => create('Once', { schedule: { type: 'once', runAt: 'not-a-date' } })).toThrow(/schedule/)
+    })
+
+    it('rejects a weekly rule with no weekdays', () => {
+      expect(() => create('Weekly', { schedule: recurring({ freq: 'week', weekdays: [] }) })).toThrow(/weekday/i)
+    })
+
+    it('rejects a non-positive interval', () => {
+      expect(() => create('Bad interval', { schedule: { ...recurring(), interval: 0 } })).toThrow(/interval/)
+    })
+
+    it('creates a recurring task whose first trigger is startAt', () => {
+      const task = create('Recurring', { schedule: recurring() })
+      expect(task.schedule?.type).toBe('recurring')
+      expect(task.schedule).toMatchObject({ occurrencesDone: 0, nextRunAt: '2030-01-01T09:00:00' })
+    })
+
+    it('duplicate copies the schedule', () => {
+      const task = create('Once', { schedule: once('2030-01-01T09:00:00') })
+      const copy = service.duplicate(projectId, task.id, { actor: 'human' })
+      expect(copy.schedule).toMatchObject({ type: 'once', runAt: '2030-01-01T09:00:00' })
+    })
+
+    it('editing the schedule replaces it and resets the occurrence counter', async () => {
+      const task = create('Recurring', { schedule: recurring({ occurrencesDone: 2 }) })
+      const result = await service.update(
+        projectId,
+        task.id,
+        { schedule: recurring({ startAt: '2031-06-01T09:00:00' }) },
+        { actor: 'human' },
+      )
+      expect(result.conflict).toBe(false)
+      expect(result.task.schedule).toMatchObject({ occurrencesDone: 0, nextRunAt: '2031-06-01T09:00:00' })
+    })
+
+    it('update can clear the schedule', async () => {
+      const task = create('Once', { schedule: once('2030-01-01T09:00:00') })
+      const result = await service.update(projectId, task.id, { schedule: null }, { actor: 'human' })
+      expect(result.task.schedule).toBeUndefined()
+    })
+
+    it('manual move to In Progress clears the schedule', async () => {
+      const task = create('Once', { schedule: once('2030-01-01T09:00:00') })
+      await service.move(projectId, task.id, 'in_progress', { actor: 'human' })
+      expect(service.get(projectId, task.id)!.schedule).toBeUndefined()
+    })
+
+    it('manual move to Done clears the schedule', async () => {
+      const task = create('Once', { schedule: once('2030-01-01T09:00:00') })
+      await service.move(projectId, task.id, 'done', { actor: 'human' })
+      expect(service.get(projectId, task.id)!.schedule).toBeUndefined()
+    })
+  })
+
+  describe('runScheduled', () => {
+    it('triggers a due one-off task: runs it, clears the schedule, seeds a session', async () => {
+      const task = create('Due once', { schedule: { type: 'once', runAt: '2020-01-01T09:00:00' } })
+      await service.runScheduled()
+      const fresh = service.get(projectId, task.id)!
+      expect(fresh.status).toBe('in_progress')
+      expect(fresh.runState).toBe('running')
+      expect(fresh.schedule).toBeUndefined()
+      expect(sm.createdSessions).toHaveLength(1)
+      expect(sm.queued[0]?.content).toBe('Due once')
+    })
+
+    it('ignores tasks that are not due yet', async () => {
+      const task = create('Later', { schedule: { type: 'once', runAt: '2099-01-01T09:00:00' } })
+      await service.runScheduled()
+      expect(service.get(projectId, task.id)!.status).toBe('todo')
+      expect(sm.createdSessions).toHaveLength(0)
+    })
+
+    it('spawns a single run for a due recurring template and advances it', async () => {
+      const task = create('Recurring', {
+        schedule: {
+          type: 'recurring',
+          freq: 'day',
+          interval: 1,
+          startAt: '2020-01-01T09:00:00',
+          end: { kind: 'never' },
+          occurrencesDone: 0,
+          nextRunAt: '2020-01-01T09:00:00',
+        },
+      })
+      await service.runScheduled()
+
+      const template = service.get(projectId, task.id)!
+      expect(template.status).toBe('todo') // template never leaves To Do
+      const sched = template.schedule as Extract<NonNullable<typeof template.schedule>, { type: 'recurring' }>
+      expect(sched.occurrencesDone).toBe(1)
+      expect(new Date(sched.nextRunAt).getTime()).toBeGreaterThan(Date.now() - 2000)
+
+      const runs = service.list(projectId).filter((t) => t.id !== task.id)
+      expect(runs).toHaveLength(1)
+      expect(runs[0]!.status).toBe('in_progress')
+      expect(runs[0]!.schedule).toBeUndefined() // the run is a plain task
+      expect(sm.createdSessions).toHaveLength(1)
+    })
+
+    it('only spawns one run even when several intervals were missed while off', async () => {
+      const task = create('Way overdue', {
+        schedule: {
+          type: 'recurring',
+          freq: 'day',
+          interval: 1,
+          startAt: '2020-01-01T09:00:00',
+          end: { kind: 'never' },
+          occurrencesDone: 0,
+          nextRunAt: '2020-01-01T09:00:00',
+        },
+      })
+      await service.runScheduled()
+      const runs = service.list(projectId).filter((t) => t.id !== task.id)
+      expect(runs).toHaveLength(1)
+      const template = service.get(projectId, task.id)!
+      const sched = template.schedule as Extract<NonNullable<typeof template.schedule>, { type: 'recurring' }>
+      expect(sched.occurrencesDone).toBe(1)
+    })
+
+    it('clears the template schedule once the count of occurrences is exhausted', async () => {
+      const task = create('One more', {
+        schedule: {
+          type: 'recurring',
+          freq: 'day',
+          interval: 1,
+          startAt: '2020-01-01T09:00:00',
+          end: { kind: 'count', count: 1 },
+          occurrencesDone: 0,
+          nextRunAt: '2020-01-01T09:00:00',
+        },
+      })
+      await service.runScheduled()
+      const template = service.get(projectId, task.id)!
+      expect(template.schedule).toBeUndefined()
+      // the final occurrence still ran
+      expect(service.list(projectId).filter((t) => t.id !== task.id)).toHaveLength(1)
+    })
+
+    it('a recurring template queued behind a full slot still advances its next run', async () => {
+      const blocker = create('Blocker')
+      await service.move(projectId, blocker.id, 'in_progress', { actor: 'human' }) // slot full
+      const task = create('Queued spawn', {
+        schedule: {
+          type: 'recurring',
+          freq: 'day',
+          interval: 1,
+          startAt: '2020-01-01T09:00:00',
+          end: { kind: 'never' },
+          occurrencesDone: 0,
+          nextRunAt: '2020-01-01T09:00:00',
+        },
+      })
+      await service.runScheduled()
+
+      const template = service.get(projectId, task.id)!
+      const sched = template.schedule as Extract<NonNullable<typeof template.schedule>, { type: 'recurring' }>
+      expect(sched.occurrencesDone).toBe(1)
+      const spawned = service.list(projectId).find((t) => t.id !== task.id && t.id !== blocker.id)!
+      expect(spawned.status).toBe('in_progress')
+      expect(spawned.runState).toBe('queued')
     })
   })
 })

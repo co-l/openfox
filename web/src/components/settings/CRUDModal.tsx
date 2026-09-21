@@ -1,6 +1,7 @@
 import { useState, useCallback, type ReactNode } from 'react'
 import { Button } from '../shared/Button'
 import { TrashIcon, CopyIcon } from '../shared/icons'
+import { useT } from '../../hooks/useT'
 
 export interface ConfirmDialogState {
   id: string | null
@@ -27,19 +28,20 @@ interface ConfirmButtonProps {
 }
 
 export function ConfirmButton({ onConfirm, onCancel }: ConfirmButtonProps) {
+  const t = useT()
   return (
     <div className="flex items-center gap-1">
       <button
         onClick={onConfirm}
         className="px-1.5 py-0.5 rounded text-xs hover:opacity-90 transition-colors bg-accent-error/20 text-accent-error hover:bg-accent-error/30"
       >
-        Delete
+        {t({ en: 'Delete', fr: 'Supprimer' })}
       </button>
       <button
         onClick={onCancel}
         className="px-1.5 py-0.5 rounded text-text-muted text-xs hover:bg-bg-primary transition-colors"
       >
-        Cancel
+        {t({ en: 'Cancel', fr: 'Annuler' })}
       </button>
     </div>
   )
@@ -50,11 +52,12 @@ interface DeleteIconProps {
 }
 
 export function DeleteIcon({ onClick }: DeleteIconProps) {
+  const t = useT()
   return (
     <button
       onClick={onClick}
       className="p-1.5 rounded hover:bg-bg-primary text-text-muted hover:text-accent-error transition-colors"
-      title="Delete"
+      title={t({ en: 'Delete', fr: 'Supprimer' })}
     >
       <TrashIcon />
     </button>
@@ -66,11 +69,12 @@ interface DuplicateIconProps {
 }
 
 export function DuplicateIcon({ onClick }: DuplicateIconProps) {
+  const t = useT()
   return (
     <button
       onClick={onClick}
       className="p-1.5 rounded hover:bg-bg-primary text-text-muted hover:text-text-primary transition-colors"
-      title="Duplicate"
+      title={t({ en: 'Duplicate', fr: 'Dupliquer' })}
     >
       <CopyIcon />
     </button>
@@ -137,13 +141,14 @@ interface ModalActionsProps {
 }
 
 export function ModalActions({ onCancel, onSave, saving, saveDisabled }: ModalActionsProps) {
+  const t = useT()
   return (
     <div className="flex justify-end gap-2 pt-2">
       <Button variant="secondary" onClick={onCancel}>
-        Cancel
+        {t({ en: 'Cancel', fr: 'Annuler' })}
       </Button>
       <Button variant="primary" onClick={onSave} disabled={saving || saveDisabled}>
-        {saving ? 'Saving...' : 'Save'}
+        {saving ? t({ en: 'Saving...', fr: 'Enregistrement...' }) : t({ en: 'Save', fr: 'Enregistrer' })}
       </Button>
     </div>
   )
@@ -163,16 +168,17 @@ interface DestinationSelectorProps {
 }
 
 export function DestinationSelector({ value, onChange }: DestinationSelectorProps) {
+  const t = useT()
   return (
     <div className="flex items-center gap-2">
-      <label className="text-xs text-text-secondary">Save to:</label>
+      <label className="text-xs text-text-secondary">{t({ en: 'Save to:', fr: 'Enregistrer dans :' })}</label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value as 'project' | 'user')}
         className="px-2 py-1 bg-bg-tertiary border border-border rounded text-xs focus:outline-none focus:ring-1 focus:ring-accent-primary"
       >
-        <option value="user">Global config</option>
-        <option value="project">Project (.openfox/)</option>
+        <option value="user">{t({ en: 'Global config', fr: 'Configuration globale' })}</option>
+        <option value="project">{t({ en: 'Project (.openfox/)', fr: 'Projet (.openfox/)' })}</option>
       </select>
     </div>
   )
@@ -187,20 +193,21 @@ interface CRUDListHeaderProps {
 }
 
 export function CRUDListHeader({ description, onNew, loading, hasItems, children }: CRUDListHeaderProps) {
+  const t = useT()
   return (
     <>
       <div className="flex items-center justify-between mb-4">
         <p className="text-text-secondary text-sm">{description}</p>
         <div className="flex items-center gap-2 flex-shrink-0 ml-3">
           <Button variant="primary" size="sm" onClick={onNew}>
-            + New
+            {t({ en: '+ New', fr: '+ Nouveau' })}
           </Button>
         </div>
       </div>
       {loading && !hasItems ? (
-        <div className="text-text-muted text-sm">Loading...</div>
+        <div className="text-text-muted text-sm">{t({ en: 'Loading...', fr: 'Chargement...' })}</div>
       ) : !hasItems ? (
-        <div className="text-text-muted text-sm">No items defined.</div>
+        <div className="text-text-muted text-sm">{t({ en: 'No items defined.', fr: 'Aucun élément défini.' })}</div>
       ) : (
         children
       )}

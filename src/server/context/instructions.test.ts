@@ -7,6 +7,7 @@ import { closeDatabase, initDatabase } from '../db/index.js'
 import { createProject, updateProject } from '../db/projects.js'
 import { setSetting, SETTINGS_KEYS } from '../db/settings.js'
 import {
+  buildLanguageInstruction,
   findInstructionFiles,
   getAllInstructions,
   getInstructionsForWorkdir,
@@ -153,6 +154,27 @@ describe('instructions', () => {
     })
   })
 
+  describe('buildLanguageInstruction', () => {
+    it('returns a LANGUAGE section for a preset language', () => {
+      const result = buildLanguageInstruction('French')
+      expect(result).toBe('## LANGUAGE\n\nAlways respond to the user in French.')
+    })
+
+    it('capitalizes the first letter of custom languages', () => {
+      expect(buildLanguageInstruction('german')).toBe('## LANGUAGE\n\nAlways respond to the user in German.')
+      expect(buildLanguageInstruction('  spanish  ')).toBe('## LANGUAGE\n\nAlways respond to the user in Spanish.')
+    })
+
+    it('returns null for automatic, empty, and null values', () => {
+      expect(buildLanguageInstruction('automatic')).toBeNull()
+      expect(buildLanguageInstruction('Automatic')).toBeNull()
+      expect(buildLanguageInstruction('')).toBeNull()
+      expect(buildLanguageInstruction('   ')).toBeNull()
+      expect(buildLanguageInstruction(null)).toBeNull()
+      expect(buildLanguageInstruction(undefined)).toBeNull()
+    })
+  })
+
   describe('higher level helpers', () => {
     it('returns workdir instructions with discovered files', async () => {
       await writeFile(join(testDir, 'AGENTS.md'), '# Agent instructions')
@@ -179,6 +201,36 @@ describe('instructions', () => {
         { path: 'Project: OpenFox', source: 'project', content: 'Project rule' },
         { path: join(testDir, 'AGENTS.md'), source: 'agents-md', content: '# Local instructions\nUse tests' },
       ])
+    })
+
+    it('injects the LANGUAGE section first when a language is set', async () => {
+      const project = createProject('OpenFox', testDir)
+      setSetting(SETTINGS_KEYS.LANGUAGE, 'French')
+      setSetting(SETTINGS_KEYS.GLOBAL_INSTRUCTIONS, 'Global rule')
+
+      const result = await getAllInstructions(testDir, project.id)
+
+      const content = result.content
+      expect(content.indexOf('## LANGUAGE')).toBeLessThan(content.indexOf('## GLOBAL INSTRUCTIONS'))
+      expect(content).toContain('## LANGUAGE\n\nAlways respond to the user in French.')
+    })
+
+    it('omits the LANGUAGE section when language is automatic', async () => {
+      const project = createProject('OpenFox', testDir)
+      setSetting(SETTINGS_KEYS.LANGUAGE, 'automatic')
+      setSetting(SETTINGS_KEYS.GLOBAL_INSTRUCTIONS, 'Global rule')
+
+      const result = await getAllInstructions(testDir, project.id)
+
+      expect(result.content).not.toContain('## LANGUAGE')
+      expect(result.content).toContain('## GLOBAL INSTRUCTIONS\n\nGlobal rule')
+    })
+
+    it('omits the LANGUAGE section when language is not set', async () => {
+      const project = createProject('OpenFox', testDir)
+      const result = await getAllInstructions(testDir, project.id)
+
+      expect(result.content).not.toContain('## LANGUAGE')
     })
 
     it('keeps file entries even when a discovered instruction file becomes unreadable', async () => {

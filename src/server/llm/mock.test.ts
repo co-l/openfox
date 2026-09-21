@@ -447,6 +447,16 @@ describe('mock llm runtime reminders', () => {
     ])
   })
 
+  it('calls step_done when the transition condition is already satisfied', async () => {
+    const client = createMockLLMClient()
+
+    const response = await client.complete({
+      messages: [{ role: 'user', content: 'If you have finished the task, call step_done()' }],
+    })
+
+    expect(response.toolCalls).toEqual([expect.objectContaining({ name: 'step_done', arguments: {} })])
+  })
+
   it('returns get_criteria before completing a criterion when the prompt asks for both', async () => {
     const client = createMockLLMClient()
 

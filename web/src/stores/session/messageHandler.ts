@@ -5,6 +5,7 @@ import type {
   GitDiffFile,
   SessionListPayload,
   SessionRunningPayload,
+  SessionPausePayload,
   ChatAskUserPayload,
   ChatDeltaPayload,
   ChatThinkingPayload,
@@ -15,6 +16,7 @@ import type {
   ChatTodoPayload,
   ChatMessagePayload,
   ChatMessageUpdatedPayload,
+  ChatStatsPayload,
   ChatLLMRetryPayload,
   ChatLLMRetryFailedPayload,
   ChatDonePayload,
@@ -32,12 +34,14 @@ import type {
 import { useDevServerStore } from '../dev-server'
 import { useBackgroundProcessesStore } from '../background-processes'
 import { useTasksStore } from '../tasks'
+import { handlePluginMessage } from '../../lib/plugin-ws'
 import { playNewMessage } from '../../lib/sound'
 import type { AgentType } from '../notifications'
 import type { SessionState, PendingQuestion, SessionPane } from './types'
 import { handleGlobalSoundEffects, resolveAgentType } from './sounds'
 import { getBuffer, scheduleStreamingFlush, cancelStreamingFlush } from './streamingBuffer'
-import { useMcpStore, type McpServerInfo } from '../mcp'
+import { snapshot } from '../../lib/resourceCache'
+import { mcpServersResource, settingResource, SETTINGS_KEYS, type McpServerInfo } from '../../lib/resources'
 import {
   emptyPane,
   paneFromFlat,
@@ -46,9 +50,83 @@ import {
   replacePane,
   updatePane,
   updatePaneSession,
+  resolveSessionProjectId,
 } from './panes'
 
 const triggeredNewMessageSound = new Set<string>()
+// Message ids already counted into the flat summaries (homepage, sidebar,
+// search corpus). Re-delivered chat.message events must not inflate counts.
+const countedChatMessageIds = new Set<string>()
+
+// The feed store must not retain the whole streamed conversation: the server
+// only ever displays the last maxVisibleItems and the client re-slices the same
+// window, but live chat.message events are unbounded until a turn-boundary
+// session.state prune. Trim to the display window plus a small headroom so a
+// long agent run cannot balloon pane.messages (and Firefox's heap) with it.
+const MAX_VISIBLE_ITEMS_DEFAULT = 300
+export const MESSAGE_CAP_HEADROOM = 25
+export const MAX_COUNTED_MESSAGE_IDS = 2000
+export const MAX_TRIGGERED_SOUND_IDS = 200
+
+// Live tool output (run_command etc.) streams uncapped from the server: the
+// final result is truncated server-side (50KB / 2000 lines), but every
+// chat.tool_output chunk is broadcast in full and the client would otherwise
+// retain — and render — the entire streamed output of every command. Keep a
+// bounded tail so a chatty command cannot balloon the store (or the DOM).
+export const MAX_STREAMING_OUTPUT_BYTES = 256 * 1024
+export const MAX_STREAMING_OUTPUT_CHUNKS = 1000
+
+export interface StreamingOutputChunk {
+  stream: 'stdout' | 'stderr'
+  content: string
+  timestamp: number
+}
+
+/** Append streamed chunks, dropping the oldest until the byte/chunk budget is met. */
+export function appendStreamingOutput(
+  existing: StreamingOutputChunk[] | undefined,
+  incoming: StreamingOutputChunk[],
+): StreamingOutputChunk[] {
+  if (incoming.length === 0) return existing ?? []
+  const merged = existing && existing.length > 0 ? [...existing, ...incoming] : incoming
+  let total = 0
+  for (const chunk of merged) total += chunk.content.length
+  let start = 0
+  while (
+    (merged.length - start > MAX_STREAMING_OUTPUT_CHUNKS || total > MAX_STREAMING_OUTPUT_BYTES) &&
+    merged.length - start > 1
+  ) {
+    const dropped = merged[start]!
+    total -= dropped.content.length
+    start++
+  }
+  return start === 0 ? merged : merged.slice(start)
+}
+
+/** Server-persisted display window (mirrors useDisplaySettings' fallback). 0 means unlimited. */
+export function getMaxVisibleItems(): number {
+  const value = snapshot<string>(settingResource.keyOf(SETTINGS_KEYS.DISPLAY_MAX_VISIBLE_ITEMS)).data
+  if (value === undefined || value === null || value === '') return MAX_VISIBLE_ITEMS_DEFAULT
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : MAX_VISIBLE_ITEMS_DEFAULT
+}
+
+/** Keep at most maxVisibleItems + headroom messages, dropping the oldest. 0 = unlimited. */
+export function trimPaneMessages(messages: Message[], maxVisibleItems: number): Message[] {
+  if (maxVisibleItems <= 0) return messages
+  const cap = maxVisibleItems + MESSAGE_CAP_HEADROOM
+  return messages.length > cap ? messages.slice(-cap) : messages
+}
+
+/** Insertion-ordered bounded set: evicts the oldest entry when at capacity. */
+export function boundedAdd(set: Set<string>, value: string, max: number): void {
+  if (set.has(value)) return
+  if (set.size >= max) {
+    const oldest = set.values().next().value
+    if (oldest !== undefined) set.delete(oldest)
+  }
+  set.add(value)
+}
 
 function addUnreadSessionId(unreadSessionIds: string[], sessionId: string): string[] {
   return unreadSessionIds.includes(sessionId) ? unreadSessionIds : [...unreadSessionIds, sessionId]
@@ -56,6 +134,12 @@ function addUnreadSessionId(unreadSessionIds: string[], sessionId: string): stri
 
 function removeUnreadSessionId(unreadSessionIds: string[], sessionId: string): string[] {
   return unreadSessionIds.filter((id) => id !== sessionId)
+}
+
+function clearsLiveTurnStats(payload: ChatDonePayload): boolean {
+  // Sub-agent completions and waiting_for_user are mid-turn pauses: the live
+  // stats stay accurate and resume streaming once the turn continues.
+  return payload.agentType !== 'sub-agent' && payload.reason !== 'waiting_for_user'
 }
 
 function markBackgroundSessionUnread(
@@ -181,6 +265,32 @@ function applyChat(
 }
 
 /**
+ * Refresh a session's flat summary on live message activity: bump the message
+ * count and record the latest message date. Lists ordered by last activity
+ * (homepage recent sessions, sidebar, search corpus) stay fresh even when no
+ * pane is open for the session.
+ */
+function refreshSessionSummaryActivity(
+  set: (fn: (state: SessionState) => Partial<SessionState> | SessionState) => void,
+  sessionId: string | undefined,
+  timestamp: string,
+): void {
+  if (!sessionId) return
+  set((state) => {
+    const sessions = state.sessions.map((s) =>
+      s.id === sessionId ? { ...s, messageCount: s.messageCount + 1, updatedAt: timestamp } : s,
+    )
+    const searchSessions = state.searchSessions?.map((s) =>
+      s.id === sessionId ? { ...s, messageCount: s.messageCount + 1, updatedAt: timestamp } : s,
+    )
+    return {
+      sessions,
+      ...(searchSessions ? { searchSessions } : {}),
+    }
+  })
+}
+
+/**
  * Drop the "waiting to retry" pill once a retried LLM attempt actually
  * streams. Stream activity means the backoff is over — the pill would
  * otherwise linger until the whole turn ends.
@@ -263,6 +373,8 @@ export function handleServerMessage(
           session: payload.session,
           messages,
           hiddenCount: payload.hiddenCount ?? 0,
+          sessionStats:
+            (payload.sessionStats as import('@shared/types.js').SessionStatsSummary | null | undefined) ?? null,
           currentTodos: [],
           pendingPathConfirmations: confs,
           pendingQuestions: payload.pendingQuestions ?? [],
@@ -270,6 +382,7 @@ export function handleServerMessage(
             (payload.activeWorkflowExecution as import('@shared/types.js').WorkflowExecution | undefined) ?? null,
           queuedMessages: prior.queuedMessages,
           llmRetry: null,
+          liveTurnStats: null,
         }
         const base = replacePane(state, sessionId, nextPane)
         return {
@@ -307,23 +420,33 @@ export function handleServerMessage(
 
     case 'session.deleted': {
       const payload = message.payload as { sessionId: string }
+      const deletedId = payload.sessionId
+      // Resolve the deleted session's projectId before removing it, so the
+      // reload can be scoped to its project instead of fetching globally.
+      const projectId = resolveSessionProjectId(get(), deletedId)
       set((state) => {
         const panes = { ...state.panes }
-        delete panes[payload.sessionId]
+        delete panes[deletedId]
         return {
           panes,
-          openSessionIds: state.openSessionIds.filter((id) => id !== payload.sessionId),
-          unreadSessionIds: removeUnreadSessionId(state.unreadSessionIds, payload.sessionId),
+          sessions: state.sessions.filter((s) => s.id !== deletedId),
+          openSessionIds: state.openSessionIds.filter((id) => id !== deletedId),
+          unreadSessionIds: removeUnreadSessionId(state.unreadSessionIds, deletedId),
           searchSessions: null,
         }
       })
-      get().listSessions()
+      get().listSessions(projectId)
       break
     }
 
     case 'session.deletedAll': {
-      set({ searchSessions: null })
-      get().listSessions()
+      // The server broadcasts sessionId = projectId for deletedAll
+      const projectId = message.sessionId
+      set((state) => ({
+        searchSessions: null,
+        sessions: projectId !== undefined ? state.sessions.filter((s) => s.projectId !== projectId) : state.sessions,
+      }))
+      get().listSessions(projectId)
       break
     }
 
@@ -335,42 +458,57 @@ export function handleServerMessage(
         break
       }
       if (!payload.isRunning) {
-        set((state) => updatePane(state, eventSessionId, (p) => ({ ...p, abortInProgress: false, queuedMessages: [] })))
+        set((state) =>
+          updatePane(state, eventSessionId, (p) => ({
+            ...p,
+            abortInProgress: false,
+            queuedMessages: [],
+            liveTurnStats: null,
+          })),
+        )
       }
       if (payload.isRunning) {
-        set((state) => updatePane(state, eventSessionId, (p) => ({ ...p, restoredInput: null })))
+        set((state) => updatePane(state, eventSessionId, (p) => ({ ...p, restoredInput: null, liveTurnStats: null })))
       }
       break
     }
 
+    case 'session.pause': {
+      const payload = message.payload as SessionPausePayload
+      const eventSessionId = message.sessionId
+      if (!eventSessionId || !isLivePane(get(), eventSessionId)) {
+        break
+      }
+      set((state) => updatePaneSession(state, eventSessionId, (s) => ({ ...s, pauseState: payload.pauseState })))
+      break
+    }
+
     case 'chat.message': {
+      const payload = message.payload as ChatMessagePayload
       if (
         !applyChat(set, get, message.sessionId, (pane) => {
-          const payload = message.payload as ChatMessagePayload
           if (pane.messages.some((m) => m.id === payload.message.id)) {
             return pane
           }
-          const isUserMessage = payload.message.role === 'user'
           return {
             ...pane,
-            messages: [...pane.messages, payload.message],
-            session:
-              pane.session && isUserMessage
-                ? { ...pane.session, messageCount: (pane.session.messageCount ?? 0) + 1 }
-                : pane.session,
+            messages: trimPaneMessages([...pane.messages, payload.message], getMaxVisibleItems()),
+            session: pane.session
+              ? { ...pane.session, messageCount: (pane.session.messageCount ?? 0) + 1 }
+              : pane.session,
           }
         })
       ) {
-        const payload = message.payload as ChatMessagePayload
-        if (payload.message.role === 'user') {
-          // Keep session message counts fresh even for non-open sessions
-          set((state) => ({
-            sessions: state.sessions.map((s) =>
-              s.id === message.sessionId ? { ...s, messageCount: s.messageCount + 1 } : s,
-            ),
-          }))
-        }
         markBackgroundSessionUnread(set, message)
+      }
+      // Keep the flat summaries (homepage recent list, sidebar, search corpus)
+      // fresh: every message start, whatever the role and whether a live pane
+      // exists, bumps the message count and records the latest message date so
+      // lists ordered by last activity match the user experience. Re-delivered
+      // messages are skipped so counts stay idempotent.
+      if (!countedChatMessageIds.has(payload.message.id)) {
+        boundedAdd(countedChatMessageIds, payload.message.id, MAX_COUNTED_MESSAGE_IDS)
+        refreshSessionSummaryActivity(set, message.sessionId, payload.message.timestamp)
       }
       break
     }
@@ -407,6 +545,12 @@ export function handleServerMessage(
               }
               return merged
             }),
+            // A message_updated carrying stats is a turn-finalize broadcast: the
+            // message now holds the whole turn's cumulative stats, so the live
+            // channel must not be merged on top of it (would double-count).
+            // Cleared here rather than waiting for chat.done to avoid a
+            // one-frame ~2x flicker in the sidebar between the two frames.
+            ...(payload.updates.stats ? { liveTurnStats: null } : {}),
           }
         })
       ) {
@@ -422,7 +566,7 @@ export function handleServerMessage(
         !applyChat(set, get, sessionId, (pane) => {
           if (sessionId === activeSessionId) {
             if (!triggeredNewMessageSound.has(payload.messageId)) {
-              triggeredNewMessageSound.add(payload.messageId)
+              boundedAdd(triggeredNewMessageSound, payload.messageId, MAX_TRIGGERED_SOUND_IDS)
               const agent: AgentType | undefined = payload.subAgentType
                 ? 'sub-agent'
                 : resolveAgentType(get(), sessionId)
@@ -476,7 +620,15 @@ export function handleServerMessage(
           let preparingToolCalls: typeof existing
           if (existingIndex >= 0) {
             preparingToolCalls = existing.map((p, i) =>
-              i === existingIndex ? { ...p, arguments: payload.arguments } : p,
+              i === existingIndex
+                ? {
+                    ...p,
+                    arguments: payload.arguments,
+                    ...(payload.editContext && payload.editContext.length > 0
+                      ? { editContext: payload.editContext }
+                      : {}),
+                  }
+                : p,
             )
           } else {
             preparingToolCalls = [
@@ -485,6 +637,7 @@ export function handleServerMessage(
                 index: payload.index,
                 name: payload.name,
                 ...(payload.arguments ? { arguments: payload.arguments } : {}),
+                ...(payload.editContext && payload.editContext.length > 0 ? { editContext: payload.editContext } : {}),
               },
             ]
           }
@@ -523,11 +676,14 @@ export function handleServerMessage(
               startedAt: Date.now(),
               ...(bufferedOutputs.length > 0
                 ? {
-                    streamingOutput: bufferedOutputs.map((o) => ({
-                      stream: o.stream,
-                      content: o.content,
-                      timestamp: Date.now(),
-                    })),
+                    streamingOutput: appendStreamingOutput(
+                      undefined,
+                      bufferedOutputs.map((o) => ({
+                        stream: o.stream,
+                        content: o.content,
+                        timestamp: Date.now(),
+                      })),
+                    ),
                   }
                 : {}),
             },
@@ -585,7 +741,11 @@ export function handleServerMessage(
               ? {
                   ...m,
                   toolCalls: m.toolCalls?.map((tc) =>
-                    tc.id === payload.callId ? { ...tc, result: payload.result } : tc,
+                    tc.id === payload.callId
+                      ? // The final result supersedes the streamed view; drop the
+                        // accumulated chunks so done tool calls stop retaining them.
+                        { ...tc, result: payload.result, streamingOutput: undefined }
+                      : tc,
                   ),
                 }
               : m,
@@ -671,9 +831,24 @@ export function handleServerMessage(
               : m,
           ),
           visionFallbackByMessage: {},
+          // Sub-agent completions and waiting_for_user arrive mid-turn — don't
+          // wipe the parent turn's live stats; they are replaced by the next
+          // top-level chat.stats / resumed streaming.
+          ...(clearsLiveTurnStats(payload) ? { liveTurnStats: null } : {}),
           ...(payload.reason !== 'error' ? { llmRetry: null } : {}),
         })),
       )
+      break
+    }
+
+    case 'chat.stats': {
+      const sessionId = message.sessionId
+      const payload = message.payload as ChatStatsPayload
+      // Live turn stats are only meaningful for open panes; background sessions
+      // get them via the aggregate once their turn lands in the snapshot.
+      if (!applyChat(set, get, sessionId, (pane) => ({ ...pane, liveTurnStats: payload.stats }))) {
+        break
+      }
       break
     }
 
@@ -687,7 +862,12 @@ export function handleServerMessage(
       applyChat(set, get, sessionId, (pane) => ({
         ...pane,
         error: null,
-        llmRetry: { status: 'retrying', attempt: payload.attempt, retryInMs: payload.retryInMs },
+        llmRetry: {
+          status: 'retrying',
+          attempt: payload.attempt,
+          retryInMs: payload.retryInMs,
+          error: payload.error,
+        },
       }))
       break
     }
@@ -1013,10 +1193,11 @@ export function handleServerMessage(
       const payload = message.payload as { servers?: McpServerInfo[] }
       if (payload?.servers) {
         const sorted = [...payload.servers].sort((a, b) => a.name.localeCompare(b.name))
-        useMcpStore.getState().setServers(sorted)
-      } else {
-        window.dispatchEvent(new CustomEvent('mcp-servers-changed'))
+        // WS write-through: update the cache entry directly so every subscriber
+        // converges without a refetch (and no refetch storm).
+        mcpServersResource.write(sorted)
       }
+      window.dispatchEvent(new CustomEvent('mcp-servers-changed'))
       break
     }
 
@@ -1049,6 +1230,14 @@ export function handleServerMessage(
 
     case 'tasks.update': {
       useTasksStore.getState().handleTasksUpdate(message.payload as import('@shared/protocol.js').TasksUpdatePayload)
+      break
+    }
+
+    case 'plugin.notification':
+    case 'plugin.notification_read':
+    case 'plugin.notification_deleted':
+    case 'plugin.ui_state': {
+      handlePluginMessage(message)
       break
     }
 

@@ -1,6 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import type { McpManager } from '../mcp/manager.js'
-import { setMcpManagerForTools, resetMcpManagerForTools } from './mcp-config.js'
+import {
+  setMcpManagerForTools,
+  resetMcpManagerForTools,
+  setMcpBootstrapForTools,
+  resetMcpBootstrapForTools,
+} from './mcp-config.js'
+import { injectContextDriftReminders } from '../chat/dynamic-context.js'
 
 const mockSetToolEnabled = vi.fn().mockResolvedValue(undefined)
 
@@ -53,6 +59,17 @@ vi.mock('./index.js', () => ({
   createToolRegistry: vi.fn(() => ({ definitions: [] })),
 }))
 
+vi.mock('../mcp/session-overrides.js', () => ({
+  getSessionDisabledServers: (sessionId: string) => (sessionId === 's2' ? ['filesystem'] : []),
+}))
+
+vi.mock('../chat/dynamic-context.js', () => ({
+  injectContextDriftReminders: vi.fn(async () => ({
+    injectedToolReminder: false,
+    injectedPromptReminder: false,
+  })),
+}))
+
 vi.mock('../utils/logger.js', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
 }))
@@ -65,6 +82,7 @@ describe('mcpConfigTool', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     resetMcpManagerForTools()
+    resetMcpBootstrapForTools()
   })
 
   describe('action: list', () => {
@@ -177,6 +195,37 @@ describe('mcpConfigTool', () => {
       expect(result.output).toContain('0 tools')
     })
 
+    it('should omit servers disabled for the session', async () => {
+      setMcpManagerForTools(mockManager)
+
+      const { mcpConfigTool } = await import('./mcp-config.js')
+
+      const result = await mcpConfigTool.execute(
+        { action: 'list' },
+        { workdir: '/tmp', sessionId: 's2', sessionManager: mockSessionManager() },
+      )
+
+      expect(result.success).toBe(true)
+      expect(result.output).toBe('No MCP servers configured.')
+      expect(result.output).not.toContain('filesystem')
+    })
+
+    it('should keep servers enabled for the session with their tool listing', async () => {
+      setMcpManagerForTools(mockManager)
+
+      const { mcpConfigTool } = await import('./mcp-config.js')
+
+      const result = await mcpConfigTool.execute(
+        { action: 'list' },
+        { workdir: '/tmp', sessionId: 's1', sessionManager: mockSessionManager() },
+      )
+
+      expect(result.success).toBe(true)
+      expect(result.output).not.toContain('disabled for this session')
+      expect(result.output).toContain('Enabled: read_file')
+      expect(result.output).toContain('Disabled: write_file')
+    })
+
     it('should report no servers when none configured', async () => {
       setMcpManagerForTools({
         ...mockManager,
@@ -230,8 +279,10 @@ describe('mcpConfigTool', () => {
       expect(result.success).toBe(true)
       expect(result.error).toBeUndefined()
       expect(result.output).toContain('new-server')
-      expect(result.output).toContain('Update system prompt')
+      expect(result.output).toContain('announced automatically')
+      expect(result.output).not.toContain('Update system prompt')
       expect(sm.setDynamicContextChanged).toHaveBeenCalledWith('s1', true)
+      expect(vi.mocked(injectContextDriftReminders)).toHaveBeenCalledWith(sm, 's1')
       expect(mockManager.addServer).toHaveBeenCalledWith(
         'new-server',
         expect.objectContaining({
@@ -318,8 +369,10 @@ describe('mcpConfigTool', () => {
       expect(result.success).toBe(true)
       expect(result.error).toBeUndefined()
       expect(result.output).toContain('filesystem')
-      expect(result.output).toContain('Update system prompt')
+      expect(result.output).toContain('announced automatically')
+      expect(result.output).not.toContain('Update system prompt')
       expect(sm.setDynamicContextChanged).toHaveBeenCalledWith('s1', true)
+      expect(vi.mocked(injectContextDriftReminders)).toHaveBeenCalledWith(sm, 's1')
       expect(mockManager.removeServer).toHaveBeenCalledWith('filesystem')
       expect(mockSaveGlobalConfig).toHaveBeenCalled()
     })
@@ -353,8 +406,10 @@ describe('mcpConfigTool', () => {
 
       expect(result.success).toBe(true)
       expect(result.error).toBeUndefined()
-      expect(result.output).toContain('Update system prompt')
+      expect(result.output).toContain('announced automatically')
+      expect(result.output).not.toContain('Update system prompt')
       expect(sm.setDynamicContextChanged).toHaveBeenCalledWith('s1', true)
+      expect(vi.mocked(injectContextDriftReminders)).toHaveBeenCalledWith(sm, 's1')
       expect(mockSetToolEnabled).toHaveBeenCalledWith('filesystem', 'read_file', false)
       expect(mockSaveGlobalConfig).toHaveBeenCalled()
       expect(mockCreateMcpTools).toHaveBeenCalled()
@@ -383,6 +438,67 @@ describe('mcpConfigTool', () => {
         { workdir: '/tmp', sessionId: 's1', sessionManager: mockSessionManager() },
       )
       expect(noEnabled.success).toBe(false)
+    })
+  })
+
+  describe('action: bootstrap', () => {
+    it('returns a ready-to-paste client config for the running server', async () => {
+      setMcpManagerForTools(mockManager)
+      const bootstrapFn = vi.fn(async () => ({
+        name: 'openfox',
+        transport: 'http',
+        url: 'http://127.0.0.1:10469/mcp',
+        headers: { Authorization: 'Bearer tok-abc' },
+      }))
+      setMcpBootstrapForTools(bootstrapFn)
+
+      const { mcpConfigTool } = await import('./mcp-config.js')
+
+      const result = await mcpConfigTool.execute(
+        { action: 'bootstrap' },
+        { workdir: '/tmp', sessionId: 's1', sessionManager: mockSessionManager() },
+      )
+
+      expect(result.success).toBe(true)
+      expect(bootstrapFn).toHaveBeenCalledTimes(1)
+      expect(result.output).toContain('"url": "http://127.0.0.1:10469/mcp"')
+      expect(result.output).toContain('"Authorization": "Bearer tok-abc"')
+      expect(result.output).toContain('"name": "openfox"')
+    })
+
+    it('omits the auth header in local mode', async () => {
+      setMcpManagerForTools(mockManager)
+      setMcpBootstrapForTools(
+        vi.fn(async () => ({
+          name: 'openfox',
+          transport: 'http',
+          url: 'http://127.0.0.1:10469/mcp',
+        })),
+      )
+
+      const { mcpConfigTool } = await import('./mcp-config.js')
+
+      const result = await mcpConfigTool.execute(
+        { action: 'bootstrap' },
+        { workdir: '/tmp', sessionId: 's1', sessionManager: mockSessionManager() },
+      )
+
+      expect(result.success).toBe(true)
+      expect(result.output).not.toContain('Authorization')
+    })
+
+    it('returns an error when no bootstrap source is wired', async () => {
+      setMcpManagerForTools(mockManager)
+
+      const { mcpConfigTool } = await import('./mcp-config.js')
+
+      const result = await mcpConfigTool.execute(
+        { action: 'bootstrap' },
+        { workdir: '/tmp', sessionId: 's1', sessionManager: mockSessionManager() },
+      )
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('bootstrap')
     })
   })
 

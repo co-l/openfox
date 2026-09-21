@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+// Authorized exception: update check is an explicit one-shot poll with a local result, not shared server data.
 import { appUrl } from '../lib/basePath'
 
 type UpdateStatus = 'idle' | 'checking' | 'upToDate' | 'available' | 'error'

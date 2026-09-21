@@ -115,6 +115,46 @@ export async function loadAllWorkflows(configDir: string, projectDir?: string): 
   return Array.from(workflowMap.values())
 }
 
+export interface WorkflowCatalogEntry {
+  id: string
+  name: string
+  description?: string
+  color?: string
+  scope: WorkflowScope
+  parameters?: import('../../shared/types.js').WorkflowParameter[]
+}
+
+/**
+ * List the effective workflow catalog for a project: builtin + user + project,
+ * deduplicated by id with project > user > builtin precedence, each entry
+ * tagged with the scope that supplied it.
+ */
+export async function listAvailableWorkflows(configDir: string, projectDir?: string): Promise<WorkflowCatalogEntry[]> {
+  const [defaultWorkflows, userWorkflows, projectWorkflows] = await Promise.all([
+    loadDefaultWorkflows(),
+    loadUserWorkflows(configDir),
+    projectDir ? loadProjectWorkflows(projectDir) : Promise.resolve([] as WorkflowDefinition[]),
+  ])
+
+  const projectIds = new Set(projectWorkflows.map((w) => w.metadata.id))
+  const userIds = new Set(userWorkflows.map((w) => w.metadata.id))
+  const effective = [...defaultWorkflows, ...userWorkflows, ...projectWorkflows]
+  const byId = new Map(effective.map((w) => [w.metadata.id, w]))
+
+  return Array.from(byId.values()).map((workflow) => ({
+    id: workflow.metadata.id,
+    name: workflow.metadata.name,
+    description: workflow.metadata.description,
+    ...(workflow.metadata.color ? { color: workflow.metadata.color } : {}),
+    scope: projectIds.has(workflow.metadata.id)
+      ? ('project' as const)
+      : userIds.has(workflow.metadata.id)
+        ? ('user' as const)
+        : ('builtin' as const),
+    ...(workflow.metadata.parameters ? { parameters: workflow.metadata.parameters } : {}),
+  }))
+}
+
 export async function saveWorkflowToProject(projectDir: string, workflow: WorkflowDefinition): Promise<void> {
   await saveItemToDir(getProjectWorkflowsDir(projectDir), workflow, WORKFLOW_EXTENSION, jsonSerializer)
 }

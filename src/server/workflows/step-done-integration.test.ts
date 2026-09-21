@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { stepDoneTool } from '../tools/step-done.js'
 import type { ToolContext } from '../tools/types.js'
 import type { Transition } from './types.js'
-import { evaluateTransitions, resolveTemplate } from './executor.js'
+import { evaluateTransitions, buildAgentNudge } from './executor.js'
 import type { TemplateContext } from './executor.js'
 
 // Mock sessionManager for test context
@@ -57,46 +57,80 @@ describe('step_done prompt injection', () => {
     expect(combined).toContain('Implement the feature')
     expect(combined).toContain("Once you're done, call step_done()")
   })
+})
 
-  it('combines nudgePrompt with step_done nudge', () => {
-    const STEP_DONE_NUDGE =
-      "You haven't called step_done(). If you haven't finished the task, continue and when you're finished call step_done()"
+describe('buildAgentNudge', () => {
+  const buildTransitions: Transition[] = [
+    {
+      when: { type: 'metadata_all_in', key: 'criteria', field: 'status', values: ['completed', 'passed'] },
+      goto: 'verify',
+    },
+    { when: { type: 'always' }, goto: 'build' },
+  ]
+  const completedEntries = {
+    criteria: [
+      { id: 'c1', description: 'First', status: 'completed' },
+      { id: 'c2', description: 'Second', status: 'passed' },
+    ],
+  }
+  const pendingEntries = {
+    criteria: [
+      { id: 'c1', description: 'First', status: 'pending' },
+      { id: 'c2', description: 'Second', status: 'failed' },
+    ],
+  }
+  const ctx: TemplateContext = {
+    workdir: '/test',
+    reason: '2 criteria remaining',
+    verifierFindings: '',
+    previousStepOutput: '',
+    criteriaCount: 2,
+    pendingCount: 2,
+    criteriaList: '- c1 [PENDING]',
+    modifiedFiles: '- src/index.ts',
+    stepOutput: { content: 'Previous attempt failed' },
+    params: {},
+  }
 
-    const nudgePrompt = 'Continue working on the criteria'
-    const parts: string[] = []
+  it('uses only the simple reminder when the transition condition is already satisfied', () => {
+    const nudge = buildAgentNudge(
+      'Continue working on the acceptance criteria. {{reason}}.',
+      ctx,
+      buildTransitions,
+      completedEntries,
+      'build',
+    )
+    expect(nudge).toBe('If you have finished the task, call step_done()')
+  })
 
-    if (nudgePrompt) {
-      parts.push(nudgePrompt)
-    }
-    parts.push(STEP_DONE_NUDGE)
-
-    const combined = parts.join('\n\n')
-
-    expect(combined).toContain('Continue working on the criteria')
-    expect(combined).toContain("You haven't called step_done()")
+  it('combines nudgePrompt with the verbose step_done nudge when work remains', () => {
+    const nudge = buildAgentNudge(
+      'Continue working on the acceptance criteria. {{reason}}.',
+      ctx,
+      buildTransitions,
+      pendingEntries,
+      'build',
+    )
+    expect(nudge).toContain('Continue working on the acceptance criteria. 2 criteria remaining.')
+    expect(nudge).toContain("You haven't called step_done()")
+    expect(nudge).not.toContain('If you have finished the task, call step_done()')
 
     // Verify order: nudgePrompt first, step_done nudge second
-    const nudgePromptIndex = combined.indexOf('Continue working')
-    const stepDoneIndex = combined.indexOf("You haven't called step_done()")
+    const nudgePromptIndex = nudge.indexOf('Continue working')
+    const stepDoneIndex = nudge.indexOf("You haven't called step_done()")
     expect(nudgePromptIndex).toBeLessThan(stepDoneIndex)
   })
 
-  it('includes only step_done nudge when nudgePrompt is not defined', () => {
-    const STEP_DONE_NUDGE =
-      "You haven't called step_done(). If you haven't finished the task, continue and when you're finished call step_done()"
+  it('includes only the step_done nudge when nudgePrompt is not defined and work remains', () => {
+    const nudge = buildAgentNudge(undefined, ctx, buildTransitions, pendingEntries, 'build')
+    expect(nudge).toBe(
+      "You haven't called step_done(). If you haven't finished the task, continue and when you're finished call step_done()",
+    )
+  })
 
-    const nudgePrompt = undefined
-    const parts: string[] = []
-
-    if (nudgePrompt) {
-      parts.push(nudgePrompt)
-    }
-    parts.push(STEP_DONE_NUDGE)
-
-    const combined = parts.join('\n\n')
-
-    expect(combined).toBe(STEP_DONE_NUDGE)
-    expect(combined).toContain("You haven't called step_done()")
+  it('uses the simple reminder when nudgePrompt is not defined and the condition is satisfied', () => {
+    const nudge = buildAgentNudge(undefined, ctx, buildTransitions, completedEntries, 'build')
+    expect(nudge).toBe('If you have finished the task, call step_done()')
   })
 })
 
@@ -109,55 +143,5 @@ describe('step_done executor integration', () => {
 
     const outcome = { result: 'completed', output: { stepDoneCalled: 'true' } }
     expect(evaluateTransitions(transitions, outcome)).toBe('verify')
-  })
-
-  it('step_done nudge prompt template resolves correctly', () => {
-    const STEP_DONE_NUDGE =
-      "You haven't called step_done(). If you haven't finished the task, continue and when you're finished call step_done()"
-
-    const nudgeTemplate = '{{stepOutput.content}}\n\n' + STEP_DONE_NUDGE
-    const ctx: TemplateContext = {
-      workdir: '/test',
-      reason: '1 criterion remaining',
-      verifierFindings: '',
-      previousStepOutput: '',
-      criteriaCount: 2,
-      pendingCount: 1,
-      criteriaList: '- c1 [PENDING]',
-      modifiedFiles: '- src/index.ts',
-      stepOutput: { content: 'Previous attempt failed' },
-      params: {},
-    }
-
-    const resolved = resolveTemplate(nudgeTemplate, ctx)
-    expect(resolved).toContain('Previous attempt failed')
-    expect(resolved).toContain("You haven't called step_done()")
-  })
-
-  it('agent step looping logic documented', () => {
-    const STEP_DONE_PROMPT = "\n\nOnce you're done, call step_done()"
-    const STEP_DONE_NUDGE =
-      "You haven't called step_done(). If you haven't finished the task, continue and when you're finished call step_done()"
-
-    const firstEntryPrompt = 'Build the feature' + STEP_DONE_PROMPT
-    const retryNudge = STEP_DONE_NUDGE
-
-    expect(firstEntryPrompt).toContain("Once you're done, call step_done()")
-    expect(retryNudge).toContain("You haven't called step_done()")
-
-    const nudgeWithPrompt = 'Fix the issues'
-    const combinedParts: string[] = []
-    if (nudgeWithPrompt) {
-      combinedParts.push(nudgeWithPrompt)
-    }
-    combinedParts.push(STEP_DONE_NUDGE)
-    const combined = combinedParts.join('\n\n')
-
-    expect(combined).toContain('Fix the issues')
-    expect(combined).toContain("You haven't called step_done()")
-
-    const nudgeIndex = combined.indexOf('Fix the issues')
-    const stepDoneIndex = combined.indexOf("You haven't called step_done()")
-    expect(nudgeIndex).toBeLessThan(stepDoneIndex)
   })
 })

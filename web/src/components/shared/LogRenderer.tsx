@@ -3,6 +3,7 @@ import { ScrollArea } from './ScrollArea'
 import type { ScrollbarGestureKind } from './ScrollArea'
 import type { OverlayScrollbarsComponentRef } from 'overlayscrollbars-react'
 import { ansiToReact } from '../../lib/ansiParser'
+import { useT } from '../../hooks/useT'
 
 interface LogEntry {
   stream: 'stdout' | 'stderr'
@@ -25,6 +26,7 @@ export function LogRenderer({
   scrollAreaRef,
   onScrollbarGesture,
 }: LogRendererProps) {
+  const t = useT()
   return (
     <ScrollArea
       ref={scrollAreaRef}
@@ -34,7 +36,7 @@ export function LogRenderer({
     >
       <pre ref={preRef} className="contents">
         {logs.length === 0 ? (
-          <span className="text-text-muted">No output yet</span>
+          <span className="text-text-muted">{t({ en: 'No output yet', fr: 'Aucune sortie pour l’instant' })}</span>
         ) : (
           logs.map((chunk, i) =>
             chunk.type === 'marker' ? (

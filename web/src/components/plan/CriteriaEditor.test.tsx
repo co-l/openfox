@@ -17,10 +17,12 @@ vi.mock('../../hooks/useAgents', () => ({
   useAgents: () => ({ agents: [], refresh: vi.fn() }),
 }))
 
-vi.mock('../../stores/workflows', () => ({
-  useWorkflowsStore: vi.fn((selector: (state: { defaults: unknown[]; userItems: unknown[] }) => unknown) =>
-    selector({ defaults: [], userItems: [] }),
-  ),
+vi.mock('../../hooks/useWorkflows', () => ({
+  useWorkflows: () => ({ workflows: [], refresh: vi.fn() }),
+}))
+
+vi.mock('../../hooks/useSessionWorkdir', () => ({
+  useSessionWorkdir: () => undefined,
 }))
 
 const mockedAuthFetch = vi.mocked(authFetch)

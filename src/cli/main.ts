@@ -2,11 +2,14 @@ import { parseArgs } from 'node:util'
 import { select, password, isCancel, cancel } from '@clack/prompts'
 import { generateKeyPairSync } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
+import { cliT, setCliMode } from './i18n.js'
 
 export type Mode = 'production' | 'development' | 'test'
 
 export function printHelp(): void {
-  console.log(`
+  console.log(
+    cliT({
+      en: `
 OpenFox - Local LLM coding assistant
 
 Usage:
@@ -21,6 +24,7 @@ Commands:
   provider remove  Remove a provider
   service          Manage the systemd service (install, start, stop, status, logs, uninstall)
   pwa              Manage the PWA installation (install, uninstall, launch, update, status)
+  mcp              Print a paste-ready MCP client config for this server (asks for the password if set)
   install          Install a persistent OpenFox launcher (use --check to inspect)
   update           Update OpenFox to the latest version
 
@@ -29,7 +33,34 @@ Options:
   --no-browser            Don't open browser on start
   -h, --help              Show this help message
   -v, --version           Show version number
-`)
+`,
+      fr: `
+OpenFox - Assistant de codage LLM local
+
+Utilisation :
+  openfox [commande] [options]
+
+Commandes :
+  (aucune)        Démarrer le serveur pour le projet courant
+  config          Afficher la configuration actuelle
+  provider add    Ajouter un nouveau fournisseur LLM
+  provider list   Lister les fournisseurs configurés
+  provider use    Changer de fournisseur actif
+  provider remove Supprimer un fournisseur
+  service         Gérer le service systemd (install, start, stop, status, logs, uninstall)
+  pwa             Gérer l’installation PWA (install, uninstall, launch, update, status)
+  mcp             Afficher une configuration MCP prête à coller pour ce serveur (demande le mot de passe s’il est défini)
+  install         Installer un lanceur OpenFox persistant (utiliser --check pour inspecter)
+  update          Mettre OpenFox à jour vers la dernière version
+
+Options :
+  -p, --port <nombre>    Spécifier le port (défaut : 10369 pour prod, 10469 pour dev)
+  --no-browser           Ne pas ouvrir le navigateur au démarrage
+  -h, --help             Afficher ce message d’aide
+  -v, --version          Afficher le numéro de version
+`,
+    }),
+  )
 }
 
 async function runNetworkSetup(mode: Mode): Promise<void> {
@@ -42,13 +73,16 @@ async function runNetworkSetup(mode: Mode): Promise<void> {
     return
   }
 
-  console.log('\nOpenFox Setup\n')
+  console.log(cliT({ en: '\nOpenFox Setup\n', fr: '\nConfiguration d’OpenFox\n' }))
 
   const networkChoice = await select({
-    message: 'How should OpenFox be accessible?',
+    message: cliT({ en: 'How should OpenFox be accessible?', fr: 'Comment OpenFox doit-il être accessible ?' }),
     options: [
-      { value: 'localhost', label: 'Secure (localhost only)' },
-      { value: 'network', label: 'Accessible from local network' },
+      { value: 'localhost', label: cliT({ en: 'Secure (localhost only)', fr: 'Sécurisé (localhost uniquement)' }) },
+      {
+        value: 'network',
+        label: cliT({ en: 'Accessible from local network', fr: 'Accessible depuis le réseau local' }),
+      },
     ],
   })
 
@@ -64,7 +98,10 @@ async function runNetworkSetup(mode: Mode): Promise<void> {
 
   if (isNetwork) {
     const pwd = await password({
-      message: 'Set a password? (optional, press Enter to skip)',
+      message: cliT({
+        en: 'Set a password? (optional, press Enter to skip)',
+        fr: 'Définir un mot de passe ? (facultatif, Entrée pour ignorer)',
+      }),
     })
 
     if (isCancel(pwd)) {
@@ -113,7 +150,7 @@ async function runNetworkSetup(mode: Mode): Promise<void> {
     },
   })
 
-  console.log('✓ Configuration saved!\n')
+  console.log(cliT({ en: '✓ Configuration saved!\n', fr: '✓ Configuration enregistrée !\n' }))
 }
 
 export async function runConfig(mode: Mode): Promise<void> {
@@ -125,31 +162,38 @@ export async function runConfig(mode: Mode): Promise<void> {
   const activeProvider = getActiveProvider(config)
   const defaultModel = getDefaultModel(config)
 
-  console.log(`Configuration (${mode}):`)
-  console.log(`  Location: ${configPath}`)
-  console.log(`  Providers: ${config.providers.length}`)
+  console.log(cliT({ en: `Configuration (${mode}):`, fr: `Configuration (${mode}) :` }))
+  console.log(cliT({ en: `  Location: ${configPath}`, fr: `  Emplacement : ${configPath}` }))
+  console.log(
+    cliT({ en: `  Providers: ${config.providers.length}`, fr: `  Fournisseurs : ${config.providers.length}` }),
+  )
   if (activeProvider) {
-    console.log(`  Active: ${activeProvider.name}`)
-    console.log(`    URL: ${activeProvider.url}`)
-    console.log(`    Model: ${defaultModel ?? 'auto'}`)
-    console.log(`    Backend: ${activeProvider.backend}`)
+    console.log(cliT({ en: `  Active: ${activeProvider.name}`, fr: `  Actif : ${activeProvider.name}` }))
+    console.log(cliT({ en: `    URL: ${activeProvider.url}`, fr: `    URL : ${activeProvider.url}` }))
+    console.log(cliT({ en: `    Model: ${defaultModel ?? 'auto'}`, fr: `    Modèle : ${defaultModel ?? 'auto'}` }))
+    console.log(cliT({ en: `    Backend: ${activeProvider.backend}`, fr: `    Backend : ${activeProvider.backend}` }))
   } else {
-    console.log(`  Active: (none configured)`)
+    console.log(cliT({ en: `  Active: (none configured)`, fr: `  Actif : (aucun configuré)` }))
   }
 
   // Display server host with human-readable description
   const host = config.server.host ?? '127.0.0.1'
-  const hostDisplay = host === '0.0.0.0' ? `${host} (accessible from local network)` : `${host} (localhost only)`
-  console.log(`  Server: ${hostDisplay}`)
-  console.log(`  Port: ${config.server.port}`)
+  const hostDisplay =
+    host === '0.0.0.0'
+      ? cliT({ en: `${host} (accessible from local network)`, fr: `${host} (accessible depuis le réseau local)` })
+      : cliT({ en: `${host} (localhost only)`, fr: `${host} (localhost uniquement)` })
+  console.log(cliT({ en: `  Server: ${hostDisplay}`, fr: `  Serveur : ${hostDisplay}` }))
+  console.log(cliT({ en: `  Port: ${config.server.port}`, fr: `  Port : ${config.server.port}` }))
 }
 
 export async function runCli(options: { mode: Mode }): Promise<void> {
   const { mode } = options
+  setCliMode(mode)
 
   const { values, positionals } = parseArgs({
     options: {
       port: { type: 'string', short: 'p' },
+      password: { type: 'string' },
       'no-browser': { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
       version: { type: 'boolean', short: 'v' },
@@ -212,6 +256,14 @@ export async function runCli(options: { mode: Mode }): Promise<void> {
       } else {
         await runPwaCommand(mode, subcommand)
       }
+      break
+    }
+    case 'mcp': {
+      const { runMcpCommand } = await import('./mcp.js')
+      const mcpOptions: { password?: string; port?: number } = {}
+      if (values.password) mcpOptions.password = values.password
+      if (values.port) mcpOptions.port = parseInt(values.port)
+      await runMcpCommand(mode, mcpOptions)
       break
     }
     case 'install': {

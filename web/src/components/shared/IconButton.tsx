@@ -1,4 +1,5 @@
 import { ButtonHTMLAttributes, forwardRef } from 'react'
+import { useT } from '../../hooks/useT'
 
 interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   /** SVG path d attribute */
@@ -29,9 +30,10 @@ IconButton.displayName = 'IconButton'
 const EDIT_ICON =
   'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z'
 
-export const EditButton = forwardRef<HTMLButtonElement, Omit<IconButtonProps, 'icon'>>((props, ref) => (
-  <IconButton ref={ref} icon={EDIT_ICON} title="Edit" {...props} />
-))
+export const EditButton = forwardRef<HTMLButtonElement, Omit<IconButtonProps, 'icon'>>((props, ref) => {
+  const t = useT()
+  return <IconButton ref={ref} icon={EDIT_ICON} title={t({ en: 'Edit', fr: 'Modifier' })} {...props} />
+})
 
 EditButton.displayName = 'EditButton'
 

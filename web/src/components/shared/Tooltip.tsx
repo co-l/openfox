@@ -6,9 +6,18 @@ interface TooltipProps {
   children: React.ReactNode
   position?: 'top' | 'bottom' | 'left' | 'right'
   delay?: number
+  triggerClassName?: string
+  enabled?: boolean
 }
 
-export function Tooltip({ content, children, position = 'top', delay = 200 }: TooltipProps) {
+export function Tooltip({
+  content,
+  children,
+  position = 'top',
+  delay = 200,
+  triggerClassName = 'inline-flex',
+  enabled = true,
+}: TooltipProps) {
   const [visible, setVisible] = useState(false)
   const [coords, setCoords] = useState({ top: 0, left: 0 })
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -21,6 +30,7 @@ export function Tooltip({ content, children, position = 'top', delay = 200 }: To
   }, [])
 
   const showTooltip = () => {
+    if (!enabled) return
     timerRef.current = setTimeout(() => {
       if (triggerRef.current) {
         const rect = triggerRef.current.getBoundingClientRect()
@@ -53,7 +63,7 @@ export function Tooltip({ content, children, position = 'top', delay = 200 }: To
     <>
       <span
         ref={triggerRef}
-        className="inline-flex"
+        className={triggerClassName}
         onMouseEnter={showTooltip}
         onMouseLeave={hideTooltip}
         onFocus={showTooltip}
@@ -64,6 +74,7 @@ export function Tooltip({ content, children, position = 'top', delay = 200 }: To
       {visible &&
         createPortal(
           <div
+            role="tooltip"
             className="fixed z-[9999] px-4 py-3 text-sm text-text-primary bg-bg-secondary border border-border rounded-lg shadow-xl max-w-sm break-words pointer-events-none"
             style={{
               top: positionStyles.top,

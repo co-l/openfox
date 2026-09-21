@@ -56,17 +56,20 @@ const IMAGE_PROMPT = `Describe this image thoroughly and accurately. Include:
 
 Be exhaustive rather than concise. Prioritize precision — if there are numbers, lists, or structured data, capture them completely. If the image contains a table or grid, reproduce it as a markdown table with exact values.`
 
-function buildPrompt(context?: string): string {
+function buildPrompt(context?: string, question?: string): string {
+  if (question) {
+    return `Answer the following question about this image. Be precise and concise, and if the answer is not visible in the image, say so explicitly:\n\n${question}`
+  }
   return context ? `${IMAGE_PROMPT}\n\nContext: ${context}` : IMAGE_PROMPT
 }
 
-function buildOllamaRequest(base64Data: string, model: string, context?: string): OllamaChatRequest {
+function buildOllamaRequest(base64Data: string, model: string, context?: string, question?: string): OllamaChatRequest {
   return {
     model,
     messages: [
       {
         role: 'user',
-        content: buildPrompt(context),
+        content: buildPrompt(context, question),
         images: [base64Data],
       },
     ],
@@ -75,14 +78,14 @@ function buildOllamaRequest(base64Data: string, model: string, context?: string)
   }
 }
 
-function buildOpenAIRequest(base64Data: string, model: string, context?: string): OpenAIChatRequest {
+function buildOpenAIRequest(base64Data: string, model: string, context?: string, question?: string): OpenAIChatRequest {
   return {
     model,
     messages: [
       {
         role: 'user',
         content: [
-          { type: 'text', text: buildPrompt(context) },
+          { type: 'text', text: buildPrompt(context, question) },
           { type: 'image_url', image_url: { url: `data:image/png;base64,${base64Data}` } },
         ],
       },
@@ -105,7 +108,7 @@ function parseOpenAIResponse(data: unknown): string | null {
 export async function describeImage(
   base64Data: string,
   visionModel: VisionModelConfig,
-  options?: { context?: string | undefined; signal?: AbortSignal | undefined },
+  options?: { context?: string | undefined; question?: string | undefined; signal?: AbortSignal | undefined },
 ): Promise<string> {
   const timeout = visionModel.timeout
 
@@ -116,8 +119,8 @@ export async function describeImage(
       : `${visionModel.baseUrl.replace(/\/+$/, '')}/api/chat`
 
     const requestBody = isOpenAI
-      ? buildOpenAIRequest(base64Data, visionModel.model, options?.context)
-      : buildOllamaRequest(base64Data, visionModel.model, options?.context)
+      ? buildOpenAIRequest(base64Data, visionModel.model, options?.context, options?.question)
+      : buildOllamaRequest(base64Data, visionModel.model, options?.context, options?.question)
 
     const timeoutController = new AbortController()
     const timeoutId = setTimeout(() => timeoutController.abort(), timeout)
@@ -172,7 +175,7 @@ export async function describeImage(
 export async function describeImageFromDataUrl(
   dataUrl: string,
   visionModel: VisionModelConfig,
-  options?: { context?: string | undefined; signal?: AbortSignal | undefined },
+  options?: { context?: string | undefined; question?: string | undefined; signal?: AbortSignal | undefined },
 ): Promise<string> {
   const base64Match = dataUrl.match(/^data:image\/[^;]+;base64,(.+)$/)
   if (!base64Match || !base64Match[1]) {
@@ -180,4 +183,18 @@ export async function describeImageFromDataUrl(
   }
 
   return describeImage(base64Match[1], visionModel, options)
+}
+
+/**
+ * The vision fallback never throws — on HTTP errors, timeouts, empty or
+ * invalid inputs it returns a marker string instead. Detect those so callers
+ * can surface the failure as an error rather than a successful description.
+ */
+export function isVisionFallbackFailure(description: string): boolean {
+  return (
+    description.startsWith('[Image description failed:') ||
+    description === '[Image description timed out]' ||
+    description === '[Image - could not describe]' ||
+    description === '[Invalid image data URL]'
+  )
 }

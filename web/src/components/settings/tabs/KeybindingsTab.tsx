@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { XCloseSmallIcon, ReloadIcon } from '../../shared/icons'
-import { SETTINGS_KEYS } from '../../../stores/settings'
-import { useSettingsStoreState } from '../useSettingsStore'
+import { useT } from '../../../hooks/useT'
+import { SETTINGS_KEYS, setSetting } from '../../../lib/resources'
+import { useSetting } from '../../../hooks/useSetting'
 import {
   parseKeybindings,
   formatKeybinding,
@@ -37,6 +38,7 @@ function KeybindingRow({
   onReset: () => void
   onCancelRecording: () => void
 }) {
+  const t = useT()
   const ref = useRef<HTMLDivElement>(null)
   const lastPressRef = useRef<number>(0)
   const lastKeyRef = useRef<string>('')
@@ -119,7 +121,9 @@ function KeybindingRow({
       <span className="text-sm text-text-primary">{label}</span>
       <div className="flex items-center gap-2">
         {isRecording ? (
-          <span className="text-xs text-accent-primary font-medium animate-pulse">Press shortcut...</span>
+          <span className="text-xs text-accent-primary font-medium animate-pulse">
+            {t({ en: 'Press shortcut...', fr: 'Appuyez sur le raccourci…' })}
+          </span>
         ) : (
           <>
             <button
@@ -127,14 +131,17 @@ function KeybindingRow({
               onClick={onStartRecording}
               className="px-2 py-0.5 text-xs font-mono bg-bg-tertiary text-text-secondary rounded border border-border hover:border-accent-primary hover:text-accent-primary transition-colors"
             >
-              {binding ? formatKeybinding(binding) : 'None'}
+              {binding ? formatKeybinding(binding) : t({ en: 'None', fr: 'Aucun' })}
             </button>
             {binding && (
               <button
                 type="button"
                 onClick={onClear}
-                title="Remove shortcut"
-                aria-label={`Remove shortcut for ${label}`}
+                title={t({ en: 'Remove shortcut', fr: 'Supprimer le raccourci' })}
+                aria-label={t(
+                  { en: 'Remove shortcut for {{label}}', fr: 'Supprimer le raccourci pour {{label}}' },
+                  { label },
+                )}
                 className="p-1 text-text-muted rounded hover:text-accent-error hover:bg-bg-tertiary transition-colors"
               >
                 <XCloseSmallIcon className="w-3.5 h-3.5" />
@@ -144,8 +151,11 @@ function KeybindingRow({
               <button
                 type="button"
                 onClick={onReset}
-                title="Reset to default"
-                aria-label={`Reset ${label} to default`}
+                title={t({ en: 'Reset to default', fr: 'Rétablir la valeur par défaut' })}
+                aria-label={t(
+                  { en: 'Reset {{label}} to default', fr: 'Rétablir {{label}} à la valeur par défaut' },
+                  { label },
+                )}
                 className="p-1 text-text-muted rounded hover:text-accent-primary hover:bg-bg-tertiary transition-colors"
               >
                 <ReloadIcon className="w-3.5 h-3.5" />
@@ -159,46 +169,46 @@ function KeybindingRow({
 }
 
 export function KeybindingsTab() {
-  const { settings, loading, setSetting } = useSettingsStoreState()
-  const raw = settings[SETTINGS_KEYS.KEYBINDINGS]
-  const isLoading = loading[SETTINGS_KEYS.KEYBINDINGS] ?? false
+  const t = useT()
+  const { value: raw, loading } = useSetting(SETTINGS_KEYS.KEYBINDINGS)
+  const isLoading = loading
   const config = parseKeybindings(raw)
   const [recording, setRecording] = useState<string | null>(null)
 
   const actions: Array<{ id: string; label: string; binding: KeyBinding | null; defaultBinding: KeyBinding | null }> = [
     {
       id: 'terminalToggle',
-      label: 'Toggle Terminal',
+      label: t({ en: 'Toggle Terminal', fr: 'Basculer le terminal' }),
       binding: config.terminalToggle,
       defaultBinding: DEFAULT_KEYBINDINGS.terminalToggle,
     },
     {
       id: 'quickAction',
-      label: 'Quick Action',
+      label: t({ en: 'Quick Action', fr: 'Action rapide' }),
       binding: config.quickAction,
       defaultBinding: DEFAULT_KEYBINDINGS.quickAction,
     },
     {
       id: 'modelSelector',
-      label: 'Select Model',
+      label: t({ en: 'Select Model', fr: 'Sélectionner le modèle' }),
       binding: config.modelSelector,
       defaultBinding: DEFAULT_KEYBINDINGS.modelSelector,
     },
     {
       id: 'sessionSearch',
-      label: 'Search Sessions',
+      label: t({ en: 'Search Sessions', fr: 'Rechercher des sessions' }),
       binding: config.sessionSearch,
       defaultBinding: DEFAULT_KEYBINDINGS.sessionSearch,
     },
     {
       id: 'criteriaSidebar',
-      label: 'Toggle Criteria Sidebar',
+      label: t({ en: 'Toggle Criteria Sidebar', fr: 'Basculer la barre de critères' }),
       binding: config.criteriaSidebar,
       defaultBinding: DEFAULT_KEYBINDINGS.criteriaSidebar,
     },
     ...config.agentSwitching.map((b, i) => ({
       id: `agentSwitching.${i}`,
-      label: `Switch to Agent ${i + 1}`,
+      label: t({ en: 'Switch to Agent {{count}}', fr: 'Passer à l’agent {{count}}' }, { count: i + 1 }),
       binding: b,
       defaultBinding: DEFAULT_KEYBINDINGS.agentSwitching[i] ?? null,
     })),
@@ -227,9 +237,9 @@ export function KeybindingsTab() {
         updated.criteriaSidebar = value
       }
 
-      setSetting(SETTINGS_KEYS.KEYBINDINGS, JSON.stringify(updated))
+      void setSetting(SETTINGS_KEYS.KEYBINDINGS, JSON.stringify(updated))
     },
-    [raw, setSetting],
+    [raw],
   )
 
   const handleBindingRecorded = useCallback(
@@ -242,25 +252,27 @@ export function KeybindingsTab() {
   )
 
   const handleReset = () => {
-    setSetting(SETTINGS_KEYS.KEYBINDINGS, JSON.stringify(DEFAULT_KEYBINDINGS))
+    void setSetting(SETTINGS_KEYS.KEYBINDINGS, JSON.stringify(DEFAULT_KEYBINDINGS))
   }
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between mb-2">
-        <h3 className="text-sm font-medium text-text-primary">Keyboard Shortcuts</h3>
+        <h3 className="text-sm font-medium text-text-primary">
+          {t({ en: 'Keyboard Shortcuts', fr: 'Raccourcis clavier' })}
+        </h3>
         <button
           type="button"
           onClick={handleReset}
           disabled={isLoading}
           className="text-xs text-text-muted hover:text-text-primary px-2 py-1 rounded hover:bg-bg-tertiary transition-colors disabled:opacity-30"
         >
-          Reset to defaults
+          {t({ en: 'Reset to defaults', fr: 'Rétablir les valeurs par défaut' })}
         </button>
       </div>
 
       {isLoading ? (
-        <div className="text-sm text-text-muted">Loading...</div>
+        <div className="text-sm text-text-muted">{t({ en: 'Loading...', fr: 'Chargement…' })}</div>
       ) : (
         <div className="space-y-1">
           {actions.map((action) => (

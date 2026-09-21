@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { terminalManager } from '../terminal/manager.js'
+import { serverT } from '../i18n.js'
 
 export interface TerminalSessionResponse {
   id: string
@@ -34,7 +35,7 @@ export function createTerminalRoutes(): Router {
     if (success) {
       res.status(204).send()
     } else {
-      res.status(404).json({ error: 'Terminal not found' })
+      res.status(404).json({ error: serverT({ en: 'Terminal not found', fr: 'Terminal introuvable' }) })
     }
   })
 
@@ -44,7 +45,7 @@ export function createTerminalRoutes(): Router {
     if (session) {
       res.json({ id: session.id, workdir: session.workdir })
     } else {
-      res.status(404).json({ error: 'Terminal not found' })
+      res.status(404).json({ error: serverT({ en: 'Terminal not found', fr: 'Terminal introuvable' }) })
     }
   })
 

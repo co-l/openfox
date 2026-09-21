@@ -471,44 +471,54 @@ async function createHarness(
   const client = new WebSocket(`ws://127.0.0.1:${address.port}/ws`)
   await once(client, 'open')
 
-  const queue: TestMessage[] = []
-  const listeners: Array<(message: TestMessage) => void> = []
-  client.on('message', (raw) => {
-    const message = JSON.parse(raw.toString()) as TestMessage
-    queue.push(message)
-    for (const listener of [...listeners]) {
-      listener(message)
-    }
-  })
-
-  const nextMessage = async (predicate: (message: TestMessage) => boolean = () => true): Promise<TestMessage> => {
-    const existing = queue.find(predicate)
-    if (existing) {
-      queue.splice(queue.indexOf(existing), 1)
-      return existing
+  // Shared queue + listener + timeout plumbing for a WebSocket client stream.
+  // Used by the primary harness client and every connectClient() secondary.
+  const createMessageStream = () => {
+    const queue: TestMessage[] = []
+    const listeners: Array<(message: TestMessage) => void> = []
+    const onMessage = (raw: WebSocket.RawData) => {
+      const message = JSON.parse(raw.toString()) as TestMessage
+      queue.push(message)
+      for (const listener of [...listeners]) {
+        listener(message)
+      }
     }
 
-    return await new Promise<TestMessage>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        const index = listeners.indexOf(listener)
-        if (index >= 0) listeners.splice(index, 1)
-        reject(new Error('Timed out waiting for message'))
-      }, 2000)
-
-      const listener = (message: TestMessage) => {
-        if (!predicate(message)) {
-          return
-        }
-        clearTimeout(timeout)
-        const index = listeners.indexOf(listener)
-        if (index >= 0) listeners.splice(index, 1)
-        queue.splice(queue.indexOf(message), 1)
-        resolve(message)
+    const nextMessage = async (predicate: (message: TestMessage) => boolean = () => true): Promise<TestMessage> => {
+      const existing = queue.find(predicate)
+      if (existing) {
+        queue.splice(queue.indexOf(existing), 1)
+        return existing
       }
 
-      listeners.push(listener)
-    })
+      return await new Promise<TestMessage>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          const index = listeners.indexOf(listener)
+          if (index >= 0) listeners.splice(index, 1)
+          reject(new Error('Timed out waiting for message'))
+        }, 2000)
+
+        const listener = (message: TestMessage) => {
+          if (!predicate(message)) {
+            return
+          }
+          clearTimeout(timeout)
+          const index = listeners.indexOf(listener)
+          if (index >= 0) listeners.splice(index, 1)
+          queue.splice(queue.indexOf(message), 1)
+          resolve(message)
+        }
+
+        listeners.push(listener)
+      })
+    }
+
+    return { onMessage, nextMessage }
   }
+
+  const primaryStream = createMessageStream()
+  client.on('message', primaryStream.onMessage)
+  const nextMessage = primaryStream.nextMessage
 
   const send = (message: Record<string, unknown>) => {
     client.send(JSON.stringify(message))
@@ -518,14 +528,56 @@ async function createHarness(
     client.send(raw)
   }
 
+  // Secondary clients on the SAME server — used to test cross-window routing
+  // (e.g. a homepage window with no active session vs. one inside a session).
+  const secondarySockets: WebSocket[] = []
+
+  const connectClient = async () => {
+    const socket = new WebSocket(`ws://127.0.0.1:${address.port}/ws`)
+    await once(socket, 'open')
+    secondarySockets.push(socket)
+
+    const stream = createMessageStream()
+    socket.on('message', stream.onMessage)
+
+    const send = (message: Record<string, unknown>) => {
+      socket.send(JSON.stringify(message))
+    }
+
+    const close = async () => {
+      socket.close()
+      await once(socket, 'close')
+    }
+
+    return { socket, send, nextMessage: stream.nextMessage, close }
+  }
+
   const close = async () => {
     client.close()
     await once(client, 'close')
+    for (const socket of secondarySockets) {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.close()
+        await once(socket, 'close')
+      }
+    }
     await new Promise<void>((resolve) => wss.close(() => resolve()))
     await new Promise<void>((resolve, reject) => httpServer.close((error) => (error ? reject(error) : resolve())))
   }
 
-  return { client, send, sendRaw, nextMessage, close, sessionManager, eventStore, httpServer }
+  return {
+    client,
+    send,
+    sendRaw,
+    nextMessage,
+    close,
+    connectClient,
+    broadcastForProject: wss.broadcastForProject,
+    broadcastAll: wss.broadcastAll,
+    sessionManager,
+    eventStore,
+    httpServer,
+  }
 }
 
 describe('createWebSocketServer', () => {
@@ -2044,6 +2096,58 @@ describe('createWebSocketServer', () => {
     // The wait resolves immediately as interrupted
     expect(await waitPromise).toBe('retry-now')
 
+    await harness.close()
+  })
+
+  it('broadcastAll — the primitive tasks.update relies on — reaches clients without an active session', async () => {
+    // Contract test: broadcastAll must deliver to EVERY connected client,
+    // including windows with no session loaded (homepage) or a session in
+    // another project. This is why deferTasksBroadcast uses broadcastAll
+    // instead of broadcastForProject (which keys off activeSessionId and
+    // would skip such windows). The actual index.ts wiring is exercised
+    // end-to-end by e2e/tasks-cross-window-sync.test.ts.
+    const session = {
+      id: 'session-1',
+      projectId: 'project-1',
+      workdir: '/tmp/project',
+      mode: 'planner' as const,
+      phase: 'plan' as const,
+      isRunning: false,
+      criteria: [],
+    }
+    const sessionManager = createSessionManager({
+      createSession: vi.fn(() => session),
+      getSession: vi.fn(() => session),
+      requireSession: vi.fn(() => session),
+    })
+    const harness = await createHarness({ sessionManager })
+
+    // Window A: viewing a session inside project-1 (sets activeSessionId).
+    harness.send({ id: 'sl-a', type: 'session.load', payload: { sessionId: 'session-1' } })
+    await harness.nextMessage((message) => message.id === 'sl-a')
+
+    // Window B: homepage — connected but with no session loaded.
+    const windowB = await harness.connectClient()
+
+    const payload = {
+      projectId: 'project-1',
+      tasks: [],
+      settings: { slotLimit: 1, queuePaused: false },
+      counts: { open: 0, todo: 0, inProgress: 0, running: 0, queued: 0, done: 0 },
+      gates: [],
+    }
+    harness.broadcastAll({ type: 'tasks.update', payload })
+
+    expect(await harness.nextMessage((message) => message.type === 'tasks.update')).toMatchObject({
+      type: 'tasks.update',
+      payload: { projectId: 'project-1' },
+    })
+    expect(await windowB.nextMessage((message) => message.type === 'tasks.update')).toMatchObject({
+      type: 'tasks.update',
+      payload: { projectId: 'project-1' },
+    })
+
+    await windowB.close()
     await harness.close()
   })
 })

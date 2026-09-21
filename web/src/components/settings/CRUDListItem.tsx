@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { EditButton } from '../shared/IconButton'
 import { EyeIcon } from '../shared/icons'
+import { useT } from '../../hooks/useT'
 import { ConfirmButton, DeleteIcon, DuplicateIcon } from './CRUDModal'
 
 export interface CRUDListItemProps {
@@ -26,6 +27,7 @@ export function CRUDListItem({
   actions,
   children,
 }: CRUDListItemProps) {
+  const t = useT()
   return (
     <div className="flex items-center justify-between p-3 rounded border border-border bg-bg-tertiary">
       <div className="min-w-0 flex-1 mr-3">{children}</div>
@@ -36,7 +38,7 @@ export function CRUDListItem({
           <button
             onClick={onView}
             className="p-1.5 rounded text-text-muted hover:text-text-primary hover:bg-bg-primary transition-colors"
-            title="View"
+            title={t({ en: 'View', fr: 'Voir' })}
           >
             <EyeIcon />
           </button>

@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import { VERSION } from '../constants.js'
+import { cliT } from './i18n.js'
 
 /**
  * Run npm with fixed args. On Windows npm is npm.cmd, which Node refuses to
@@ -20,17 +21,29 @@ function npm(args: string[], inherit = false): { ok: boolean; stdout: string } {
 export async function runUpdate(options: { refreshLauncher?: () => Promise<number> } = {}): Promise<number> {
   const view = npm(['view', 'openfox', 'version'])
   if (!view.ok) {
-    console.error('Failed to check the latest version (npm view openfox version)')
+    console.error(
+      cliT({
+        en: 'Failed to check the latest version (npm view openfox version)',
+        fr: 'Échec de la vérification de la dernière version (npm view openfox version)',
+      }),
+    )
     return 1
   }
   const latest = view.stdout
 
   if (VERSION === latest) {
-    console.log(`OpenFox is already at the latest version: ${VERSION}`)
+    console.log(
+      cliT({
+        en: `OpenFox is already at the latest version: ${VERSION}`,
+        fr: `OpenFox est déjà à la dernière version : ${VERSION}`,
+      }),
+    )
     return 0
   }
 
-  console.log(`Updating OpenFox: ${VERSION} -> ${latest}`)
+  console.log(
+    cliT({ en: `Updating OpenFox: ${VERSION} -> ${latest}`, fr: `Mise à jour d’OpenFox : ${VERSION} -> ${latest}` }),
+  )
   if (!npm(['install', '-g', 'openfox@latest'], true).ok) {
     return 1
   }
@@ -42,10 +55,20 @@ export async function runUpdate(options: { refreshLauncher?: () => Promise<numbe
     })
   const installCode = await refreshLauncher()
   if (installCode !== 0) {
-    console.error('OpenFox updated, but the persistent launcher could not be refreshed.')
+    console.error(
+      cliT({
+        en: 'OpenFox updated, but the persistent launcher could not be refreshed.',
+        fr: 'OpenFox a été mis à jour, mais le lanceur persistant n’a pas pu être actualisé.',
+      }),
+    )
     return installCode
   }
-  console.log(`Updated: ${latest}`)
-  console.log('Please restart OpenFox to use the new version.')
+  console.log(cliT({ en: `Updated: ${latest}`, fr: `Mis à jour : ${latest}` }))
+  console.log(
+    cliT({
+      en: 'Please restart OpenFox to use the new version.',
+      fr: 'Veuillez redémarrer OpenFox pour utiliser la nouvelle version.',
+    }),
+  )
   return 0
 }

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { wsClient } from '../lib/ws'
+// Authorized exception: terminal sessions are WS-driven; REST bootstraps the list and creates sessions on drawer open (visibility-gated), then WS pushes converge state.
 import { authFetch } from '../lib/api'
 
 function generateUUID(): string {

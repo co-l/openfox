@@ -20,7 +20,14 @@ export default defineConfig({
         inline: ['zustand'],
       },
     },
-    include: ['src/**/*.test.ts', 'web/src/**/*.test.ts', 'web/src/**/*.test.tsx', 'scripts/**/*.test.ts'],
+    include: [
+      'src/**/*.test.ts',
+      'web/src/**/*.test.ts',
+      'web/src/**/*.test.tsx',
+      'scripts/**/*.test.ts',
+      'eslint/**/*.test.ts',
+      'examples/**/*.test.ts',
+    ],
     // A few tests (init-llm, test-params) flake past the 5s default under
     // full-suite load on slower machines.
     testTimeout: 15_000,

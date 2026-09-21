@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import { useSettingsStore, SETTINGS_KEYS } from './settings'
+import { SETTINGS_KEYS, settingResource, setSetting } from '../lib/resources'
+import { load as loadResource, snapshot, subscribe } from '../lib/resourceCache'
 
 // Sound event types
 export type SoundEvent = 'complete' | 'waiting_for_user' | 'phase_done' | 'phase_blocked' | 'new_message'
@@ -120,39 +121,31 @@ export const useNotificationSettingsStore = create<NotificationSettingsState>((s
   loaded: false,
 
   load: () => {
-    // Subscribe to settings store for server-persisted notification settings
-    const settingsStore = useSettingsStore.getState()
-    settingsStore.getSetting(SETTINGS_KEYS.NOTIFICATION_SETTINGS)
-
-    // Watch for when the value arrives from server
-    const unsubscribe = useSettingsStore.subscribe((state) => {
-      const raw = state.settings[SETTINGS_KEYS.NOTIFICATION_SETTINGS]
-      if (raw !== undefined) {
-        try {
-          const parsed = JSON.parse(raw) as Partial<NotificationSettings>
-          set({
-            settings: mergeWithDefaults(parsed),
-            loaded: true,
-          })
-        } catch {
-          set({ loaded: true })
-        }
-      }
-    })
-
-    // Check if already available
-    const current = useSettingsStore.getState().settings[SETTINGS_KEYS.NOTIFICATION_SETTINGS]
-    if (current) {
+    // Watch the resource-cache entry for the notification settings key and
+    // apply the value as soon as it lands (fetch or write-through), then
+    // kick the load. `last` guards against redundant emits on unrelated keys.
+    const key = settingResource.keyOf(SETTINGS_KEYS.NOTIFICATION_SETTINGS)
+    const apply = (raw: string) => {
       try {
-        const parsed = JSON.parse(current) as Partial<NotificationSettings>
-        set({
-          settings: mergeWithDefaults(parsed),
-          loaded: true,
-        })
+        const parsed = JSON.parse(raw) as Partial<NotificationSettings>
+        set({ settings: mergeWithDefaults(parsed), loaded: true })
       } catch {
         set({ loaded: true })
       }
     }
+
+    let last = snapshot<string>(key).data
+    if (last !== undefined) apply(last)
+
+    const unsubscribe = subscribe(() => {
+      const snap = snapshot<string>(key)
+      if (snap.data !== undefined && snap.data !== last) {
+        last = snap.data
+        apply(snap.data)
+      }
+    })
+
+    loadResource(key, () => settingResource.fetch(SETTINGS_KEYS.NOTIFICATION_SETTINGS), settingResource.maxAgeMs)
 
     return unsubscribe
   },
@@ -202,7 +195,7 @@ export const useNotificationSettingsStore = create<NotificationSettingsState>((s
 }))
 
 function persist(settings: NotificationSettings) {
-  useSettingsStore.getState().setSetting(SETTINGS_KEYS.NOTIFICATION_SETTINGS, JSON.stringify(settings))
+  void setSetting(SETTINGS_KEYS.NOTIFICATION_SETTINGS, JSON.stringify(settings))
 }
 
 function mergeWithDefaults(partial: Partial<NotificationSettings>): NotificationSettings {

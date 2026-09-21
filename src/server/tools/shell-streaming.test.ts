@@ -354,6 +354,69 @@ for i in a b c d e f g h i j; do echo "$i"; done
       expect(result.output).not.toContain('b1')
     })
   })
+
+  describe('zombie pipe (detached child holding the stdio pipes)', () => {
+    // A detached child (own session/process group) cannot be reached by a
+    // process-group kill. It keeps the write end of the tool's stdio pipes
+    // open long after the shell has exited, which prevents Node's 'close'
+    // event from ever firing. `setsid` is Linux-only, so the orphan is a
+    // detached grandchild spawned via node (`detached: true` calls setsid
+    // on every POSIX platform) that inherits the pipe fds.
+    const ORPHAN_COMMAND = `bash -c '${process.execPath} -e "const cp=require(\\"child_process\\");cp.spawn(process.execPath,[\\"-e\\",\\"setTimeout(()=>{},10000)\\"],{detached:true,stdio:[\\"ignore\\",process.stdout,process.stderr]}).unref()" & echo orphan-launched'`
+
+    it.skipIf(IS_WIN32)(
+      'settles after a small timeout instead of hanging',
+      async () => {
+        const contextWithShortTimeout: ToolContext = {
+          sessionManager: mockSessionManager,
+          workdir: tempDir,
+          sessionId: 'test-session',
+        }
+
+        const started = Date.now()
+        const result = await runCommandTool.execute(
+          // The orphan outlives the 500ms timeout and 2s grace, but self-cleans
+          // quickly so the test doesn't leave a 10-minute orphan behind.
+          { command: ORPHAN_COMMAND, timeout: 500 },
+          contextWithShortTimeout,
+        )
+
+        // Must settle shortly after the timeout, not hang until the orphan dies
+        expect(Date.now() - started).toBeLessThan(5000)
+        expect(result.output).toContain('orphan-launched')
+        expect(result.success).toBe(false)
+        expect(result.output).toContain('[Process timed out after 500ms]')
+      },
+      10000,
+    )
+
+    it.skipIf(IS_WIN32)(
+      'settles with the real exit code after a bounded grace when the timeout never fires',
+      async () => {
+        const contextWithDefaultTimeout: ToolContext = {
+          sessionManager: mockSessionManager,
+          workdir: tempDir,
+          sessionId: 'test-session',
+        }
+
+        const started = Date.now()
+        const result = await runCommandTool.execute(
+          // The orphan outlives the 2s grace, but self-cleans quickly.
+          { command: ORPHAN_COMMAND },
+          contextWithDefaultTimeout,
+        )
+
+        // The shell exits almost immediately; the tool must not wait for the
+        // default 120s timeout — it settles after a bounded grace (~2s) with
+        // the shell's real exit code, because the command genuinely succeeded.
+        expect(Date.now() - started).toBeLessThan(10000)
+        expect(result.success).toBe(true)
+        expect(result.output).toContain('orphan-launched')
+        expect(result.output).not.toContain('[Process timed out')
+      },
+      15000,
+    )
+  })
 })
 
 // Separate import for afterEach

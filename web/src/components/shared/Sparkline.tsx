@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { buildSparklineChart } from '@shared/sparkline.js'
+import { useT } from '../../hooks/useT'
 
 interface DataPoint {
   x: number
@@ -45,6 +46,7 @@ export function Sparkline({
   formatY = formatNumber,
   formatX = formatNumber,
 }: SparklineProps) {
+  const t = useT()
   const chartData = useMemo(() => {
     const range = buildSparklineChart(data, width)
     const chartWidth = Math.max(width * 6, 240)
@@ -98,7 +100,7 @@ export function Sparkline({
     return (
       <div className="font-mono text-text-muted text-xs">
         {label && <div className="mb-1">{label}</div>}
-        <div>No data</div>
+        <div>{t({ en: 'No data', fr: 'Aucune donnée' })}</div>
       </div>
     )
   }

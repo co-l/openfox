@@ -38,16 +38,20 @@ vi.mock('../../lib/api', () => ({
   authFetch: mockAuthFetch,
 }))
 
-vi.mock('../../stores/agents', () => ({
+vi.mock('../../lib/agents-actions', () => ({
   getAgentColor: () => '#3b82f6',
 }))
 
-vi.mock('../../stores/config', () => ({
-  useConfigStore: (selector: (s: unknown) => unknown) =>
-    selector({
-      providers: [],
-      defaultModelSelection: null,
-    }),
+vi.mock('../../hooks/useProviders', () => ({
+  useProviders: () => ({ providers: [], activeProviderId: null, refresh: vi.fn(), loading: false }),
+}))
+
+vi.mock('../../hooks/useConfig', () => ({
+  useConfig: () => ({
+    config: { defaultModelSelection: null },
+    refresh: vi.fn(),
+    loading: false,
+  }),
 }))
 
 vi.mock('../../hooks/useKeybindings', () => ({

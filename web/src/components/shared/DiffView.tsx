@@ -1,5 +1,10 @@
 import { OptionalScrollArea } from './OptionalScrollArea'
-import { memo, useMemo, useState } from 'react'
+import { memo, useMemo, useRef, useState } from 'react'
+import { ScrollArea } from './ScrollArea'
+import { AutoScrollToggle } from './AutoScrollToggle'
+import { useAutoScroll } from '../../hooks/useAutoScroll'
+import { useViewport } from '../../hooks/useViewport'
+import type { OverlayScrollbarsComponentRef } from 'overlayscrollbars-react'
 import { CodeHighlight } from './CodeHighlight'
 import { getLanguageFromPath } from '../../lib/syntax-highlighter'
 export { getLanguageFromPath, wrappedCodeStyle } from '../../lib/syntax-highlighter'
@@ -7,6 +12,7 @@ import type { EditContextRegion } from '@shared/types.js'
 import type { DiffLine as ProtocolDiffLine } from '@shared/protocol.js'
 import { ImageModal } from './ImageModal'
 import { Markdown } from './Markdown'
+import { useT } from '../../hooks/useT'
 
 interface DiffViewProps {
   oldString: string
@@ -39,13 +45,14 @@ const DiffSection = memo(function DiffSection({ type, children }: DiffSectionPro
 })
 
 export const DiffView = memo(function DiffView({ oldString, newString, filePath }: DiffViewProps) {
+  const t = useT()
   const language = useMemo(() => getLanguageFromPath(filePath), [filePath])
 
   const hasOld = oldString.length > 0
   const hasNew = newString.length > 0
 
   if (!hasOld && !hasNew) {
-    return <div className="text-xs text-text-muted italic p-2">No changes</div>
+    return <div className="text-xs text-text-muted italic p-2">{t({ en: 'No changes', fr: 'Aucun changement' })}</div>
   }
 
   return (
@@ -68,18 +75,47 @@ export const DiffView = memo(function DiffView({ oldString, newString, filePath 
 interface FilePreviewProps {
   content: string
   filePath?: string
+  /** While the file content is still streaming in: follow the tail and show the live toggle. */
+  streaming?: boolean
 }
 
-export const FilePreview = memo(function FilePreview({ content, filePath }: FilePreviewProps) {
+export const FilePreview = memo(function FilePreview({ content, filePath, streaming = false }: FilePreviewProps) {
   const language = useMemo(() => getLanguageFromPath(filePath), [filePath])
+  const scrollRef = useRef<OverlayScrollbarsComponentRef<'div'>>(null)
+  const getViewport = useViewport(scrollRef)
+  const { isAutoScrollActive, setAutoScroll, handleScrollbarGesture } = useAutoScroll(scrollRef, null, getViewport)
 
-  return (
-    <OptionalScrollArea className="rounded border border-border max-h-[45vh]">
-      <DiffSection type="added">
-        <CodeHighlight code={content} language={language} variant="block" showLineNumbers />
-      </DiffSection>
-    </OptionalScrollArea>
+  const preview = (
+    <DiffSection type="added">
+      <CodeHighlight code={content} language={language} variant="block" showLineNumbers />
+    </DiffSection>
   )
+
+  // While streaming, the preview follows the growing content (like the logs
+  // viewer). The live toggle disappears once the call finishes — the final
+  // render below shows the file from the top, matching the collapsed shape.
+  if (streaming) {
+    return (
+      <div className="relative">
+        <ScrollArea
+          ref={scrollRef}
+          onScrollbarGesture={handleScrollbarGesture}
+          className="rounded border border-border max-h-[45vh]"
+        >
+          {preview}
+        </ScrollArea>
+        <div className="absolute bottom-1 right-1 z-10">
+          <AutoScrollToggle
+            isActive={isAutoScrollActive}
+            onToggle={setAutoScroll}
+            className="text-xs text-text-muted hover:text-text-primary flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-bg-tertiary transition-colors"
+          />
+        </div>
+      </div>
+    )
+  }
+
+  return <OptionalScrollArea className="rounded border border-border max-h-[45vh]">{preview}</OptionalScrollArea>
 })
 
 /**
@@ -92,10 +128,11 @@ export const FilePreview = memo(function FilePreview({ content, filePath }: File
  * Supports multiple edits per region (for replace_all with overlapping contexts).
  */
 export const EditContextView = memo(function EditContextView({ regions, filePath }: EditContextViewProps) {
+  const t = useT()
   const language = useMemo(() => getLanguageFromPath(filePath), [filePath])
 
   if (regions.length === 0) {
-    return <div className="text-xs text-text-muted italic p-2">No changes</div>
+    return <div className="text-xs text-text-muted italic p-2">{t({ en: 'No changes', fr: 'Aucun changement' })}</div>
   }
 
   return (
@@ -215,6 +252,7 @@ function stripLineNumbers(content: string): string {
 }
 
 export const ReadFileView = memo(function ReadFileView({ result, metadata, filePath }: ReadFileViewProps) {
+  const t = useT()
   const [modalOpen, setModalOpen] = useState(false)
   const language = useMemo(() => getLanguageFromPath(filePath), [filePath])
 
@@ -238,7 +276,7 @@ export const ReadFileView = memo(function ReadFileView({ result, metadata, fileP
 
   // Text file - show with syntax highlighting
   if (!result) {
-    return <div className="text-xs text-text-muted italic p-2">Empty file</div>
+    return <div className="text-xs text-text-muted italic p-2">{t({ en: 'Empty file', fr: 'Fichier vide' })}</div>
   }
 
   const content: string = result
@@ -289,6 +327,7 @@ function SimpleDiffLine({ type, content }: SimpleDiffLineProps) {
 
 interface UnifiedDiffViewerProps {
   diff: ProtocolDiffLine[]
+  hideHeader?: boolean
 }
 
 /**
@@ -296,7 +335,8 @@ interface UnifiedDiffViewerProps {
  * Groups removed lines before their corresponding added lines at each change location.
  * Used for system prompt diff preview and other text-based diffs.
  */
-export function UnifiedDiffViewer({ diff }: UnifiedDiffViewerProps) {
+export function UnifiedDiffViewer({ diff, hideHeader = false }: UnifiedDiffViewerProps) {
+  const t = useT()
   const changes: Array<{ type: 'removed' | 'added'; content: string }> = []
 
   let i = 0
@@ -331,12 +371,20 @@ export function UnifiedDiffViewer({ diff }: UnifiedDiffViewerProps) {
   }
 
   if (changes.length === 0) {
-    return <div className="py-8 text-center text-text-muted">No changes detected.</div>
+    return (
+      <div className="py-8 text-center text-text-muted">
+        {t({ en: 'No changes detected.', fr: 'Aucun changement détecté.' })}
+      </div>
+    )
   }
 
   return (
     <div>
-      <div className="px-2 py-1 text-xs font-semibold text-text-muted uppercase tracking-wide">Changes:</div>
+      {!hideHeader && (
+        <div className="px-2 py-1 text-xs font-semibold text-text-muted uppercase tracking-wide">
+          {t({ en: 'Changes:', fr: 'Modifications :' })}
+        </div>
+      )}
       <div className="font-mono text-xs leading-5">
         {changes.map((change, idx) => (
           <SimpleDiffLine key={idx} type={change.type} content={change.content} />

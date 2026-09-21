@@ -1,6 +1,7 @@
 import { OptionalScrollArea } from './OptionalScrollArea'
 import { memo } from 'react'
 import { Markdown } from './Markdown'
+import { useT } from '../../hooks/useT'
 
 interface ThinkingBlockProps {
   content: string
@@ -8,10 +9,11 @@ interface ThinkingBlockProps {
 }
 
 export const ThinkingBlock = memo(function ThinkingBlock({ content, variant = 'default' }: ThinkingBlockProps) {
+  const t = useT()
   if (variant === 'labeled') {
     return (
       <div className="text-text-muted text-sm italic feed-item">
-        <span className="text-text-thinking">thinking:</span>
+        <span className="text-text-thinking">{t({ en: 'thinking:', fr: 'réflexion :' })}</span>
         <OptionalScrollArea horizontal className="ml-1.5 mt-0.5">
           <Markdown content={content} />
         </OptionalScrollArea>

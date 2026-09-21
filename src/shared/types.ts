@@ -28,6 +28,16 @@ export type ToolMode = string
 // Workflow phase shown to user (more granular than mode)
 export type SessionPhase = 'plan' | 'build' | 'verification' | 'waiting' | 'blocked' | 'done'
 
+/**
+ * Pause state of a running session (cooperative pause — never aborts the
+ * in-flight LLM request, only gates the NEXT one):
+ * - none: no pause requested
+ * - pending: pause requested, agent is finishing the current LLM request
+ * - paused: agent is blocked before the next LLM request, waiting for resume
+ * - resuming: resume requested, agent is about to issue the next LLM request
+ */
+export type PauseState = 'none' | 'pending' | 'paused' | 'resuming'
+
 // ============================================================================
 // Workflow Types
 // ============================================================================
@@ -90,6 +100,7 @@ export interface Session {
   mode: SessionMode
   phase: SessionPhase // Current workflow phase
   isRunning: boolean // Is the agent actively working?
+  pauseState?: PauseState // Cooperative pause state (default 'none' when absent)
   providerId?: string | null // Per-session provider override
   providerModel?: string | null // Per-session model override
   providerReasoningEffort?: string | null // Per-session reasoning effort override (with providerModel)
@@ -179,6 +190,8 @@ export interface MessageStats {
   reasoningEffort?: string
   mode: ToolMode // Which system prompt was used (planner, builder, verifier)
   totalTime: number // wall clock time (seconds)
+  /** Wall-clock time spent in the thinking phase across LLM calls (seconds). */
+  thinkingDuration?: number
   toolTime: number // time spent in tool execution (seconds)
   prefillTokens: number // total prompt tokens across all LLM calls
   prefTokenIncrement?: number // sum of new (non-cached) tokens across all calls; used for accurate prefillSpeed
@@ -256,6 +269,22 @@ export interface CallStatsDataPoint {
   maxTokens?: number
 }
 
+export interface AgentSessionStats {
+  agentId: string
+  isSubAgent: boolean
+  totalTime: number
+  aiTime: number
+  toolTime: number
+  prefillTokens: number
+  generationTokens: number
+  avgPrefillSpeed: number
+  avgGenerationSpeed: number
+  responseCount: number
+  llmCallCount: number
+  dataPoints: StatsDataPoint[]
+  callDataPoints: CallStatsDataPoint[]
+}
+
 // Aggregated session-level stats for benchmarking
 export interface SessionStats {
   // Aggregates
@@ -272,6 +301,7 @@ export interface SessionStats {
   dataPoints: StatsDataPoint[]
   callDataPoints: CallStatsDataPoint[]
   modelGroups: ModelSessionStats[]
+  agentGroups: AgentSessionStats[]
 }
 
 export interface StatsIdentity {
@@ -297,6 +327,58 @@ export interface ModelSessionStats extends StatsIdentity {
   llmCallCount: number
   dataPoints: StatsDataPoint[]
   callDataPoints: CallStatsDataPoint[]
+  agentGroups?: AgentSessionStats[]
+}
+
+/**
+ * Minimal per-response stats input for aggregation. `Message` is assignable
+ * to it — only id, timestamp and stats are read.
+ */
+export interface StatsSource {
+  id: string
+  timestamp: string
+  stats?: MessageStats | null
+}
+
+/**
+ * Lean server-computed session stats: the headline aggregates only, no
+ * discrete per-response/per-call progression arrays. Shipped on every
+ * session load and state update (a few hundred bytes) regardless of how many
+ * responses the session has. The trailing accumulators are internal — they
+ * keep the live-turn merge exact and are never displayed.
+ */
+export interface SessionStatsSummary {
+  totalTime: number
+  aiTime: number
+  toolTime: number
+  prefillTokens: number
+  generationTokens: number
+  avgPrefillSpeed: number
+  avgGenerationSpeed: number
+  responseCount: number
+  llmCallCount: number
+  modelGroups: ModelStatsSummary[]
+  // Internal accumulators (same token source as the per-message speed)
+  totalPrefillSource: number
+  totalPrefillTime: number
+  totalGenTime: number
+}
+
+export interface ModelStatsSummary extends StatsIdentity {
+  key: string
+  label: string
+  totalTime: number
+  aiTime: number
+  toolTime: number
+  prefillTokens: number
+  generationTokens: number
+  avgPrefillSpeed: number
+  avgGenerationSpeed: number
+  responseCount: number
+  llmCallCount: number
+  totalPrefillSource: number
+  totalPrefillTime: number
+  totalGenTime: number
 }
 
 export interface InjectedFile {
@@ -310,6 +392,7 @@ export interface PreparingToolCall {
   index: number // Tool call index (for matching when complete)
   name: string // Tool name (available early in stream)
   arguments?: string // Partial arguments (streaming JSON fragments)
+  editContext?: EditContextRegion[] // Live edit context for streaming edit_file
 }
 
 export interface Attachment {
@@ -377,6 +460,7 @@ export interface ToolCall {
   streamingOutputTruncated?: boolean
   parseError?: string // Error message if JSON parsing failed
   rawArguments?: string // The unparsed arguments string for debugging
+  preflightError?: string // Set by stream fast-fail: the call must NOT execute, surface this error instead
 }
 
 /** A single line of context around an edit */
@@ -446,6 +530,29 @@ export type TaskStatus = 'todo' | 'in_progress' | 'done'
 export type TaskRunState = 'running' | 'queued'
 export type TaskActor = 'human' | 'agent' | 'system'
 
+/** Google-Calendar-style schedule for a task. Present ⇒ the task auto-triggers. */
+export type TaskSchedule =
+  | { type: 'once'; runAt: string }
+  | {
+      type: 'recurring'
+      freq: 'day' | 'week' | 'month' | 'year'
+      /** Repeat every X days/weeks/months/years. */
+      interval: number
+      /** Week freq only: selected weekdays, 0 = Sunday … 6 = Saturday. */
+      weekdays?: number[]
+      /** Month/year freq: day of month (1..31). */
+      monthDay?: number
+      /** Year freq only: month, 1..12. */
+      yearMonth?: number
+      /** First occurrence (date + local time-of-day) — anchor and first trigger. */
+      startAt: string
+      end: { kind: 'never' } | { kind: 'until'; until: string } | { kind: 'count'; count: number }
+      /** How many occurrences have already been triggered (drives `count`). */
+      occurrencesDone: number
+      /** Next trigger time — kept in sync with the DB `next_run_at` column. */
+      nextRunAt: string
+    }
+
 /** Per-project gate (Definition of Done) configuration. */
 export interface TaskGateConfig {
   id: string
@@ -489,6 +596,8 @@ export interface ProjectTask {
   queuePosition?: number
   /** Ordering within the column (stable, used for drag-reorder). */
   position: number
+  /** Auto-trigger schedule (once or recurring). Present ⇒ planned task. */
+  schedule?: TaskSchedule
   /** Monotonic revision counter — bumped on every mutation. Optimistic concurrency guard. */
   version: number
   agentId?: string
@@ -640,10 +749,20 @@ export interface Diagnostic {
 // ============================================================================
 
 /** Supported LLM inference backends */
-export type LlmBackend = 'vllm' | 'sglang' | 'ollama' | 'llamacpp' | 'lmstudio' | 'opencode-go' | 'unknown'
+export type LlmBackend =
+  | 'vllm'
+  | 'sglang'
+  | 'ollama'
+  | 'llamacpp'
+  | 'lmstudio'
+  | 'unsloth'
+  | 'opencode-go'
+  | 'openai'
+  | 'anthropic'
+  | 'unknown'
 
 /** Extended backend type including cloud providers */
-export type ProviderBackend = LlmBackend | 'openai' | 'anthropic'
+export type ProviderBackend = LlmBackend
 
 /** Model configuration with context window */
 export interface ModelConfig {
@@ -660,6 +779,11 @@ export interface ModelConfig {
    *  Takes precedence over `thinkingLevel` as the model default and is never
    *  clamped to the preset list — the escape hatch for provider-specific values. */
   reasoningEffortOverride?: string
+  /** Modes a merged model exposes, each mapping a level to the concrete
+   *  provider model ID to send (e.g. OmniRoute exposes the same model as
+   *  "gemini-3.6-flash-low/-medium/-high"). When present, the active effort
+   *  selects the corresponding apiModelId at request time. */
+  modes?: Array<{ level: string; apiModelId: string; name?: string }>
   contextWindow: number // Context window size in tokens
   source: 'backend' | 'user' | 'default' // Where the value came from
   selected?: boolean // User explicitly selected this model (for multi-model providers)
@@ -685,6 +809,8 @@ export interface ModelConfig {
   defaultTopP?: number
   defaultTopK?: number
   defaultMaxTokens?: number
+  /** Metadata contributed by plugins (pricing, capabilities, badges). */
+  pluginMetadata?: import('./plugin.js').PluginModelMetadataView
 }
 
 /** LLM provider configuration */

@@ -9,6 +9,8 @@ import { LLMError } from '../utils/errors.js'
 
 export interface RequestOptions {
   signal?: AbortSignal | null | undefined
+  /** Extra headers merged over the client's default headers (e.g. opencode session affinity). */
+  headers?: Record<string, string>
 }
 
 export interface ChatRequest {
@@ -44,7 +46,7 @@ export abstract class ChatHttpClient {
   ): Promise<Response> {
     const { url, headers, body } = this.buildRequest(params)
     logger.debug('HTTP request to LLM', { url, bodyKeys: Object.keys(params) })
-    return postJson(url, headers, body, options)
+    return postJson(url, { ...headers, ...options?.headers }, body, options)
   }
 
   async createChatCompletion(

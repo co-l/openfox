@@ -1,16 +1,29 @@
 import { memo, useState } from 'react'
 import { useBackgroundProcessesStore } from '../../stores/background-processes'
+import { useT } from '../../hooks/useT'
 import { LogViewer } from './LogViewer.tsx'
+import type { LogLine } from '@shared/protocol.js'
 
 interface BackgroundProcessesProps {
   sessionId: string | undefined
 }
 
+const EMPTY_LOGS: LogLine[] = []
+
+const STATUS_LABELS: Record<string, { en: string; fr: string }> = {
+  running: { en: 'running', fr: 'en cours' },
+  starting: { en: 'starting', fr: 'démarrage' },
+  stopping: { en: 'stopping', fr: 'arrêt' },
+  exited: { en: 'exited', fr: 'terminé' },
+}
+
 export const BackgroundProcesses = memo(function BackgroundProcesses({ sessionId }: BackgroundProcessesProps) {
+  const t = useT()
   const processes = useBackgroundProcessesStore((s) => s.processes)
   const stopProcess = useBackgroundProcessesStore((s) => s.stopProcess)
   const [expandedProcessId, setExpandedProcessId] = useState<string | null>(null)
-  const [expandedLogs, setExpandedLogs] = useState<{ content: string; stream: 'stdout' | 'stderr' }[]>([])
+  const expandedLogs =
+    useBackgroundProcessesStore((s) => (expandedProcessId ? s.logs[expandedProcessId] : undefined)) ?? EMPTY_LOGS
 
   const activeProcesses = processes.filter((p) => p.status !== 'exited')
   const runningCount = activeProcesses.filter((p) => p.status === 'running').length
@@ -35,8 +48,6 @@ export const BackgroundProcesses = memo(function BackgroundProcesses({ sessionId
   }
 
   const handleExpandLogs = (processId: string) => {
-    const logs = useBackgroundProcessesStore.getState().logs[processId] ?? []
-    setExpandedLogs(logs.map((l) => ({ content: l.content, stream: l.stream })))
     setExpandedProcessId(processId)
   }
 
@@ -51,8 +62,10 @@ export const BackgroundProcesses = memo(function BackgroundProcesses({ sessionId
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0 bg-accent-primary" />
-          <h3 className="text-sm font-semibold text-text-primary">Background</h3>
-          <span className="text-xs text-text-muted">({runningCount} running)</span>
+          <h3 className="text-sm font-semibold text-text-primary">{t({ en: 'Background', fr: 'Arrière-plan' })}</h3>
+          <span className="text-xs text-text-muted">
+            ({t({ en: '{{count}} running', fr: '{{count}} en cours' }, { count: runningCount })})
+          </span>
         </div>
       </div>
 
@@ -65,22 +78,24 @@ export const BackgroundProcesses = memo(function BackgroundProcesses({ sessionId
                 <span className="text-sm text-text-primary truncate" title={process.name}>
                   {process.name}
                 </span>
-                <span className="text-xs text-text-muted">[{process.status}]</span>
+                <span className="text-xs text-text-muted">
+                  [{t(STATUS_LABELS[process.status] ?? { en: process.status, fr: process.status })}]
+                </span>
               </div>
               <div className="flex gap-1 ml-2">
                 <button
                   onClick={() => handleExpandLogs(process.id)}
                   className="px-2 py-1 text-xs rounded bg-bg-tertiary hover:bg-border text-text-secondary transition-colors"
-                  title="View logs"
+                  title={t({ en: 'View logs', fr: 'Voir les journaux' })}
                 >
-                  Logs
+                  {t({ en: 'Logs', fr: 'Journaux' })}
                 </button>
                 <button
                   onClick={() => handleStop(process.id)}
                   className="px-2 py-1 text-xs rounded bg-bg-tertiary hover:bg-accent-error/20 text-text-secondary hover:text-accent-error transition-colors"
-                  title="Stop process"
+                  title={t({ en: 'Stop process', fr: 'Arrêter le processus' })}
                 >
-                  Stop
+                  {t({ en: 'Stop', fr: 'Arrêter' })}
                 </button>
               </div>
             </div>
@@ -98,7 +113,6 @@ export const BackgroundProcesses = memo(function BackgroundProcesses({ sessionId
               logs={expandedLogs}
               onClose={() => {
                 setExpandedProcessId(null)
-                setExpandedLogs([])
               }}
             />
           )

@@ -59,25 +59,25 @@ vi.mock('../../stores/config', () => ({
   }),
 }))
 
-vi.mock('../../stores/agents', () => ({
-  useAgentsStore: mockStore({
-    defaults: [],
-    userItems: [],
-    projectItems: [],
-    modelOverrides: {},
-    loading: false,
-    fetchAgents: vi.fn(),
-    fetchAgent: vi.fn(),
-    fetchDefaultContent: vi.fn(),
-    createAgent: vi.fn(),
-    updateAgent: vi.fn(),
-    deleteAgent: vi.fn(),
-    duplicateAgent: vi.fn(),
-  }),
+const { mockCreateAgent, mockUpdateAgent, mockDeleteAgent, mockDuplicateAgent } = vi.hoisted(() => ({
+  mockCreateAgent: vi.fn(),
+  mockUpdateAgent: vi.fn(),
+  mockDeleteAgent: vi.fn(),
+  mockDuplicateAgent: vi.fn(),
 }))
 
+vi.mock('../../lib/agents-actions', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/agents-actions')>()
+  return {
+    ...actual,
+    createAgent: mockCreateAgent,
+    updateAgent: mockUpdateAgent,
+    deleteAgent: mockDeleteAgent,
+    duplicateAgent: mockDuplicateAgent,
+  }
+})
+
 import { AgentsModal } from './AgentsModal'
-import { useAgentsStore } from '../../stores/agents'
 
 describe('AgentsModal', () => {
   beforeEach(() => {
@@ -102,7 +102,7 @@ describe('AgentsModal', () => {
   })
 
   it('finishes saving a new agent and returns to the list view', async () => {
-    vi.mocked(useAgentsStore.getState().createAgent).mockResolvedValue({ success: true })
+    mockCreateAgent.mockResolvedValue({ success: true })
     const user = userEvent.setup()
     render(<AgentsModal isOpen onClose={vi.fn()} />)
 

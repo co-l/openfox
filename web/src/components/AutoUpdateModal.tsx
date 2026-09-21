@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { Modal } from './shared/Modal'
 import { authFetch } from '../lib/api'
 import { appUrl } from '../lib/basePath'
+import { useT } from '../hooks/useT'
 import { getStoredLastVersion, stampPreviousVersion } from '../lib/versionTracking'
 
 type ModalState = 'ready' | 'updating' | 'complete' | 'failed' | 'restarting' | 'restartFailed'
@@ -15,7 +16,16 @@ interface AutoUpdateModalProps {
 const POLL_INTERVAL_MS = 1_000
 const POLL_TIMEOUT_MS = 30_000
 
-function FallbackPanel({ message, command, hint }: { message: string | null; command: string; hint: string }) {
+function FallbackPanel({
+  message,
+  command,
+  hint,
+}: {
+  message: string | null
+  command: string
+  hint: { en: string; fr: string }
+}) {
+  const t = useT()
   return (
     <div className="flex flex-col gap-3 mt-2">
       <div className="flex items-center gap-2 px-3 py-2 bg-accent-danger/10 border border-accent-danger/30 rounded text-xs">
@@ -23,12 +33,13 @@ function FallbackPanel({ message, command, hint }: { message: string | null; com
         <p className="text-text-secondary">{message}</p>
       </div>
       <div className="bg-bg-tertiary rounded px-3 py-2 text-xs font-mono text-text-secondary">{command}</div>
-      <p className="text-xs text-text-muted">{hint}</p>
+      <p className="text-xs text-text-muted">{t(hint)}</p>
     </div>
   )
 }
 
 export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModalProps) {
+  const t = useT()
   const [state, setState] = useState<ModalState>('ready')
   const [progressDots, setProgressDots] = useState('')
   const [modalVersionInfo, setModalVersionInfo] = useState(versionInfo)
@@ -145,7 +156,10 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
         if (startedAt !== null && Date.now() - startedAt >= POLL_TIMEOUT_MS) {
           clearPoll()
           enterRestartFailed(
-            'OpenFox could not be reached after restart within 30 seconds. Please restart OpenFox manually.',
+            t({
+              en: 'OpenFox could not be reached after restart within 30 seconds. Please restart OpenFox manually.',
+              fr: 'OpenFox est resté injoignable pendant 30 secondes après le redémarrage. Veuillez redémarrer OpenFox manuellement.',
+            }),
           )
           return
         }
@@ -182,7 +196,7 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
         void tick()
       }, POLL_INTERVAL_MS)
     },
-    [clearPoll, enterRestartFailed, markUpdateApplied],
+    [clearPoll, enterRestartFailed, markUpdateApplied, t],
   )
 
   const handleUpdate = useCallback(async () => {
@@ -205,23 +219,32 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
           setState('complete')
         }
       } else {
-        setErrorMessage(data.error ?? 'Update failed')
+        setErrorMessage(data.error ?? t({ en: 'Update failed', fr: 'Échec de la mise à jour' }))
         setState('failed')
       }
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Update request failed')
+      setErrorMessage(
+        err instanceof Error
+          ? err.message
+          : t({ en: 'Update request failed', fr: 'La demande de mise à jour a échoué' }),
+      )
       setState('failed')
     }
-  }, [restartAndPoll])
+  }, [restartAndPoll, t])
 
   const handleRestartNow = useCallback(() => {
     const installedVersion = updatedVersion ?? modalVersionInfo?.latest ?? null
     if (!installedVersion) {
-      enterRestartFailed('Installed version unknown; cannot verify restart.')
+      enterRestartFailed(
+        t({
+          en: 'Installed version unknown; cannot verify restart.',
+          fr: 'Version installée inconnue ; redémarrage impossible à vérifier.',
+        }),
+      )
       return
     }
     void restartAndPoll(installedVersion)
-  }, [updatedVersion, modalVersionInfo, enterRestartFailed, restartAndPoll])
+  }, [updatedVersion, modalVersionInfo, enterRestartFailed, restartAndPoll, t])
 
   // Cleanup on unmount
   useEffect(() => {
@@ -256,16 +279,16 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
 
   const title =
     state === 'failed'
-      ? 'Update Failed'
+      ? t({ en: 'Update Failed', fr: 'Échec de la mise à jour' })
       : state === 'restarting'
-        ? 'Restarting…'
+        ? t({ en: 'Restarting…', fr: 'Redémarrage…' })
         : state === 'complete'
-          ? 'Update Complete'
+          ? t({ en: 'Update Complete', fr: 'Mise à jour terminée' })
           : state === 'restartFailed'
-            ? 'Restart Not Confirmed'
+            ? t({ en: 'Restart Not Confirmed', fr: 'Redémarrage non confirmé' })
             : isDev
-              ? 'New OpenFox (dev) version available'
-              : 'New OpenFox version available'
+              ? t({ en: 'New OpenFox (dev) version available', fr: 'Nouvelle version OpenFox (dev) disponible' })
+              : t({ en: 'New OpenFox version available', fr: 'Nouvelle version d’OpenFox disponible' })
 
   return (
     <Modal
@@ -282,7 +305,7 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
               onClick={handleUpdate}
               className="w-full px-3 py-2 text-sm rounded bg-accent-primary hover:brightness-110 transition-all text-white font-medium"
             >
-              Update OpenFox
+              {t({ en: 'Update OpenFox', fr: 'Mettre à jour OpenFox' })}
             </button>
           )}
 
@@ -291,7 +314,10 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
           {(state === 'ready' || state === 'updating') && serviceMode && (
             <label className="flex items-center justify-center gap-2 text-xs text-text-muted cursor-pointer select-none">
               <input type="checkbox" checked={autoRestart} onChange={(e) => toggleAutoRestart(e.target.checked)} />
-              Auto-restart once update is done
+              {t({
+                en: 'Auto-restart once update is done',
+                fr: 'Redémarrer automatiquement une fois la mise à jour terminée',
+              })}
             </label>
           )}
 
@@ -301,13 +327,13 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
                 onClick={handleRestartNow}
                 className="w-full px-3 py-2 text-sm rounded bg-accent-primary hover:brightness-110 transition-all text-white font-medium"
               >
-                Restart OpenFox now
+                {t({ en: 'Restart OpenFox now', fr: 'Redémarrer OpenFox maintenant' })}
               </button>
               <button
                 onClick={onClose}
                 className="w-full px-3 py-2 text-sm rounded bg-bg-tertiary hover:bg-bg-secondary transition-colors text-text-primary font-medium"
               >
-                Later
+                {t({ en: 'Later', fr: 'Plus tard' })}
               </button>
             </div>
           )}
@@ -317,7 +343,7 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
               onClick={onClose}
               className="w-full px-3 py-2 text-sm rounded bg-bg-tertiary hover:bg-bg-secondary transition-colors text-text-primary font-medium"
             >
-              Close
+              {t({ en: 'Close', fr: 'Fermer' })}
             </button>
           )}
 
@@ -326,7 +352,7 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
               onClick={onClose}
               className="w-full px-3 py-2 text-sm rounded bg-bg-tertiary hover:bg-bg-secondary transition-colors text-text-primary font-medium"
             >
-              Close
+              {t({ en: 'Close', fr: 'Fermer' })}
             </button>
           )}
         </div>
@@ -335,13 +361,13 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
       <div className="flex flex-col gap-4">
         {modalVersionInfo && (
           <div className="flex justify-between text-sm">
-            <span className="text-text-muted">Current version</span>
+            <span className="text-text-muted">{t({ en: 'Current version', fr: 'Version actuelle' })}</span>
             <span className="text-text-primary font-mono">{formatVersion(modalVersionInfo.current)}</span>
           </div>
         )}
         {modalVersionInfo && (
           <div className="flex justify-between text-sm pb-2">
-            <span className="text-text-muted">Latest version</span>
+            <span className="text-text-muted">{t({ en: 'Latest version', fr: 'Dernière version' })}</span>
             <span className="text-accent-primary font-mono font-semibold">{modalVersionInfo.latest}</span>
           </div>
         )}
@@ -352,7 +378,9 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
               <div className="h-full bg-accent-primary animate-pulse w-full" />
             </div>
             <p className="text-xs text-text-muted text-center">
-              {state === 'restarting' ? 'Restarting' : 'Updating'}
+              {state === 'restarting'
+                ? t({ en: 'Restarting', fr: 'Redémarrage' })
+                : t({ en: 'Updating', fr: 'Mise à jour' })}
               {progressDots}
             </p>
           </div>
@@ -361,10 +389,22 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
         {state === 'complete' && (
           <div className="flex flex-col gap-3 mt-2">
             <div className="bg-bg-tertiary rounded px-3 py-2 text-xs text-text-secondary">
-              OpenFox has been updated to v{updatedVersion ?? modalVersionInfo?.latest}.
+              {t(
+                {
+                  en: 'OpenFox has been updated to v{{version}}.',
+                  fr: 'OpenFox a été mis à jour vers la v{{version}}.',
+                },
+                { version: updatedVersion ?? modalVersionInfo?.latest ?? '' },
+              )}{' '}
               {restartAvailable
-                ? ' Click "Restart OpenFox now" to apply the update.'
-                : ' Please restart OpenFox to use the new version.'}
+                ? t({
+                    en: 'Click "Restart OpenFox now" to apply the update.',
+                    fr: 'Cliquez sur « Redémarrer OpenFox maintenant » pour appliquer la mise à jour.',
+                  })
+                : t({
+                    en: 'Please restart OpenFox to use the new version.',
+                    fr: 'Veuillez redémarrer OpenFox pour utiliser la nouvelle version.',
+                  })}
             </div>
           </div>
         )}
@@ -373,7 +413,10 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
           <FallbackPanel
             message={errorMessage}
             command="openfox update"
-            hint="Run this command in your terminal to complete the update."
+            hint={{
+              en: 'Run this command in your terminal to complete the update.',
+              fr: 'Exécutez cette commande dans votre terminal pour terminer la mise à jour.',
+            }}
           />
         )}
 
@@ -381,7 +424,10 @@ export function AutoUpdateModal({ isOpen, onClose, versionInfo }: AutoUpdateModa
           <FallbackPanel
             message={errorMessage}
             command="openfox service restart"
-            hint="Run this command in your terminal to restart OpenFox."
+            hint={{
+              en: 'Run this command in your terminal to restart OpenFox.',
+              fr: 'Exécutez cette commande dans votre terminal pour redémarrer OpenFox.',
+            }}
           />
         )}
       </div>

@@ -3,9 +3,15 @@ import { Modal } from '../shared/SelfContainedModal'
 import { Button } from '../shared/Button'
 import { EditButton } from '../shared/IconButton'
 import { EyeIcon } from '../shared/icons'
-import { useCommandsStore, type CommandInfo, type CommandFull } from '../../stores/commands'
+import {
+  createCommand,
+  updateCommand,
+  deleteCommand,
+  type CommandInfo,
+  type CommandFull,
+} from '../../lib/commands-actions'
 import { useResource } from '../../hooks/useResource'
-import { agentsResource } from '../../lib/resources'
+import { agentsResource, commandsResource, commandResource, commandDefaultResource } from '../../lib/resources'
 import {
   useConfirmDialog,
   ConfirmButton,
@@ -16,10 +22,10 @@ import {
   ModalActions,
 } from './CRUDModal'
 import { ItemsHeader } from '../shared/ItemsHeader'
-import { CRUDListHeader } from './CRUDListHeader'
-import { CRUDListView } from './CRUDListView'
+import { CRUDListScaffold } from './CRUDListScaffold'
 import { NameIdFields } from './FormFields'
 import { useCRUDForm } from './useCRUDForm'
+import { useT } from '../../hooks/useT'
 
 interface CommandsModalProps {
   isOpen: boolean
@@ -47,12 +53,13 @@ function toSlug(name: string): string {
 }
 
 function ViewButton({ onClick }: { onClick: () => void }) {
+  const t = useT()
   return (
     <button
       type="button"
       onClick={onClick}
       className="p-1.5 rounded text-text-muted hover:text-text-primary hover:bg-bg-primary transition-colors"
-      title="View"
+      title={t({ en: 'View', fr: 'Voir' })}
     >
       <EyeIcon />
     </button>
@@ -60,17 +67,11 @@ function ViewButton({ onClick }: { onClick: () => void }) {
 }
 
 export function CommandsModal({ isOpen, onClose, initialEditId, projectDir }: CommandsModalProps) {
-  const defaults = useCommandsStore((state) => state.defaults)
-  const userItems = useCommandsStore((state) => state.userItems)
-  const projectItems = useCommandsStore((state) => state.projectItems)
-  const loading = useCommandsStore((state) => state.loading)
-  const fetchCommands = useCommandsStore((state) => state.fetchCommands)
-  const fetchCommand = useCommandsStore((state) => state.fetchCommand)
-  const fetchDefaultContent = useCommandsStore((state) => state.fetchDefaultContent)
-  const createCommand = useCommandsStore((state) => state.createCommand)
-  const updateCommand = useCommandsStore((state) => state.updateCommand)
-  const deleteCommandAction = useCommandsStore((state) => state.deleteCommand)
-
+  const t = useT()
+  const { data: commandsData, loading } = useResource(commandsResource, projectDir)
+  const defaults = commandsData?.defaults ?? []
+  const userItems = commandsData?.userItems ?? []
+  const projectItems = commandsData?.projectItems ?? []
   const [viewingDefaultId, setViewingDefaultId] = useState<string | null>(null)
   const [defaultContent, setDefaultContent] = useState<string | null>(null)
 
@@ -80,14 +81,10 @@ export function CommandsModal({ isOpen, onClose, initialEditId, projectDir }: Co
   const { requestDelete, clearConfirm, isConfirming } = useConfirmDialog()
   const clearConfirmCalled = useRef(false)
 
-  const { data, refresh } = useResource(agentsResource, projectDir)
+  const { data } = useResource(agentsResource, projectDir)
   const allAgents = data ? [...data.defaults, ...data.userItems] : []
   const topLevelAgents = allAgents.filter((a) => !a.subagent)
 
-  const fetchCommandsRef = useRef(fetchCommands)
-  const refreshAgentsRef = useRef(refresh)
-  const fetchCommandRef = useRef(fetchCommand)
-  const fetchDefaultContentRef = useRef(fetchDefaultContent)
   const projectDirRef = useRef(projectDir)
   const initialEditIdRef = useRef(initialEditId)
   const setViewRef = useRef(setView)
@@ -96,10 +93,6 @@ export function CommandsModal({ isOpen, onClose, initialEditId, projectDir }: Co
   const clearConfirmRef = useRef(clearConfirm)
 
   useEffect(() => {
-    fetchCommandsRef.current = fetchCommands
-    refreshAgentsRef.current = refresh
-    fetchCommandRef.current = fetchCommand
-    fetchDefaultContentRef.current = fetchDefaultContent
     projectDirRef.current = projectDir
     initialEditIdRef.current = initialEditId
     setViewRef.current = setView
@@ -110,8 +103,6 @@ export function CommandsModal({ isOpen, onClose, initialEditId, projectDir }: Co
 
   useEffect(() => {
     if (isOpen) {
-      fetchCommandsRef.current(projectDirRef.current)
-      refreshAgentsRef.current()
       if (!clearConfirmCalled.current) {
         clearConfirmRef.current()
         clearConfirmCalled.current = true
@@ -122,10 +113,10 @@ export function CommandsModal({ isOpen, onClose, initialEditId, projectDir }: Co
         setEditingIdRef.current(initialEditIdRef.current)
         setFormErrorRef.current('')
         if (isDefaultItem) {
-          fetchDefaultContentRef.current(initialEditIdRef.current).then((content) => {
+          commandDefaultResource.refresh(initialEditIdRef.current).then((content) => {
             if (!content) return
             setFormData({
-              name: content.metadata.name + ' (copy)',
+              name: content.metadata.name + ' ' + t({ en: '(copy)', fr: '(copie)' }),
               id: `${initialEditIdRef.current}-copy-${Date.now()}`,
               prompt: content.prompt,
               agentMode: content.metadata.agentMode ?? '',
@@ -134,7 +125,7 @@ export function CommandsModal({ isOpen, onClose, initialEditId, projectDir }: Co
             })
           })
         } else {
-          fetchCommandRef.current(initialEditIdRef.current, projectDirRef.current).then((command) => {
+          commandResource.refresh(initialEditIdRef.current, projectDirRef.current).then((command) => {
             if (!command) return
             setFormData({
               name: command.metadata.name,
@@ -157,18 +148,18 @@ export function CommandsModal({ isOpen, onClose, initialEditId, projectDir }: Co
 
   const handleViewDefault = async (commandId: string) => {
     setViewingDefaultId(commandId)
-    const content = await fetchDefaultContent(commandId)
+    const content = await commandDefaultResource.refresh(commandId)
     setDefaultContent(content?.prompt ?? null)
   }
 
   const handleDuplicate = async (commandId: string) => {
     const isDefault = defaults.some((d) => d.id === commandId)
     if (isDefault) {
-      const content = await fetchDefaultContent(commandId)
+      const content = await commandDefaultResource.refresh(commandId)
       if (content) {
         setEditingId(null)
         setFormData({
-          name: `${content.metadata.name} (copy)`,
+          name: `${content.metadata.name} ${t({ en: '(copy)', fr: '(copie)' })}`,
           id: `${commandId}-copy-${Date.now()}`,
           prompt: content.prompt,
           agentMode: content.metadata.agentMode ?? '',
@@ -179,11 +170,11 @@ export function CommandsModal({ isOpen, onClose, initialEditId, projectDir }: Co
         setView('edit')
       }
     } else {
-      const command = await fetchCommand(commandId, projectDir)
+      const command = await commandResource.refresh(commandId, projectDir)
       if (command) {
         setEditingId(null)
         setFormData({
-          name: `${command.metadata.name} (copy)`,
+          name: `${command.metadata.name} ${t({ en: '(copy)', fr: '(copie)' })}`,
           id: `${commandId}-copy-${Date.now()}`,
           prompt: command.prompt,
           agentMode: command.metadata.agentMode ?? '',
@@ -203,7 +194,7 @@ export function CommandsModal({ isOpen, onClose, initialEditId, projectDir }: Co
   }
 
   const handleEdit = async (commandId: string) => {
-    const command = await fetchCommand(commandId, projectDir)
+    const command = await commandResource.refresh(commandId, projectDir)
     if (!command) return
     setEditingId(commandId)
     setFormData({
@@ -219,14 +210,14 @@ export function CommandsModal({ isOpen, onClose, initialEditId, projectDir }: Co
   }
 
   const handleDelete = async (commandId: string) => {
-    await deleteCommandAction(commandId, projectDir)
+    await deleteCommand(commandId, projectDir)
     clearConfirm()
   }
 
   const handleSave = async () => {
     const id = editingId ?? formData.id
     if (!id || !formData.name || !formData.prompt) {
-      setFormError('Name and message are required.')
+      setFormError(t({ en: 'Name and message are required.', fr: 'Le nom et le message sont requis.' }))
       return
     }
 
@@ -245,7 +236,9 @@ export function CommandsModal({ isOpen, onClose, initialEditId, projectDir }: Co
     setSaving(false)
 
     if (!result.success) {
-      setFormError(result.error ?? 'Failed to save command.')
+      setFormError(
+        result.error ?? t({ en: 'Failed to save command.', fr: 'Échec de l’enregistrement de la commande.' }),
+      )
       return
     }
 
@@ -280,11 +273,13 @@ export function CommandsModal({ isOpen, onClose, initialEditId, projectDir }: Co
     if (!viewingDefaultId) return
     setViewingDefaultId(null)
     setView('edit')
-    setEditingId(viewingDefaultId)
-    fetchDefaultContent(viewingDefaultId).then((content) => {
+    // A duplicate is a NEW command: leave editingId null so Save creates a
+    // fresh copy instead of updating (and overwriting) the source default.
+    setEditingId(null)
+    commandDefaultResource.refresh(viewingDefaultId).then((content) => {
       if (!content) return
       setFormData({
-        name: `${content.metadata.name} (copy)`,
+        name: `${content.metadata.name} ${t({ en: '(copy)', fr: '(copie)' })}`,
         id: `${viewingDefaultId}-copy-${Date.now()}`,
         prompt: content.prompt,
         agentMode: content.metadata.agentMode ?? '',
@@ -300,15 +295,15 @@ export function CommandsModal({ isOpen, onClose, initialEditId, projectDir }: Co
       <Modal
         isOpen={isOpen}
         onClose={handleViewClose}
-        title={`Default: ${defaultItem?.name ?? viewingDefaultId}`}
+        title={t({ en: 'Default: {{name}}', fr: 'Défaut : {{name}}' }, { name: defaultItem?.name ?? viewingDefaultId })}
         size="xl"
         footer={
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={handleViewClose}>
-              Close
+              {t({ en: 'Close', fr: 'Fermer' })}
             </Button>
             <Button variant="primary" onClick={handleDuplicateFromView}>
-              Duplicate & Customize
+              {t({ en: 'Duplicate & Customize', fr: 'Dupliquer et personnaliser' })}
             </Button>
           </div>
         }
@@ -316,29 +311,33 @@ export function CommandsModal({ isOpen, onClose, initialEditId, projectDir }: Co
         <div className="flex flex-col h-full">
           <div className="space-y-3 mb-3">
             <div className="flex items-center gap-2 text-xs text-text-muted">
-              <span className="px-1.5 py-0.5 rounded bg-bg-tertiary text-text-secondary">Built-in</span>
+              <span className="px-1.5 py-0.5 rounded bg-bg-tertiary text-text-secondary">
+                {t({ en: 'Built-in', fr: 'Intégré' })}
+              </span>
               <span className="font-mono">{viewingDefaultId}</span>
             </div>
 
             <div>
-              <label className="block text-xs text-text-secondary mb-1">Name</label>
+              <label className="block text-xs text-text-secondary mb-1">{t({ en: 'Name', fr: 'Nom' })}</label>
               <div className="px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm">{defaultItem?.name}</div>
             </div>
 
             <div>
-              <label className="block text-xs text-text-secondary mb-1">Agent Mode</label>
+              <label className="block text-xs text-text-secondary mb-1">
+                {t({ en: 'Agent Mode', fr: 'Mode agent' })}
+              </label>
               <div className="px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm text-text-muted">
-                {defaultItem?.agentMode || 'None'}
+                {defaultItem?.agentMode || t({ en: 'None', fr: 'Aucun' })}
               </div>
             </div>
           </div>
 
           <div className="flex-1 min-h-[120px] border-t border-border pt-3 flex flex-col">
-            <label className="block text-xs text-text-secondary mb-1">Message</label>
+            <label className="block text-xs text-text-secondary mb-1">{t({ en: 'Message', fr: 'Message' })}</label>
             <textarea
               value={defaultContent ?? ''}
               readOnly
-              placeholder="..."
+              placeholder={t({ en: '...', fr: '...' })}
               className="flex-1 w-full px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono resize-none opacity-60"
             />
           </div>
@@ -352,7 +351,11 @@ export function CommandsModal({ isOpen, onClose, initialEditId, projectDir }: Co
       <Modal
         isOpen={isOpen}
         onClose={handleCancel}
-        title={editingId ? 'Edit Command' : 'New Command'}
+        title={
+          editingId
+            ? t({ en: 'Edit Command', fr: 'Modifier la commande' })
+            : t({ en: 'New Command', fr: 'Nouvelle commande' })
+        }
         size="xl"
         footer={
           <ModalActions
@@ -370,9 +373,9 @@ export function CommandsModal({ isOpen, onClose, initialEditId, projectDir }: Co
             <NameIdFields
               name={formData.name}
               id={formData.id}
-              nameLabel="Name"
-              idLabel="ID"
-              namePlaceholder="My Command"
+              nameLabel={t({ en: 'Name', fr: 'Nom' })}
+              idLabel={t({ en: 'ID', fr: 'ID' })}
+              namePlaceholder={t({ en: 'My Command', fr: 'Ma commande' })}
               idPlaceholder="my-command"
               readOnlyId={!!editingId && !formData.isDefault}
               onNameChange={handleNameChange}
@@ -381,14 +384,17 @@ export function CommandsModal({ isOpen, onClose, initialEditId, projectDir }: Co
 
             <div>
               <label className="block text-xs text-text-secondary mb-1">
-                Agent Mode <span className="text-text-muted">(optional)</span>
+                {t({ en: 'Agent Mode', fr: 'Mode agent' })}{' '}
+                <span className="text-text-muted">{t({ en: '(optional)', fr: '(facultatif)' })}</span>
               </label>
               <select
                 value={formData.agentMode}
                 onChange={(e) => setFormData((prev) => ({ ...prev, agentMode: e.target.value }))}
                 className="w-full px-2 py-1.5 bg-bg-tertiary border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary"
               >
-                <option value="">None (keep current mode)</option>
+                <option value="">
+                  {t({ en: 'None (keep current mode)', fr: 'Aucun (conserver le mode actuel)' })}
+                </option>
                 {topLevelAgents.map((agent) => (
                   <option key={agent.id} value={agent.id}>
                     {agent.name}
@@ -406,11 +412,14 @@ export function CommandsModal({ isOpen, onClose, initialEditId, projectDir }: Co
           </div>
 
           <div className="flex-1 min-h-[120px] border-t border-border pt-3 flex flex-col">
-            <label className="block text-xs text-text-secondary mb-1">Message</label>
+            <label className="block text-xs text-text-secondary mb-1">{t({ en: 'Message', fr: 'Message' })}</label>
             <textarea
               value={formData.prompt}
               onChange={(e) => setFormData((prev) => ({ ...prev, prompt: e.target.value }))}
-              placeholder="The message that will be sent when this command is triggered..."
+              placeholder={t({
+                en: 'The message that will be sent when this command is triggered...',
+                fr: 'Le message qui sera envoyé lorsque cette commande est déclenchée...',
+              })}
               className="h-80 w-full px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono resize-y focus:outline-none focus:ring-1 focus:ring-accent-primary"
             />
           </div>
@@ -428,6 +437,14 @@ export function CommandsModal({ isOpen, onClose, initialEditId, projectDir }: Co
         <div className="min-w-0 flex-1 mr-3">
           <div className="flex items-center gap-2">
             <span className="text-text-primary text-sm font-medium">{command.name}</span>
+            {command.pluginId ? (
+              <span
+                data-plugin-command
+                className="text-[10px] px-1.5 py-0.5 rounded border border-border bg-bg-secondary text-text-muted"
+              >
+                {t({ en: 'Plugin', fr: 'Plugin' })}
+              </span>
+            ) : null}
           </div>
         </div>
 
@@ -445,50 +462,46 @@ export function CommandsModal({ isOpen, onClose, initialEditId, projectDir }: Co
     ))
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Commands" size="lg">
-      <CRUDListHeader
-        description="Commands are pre-defined messages you can send with a single click."
+    <Modal isOpen={isOpen} onClose={onClose} title={t({ en: 'Commands', fr: 'Commandes' })} size="lg">
+      <CRUDListScaffold
+        description={t({
+          en: 'Commands are pre-defined messages you can send with a single click.',
+          fr: 'Les commandes sont des messages prédéfinis que vous pouvez envoyer en un seul clic.',
+        })}
         onNew={handleNew}
-      />
-
-      <CRUDListView
         loading={loading}
         hasItems={defaults.length > 0 || userItems.length > 0 || projectItems.length > 0}
-        loadingLabel="Loading commands..."
-        emptyLabel="No commands created yet."
+        loadingLabel={t({ en: 'Loading commands...', fr: 'Chargement des commandes...' })}
+        emptyLabel={t({ en: 'No commands created yet.', fr: 'Aucune commande créée pour l’instant.' })}
       >
         {defaults.length > 0 && (
-          <div>
-            <h3 className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wide">Built-in</h3>
-            <div className="space-y-2">
-              {defaults.map((command) => (
-                <div
-                  key={command.id}
-                  className="flex items-center justify-between p-3 rounded border border-border bg-bg-tertiary"
-                >
-                  <div className="min-w-0 flex-1 mr-3">
-                    <span className="text-text-primary text-sm font-medium">{command.name}</span>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
-                    <ViewButton onClick={() => handleViewDefault(command.id)} />
-                    <DuplicateIcon onClick={() => handleDuplicate(command.id)} />
-                  </div>
+          <ItemsHeader label={t({ en: 'Built-in', fr: 'Intégrées' })}>
+            {defaults.map((command) => (
+              <div
+                key={command.id}
+                className="flex items-center justify-between p-3 rounded border border-border bg-bg-tertiary"
+              >
+                <div className="min-w-0 flex-1 mr-3">
+                  <span className="text-text-primary text-sm font-medium">{command.name}</span>
                 </div>
-              ))}
-            </div>
-          </div>
+
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <ViewButton onClick={() => handleViewDefault(command.id)} />
+                  <DuplicateIcon onClick={() => handleDuplicate(command.id)} />
+                </div>
+              </div>
+            ))}
+          </ItemsHeader>
         )}
 
         {userItems.length > 0 && <ItemsHeader>{renderCommandItems(userItems)}</ItemsHeader>}
 
         {projectItems.length > 0 && (
           <div className="mt-4">
-            <h3 className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wide">Project</h3>
-            <div className="space-y-2">{renderCommandItems(projectItems)}</div>
+            <ItemsHeader label={t({ en: 'Project', fr: 'Projet' })}>{renderCommandItems(projectItems)}</ItemsHeader>
           </div>
         )}
-      </CRUDListView>
+      </CRUDListScaffold>
     </Modal>
   )
 }

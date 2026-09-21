@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useCallback, useMemo, useRef } from 'react'
 import { Modal } from '../shared/SelfContainedModal'
 import { Button } from '../shared/Button'
 import { Input } from '../shared/Input'
@@ -6,12 +6,22 @@ import { ConfirmModal } from '../shared/ConfirmModal'
 import { PauseIcon, PlayIcon, SearchIcon, PlusIcon } from '../shared/icons'
 import { useTasksStore } from '../../stores/tasks'
 import { useAgents } from '../../hooks/useAgents'
-import { useProjectStore } from '../../stores/project'
+import { useProjects } from '../../hooks/useProjects'
+import { useResource } from '../../hooks/useResource'
+import { boardResource, readBoard } from '../../lib/resources'
 import { ModalCrumbTitle } from '../shared/ModalCrumbTitle'
 import { TaskColumn } from './TaskColumn'
 import { TaskEditor } from './TaskEditor'
 import { GatesEditor } from './GatesEditor'
-import type { ProjectTask, TaskStatus } from '@shared/types.js'
+import type { ProjectTask, TaskStatus, TaskSchedule } from '@shared/types.js'
+import { useT } from '../../hooks/useT'
+
+/** Canonical next trigger of a planned task (used to float them in To Do). */
+function scheduleNextRun(task: ProjectTask): string | undefined {
+  const s: TaskSchedule | undefined = task.schedule
+  if (!s) return undefined
+  return s.type === 'once' ? s.runAt : s.nextRunAt
+}
 
 interface TasksModalProps {
   isOpen: boolean
@@ -20,17 +30,18 @@ interface TasksModalProps {
 }
 
 export function TasksModal({ isOpen, onClose, projectId }: TasksModalProps) {
-  const tasks = useTasksStore((state) => state.tasks)
-  const settings = useTasksStore((state) => state.settings)
-  const loadBoard = useTasksStore((state) => state.loadBoard)
-  const loadGates = useTasksStore((state) => state.loadGates)
+  const t = useT()
+  const { data: board } = useResource(boardResource, projectId)
+  const tasks = board?.tasks ?? []
+  const settings = board?.settings ?? { slotLimit: 1, queuePaused: false }
   const moveTask = useTasksStore((state) => state.moveTask)
   const reorderTask = useTasksStore((state) => state.reorderTask)
   const deleteTask = useTasksStore((state) => state.deleteTask)
   const duplicateTask = useTasksStore((state) => state.duplicateTask)
   const setSettings = useTasksStore((state) => state.setSettings)
   const lastError = useTasksStore((state) => state.lastError)
-  const project = useProjectStore((state) => state.projects.find((p) => p.id === projectId))
+  const { projects } = useProjects()
+  const project = projects.find((p) => p.id === projectId)
 
   const { agents } = useAgents()
 
@@ -41,15 +52,6 @@ export function TasksModal({ isOpen, onClose, projectId }: TasksModalProps) {
 
   const draggedRef = useRef<{ task: ProjectTask } | null>(null)
 
-  useEffect(() => {
-    if (isOpen) {
-      void loadBoard(projectId)
-      void loadGates(projectId)
-      // Agents load via the resource cache (implicit loadership), so the card
-      // chips render even when the board is opened from the homepage.
-    }
-  }, [isOpen, projectId, loadBoard, loadGates])
-
   const filteredTasks = useMemo(() => {
     if (!search.trim()) return tasks
     const q = search.toLowerCase()
@@ -57,7 +59,18 @@ export function TasksModal({ isOpen, onClose, projectId }: TasksModalProps) {
   }, [tasks, search])
 
   const byColumn = useMemo(() => {
-    const todo = filteredTasks.filter((t) => t.status === 'todo').sort((a, b) => a.position - b.position)
+    const todo = filteredTasks
+      .filter((t) => t.status === 'todo')
+      .sort((a, b) => {
+        // Planned tasks float to the top of To Do, soonest trigger first;
+        // regular tasks keep their drag position below.
+        const aNext = scheduleNextRun(a)
+        const bNext = scheduleNextRun(b)
+        if (aNext && bNext) return aNext.localeCompare(bNext)
+        if (aNext) return -1
+        if (bNext) return 1
+        return a.position - b.position
+      })
     const inProgress = filteredTasks
       .filter((t) => t.status === 'in_progress')
       .sort((a, b) => {
@@ -169,13 +182,13 @@ export function TasksModal({ isOpen, onClose, projectId }: TasksModalProps) {
     // Read the freshest value: closures over the render-scoped `settings` can
     // be stale between rapid clicks, making +/− appear to skip or ignore
     // presses.
-    const current = useTasksStore.getState().settings.slotLimit
+    const current = readBoard(projectId)?.settings.slotLimit ?? 1
     const next = Math.max(1, Math.min(10, current + delta))
     if (next !== current) void setSettings(projectId, { slotLimit: next })
   }
 
   const togglePause = () => {
-    const paused = useTasksStore.getState().settings.queuePaused
+    const paused = readBoard(projectId)?.settings.queuePaused ?? false
     void setSettings(projectId, { queuePaused: !paused })
   }
 
@@ -198,16 +211,19 @@ export function TasksModal({ isOpen, onClose, projectId }: TasksModalProps) {
   const renderColumn = (status: TaskStatus) => {
     const meta = {
       todo: {
-        title: 'To Do',
+        title: t({ en: 'To Do', fr: 'À faire' }),
         accentClass: 'border-t-2 border-t-blue-500/60',
       },
       in_progress: {
-        title: 'In Progress',
+        title: t({ en: 'In Progress', fr: 'En cours' }),
         accentClass: 'border-t-2 border-t-amber-500/60',
-        hint: 'Moving a task here starts it automatically.',
+        hint: t({
+          en: 'Moving a task here starts it automatically.',
+          fr: 'Déplacer une tâche ici la démarre automatiquement.',
+        }),
       },
       done: {
-        title: 'Done',
+        title: t({ en: 'Done', fr: 'Terminées' }),
         accentClass: 'border-t-2 border-t-emerald-500/60',
       },
     }[status]!
@@ -222,10 +238,10 @@ export function TasksModal({ isOpen, onClose, projectId }: TasksModalProps) {
         headerAction={
           status === 'todo' ? (
             <Button variant="primary" onClick={() => setEditor({ mode: 'create' })}>
-              <PlusIcon className="w-4 h-4 mr-1 inline-block" /> New Task
+              <PlusIcon className="w-4 h-4 mr-1 inline-block" /> {t({ en: 'New Task', fr: 'Nouvelle tâche' })}
             </Button>
           ) : status === 'done' ? (
-            <Button onClick={() => setGatesOpen(true)}>Gates</Button>
+            <Button onClick={() => setGatesOpen(true)}>{t({ en: 'Gates', fr: 'Portes' })}</Button>
           ) : undefined
         }
         footer={status === 'in_progress' ? queueFooter : undefined}
@@ -239,20 +255,22 @@ export function TasksModal({ isOpen, onClose, projectId }: TasksModalProps) {
   const queueFooter = (
     <div className="px-3 py-3 space-y-3">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-sm font-medium text-text-muted">Parallel slots</span>
+        <span className="text-sm font-medium text-text-muted">
+          {t({ en: 'Parallel slots', fr: 'Emplacements parallèles' })}
+        </span>
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={() => adjustSlot(-1)}
             disabled={settings.slotLimit <= 1}
-            aria-label="Decrease slot limit"
+            aria-label={t({ en: 'Decrease slot limit', fr: 'Diminuer la limite d’emplacements' })}
             className="w-7 h-7 rounded-md bg-bg-tertiary border border-border text-text-primary text-lg leading-none hover:bg-border disabled:opacity-40 disabled:hover:bg-bg-tertiary transition-colors"
           >
             −
           </button>
           <span
             className="w-9 text-center text-sm font-semibold text-text-primary tabular-nums"
-            title="Parallel-slot limit"
+            title={t({ en: 'Parallel-slot limit', fr: 'Limite d’emplacements parallèles' })}
           >
             {settings.slotLimit}
           </span>
@@ -260,7 +278,7 @@ export function TasksModal({ isOpen, onClose, projectId }: TasksModalProps) {
             type="button"
             onClick={() => adjustSlot(1)}
             disabled={settings.slotLimit >= 10}
-            aria-label="Increase slot limit"
+            aria-label={t({ en: 'Increase slot limit', fr: 'Augmenter la limite d’emplacements' })}
             className="w-7 h-7 rounded-md bg-bg-tertiary border border-border text-text-primary text-lg leading-none hover:bg-border disabled:opacity-40 disabled:hover:bg-bg-tertiary transition-colors"
           >
             +
@@ -270,15 +288,20 @@ export function TasksModal({ isOpen, onClose, projectId }: TasksModalProps) {
 
       <div className="pt-3 border-t border-border/70">
         <div className="flex items-center justify-between gap-2">
-          <span className="min-w-0 flex-1 truncate text-sm text-text-muted" title="Active tasks / limit">
+          <span
+            className="min-w-0 flex-1 truncate text-sm text-text-muted"
+            title={t({ en: 'Active tasks / limit', fr: 'Tâches actives / limite' })}
+          >
             <span className="inline-flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
-              <strong className="text-text-primary tabular-nums">{runningCount}</strong> / {settings.slotLimit} running
+              <strong className="text-text-primary tabular-nums">{runningCount}</strong>
+              {t({ en: ' / {{limit}} running', fr: ' / {{limit}} en cours' }, { limit: settings.slotLimit })}
             </span>
             {queuedCount > 0 && (
               <span className="ml-2 inline-flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
-                <strong className="text-text-primary tabular-nums">{queuedCount}</strong> queued
+                <strong className="text-text-primary tabular-nums">{queuedCount}</strong>
+                {t({ en: ' queued', fr: ' en file' })}
               </span>
             )}
           </span>
@@ -290,10 +313,20 @@ export function TasksModal({ isOpen, onClose, projectId }: TasksModalProps) {
                 ? 'border-amber-400/40 text-amber-400 hover:bg-amber-400/10'
                 : 'border-border text-text-muted hover:bg-bg-tertiary'
             }`}
-            title={settings.queuePaused ? 'Resume auto-launch of queued tasks' : 'Pause auto-launch of queued tasks'}
+            title={
+              settings.queuePaused
+                ? t({
+                    en: 'Resume auto-launch of queued tasks',
+                    fr: 'Reprendre le lancement automatique des tâches en file',
+                  })
+                : t({
+                    en: 'Pause auto-launch of queued tasks',
+                    fr: 'Mettre en pause le lancement automatique des tâches en file',
+                  })
+            }
           >
             {settings.queuePaused ? <PlayIcon className="w-3 h-3" /> : <PauseIcon className="w-3 h-3" />}
-            {settings.queuePaused ? 'Resume' : 'Pause'}
+            {settings.queuePaused ? t({ en: 'Resume', fr: 'Reprendre' }) : t({ en: 'Pause', fr: 'Pause' })}
           </Button>
         </div>
       </div>
@@ -305,7 +338,9 @@ export function TasksModal({ isOpen, onClose, projectId }: TasksModalProps) {
       <Modal
         isOpen={isOpen}
         onClose={onClose}
-        title={<ModalCrumbTitle projectName={project?.name ?? projectId}>Tasks</ModalCrumbTitle>}
+        title={
+          <ModalCrumbTitle projectName={project?.name ?? projectId}>{t({ en: 'Tasks', fr: 'Tâches' })}</ModalCrumbTitle>
+        }
         size="full"
         showCloseButton
         closeOnBackdropClick
@@ -318,7 +353,7 @@ export function TasksModal({ isOpen, onClose, projectId }: TasksModalProps) {
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search tasks…"
+                placeholder={t({ en: 'Search tasks…', fr: 'Rechercher des tâches…' })}
                 className="pl-7 pr-2 w-full text-sm"
               />
             </div>
@@ -333,7 +368,7 @@ export function TasksModal({ isOpen, onClose, projectId }: TasksModalProps) {
               onClick={() => useTasksStore.setState({ lastError: null })}
               className="text-sm underline"
             >
-              Dismiss
+              {t({ en: 'Dismiss', fr: 'Ignorer' })}
             </button>
           </div>
         )}
@@ -361,9 +396,15 @@ export function TasksModal({ isOpen, onClose, projectId }: TasksModalProps) {
           isOpen
           onClose={() => setDeleteTarget(null)}
           onConfirm={() => void handleDelete()}
-          title="Delete task?"
-          message={`“${deleteTarget.prompt.slice(0, 60)}” will be removed from the board. Its sessions and history stay untouched.`}
-          confirmLabel="Delete task"
+          title={t({ en: 'Delete task?', fr: 'Supprimer la tâche ?' })}
+          message={t(
+            {
+              en: '“{{prompt}}” will be removed from the board. Its sessions and history stay untouched.',
+              fr: '« {{prompt}} » sera retirée du tableau. Ses sessions et son historique restent intacts.',
+            },
+            { prompt: deleteTarget.prompt.slice(0, 60) },
+          )}
+          confirmLabel={t({ en: 'Delete task', fr: 'Supprimer la tâche' })}
           confirmVariant="danger"
         />
       )}

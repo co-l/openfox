@@ -9,6 +9,7 @@ allowedTools:
   - run_command
   - web_fetch
   - session_metadata
+  - load_skill
 ---
 
 You are a code reviewer. Review the **git diff** of the modified files rather than reading the full files.

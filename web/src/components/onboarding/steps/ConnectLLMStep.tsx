@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react'
+import { useT } from '../../../hooks/useT'
 import { authFetch } from '../../../lib/api'
+import { useResource } from '../../../hooks/useResource'
+import { providersResource } from '../../../lib/resources'
 import { PlusLgIcon, TrashIcon, ChevronUpIcon, ChevronDownIcon, GripVerticalIcon } from '../../shared/icons'
 import { ProviderModal, providerFormPayload, type ProviderFormData } from '../../shared/ProviderModal'
 import { getBackendDisplayName, type ProviderInfo } from '../types'
@@ -19,6 +22,7 @@ export const ConnectLLMStep = forwardRef<ConnectLLMStepHandle, ConnectLLMStepPro
   { onNext, embedded = false },
   ref,
 ) {
+  const t = useT()
   const [existingProviders, setExistingProviders] = useState<ProviderInfo[]>([])
   const [providers, setProviders] = useState<ProviderInfo[]>([])
   const [showModal, setShowModal] = useState(false)
@@ -29,6 +33,7 @@ export const ConnectLLMStep = forwardRef<ConnectLLMStepHandle, ConnectLLMStepPro
   const [dragOverId, setDragOverId] = useState<string | null>(null)
   const [reorderError, setReorderError] = useState(false)
   const orderTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const { data: providersData } = useResource(providersResource)
 
   useEffect(() => {
     return () => {
@@ -37,52 +42,22 @@ export const ConnectLLMStep = forwardRef<ConnectLLMStepHandle, ConnectLLMStepPro
   }, [])
 
   useEffect(() => {
-    fetchExistingProviders()
-  }, [])
-
-  async function fetchExistingProviders() {
-    try {
-      const response = await authFetch('/api/providers')
-      if (response.ok) {
-        const data = (await response.json()) as {
-          providers: Array<{
-            id: string
-            name: string
-            url: string
-            backend: string
-            apiKey?: string
-            isLocal?: boolean
-            thinkingField?: string
-            sendReasoningInMessages?: boolean
-            models?: Array<{
-              id: string
-              contextWindow: number
-              supportsVision?: boolean
-              thinkingEnabled?: boolean
-              thinkingLevel?: string
-              nonThinkingEnabled?: boolean
-            }>
-          }>
-        }
-        const mapped: ProviderInfo[] = data.providers.map((p) => ({
-          id: p.id,
-          name: p.name,
-          url: p.url,
-          backend: p.backend as ProviderInfo['backend'],
-          model: null,
-          apiKey: p.apiKey,
-          isLocal: p.isLocal,
-          thinkingField: p.thinkingField,
-          sendReasoningInMessages: p.sendReasoningInMessages,
-          models: p.models,
-        }))
-        setExistingProviders(mapped)
-        setProviders(mapped)
-      }
-    } catch {
-      /* empty */
-    }
-  }
+    if (!providersData) return
+    const mapped: ProviderInfo[] = providersData.providers.map((p) => ({
+      id: p.id,
+      name: p.name,
+      url: p.url,
+      backend: p.backend as ProviderInfo['backend'],
+      model: null,
+      apiKey: p.apiKey,
+      isLocal: p.isLocal,
+      thinkingField: p.thinkingField,
+      sendReasoningInMessages: p.sendReasoningInMessages,
+      models: p.models,
+    }))
+    setExistingProviders(mapped)
+    setProviders(mapped)
+  }, [providersData])
 
   async function handleSave(formData: ProviderFormData) {
     const isTemporary = formData.id.startsWith('temp-')
@@ -201,9 +176,8 @@ export const ConnectLLMStep = forwardRef<ConnectLLMStepHandle, ConnectLLMStepPro
 
   async function restoreProviderOrder() {
     try {
-      const response = await authFetch('/api/providers')
-      if (!response.ok) return
-      const data = (await response.json()) as { providers: Array<{ id: string }> }
+      const data = await providersResource.refresh()
+      if (!data) return
       const serverIds = data.providers.map((p) => p.id)
       setProviders((current) => {
         const serverIdSet = new Set(serverIds)
@@ -264,8 +238,12 @@ export const ConnectLLMStep = forwardRef<ConnectLLMStepHandle, ConnectLLMStepPro
     <div className="max-w-xl mx-auto">
       {!embedded && (
         <>
-          <h2 className="text-2xl font-bold text-text-primary mb-2">LLM Providers</h2>
-          <p className="text-text-secondary mb-8">Manage your LLM server connections</p>
+          <h2 className="text-2xl font-bold text-text-primary mb-2">
+            {t({ en: 'LLM Providers', fr: 'Fournisseurs LLM' })}
+          </h2>
+          <p className="text-text-secondary mb-8">
+            {t({ en: 'Manage your LLM server connections', fr: 'Gérez vos connexions aux serveurs LLM' })}
+          </p>
         </>
       )}
 
@@ -297,8 +275,8 @@ export const ConnectLLMStep = forwardRef<ConnectLLMStepHandle, ConnectLLMStepPro
                     onDragStart={() => handleDragStart(provider.id)}
                     onDragEnd={handleDragEnd}
                     className="p-1.5 mr-1 text-text-muted hover:text-text-secondary cursor-grab active:cursor-grabbing transition-colors"
-                    title="Drag to reorder"
-                    aria-label="Drag to reorder"
+                    title={t({ en: 'Drag to reorder', fr: 'Glisser pour réordonner' })}
+                    aria-label={t({ en: 'Drag to reorder', fr: 'Glisser pour réordonner' })}
                   >
                     <GripVerticalIcon className="w-4 h-4" />
                   </button>
@@ -312,11 +290,15 @@ export const ConnectLLMStep = forwardRef<ConnectLLMStepHandle, ConnectLLMStepPro
                     <span
                       className={`text-xs px-1.5 py-0.5 rounded-full ${provider.isLocal ? 'text-accent-success bg-accent-success/10' : 'text-accent-warning bg-accent-warning/10'}`}
                     >
-                      {provider.isLocal ? 'local' : 'api'}
+                      {provider.isLocal ? t({ en: 'local', fr: 'local' }) : t({ en: 'api', fr: 'api' })}
                     </span>
                   </div>
                   <p className="text-text-muted text-sm mt-1 truncate">{provider.url}</p>
-                  {provider.model && <p className="text-text-secondary text-xs mt-0.5">Model: {provider.model}</p>}
+                  {provider.model && (
+                    <p className="text-text-secondary text-xs mt-0.5">
+                      {t({ en: 'Model:', fr: 'Modèle :' })} {provider.model}
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-1">
                   {confirmingDelete === provider.id ? (
@@ -326,13 +308,15 @@ export const ConnectLLMStep = forwardRef<ConnectLLMStepHandle, ConnectLLMStepPro
                         disabled={removing === provider.id}
                         className="px-2 py-1 text-xs text-red-500 hover:text-red-400 bg-red-500/10 rounded transition-colors disabled:opacity-50"
                       >
-                        {removing === provider.id ? 'Deleting...' : 'Confirm'}
+                        {removing === provider.id
+                          ? t({ en: 'Deleting...', fr: 'Suppression…' })
+                          : t({ en: 'Confirm', fr: 'Confirmer' })}
                       </button>
                       <button
                         onClick={() => setConfirmingDelete(null)}
                         className="px-2 py-1 text-xs text-text-muted hover:text-text-secondary transition-colors"
                       >
-                        Cancel
+                        {t({ en: 'Cancel', fr: 'Annuler' })}
                       </button>
                     </div>
                   ) : (
@@ -341,12 +325,12 @@ export const ConnectLLMStep = forwardRef<ConnectLLMStepHandle, ConnectLLMStepPro
                         onClick={() => openEditModal(provider)}
                         className="px-2 py-1 text-xs text-text-muted hover:text-text-secondary border border-border rounded transition-colors"
                       >
-                        Edit
+                        {t({ en: 'Edit', fr: 'Modifier' })}
                       </button>
                       <button
                         onClick={() => setConfirmingDelete(provider.id)}
                         className="p-2 text-text-muted hover:text-red-500 transition-colors"
-                        title="Remove provider"
+                        title={t({ en: 'Remove provider', fr: 'Supprimer le fournisseur' })}
                       >
                         <TrashIcon />
                       </button>
@@ -360,8 +344,8 @@ export const ConnectLLMStep = forwardRef<ConnectLLMStepHandle, ConnectLLMStepPro
                       onClick={() => moveProvider(index, -1)}
                       disabled={index === 0}
                       className="p-0.5 text-text-muted hover:text-text-secondary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                      title="Move up"
-                      aria-label="Move up"
+                      title={t({ en: 'Move up', fr: 'Monter' })}
+                      aria-label={t({ en: 'Move up', fr: 'Monter' })}
                     >
                       <ChevronUpIcon className="w-3.5 h-3.5" />
                     </button>
@@ -370,8 +354,8 @@ export const ConnectLLMStep = forwardRef<ConnectLLMStepHandle, ConnectLLMStepPro
                       onClick={() => moveProvider(index, 1)}
                       disabled={index === providers.length - 1}
                       className="p-0.5 text-text-muted hover:text-text-secondary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                      title="Move down"
-                      aria-label="Move down"
+                      title={t({ en: 'Move down', fr: 'Descendre' })}
+                      aria-label={t({ en: 'Move down', fr: 'Descendre' })}
                     >
                       <ChevronDownIcon className="w-3.5 h-3.5" />
                     </button>
@@ -382,13 +366,18 @@ export const ConnectLLMStep = forwardRef<ConnectLLMStepHandle, ConnectLLMStepPro
           </div>
         ) : (
           <div className="bg-bg-secondary rounded-lg p-8 text-center border border-border">
-            <p className="text-text-muted">No providers configured yet</p>
+            <p className="text-text-muted">
+              {t({ en: 'No providers configured yet', fr: 'Aucun fournisseur configuré pour le moment' })}
+            </p>
           </div>
         )}
 
         {embedded && reorderError && (
           <p className="text-xs text-red-500 mt-1">
-            Couldn't save the new provider order. Showing the last saved order.
+            {t({
+              en: "Couldn't save the new provider order. Showing the last saved order.",
+              fr: 'Impossible d’enregistrer le nouvel ordre des fournisseurs. Affichage du dernier ordre enregistré.',
+            })}
           </p>
         )}
 
@@ -400,7 +389,7 @@ export const ConnectLLMStep = forwardRef<ConnectLLMStepHandle, ConnectLLMStepPro
               className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-bg-secondary border border-dashed border-border rounded-lg text-text-secondary hover:text-text-primary hover:border-text-muted transition-colors"
             >
               <PlusLgIcon className="w-4 h-4" />
-              Add Provider
+              {t({ en: 'Add Provider', fr: 'Ajouter un fournisseur' })}
             </button>
 
             <button
@@ -409,7 +398,7 @@ export const ConnectLLMStep = forwardRef<ConnectLLMStepHandle, ConnectLLMStepPro
               data-testid="onboarding-continue-button"
               className="w-full mt-6 px-6 py-3 bg-accent-primary text-text-primary rounded-lg font-medium hover:bg-accent-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {embedded ? 'Done' : 'Continue'}
+              {embedded ? t({ en: 'Done', fr: 'Terminé' }) : t({ en: 'Continue', fr: 'Continuer' })}
             </button>
           </>
         )}

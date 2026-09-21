@@ -8,9 +8,15 @@ import type { PdfBlock } from '../tools/pdf-utils.js'
 import { contentHash, cacheSet } from '../utils/cache.js'
 import { decodeDataUrl } from '../utils/data-url.js'
 
-export async function loadVisionModelFromGlobalConfig(): Promise<
-  { baseUrl: string; model: string; timeout: number; backend: VisionBackend; apiKey?: string } | undefined
-> {
+export interface ResolvedVisionModel {
+  baseUrl: string
+  model: string
+  timeout: number
+  backend: VisionBackend
+  apiKey?: string
+}
+
+export async function loadVisionModelFromGlobalConfig(): Promise<ResolvedVisionModel | undefined> {
   try {
     const { loadGlobalConfig, resolveVisionFallback } = await import('../../cli/config.js')
     const runtimeConfig = getRuntimeConfig()
@@ -23,15 +29,28 @@ export async function loadVisionModelFromGlobalConfig(): Promise<
   return undefined
 }
 
+/**
+ * Resolve the vision fallback model to use, preferring the in-memory runtime
+ * config (dev/CLI) and falling back to the persisted global config. Returns
+ * undefined when no vision fallback is configured.
+ */
+export async function loadResolvedVisionModel(): Promise<ResolvedVisionModel | undefined> {
+  const runtimeConfig = getRuntimeConfig()
+  const llm = runtimeConfig.llm
+  if (llm?.visionModel) {
+    return {
+      baseUrl: llm.baseUrl,
+      model: llm.visionModel,
+      timeout: llm.timeout,
+      backend: (llm.backend === 'ollama' ? 'ollama' : 'openai') as VisionBackend,
+    }
+  }
+  return loadVisionModelFromGlobalConfig()
+}
+
 export interface ImageProcessorOptions {
   modelSupportsVision: boolean
-  visionModel?: {
-    baseUrl: string
-    model: string
-    timeout: number
-    backend: VisionBackend
-    apiKey?: string
-  }
+  visionModel?: ResolvedVisionModel
   signal?: AbortSignal
   onEvent?: (event: TurnEvent) => void
   /** Called to persist enriched event data (e.g., attachment descriptions) back to the event store */

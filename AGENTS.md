@@ -104,6 +104,8 @@ Precommit hooks take >40s, so always use a 120s timeout when committing:
 git commit -m "message"   # timeout: 120000ms
 ```
 
+Never skip the hooks unless the user explicitly asks.
+
 ### Release
 
 **When asked to publish, read [docs/RELEASE.md](RELEASE.md) and follow the playbook.** It's the single source of truth: changelog generation, version bump, publish, and the merge to `main` (all release work happens on `develop`; `main` only ever receives a successful release).
@@ -156,6 +158,16 @@ return { success: false, error: error.message, durationMs, truncated: false }
 - Use Zod for runtime validation of config/external input
 - Event sourcing pattern for session state (EventStore)
 
+### Internationalization (en + fr)
+
+All user-facing strings ship in English AND French — no fallback, a missing `fr` entry is a type error.
+
+- Web UI strings go through `useT()`/`t({ en, fr })`; the `jsx-no-literals` lint gate enforces this — never bypass it with a disable.
+- The gate flags JSX text, string literals (including `cond ? 'a' : 'b'` and `a && 'b'`) and `aria-label`/`placeholder`/`title`/`alt`. Language-neutral glyphs and acronyms (e.g. `MCP`, `99+`) go in the `allowedStrings` allowlist in `eslint.config.js`, not in `t()`.
+- If the gate misses a string shape, extend `eslint/jsx-no-literals.mjs` and add a case to `eslint/jsx-no-literals.test.ts` first.
+- Never call `useT()` after a conditional early return — keep hooks at the top of the component.
+- Server/CLI use `serverT()`/`cliT()`; LLM-facing, external tool output, and dev-facing strings stay English. Full reference: `docs/I18N.md`.
+
 ## Design Principles
 
 ### Dumb Client, Smart Server
@@ -178,6 +190,33 @@ Session state is derived from EventStore, not persisted directly:
 - EventStore replays events to reconstruct state
 - Enables time-travel debugging and audit trails
 
+### Resource Cache (Data Loading)
+
+REST/WS-driven data belongs to the data layer, never a component. Define a
+`xxxResource` in `web/src/lib/resources.ts` via the `resource()` factory
+(keyed, single-flight, freshness-aware) and consume it through
+`useResource`/`useResourceWhen` in `web/src/hooks/`. Mounting the hook loads +
+retains the cache entry; unmounting releases it — implicit loadership, no
+component `useEffect` fetch.
+
+**Do:**
+
+- Create one resource per data domain (keyed by its scope args) + a thin
+  `useXxx(scope)` hook; consumers just subscribe, whoever mounts first loads.
+- Write WS payloads and POST/PUT responses through `resource.write(data, ...)`
+  so every subscriber converges without refetching (see `mcpServersResource`,
+  `boardResource`).
+- Keep append-only, unbounded streams (e.g. dev-server logs) in a store with
+  rAF batching and a cap — replace-on-fetch resources don't fit streaming.
+
+**Don't:**
+
+- Don't fire fetches from a component `useEffect` — it makes the first consumer
+  responsible for loading. Real bug this caused: the compact sidebar showed
+  "Aucune config" until the dev-server popover mounted and fetched, because the
+  fetch lived in `DevServerFooter`. If a fetch is needed on mount, it belongs in
+  the data hook or the resource itself.
+
 ### `.openfox/` Directory Contract
 
 Every file in `.openfox/` must be **committable** and **meaningful in the project context** — it describes how OpenFox interacts with _this repository_ for any contributor.
@@ -189,6 +228,8 @@ Every file in `.openfox/` must be **committable** and **meaningful in the projec
 **Rationale:** Clean repo, no leaked personal config, reliable source of truth for CI and collaborators.
 
 **Workflows:** When asked to create or edit a workflow, load the built-in `workflows` skill via `load_skill("workflows")` — it is the authoritative reference for workflow file format, storage locations (project `.openfox/workflows/` vs global `{configDir}/workflows/`), the full JSON schema, step types, transition conditions, and template variables ([docs/WORKFLOWS.md](docs/WORKFLOWS.md) is a pointer to it). Project workflows belong in `.openfox/workflows/` and are committable.
+
+**Plugins:** When asked to create or edit a plugin, read [docs/PLUGINS.md](docs/PLUGINS.md) — the authoritative reference for the `openfox/plugin` contract (manifest, registry API, UI slots, settings, hooks, RPC, transitions, versioning, trust model). For host internals (lifecycle, install pipeline, wiring) see [docs/PLUGIN-ARCHITECTURE.md](docs/PLUGIN-ARCHITECTURE.md). The reference implementation lives in [examples/hello-plugin](examples/hello-plugin). Plugins run in-process with full trust; never load project-local plugin code from a cloned repo.
 
 ## TDD Workflow
 

@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useSessionStore } from '../../stores/session'
-import { useProjectStore } from '../../stores/project'
+import { useProjects } from '../../hooks/useProjects'
 import { ChevronUpIcon, ChevronDownIcon, XCloseIcon, PlusIcon } from '../shared/icons'
 import { AggregateStats } from './AggregateStats'
 import { SplitNewSessionModal } from './SplitNewSessionModal'
 import type { SplitLayoutMode } from '../../lib/splitPersistence'
 import type { SessionSummary } from '@shared/types.js'
+import { useT } from '../../hooks/useT'
 
 function sessionLabel(sessionId: string, title: string | undefined): string {
   return title ?? sessionId.slice(0, 8)
@@ -23,6 +24,7 @@ interface SplitControlPanelProps {
  * then most recent. Clicking a session opens it as a pane.
  */
 export function SplitControlPanel({ collapsed = false, layout, onLayoutChange }: SplitControlPanelProps) {
+  const t = useT()
   const [newSessionOpen, setNewSessionOpen] = useState(false)
   const openSessionIds = useSessionStore((state) => state.openSessionIds)
   const focusedSessionId = useSessionStore((state) => state.focusedSessionId ?? state.currentSession?.id)
@@ -33,7 +35,7 @@ export function SplitControlPanel({ collapsed = false, layout, onLayoutChange }:
   const reorderPane = useSessionStore((state) => state.reorderPane)
   const openPane = useSessionStore((state) => state.openPane)
   const isPaneOpen = useSessionStore((state) => state.isPaneOpen)
-  const projects = useProjectStore((state) => state.projects)
+  const { projects } = useProjects()
   const projectById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects])
 
   const sortedSessions = useMemo(() => {
@@ -61,10 +63,14 @@ export function SplitControlPanel({ collapsed = false, layout, onLayoutChange }:
     >
       <div className="flex items-center gap-1 px-2 h-9 border-b border-border shrink-0">
         <span className="text-xs font-semibold uppercase tracking-wide text-text-muted whitespace-nowrap">
-          Split view
+          {t({ en: 'Split view', fr: 'Vue divisée' })}
         </span>
         <span className="text-xs text-text-muted ml-auto">{openSessionIds.length}</span>
-        <div className="flex items-center rounded bg-bg-tertiary p-0.5 ml-1" role="group" aria-label="Pane layout">
+        <div
+          className="flex items-center rounded bg-bg-tertiary p-0.5 ml-1"
+          role="group"
+          aria-label={t({ en: 'Pane layout', fr: 'Disposition des panneaux' })}
+        >
           <button
             type="button"
             onClick={() => onLayoutChange('columns')}
@@ -73,11 +79,11 @@ export function SplitControlPanel({ collapsed = false, layout, onLayoutChange }:
                 ? 'bg-accent-primary/25 text-text-primary'
                 : 'text-text-muted hover:text-text-primary'
             }`}
-            title="Stack panes as columns"
-            aria-label="Columns layout"
+            title={t({ en: 'Stack panes as columns', fr: 'Empiler les panneaux en colonnes' })}
+            aria-label={t({ en: 'Columns layout', fr: 'Disposition en colonnes' })}
             aria-pressed={layout === 'columns'}
           >
-            Columns
+            {t({ en: 'Columns', fr: 'Colonnes' })}
           </button>
           <button
             type="button"
@@ -85,20 +91,27 @@ export function SplitControlPanel({ collapsed = false, layout, onLayoutChange }:
             className={`px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors ${
               layout === 'grid' ? 'bg-accent-primary/25 text-text-primary' : 'text-text-muted hover:text-text-primary'
             }`}
-            title="Arrange panes in a grid"
-            aria-label="Grid layout"
+            title={t({ en: 'Arrange panes in a grid', fr: 'Disposer les panneaux en grille' })}
+            aria-label={t({ en: 'Grid layout', fr: 'Disposition en grille' })}
             aria-pressed={layout === 'grid'}
           >
-            Grid
+            {t({ en: 'Grid', fr: 'Grille' })}
           </button>
         </div>
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="px-3 pt-3 pb-2">
-          <h2 className="text-[10px] font-semibold uppercase tracking-wide text-text-muted mb-1">Open panes</h2>
+          <h2 className="text-[10px] font-semibold uppercase tracking-wide text-text-muted mb-1">
+            {t({ en: 'Open panes', fr: 'Panneaux ouverts' })}
+          </h2>
           {openSessionIds.length === 0 ? (
-            <p className="text-xs text-text-muted">No panes open — pick a session below.</p>
+            <p className="text-xs text-text-muted">
+              {t({
+                en: 'No panes open — pick a session below.',
+                fr: 'Aucun panneau ouvert — choisissez une session ci-dessous.',
+              })}
+            </p>
           ) : (
             <ul className="space-y-0.5">
               {openSessionIds.map((sessionId, index) => {
@@ -130,8 +143,8 @@ export function SplitControlPanel({ collapsed = false, layout, onLayoutChange }:
                         }}
                         disabled={index === 0}
                         className="p-0.5 rounded hover:bg-bg-secondary text-text-muted hover:text-text-primary disabled:opacity-30 disabled:cursor-default"
-                        title="Move pane left"
-                        aria-label="Move pane left"
+                        title={t({ en: 'Move pane left', fr: 'Déplacer le panneau à gauche' })}
+                        aria-label={t({ en: 'Move pane left', fr: 'Déplacer le panneau à gauche' })}
                       >
                         <ChevronUpIcon className="w-3 h-3" />
                       </button>
@@ -143,8 +156,8 @@ export function SplitControlPanel({ collapsed = false, layout, onLayoutChange }:
                         }}
                         disabled={index === openSessionIds.length - 1}
                         className="p-0.5 rounded hover:bg-bg-secondary text-text-muted hover:text-text-primary disabled:opacity-30 disabled:cursor-default"
-                        title="Move pane right"
-                        aria-label="Move pane right"
+                        title={t({ en: 'Move pane right', fr: 'Déplacer le panneau à droite' })}
+                        aria-label={t({ en: 'Move pane right', fr: 'Déplacer le panneau à droite' })}
                       >
                         <ChevronDownIcon className="w-3 h-3" />
                       </button>
@@ -155,8 +168,8 @@ export function SplitControlPanel({ collapsed = false, layout, onLayoutChange }:
                           closePane(sessionId)
                         }}
                         className="p-0.5 rounded hover:bg-bg-secondary text-text-muted hover:text-text-primary"
-                        title="Close pane"
-                        aria-label="Close pane"
+                        title={t({ en: 'Close pane', fr: 'Fermer le panneau' })}
+                        aria-label={t({ en: 'Close pane', fr: 'Fermer le panneau' })}
                       >
                         <XCloseIcon className="w-3 h-3" />
                       </button>
@@ -174,19 +187,23 @@ export function SplitControlPanel({ collapsed = false, layout, onLayoutChange }:
 
         <div className="px-3 pt-3 pb-4 border-t border-border">
           <div className="flex items-center mb-1">
-            <h2 className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">Sessions</h2>
+            <h2 className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+              {t({ en: 'Sessions', fr: 'Sessions' })}
+            </h2>
             <button
               type="button"
               onClick={() => setNewSessionOpen(true)}
               className="ml-auto p-0.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
-              title="New session"
-              aria-label="New session"
+              title={t({ en: 'New session', fr: 'Nouvelle session' })}
+              aria-label={t({ en: 'New session', fr: 'Nouvelle session' })}
             >
               <PlusIcon className="w-3.5 h-3.5" />
             </button>
           </div>
           {sortedSessions.length === 0 ? (
-            <p className="text-xs text-text-muted">No sessions yet.</p>
+            <p className="text-xs text-text-muted">
+              {t({ en: 'No sessions yet.', fr: 'Aucune session pour l’instant.' })}
+            </p>
           ) : (
             <ul className="space-y-0.5">
               {sortedSessions.map((session) => {
@@ -197,7 +214,11 @@ export function SplitControlPanel({ collapsed = false, layout, onLayoutChange }:
                     className="flex items-center gap-1.5 rounded px-1.5 py-1 cursor-pointer hover:bg-bg-tertiary/50"
                     onClick={() => handleSessionClick(session)}
                     data-session-item={session.id}
-                    title={open ? 'Focus pane' : 'Open in split view'}
+                    title={
+                      open
+                        ? t({ en: 'Focus pane', fr: 'Se concentrer sur le panneau' })
+                        : t({ en: 'Open in split view', fr: 'Ouvrir en vue divisée' })
+                    }
                   >
                     <span
                       className={`w-1.5 h-1.5 rounded-full shrink-0 ${

@@ -1,4 +1,4 @@
-import type { SkillInfo } from '../../stores/skills'
+import type { SkillInfo } from '../../lib/skills-actions'
 import { Toggle } from '../shared/Toggle'
 import { CRUDListItemSimple } from './CRUDListItem'
 

@@ -276,6 +276,15 @@ export const RULES: MockRule[] = [
     response: 'Wrote to the approved path.',
   },
   {
+    match: /write.*(?:three|3).*outside|three.*files.*outside/i,
+    tools: [
+      { name: 'write_file', arguments: { path: '/home/test/alpha.txt', content: 'alpha' } },
+      { name: 'write_file', arguments: { path: '/home/test/beta.txt', content: 'beta' } },
+      { name: 'write_file', arguments: { path: '/home/test/gamma.txt', content: 'gamma' } },
+    ],
+    response: 'Wrote three files outside the project.',
+  },
+  {
     match: /write.*\/home\/test\/denied/i,
     tools: [{ name: 'write_file', arguments: { path: '/home/test/denied.txt', content: 'denied' } }],
     response: 'Wrote to the denied path.',
@@ -545,6 +554,30 @@ export const RULES: MockRule[] = [
     match: /typescript|features/i,
     tools: [],
     response: 'TypeScript is a strongly typed programming language that builds on JavaScript.',
+  },
+  // Default-workflow completion: the mock must be able to drive the built-in
+  // workflow to $done (finalize/summarize agent steps + sub-agent return_value).
+  {
+    match: /You must call return_value with a summary of your findings/i,
+    tools: [
+      { name: 'return_value', arguments: { content: 'No issues found in the reviewed changes.', result: 'success' } },
+    ],
+    response: 'Returning findings summary.',
+  },
+  {
+    match: /## Code Review Findings/i,
+    tools: [{ name: 'step_done', arguments: {} }],
+    response: 'All review findings resolved.',
+  },
+  {
+    match: /The step cannot complete because not all review findings/i,
+    tools: [{ name: 'step_done', arguments: {} }],
+    response: 'Review findings handled.',
+  },
+  {
+    match: /Produce a concise summary of what was accomplished/i,
+    tools: [{ name: 'step_done', arguments: {} }],
+    response: 'Summary produced.',
   },
   {
     match: /.*/,

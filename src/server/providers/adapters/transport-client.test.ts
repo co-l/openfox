@@ -368,6 +368,67 @@ describe('createTransportLLMClient', () => {
     expect(client.getReasoningEffort?.()).toBe('deep')
   })
 
+  it('sanitizes tool schemas before passing to complete() and stream()', async () => {
+    const provider: Provider = {
+      id: 'copilot',
+      name: 'GitHub Copilot',
+      url: 'https://api.githubcopilot.com',
+      backend: 'openai',
+      models: [{ id: 'gpt-4o', contextWindow: 128000, source: 'backend' }],
+      isActive: true,
+      createdAt: new Date().toISOString(),
+    }
+
+    let capturedTools: unknown[] = []
+    const mockComplete = vi.fn(async (request: { tools?: unknown[] }) => {
+      capturedTools = request.tools ?? []
+      return {
+        id: 'r1',
+        content: '',
+        toolCalls: [],
+        finishReason: 'stop' as const,
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      }
+    })
+    const client = createTransportLLMClient(provider, 'gpt-4o', { ...transport, complete: mockComplete })
+
+    await client.complete({
+      messages: [{ role: 'user', content: 'test' }],
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: 'test_tool',
+            description: 'A test tool',
+            parameters: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                opt: { type: 'string', default: null },
+              },
+            },
+          },
+        },
+      ],
+    })
+
+    expect(capturedTools).toEqual([
+      {
+        type: 'function',
+        function: {
+          name: 'test_tool',
+          description: 'A test tool',
+          parameters: {
+            type: 'object',
+            properties: {
+              opt: { type: 'string' },
+            },
+          },
+        },
+      },
+    ])
+  })
+
   it('passes an in-list client effort through unchanged', () => {
     const provider: Provider = {
       id: 'openai',

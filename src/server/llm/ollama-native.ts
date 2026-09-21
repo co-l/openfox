@@ -28,6 +28,8 @@ import './proxy.js'
 export interface OllamaClientOptions {
   /** Base URL WITHOUT the /v1 prefix (e.g. http://localhost:11434). */
   baseURL: string
+  /** Optional API key for authentication (e.g., for OpenWebUI proxy). */
+  apiKey?: string
 }
 
 interface OllamaToolCall {
@@ -93,28 +95,81 @@ export function toOllamaThink(effort: string): boolean | string {
  * while OpenAI-shaped history messages carry it as a JSON string. Parse the
  * string back into an object; messages without tool calls pass through
  * untouched.
+ *
+ * Also converts OpenAI-style content arrays to Ollama-native format:
+ * - Text parts are concatenated into the `content` string
+ * - image_url parts are extracted as base64 strings into the `images` array
  */
+/**
+ * Ollama-native tool calls carry `function.arguments` as a parsed object, while
+ * OpenAI-shaped messages carry it as a JSON string. Parse it back into an
+ * object; a message without tool calls passes through untouched.
+ */
+function parseToolCalls(toolCalls: unknown): unknown[] | undefined {
+  if (!Array.isArray(toolCalls) || toolCalls.length === 0) return undefined
+  return toolCalls.map((toolCall) => {
+    const fn = (toolCall as { function?: { arguments?: unknown } }).function
+    if (!fn || typeof fn.arguments !== 'string') return toolCall
+    try {
+      return {
+        ...toolCall,
+        function: { ...fn, arguments: JSON.parse(fn.arguments) },
+      }
+    } catch {
+      return toolCall
+    }
+  })
+}
+
 function toNativeMessage(message: ChatCompletionMessageParam): Record<string, unknown> {
   const raw = message as unknown as Record<string, unknown>
   const toolCalls = raw['tool_calls']
-  if (!Array.isArray(toolCalls) || toolCalls.length === 0) {
-    return raw
-  }
-  return {
-    ...raw,
-    tool_calls: toolCalls.map((toolCall) => {
-      const fn = (toolCall as { function?: { arguments?: unknown } }).function
-      if (!fn || typeof fn.arguments !== 'string') return toolCall
-      try {
-        return {
-          ...toolCall,
-          function: { ...fn, arguments: JSON.parse(fn.arguments) },
+
+  // Handle content: if it's an array, convert to Ollama-native format
+  const content = raw['content']
+  if (Array.isArray(content)) {
+    const textParts: string[] = []
+    const imageParts: string[] = []
+
+    for (const part of content) {
+      if (part.type === 'text') {
+        textParts.push(part.text)
+      } else if (part.type === 'image_url') {
+        const match = part.image_url.url.match(/^data:image\/[^;]+;base64,(.+)$/)
+        if (match && match[1]) {
+          imageParts.push(match[1])
         }
-      } catch {
-        return toolCall
       }
-    }),
+    }
+
+    const result: Record<string, unknown> = {
+      ...raw,
+      content: textParts.join('\n'),
+    }
+
+    if (imageParts.length > 0) {
+      result['images'] = imageParts
+    }
+
+    const parsedToolCalls = parseToolCalls(toolCalls)
+    if (parsedToolCalls !== undefined) {
+      result['tool_calls'] = parsedToolCalls
+    }
+
+    return result
   }
+
+  // No content array - handle tool calls if present
+  const parsedToolCalls = parseToolCalls(toolCalls)
+  if (parsedToolCalls !== undefined) {
+    return {
+      ...raw,
+      tool_calls: parsedToolCalls,
+    }
+  }
+
+  // No tool calls and content is not an array - pass through unchanged
+  return raw
 }
 
 /**
@@ -264,20 +319,27 @@ export function parseOllamaChatChunk(data: OllamaChatResponse): ChatCompletionCh
  */
 export class OllamaHttpClient extends ChatHttpClient {
   private baseURL: string
+  private apiKey: string | undefined
 
   constructor(options: OllamaClientOptions) {
     super()
     this.baseURL = options.baseURL
+    this.apiKey = options.apiKey
   }
 
   protected buildRequest(
     params: ChatCompletionCreateParamsNonStreaming | ChatCompletionCreateParamsStreaming,
   ): ChatRequest {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    }
+    if (this.apiKey) {
+      headers['Authorization'] = `Bearer ${this.apiKey}`
+    }
+
     return {
       url: `${this.baseURL}/api/chat`,
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(buildOllamaChatRequest(params)),
     }
   }

@@ -1,8 +1,10 @@
 import { useState, useRef, useEffect, useCallback, type Dispatch, type SetStateAction } from 'react'
+import { useT } from '../../hooks/useT'
 import { useSessionStore, useIsRunning, useQueuedMessages } from '../../stores/session'
 import { useScopedPaneState } from '../../stores/session/session-scope'
-import { useWorkflowsStore, selectAllWorkflows } from '../../stores/workflows'
-import { useCommandsStore } from '../../stores/commands'
+import { useResource } from '../../hooks/useResource'
+import { useWorkflows } from '../../hooks/useWorkflows'
+import { commandsResource, commandResource } from '../../lib/resources'
 import { authFetch } from '../../lib/api'
 import { parseSlashCommand, extractTemplateParams } from '../../lib/parse-slash-command'
 import { insertSuggestionAtCursor, focusTextareaAt, resolveSlashParamIds } from '../../lib/composer-utils'
@@ -15,21 +17,25 @@ import { AttachmentPreview } from '../shared/AttachmentPreview.js'
 import { PromptHistoryList } from '../shared/PromptHistory.js'
 import { RunningIndicator } from '../shared/RunningIndicator'
 import { AutoScrollToggle } from '../shared/AutoScrollToggle'
-import { SearchIcon, StopIcon } from '../shared/icons'
+import { PauseIcon, PlayIcon, SearchIcon, SendIcon, StopIcon, XCloseIcon } from '../shared/icons'
 import { WorkflowBar } from './WorkflowBar'
 import { processFile } from '../../lib/file-processing.js'
 import { mimeTypeToExtension, isSupportedMimeType } from '../../lib/attachment-utils.js'
 import { CHAT_TEXTAREA_ID } from '../../lib/focusChatTextarea'
 import { shouldAutofocus } from '../../lib/device'
+import { useIsTouchDevice } from '../../hooks/useIsTouchDevice'
 import { useScrolledSend } from '../../hooks/useScrolledSend'
+import { useVisualViewport } from '../../hooks/useVisualViewport'
 import { MoreMenu } from './MoreMenu'
 import { QueuedMessages } from './QueuedMessages'
 import { AgentSelector } from './AgentSelector'
 import { DangerLevelSelector } from './DangerLevelSelector'
 import { ProviderSelector } from '../settings/ProviderSelector'
 import { McpSelector } from './McpSelector'
-import { SETTINGS_KEYS } from '../../stores/settings'
-import { useSettingsStore } from '../../stores/settings'
+import { PluginSlot } from '../plugins/PluginSlot'
+import { PluginZone } from '../plugins/PluginZone'
+import { SETTINGS_KEYS } from '../../lib/resources'
+import { useSetting } from '../../hooks/useSetting'
 import {
   AtMentionAutocomplete,
   type AtMentionAutocompleteHandle,
@@ -39,6 +45,9 @@ import { SlashAutocomplete, type SlashAutocompleteHandle, type SlashSuggestion }
 
 const COMPOSER_MIN_HEIGHT = 24
 const COMPOSER_MAX_HEIGHT = 200
+// Chrome below the textarea when the composer expands full-height on mobile:
+// row padding + selector rows + form padding, with a small buffer.
+const COMPOSER_EXPANDED_RESERVE = 96
 
 interface ChatInputProps {
   input: string
@@ -99,15 +108,47 @@ export function ChatInput({
   onSendCommand,
   clearInput,
 }: ChatInputProps) {
+  const t = useT()
+  const isTouch = useIsTouchDevice()
+  const [isFocused, setIsFocused] = useState(false)
+  const viewport = useVisualViewport()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const prevLenRef = useRef(0)
+  const wasExpandedRef = useRef(false)
   const cursorPosRef = useRef(0)
   const autocompleteRef = useRef<AtMentionAutocompleteHandle>(null)
   const slashAutocompleteRef = useRef<SlashAutocompleteHandle>(null)
 
   const isRunning = useIsRunning(sessionId)
+  const perSessionMcpEnabled = useSetting(SETTINGS_KEYS.FEATURES_PER_SESSION_MCP, 'false').value === 'true'
+  const fullscreenComposer = useSetting(SETTINGS_KEYS.DISPLAY_MOBILE_FULLSCREEN_COMPOSER, 'false').value === 'true'
   const stopGeneration = useSessionStore((state) => state.stopGeneration)
+  const pauseGeneration = useSessionStore((state) => state.pauseGeneration)
+  const resumeGeneration = useSessionStore((state) => state.resumeGeneration)
+  const pauseState = useScopedPaneState(
+    sessionId,
+    (pane) => pane.session?.pauseState ?? 'none',
+    (state) => state.currentSession?.pauseState ?? 'none',
+    'none',
+  )
+  const pauseTooltip =
+    pauseState === 'pending'
+      ? t({ en: 'Cancel pausing', fr: 'Annuler la mise en pause' })
+      : pauseState === 'paused'
+        ? t({ en: 'Paused', fr: 'En pause' })
+        : pauseState === 'resuming'
+          ? t({ en: 'Resuming…', fr: 'Reprise en cours…' })
+          : t({ en: 'Pause', fr: 'Mettre en pause' })
+  const handlePauseResume = () => {
+    if (!sessionId) return
+    if (pauseState === 'none') {
+      pauseGeneration(sessionId)
+    } else {
+      // pending → cancel the pause (no interruption), paused → resume
+      resumeGeneration(sessionId)
+    }
+  }
   const cancelQueued = useSessionStore((state) => state.cancelQueued)
   const queuedMessages = useQueuedMessages(sessionId)
   const restoredInput = useScopedPaneState(
@@ -130,7 +171,6 @@ export function ChatInput({
     null,
   )
   const warmupSentRef = useRef(false)
-  const loadedWorkdirRef = useRef<string | undefined>(undefined)
   const sendingRef = useRef(false)
   const [activeSlashParams, setActiveSlashParams] = useState<string[]>([])
   // Records the scope chosen via the slash autocomplete so the launch resolves
@@ -139,14 +179,11 @@ export function ChatInput({
 
   const { sendMessage, launchWorkflow } = useScrolledSend(setAutoScroll, sessionId)
 
-  // Eagerly load workflows and commands so slash autocomplete always has data.
-  // Scoped to the session's project workdir; reloads when the active project changes.
-  useEffect(() => {
-    if (loadedWorkdirRef.current === workdir) return
-    loadedWorkdirRef.current = workdir
-    useWorkflowsStore.getState().fetchWorkflows(workdir)
-    useCommandsStore.getState().fetchCommands(workdir)
-  }, [workdir])
+  const { data: commandsData } = useResource(commandsResource, workdir)
+  const commands = commandsData
+    ? dedupById(dedupById(commandsData.defaults, commandsData.userItems), commandsData.projectItems)
+    : []
+  const { workflows } = useWorkflows(workdir)
 
   // Clear inline param hints when input is emptied (after send, escape, etc.)
   useEffect(() => {
@@ -167,6 +204,8 @@ export function ChatInput({
     (opts: { force?: boolean } = {}) => {
       const textarea = textareaRef.current
       if (!textarea) return
+      // While the mobile composer is pinned full-height, auto-resize must not fight it.
+      if (wasExpandedRef.current) return
       // An empty textarea reports its wrapped placeholder in scrollHeight, which
       // balloons the box on narrow layouts; pin it to the minimum height instead.
       if (!input) {
@@ -224,6 +263,26 @@ export function ChatInput({
   useEffect(() => {
     resizeTextarea()
   }, [input, resizeTextarea])
+
+  // Mobile full-height composer (opt-in): while the textarea is focused on a
+  // touch device and the keyboard is up, pin it to the remaining pane height so
+  // it fills the screen instead of auto-growing endlessly (scrolls internally).
+  const expandedHeight =
+    isTouch && isFocused && viewport.keyboardVisible && fullscreenComposer
+      ? Math.max(COMPOSER_MIN_HEIGHT, viewport.height - COMPOSER_EXPANDED_RESERVE)
+      : null
+
+  useEffect(() => {
+    const textarea = textareaRef.current
+    if (!textarea) return
+    if (expandedHeight !== null) {
+      wasExpandedRef.current = true
+      textarea.style.height = `${expandedHeight}px`
+    } else if (wasExpandedRef.current) {
+      wasExpandedRef.current = false
+      resizeTextarea({ force: true })
+    }
+  }, [expandedHeight, resizeTextarea])
 
   // Re-evaluate the height when the composer's column changes width (narrower or
   // wider panes change how content wraps). Forces a fresh 'auto' measurement so a
@@ -407,9 +466,6 @@ export function ChatInput({
     // Detect slash commands: /workflow-id arg1 arg2 or /command-name arg1 arg2
     const trimmed = input.trim()
     if (trimmed.startsWith('/')) {
-      const workflows = selectAllWorkflows(useWorkflowsStore.getState())
-      const allCommands = useCommandsStore.getState()
-      const commands = dedupById(dedupById(allCommands.defaults, allCommands.userItems), allCommands.projectItems)
       const slashResult = parseSlashCommand(input, workflows, commands)
       if (slashResult?.workflowId) {
         const pending = selectedSlashScopeRef.current
@@ -421,7 +477,15 @@ export function ChatInput({
         const missingRequired = (wf?.parameters ?? []).filter((p) => p.required && !(p.id in slashResult.params))
         if (missingRequired.length > 0) {
           const names = missingRequired.map((p) => p.label || p.id).join(', ')
-          setErrorMessage(`Missing required parameter${missingRequired.length > 1 ? 's' : ''}: ${names}`)
+          setErrorMessage(
+            t(
+              {
+                en: { one: 'Missing required parameter: {{names}}', other: 'Missing required parameters: {{names}}' },
+                fr: { one: 'Paramètre requis manquant : {{names}}', other: 'Paramètres requis manquants : {{names}}' },
+              },
+              { count: missingRequired.length, names },
+            ),
+          )
           sendingRef.current = false
           return
         }
@@ -432,7 +496,7 @@ export function ChatInput({
       }
       if (slashResult?.commandId) {
         // Fetch command, resolve params, send as message
-        allCommands.fetchCommand(slashResult.commandId, workdir).then((full) => {
+        commandResource.refresh(slashResult.commandId, workdir).then((full) => {
           if (full) {
             // Map positional args to named params by order of appearance in the prompt
             const paramNames = extractTemplateParams(full.prompt)
@@ -495,7 +559,7 @@ export function ChatInput({
       if (suggestion.type === 'workflow') {
         selectedSlashScopeRef.current = { id: suggestion.id, scope: suggestion.scope }
       }
-      setActiveSlashParams(resolveSlashParamIds(suggestion))
+      setActiveSlashParams(resolveSlashParamIds(suggestion, workdir))
     },
     [input, setInput],
   )
@@ -540,6 +604,86 @@ export function ChatInput({
     cursorPosRef.current = e.currentTarget.selectionStart
   }, [])
 
+  // While the composer is pinned full-screen, pressing an action button must not
+  // blur the textarea: the collapse would swallow the tap (first press only
+  // minimizes, the second one actually sends).
+  const keepComposerFocus = (e: React.MouseEvent) => {
+    if (expandedHeight !== null) e.preventDefault()
+  }
+
+  const moreMenu = ({ mobile = false }: { mobile?: boolean } = {}) => (
+    <MoreMenu
+      onSendCommand={onSendCommand}
+      onSelectWorkflow={onSelectWorkflow}
+      onSelectWorkflowWithSubGroup={onSelectWorkflowWithSubGroup}
+      onOpenCommandsManager={onOpenCommandsModal}
+      onOpenWorkflowsManager={onOpenWorkflowsModal}
+      onAttach={handleAttachClick}
+      textareaContent={input}
+      attachments={attachments.length > 0 ? attachments : undefined}
+      {...(mobile ? { onTriggerMouseDown: keepComposerFocus } : {})}
+    />
+  )
+
+  const sendButton = ({ mobile = false }: { mobile?: boolean } = {}) => (
+    <button
+      type="button"
+      onClick={handleSend}
+      disabled={!input.trim() && attachments.length === 0}
+      data-testid={mobile ? 'chat-send-button-touch' : 'chat-send-button'}
+      {...(mobile ? { 'aria-label': t({ en: 'Send', fr: 'Envoyer' }), onMouseDown: keepComposerFocus } : {})}
+      className={`rounded-l bg-accent-primary/20 text-sm text-accent-primary font-medium hover:bg-accent-primary/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors ${
+        mobile ? 'flex items-center justify-center px-4 py-2' : 'px-4 py-1.5'
+      }`}
+    >
+      {mobile ? <SendIcon className="w-4 h-4" /> : t({ en: 'Send', fr: 'Envoyer' })}
+    </button>
+  )
+
+  const pauseButton = ({ mobile = false }: { mobile?: boolean } = {}) => (
+    <button
+      type="button"
+      onClick={handlePauseResume}
+      disabled={!sessionId || pauseState === 'resuming'}
+      data-testid={mobile ? 'chat-pause-button-touch' : 'chat-pause-button'}
+      title={pauseTooltip}
+      aria-label={pauseTooltip}
+      {...(mobile ? { onMouseDown: keepComposerFocus } : {})}
+      className={`group flex items-center justify-center px-3 py-2 rounded-l bg-accent-warning/20 text-accent-warning hover:bg-accent-warning/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
+        pauseState === 'pending' ? 'animate-pause-pulse' : ''
+      }`}
+    >
+      {pauseState === 'paused' || pauseState === 'resuming' ? (
+        <PlayIcon className="w-4 h-4" />
+      ) : pauseState === 'pending' ? (
+        <>
+          <PauseIcon className="w-4 h-4 group-hover:hidden" />
+          <XCloseIcon className="hidden w-4 h-4 group-hover:block" />
+        </>
+      ) : (
+        <PauseIcon className="w-4 h-4" />
+      )}
+    </button>
+  )
+
+  const stopButton = ({ mobile = false }: { mobile?: boolean } = {}) => (
+    <button
+      type="button"
+      onClick={() => sessionId && stopGeneration(sessionId)}
+      data-testid={mobile ? 'chat-stop-button-touch' : 'chat-stop-button'}
+      title={t({ en: 'Stop', fr: 'Stopper' })}
+      aria-label={t({ en: 'Stop', fr: 'Stopper' })}
+      {...(mobile ? { onMouseDown: keepComposerFocus } : {})}
+      className={`flex items-center justify-center bg-accent-error/20 text-accent-error hover:bg-accent-error/30 transition-colors ${
+        mobile
+          ? 'px-3 py-2 rounded-r border-l border-black/10 dark:border-white/10'
+          : 'px-3 py-2 rounded-r border-l border-black/10 dark:border-white/10'
+      }`}
+    >
+      <StopIcon />
+    </button>
+  )
+
   return (
     <div className="relative">
       <div className="absolute -top-8 left-2 @md:left-4 z-10">
@@ -557,165 +701,187 @@ export function ChatInput({
           type="button"
           onClick={onOpenMessageSearch}
           className="text-sm text-text-muted hover:text-text-primary flex items-center gap-1.5 px-2 py-0.5 rounded hover:bg-bg-tertiary transition-colors"
-          aria-label="Browse history"
+          aria-label={t({ en: 'Browse history', fr: 'Historique' })}
         >
           <SearchIcon />
-          Browse history
+          {t({ en: 'Browse history', fr: 'Historique' })}
         </button>
       </div>
 
       <WorkflowBar />
 
-      <form onSubmit={handleSubmit} className="p-2 @md:p-4 bg-secondary rounded-lg">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*,text/*,.pdf,.json,.xml,.yaml,.yml,.js,.sh,.xhtml"
-          onChange={handleFileSelect}
-          className="hidden"
-          multiple
-        />
+      <PluginZone
+        id="composer"
+        context={{
+          ...(sessionId ? { sessionId } : {}),
+          ...(workdir ? { workdir } : {}),
+        }}
+      >
+        <form onSubmit={handleSubmit} className="p-2 @md:p-4 bg-secondary rounded-lg">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,text/*,.pdf,.json,.xml,.yaml,.yml,.js,.sh,.xhtml"
+            onChange={handleFileSelect}
+            className="hidden"
+            multiple
+          />
 
-        {errorMessage && (
-          <div className="mb-2 p-2 bg-red-500/10 border border-red-500/50 rounded text-red-300 text-sm">
-            {errorMessage}
-          </div>
-        )}
+          {errorMessage && (
+            <div className="mb-2 p-2 bg-red-500/10 border border-red-500/50 rounded text-red-300 text-sm">
+              {errorMessage}
+            </div>
+          )}
 
-        {attachments.length > 0 && (
-          <div className="mb-3 flex flex-wrap gap-2">
-            {attachments.map((attachment) => (
-              <AttachmentPreview key={attachment.id} attachment={attachment} onRemove={handleRemoveAttachment} />
-            ))}
-          </div>
-        )}
+          {attachments.length > 0 && (
+            <div className="mb-3 flex flex-wrap gap-2">
+              {attachments.map((attachment) => (
+                <AttachmentPreview key={attachment.id} attachment={attachment} onRemove={handleRemoveAttachment} />
+              ))}
+            </div>
+          )}
 
-        {showHistory && (
-          <PromptHistoryList
-            history={history}
-            selectedIndex={selectedIndex}
-            onSelect={(content) => {
-              setInput(content)
-              closeHistory()
-            }}
-            onEscape={closeHistory}
-            onNavigate={(direction) => {
-              if (direction === 'up') navigateUp()
-              else navigateDown()
+          {showHistory && (
+            <PromptHistoryList
+              history={history}
+              selectedIndex={selectedIndex}
+              onSelect={(content) => {
+                setInput(content)
+                closeHistory()
+              }}
+              onEscape={closeHistory}
+              onNavigate={(direction) => {
+                if (direction === 'up') navigateUp()
+                else navigateDown()
+              }}
+            />
+          )}
+
+          <QueuedMessages
+            messages={queuedMessages}
+            onCancel={(queueId) => sessionId && cancelQueued(sessionId, queueId)}
+          />
+
+          <PluginSlot
+            slot="composer.actions"
+            context={{
+              ...(sessionId ? { sessionId } : {}),
+              ...(workdir ? { workdir } : {}),
             }}
           />
-        )}
 
-        <QueuedMessages
-          messages={queuedMessages}
-          onCancel={(queueId) => sessionId && cancelQueued(sessionId, queueId)}
-        />
-
-        <div
-          className={`flex items-end gap-3 p-3 rounded transition-colors ${
-            dragOver ? 'bg-accent-primary/10' : 'bg-primary'
-          }`}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
-          <div className="relative flex-1 min-w-0">
-            <textarea
-              id={CHAT_TEXTAREA_ID}
-              ref={textareaRef}
-              value={input}
-              onChange={handleInput}
-              onKeyDown={handleKeyDown}
-              onSelect={handleSelect}
-              onKeyUp={handleKeyUp}
-              placeholder="What would you like to build?"
-              data-testid="chat-input-textarea"
-              className="w-full bg-transparent text-sm placeholder:text-text-muted resize-none overflow-y-auto focus:outline-none"
-              style={{ minHeight: `${COMPOSER_MIN_HEIGHT}px`, maxHeight: `${COMPOSER_MAX_HEIGHT}px` }}
-              spellCheck={false}
-            />
-            <AtMentionAutocomplete
-              ref={autocompleteRef}
-              text={input}
-              cursorPos={cursorPosRef.current}
-              workdir={workdir}
-              onSelect={handleSelectFile}
-            />
-            <SlashAutocomplete
-              ref={slashAutocompleteRef}
-              text={input}
-              cursorPos={cursorPosRef.current}
-              workflows={(() => selectAllWorkflows(useWorkflowsStore.getState()))()}
-              commands={(() => {
-                const s = useCommandsStore.getState()
-                return dedupById(dedupById(s.defaults, s.userItems), s.projectItems)
-              })()}
-              onSelect={handleSelectSlash}
-            />
-            {activeSlashParams.length > 0 &&
-              (() => {
-                // Count space-separated args after the last /command
-                const match = input.match(/\/(\w+)\s+(.*)$/)
-                const args = match ? match[2]!.trim().split(/\s+/) : []
-                const filledCount = args.filter(Boolean).length
-                const nextParam = activeSlashParams[filledCount]
-                if (!nextParam) return null
-                return (
-                  <span
-                    className="absolute left-3 top-[26px] text-sm text-text-muted/40 pointer-events-none select-none"
-                    aria-hidden
-                  >
-                    {nextParam}=?
-                  </span>
-                )
-              })()}
-          </div>
-          <div className="flex items-center self-center gap-1.5">
-            {isRunning && (
-              <button
-                type="button"
-                onClick={() => sessionId && stopGeneration(sessionId)}
-                data-testid="chat-stop-button"
-                className="flex items-center gap-1 px-4 py-1.5 rounded bg-accent-error/20 text-sm text-accent-error font-medium hover:bg-accent-error/30 transition-colors whitespace-nowrap"
-              >
-                <StopIcon />
-                Abort
-              </button>
-            )}
-            <div className="flex items-center">
-              <button
-                type="button"
-                onClick={handleSend}
-                disabled={!input.trim() && attachments.length === 0}
-                data-testid="chat-send-button"
-                className="px-4 py-1.5 rounded-l bg-accent-primary/20 text-sm text-accent-primary font-medium hover:bg-accent-primary/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                Send
-              </button>
-              <MoreMenu
-                onSendCommand={onSendCommand}
-                onSelectWorkflow={onSelectWorkflow}
-                onSelectWorkflowWithSubGroup={onSelectWorkflowWithSubGroup}
-                onOpenCommandsManager={onOpenCommandsModal}
-                onOpenWorkflowsManager={onOpenWorkflowsModal}
-                onAttach={handleAttachClick}
-                textareaContent={input}
-                attachments={attachments.length > 0 ? attachments : undefined}
+          <div
+            className={`flex items-end gap-3 p-3 rounded transition-colors ${
+              dragOver ? 'bg-accent-primary/10' : 'bg-primary'
+            }`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <div className="relative flex-1 min-w-0">
+              <textarea
+                id={CHAT_TEXTAREA_ID}
+                ref={textareaRef}
+                value={input}
+                onChange={handleInput}
+                onKeyDown={handleKeyDown}
+                onSelect={handleSelect}
+                onKeyUp={handleKeyUp}
+                onFocus={() => setIsFocused(true)}
+                onBlur={() => setIsFocused(false)}
+                placeholder={t({ en: 'What would you like to build?', fr: 'Que souhaitez-vous construire ?' })}
+                data-testid="chat-input-textarea"
+                className="w-full bg-transparent text-sm placeholder:text-text-muted resize-none overflow-y-auto focus:outline-none"
+                style={{
+                  minHeight: `${COMPOSER_MIN_HEIGHT}px`,
+                  maxHeight: expandedHeight !== null ? 'none' : `${COMPOSER_MAX_HEIGHT}px`,
+                }}
+                spellCheck={false}
               />
+              <AtMentionAutocomplete
+                ref={autocompleteRef}
+                text={input}
+                cursorPos={cursorPosRef.current}
+                workdir={workdir}
+                onSelect={handleSelectFile}
+              />
+              <SlashAutocomplete
+                ref={slashAutocompleteRef}
+                text={input}
+                cursorPos={cursorPosRef.current}
+                workflows={workflows}
+                commands={commands}
+                onSelect={handleSelectSlash}
+              />
+              {activeSlashParams.length > 0 &&
+                (() => {
+                  // Count space-separated args after the last /command
+                  const match = input.match(/\/(\w+)\s+(.*)$/)
+                  const args = match ? match[2]!.trim().split(/\s+/) : []
+                  const filledCount = args.filter(Boolean).length
+                  const nextParam = activeSlashParams[filledCount]
+                  if (!nextParam) return null
+                  return (
+                    <span
+                      className="absolute left-3 top-[26px] text-sm text-text-muted/40 pointer-events-none select-none"
+                      aria-hidden
+                    >
+                      {`${nextParam}=?`}
+                    </span>
+                  )
+                })()}
+            </div>
+            <div className="hidden @md:flex items-center self-center gap-1.5">
+              {isRunning && (
+                <div className="flex items-center self-center">
+                  {pauseButton()}
+                  {stopButton()}
+                </div>
+              )}
+              <div className="flex items-center">
+                {sendButton()}
+                {moreMenu()}
+              </div>
+            </div>
+            <div className="flex @md:hidden items-center self-center gap-1.5">
+              {isRunning && (
+                <div className="flex items-center">
+                  {pauseButton({ mobile: true })}
+                  {stopButton({ mobile: true })}
+                </div>
+              )}
+              <div className="flex items-center">
+                {sendButton({ mobile: true })}
+                {moreMenu({ mobile: true })}
+              </div>
             </div>
           </div>
-        </div>
-        <div className="mt-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <AgentSelector />
-            <DangerLevelSelector />
-          </div>
-          <div className="flex items-center gap-2">
-            {useSettingsStore((s) => s.settings)[SETTINGS_KEYS.FEATURES_PER_SESSION_MCP] === 'true' && <McpSelector />}
-            <ProviderSelector />
-          </div>
-        </div>
-      </form>
+          <PluginZone
+            id="composer.toolbar"
+            context={{
+              ...(sessionId ? { sessionId } : {}),
+              ...(workdir ? { workdir } : {}),
+            }}
+          >
+            <div className="mt-3 flex flex-col gap-y-1 @md:flex-row @md:flex-nowrap @md:items-center @md:gap-x-2">
+              <div className="flex items-center justify-between gap-2 @md:justify-start">
+                <AgentSelector />
+                <DangerLevelSelector />
+              </div>
+              <div className="flex items-center @md:ms-auto" data-testid="model-selector-group">
+                {perSessionMcpEnabled && (
+                  <div data-testid="mcp-selector-slot">
+                    <McpSelector />
+                  </div>
+                )}
+                <div className="ms-auto @md:ms-0 min-w-0" data-testid="provider-selector-slot">
+                  <ProviderSelector />
+                </div>
+              </div>
+            </div>
+          </PluginZone>
+        </form>
+      </PluginZone>
     </div>
   )
 }

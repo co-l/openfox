@@ -15,8 +15,12 @@ vi.mock('../../stores/session', () => ({
   useSessionStore: (selector: (state: unknown) => unknown) => selector(storeState),
 }))
 
-vi.mock('../../stores/project', () => ({
-  useProjectStore: (selector: (state: unknown) => unknown) => selector({ projects: [{ id: 'p1', name: 'acme-app' }] }),
+vi.mock('../../hooks/useProjects', () => ({
+  useProjects: () => ({
+    projects: [{ id: 'p1', name: 'acme-app' }],
+    refresh: vi.fn(),
+    loading: false,
+  }),
 }))
 
 vi.mock('../../lib/api', () => ({ authFetch: authFetchMock }))

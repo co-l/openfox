@@ -59,10 +59,6 @@ const sessionStoreState = {
 
 const sessionStoreStateRef = { current: sessionStoreState }
 
-const projectStoreState = {
-  currentProject: { id: 'project-1', name: 'Project', workdir: '/tmp/project' },
-}
-
 vi.mock('wouter', () => ({
   useLocation: () => [undefined, mockNavigate],
   Link: ({ href, children, className }: { href: string; children: ReactNode; className?: string }) => {
@@ -75,8 +71,8 @@ vi.mock('../../stores/session', () => ({
   useSessionStore: (selector: (state: typeof sessionStoreState) => unknown) => selector(sessionStoreStateRef.current),
 }))
 
-vi.mock('../../stores/project', () => ({
-  useProjectStore: (selector: (state: typeof projectStoreState) => unknown) => selector(projectStoreState),
+vi.mock('../../hooks/useCurrentProject', () => ({
+  useCurrentProject: () => ({ id: 'project-1', name: 'Project', workdir: '/tmp/project' }),
 }))
 
 vi.mock('../shared/Button', () => ({

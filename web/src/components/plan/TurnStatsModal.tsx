@@ -1,4 +1,5 @@
 import { Modal } from '../shared/SelfContainedModal'
+import { useT } from '../../hooks/useT'
 import type { TurnStats } from '../../lib/types'
 import { useAgents } from '../../hooks/useAgents'
 import { formatTime } from '../../lib/format-stats'
@@ -9,13 +10,14 @@ interface TurnStatsModalProps {
 }
 
 export function TurnStatsModal({ stats: s, onClose }: TurnStatsModalProps) {
+  const t = useT()
   const { agents } = useAgents()
   const agentInfo = agents.find((a) => a.id === s.mode)
   const modeName = agentInfo?.name ?? s.mode
   const modelLabel = s.reasoningEffort ? `${s.model}:${s.reasoningEffort}` : s.model
 
   return (
-    <Modal isOpen={true} onClose={onClose} title="Turn Stats" size="md">
+    <Modal isOpen={true} onClose={onClose} title={t({ en: 'Turn Stats', fr: 'Statistiques du tour' })} size="md">
       <div className="space-y-4">
         <div className="flex items-center gap-3">
           <p className="text-xs text-text-muted">
@@ -24,29 +26,29 @@ export function TurnStatsModal({ stats: s, onClose }: TurnStatsModalProps) {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <StatCard label="Total Time" value={formatTime(s.totalTime)} />
-          <StatCard label="Prefill" value={formatTokens(s.prefillTokens)} />
-          <StatCard label="Generated" value={formatTokens(s.generationTokens)} />
-          <StatCard label="LLM Calls" value={String(s.llmCalls?.length ?? 1)} />
+          <StatCard label={t({ en: 'Total Time', fr: 'Temps total' })} value={formatTime(s.totalTime)} />
+          <StatCard label={t({ en: 'Prefill', fr: 'Préremplissage' })} value={formatTokens(s.prefillTokens)} />
+          <StatCard label={t({ en: 'Generated', fr: 'Généré' })} value={formatTokens(s.generationTokens)} />
+          <StatCard label={t({ en: 'LLM Calls', fr: 'Appels LLM' })} value={String(s.llmCalls?.length ?? 1)} />
         </div>
 
         {s.llmCalls && s.llmCalls.length > 0 && (
           <div>
-            <h4 className="text-sm font-medium text-text-secondary mb-2">LLM Calls</h4>
+            <h4 className="text-sm font-medium text-text-secondary mb-2">{t({ en: 'LLM Calls', fr: 'Appels LLM' })}</h4>
             {s.llmCalls.map((call, i) => (
               <div key={i} className="bg-bg-tertiary/30 rounded p-3 mb-2">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs text-text-muted">Call {i + 1}</span>
                   <span className="text-xs text-text-muted">
-                    {call.ttft.toFixed(2)}s TTFT · {call.completionTime.toFixed(2)}s gen
+                    {t({ en: 'Call {{count}}', fr: 'Appel {{count}}' }, { count: i + 1 })}
+                  </span>
+                  <span className="text-xs text-text-muted">
+                    {`${call.ttft.toFixed(2)}s TTFT · ${call.completionTime.toFixed(2)}s gen`}
                   </span>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div>
-                    <span className="text-text-muted">Tokens:</span>{' '}
-                    <span className="text-text-primary">
-                      {call.promptTokens} → {call.completionTokens}
-                    </span>
+                    <span className="text-text-muted">{t({ en: 'Tokens:', fr: 'Jetons :' })}</span>{' '}
+                    <span className="text-text-primary">{`${call.promptTokens} → ${call.completionTokens}`}</span>
                   </div>
                   <div className="flex flex-wrap gap-x-2 gap-y-1">
                     {call.temperature !== undefined && <Tag label="temp" value={call.temperature.toFixed(2)} />}

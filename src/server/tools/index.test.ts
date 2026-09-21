@@ -213,7 +213,7 @@ const verifierDef: AgentDefinition = {
     name: 'Verifier',
     description: 'Verifies',
     subagent: true,
-    allowedTools: ['read_file', 'run_command', 'session_metadata', 'web_fetch'],
+    allowedTools: ['read_file', 'run_command', 'session_metadata', 'web_fetch', 'load_skill'],
   },
   prompt: 'Verify.',
 }
@@ -262,7 +262,16 @@ describe('tool registries', () => {
     const toolNames = registry.tools.map((t) => t.name)
     expect(toolNames).toContain('read_file')
     expect(toolNames).toContain('session_metadata')
+    expect(toolNames).toContain('load_skill')
     expect(toolNames).toContain('return_value')
+  })
+
+  it('permits execution of load_skill for a sub-agent that lists it', async () => {
+    const registry = getToolRegistryForAgent(verifierDef)
+    const context = { workdir: '/tmp/project', sessionId: 'session-1', sessionManager: {} as never }
+
+    const result = await registry.execute('load_skill', { skillId: 'some-skill' }, context)
+    expect(result).toMatchObject({ success: true, output: 'skill' })
   })
 
   it('createToolRegistry returns all available tools', () => {

@@ -1,12 +1,15 @@
 // @vitest-environment happy-dom
 import { cleanup, render } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { SETTINGS_KEYS, useSettingsStore } from '../../stores/settings'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { SETTINGS_KEYS, settingResource } from '../../lib/resources'
+import { clearCache } from '../../lib/resourceCache'
 import { OptionalScrollArea } from './OptionalScrollArea'
+
+vi.mock('../../lib/api', () => ({ authFetch: vi.fn() }))
 
 describe('OptionalScrollArea', () => {
   beforeEach(() => {
-    useSettingsStore.setState({ settings: {} })
+    clearCache()
   })
 
   afterEach(cleanup)
@@ -19,27 +22,21 @@ describe('OptionalScrollArea', () => {
   })
 
   it('renders a native scrollable div when the toolCalls scope is enabled', () => {
-    useSettingsStore.setState({
-      settings: { [SETTINGS_KEYS.DISPLAY_USE_NATIVE_SCROLLBARS]: 'true' },
-    })
+    settingResource.write('true', SETTINGS_KEYS.DISPLAY_USE_NATIVE_SCROLLBARS)
     const { container } = render(<OptionalScrollArea>content</OptionalScrollArea>)
 
     expect(container.querySelector('.overflow-y-auto')).not.toBeNull()
   })
 
   it('maps the horizontal flag to overflow-x-auto in native mode', () => {
-    useSettingsStore.setState({
-      settings: { [SETTINGS_KEYS.DISPLAY_USE_NATIVE_SCROLLBARS]: 'true' },
-    })
+    settingResource.write('true', SETTINGS_KEYS.DISPLAY_USE_NATIVE_SCROLLBARS)
     const { container } = render(<OptionalScrollArea horizontal>content</OptionalScrollArea>)
 
     expect(container.querySelector('.overflow-x-auto')).not.toBeNull()
   })
 
   it('passes through className and style in native mode', () => {
-    useSettingsStore.setState({
-      settings: { [SETTINGS_KEYS.DISPLAY_USE_NATIVE_SCROLLBARS]: 'true' },
-    })
+    settingResource.write('true', SETTINGS_KEYS.DISPLAY_USE_NATIVE_SCROLLBARS)
     const { container } = render(
       <OptionalScrollArea className="max-h-32" style={{ color: 'red' }}>
         content
@@ -52,9 +49,7 @@ describe('OptionalScrollArea', () => {
   })
 
   it('keeps scopes independent: codeBlocks on does not affect toolCalls', () => {
-    useSettingsStore.setState({
-      settings: { [SETTINGS_KEYS.DISPLAY_USE_NATIVE_SCROLLBARS_CODE_BLOCKS]: 'true' },
-    })
+    settingResource.write('true', SETTINGS_KEYS.DISPLAY_USE_NATIVE_SCROLLBARS_CODE_BLOCKS)
     const { container } = render(
       <div>
         <OptionalScrollArea>tool calls</OptionalScrollArea>

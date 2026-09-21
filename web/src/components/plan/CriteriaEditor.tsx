@@ -1,14 +1,16 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import type { MetadataEntry } from '@shared/types.js'
+import { useT } from '../../hooks/useT'
 import { authFetch } from '../../lib/api'
 import { shouldAutofocus } from '../../lib/device'
 import { PlusIcon, XCloseIcon, TrashIcon, InfoIcon } from '../shared/icons'
 import { Modal } from '../shared/Modal'
 import { MetadataStatusIcon, decodeHtmlEntities } from '../shared/MetadataStatusIcon'
 import { useAgents } from '../../hooks/useAgents'
-import { getAgentColor } from '../../stores/agents'
+import { getAgentColor } from '../../lib/agents-actions'
 import { useScopedPaneState } from '../../stores/session/session-scope'
-import { useWorkflowsStore } from '../../stores/workflows'
+import { useWorkflows } from '../../hooks/useWorkflows'
+import { useSessionWorkdir } from '../../hooks/useSessionWorkdir'
 
 const statusCycle: Record<string, string> = {
   pending: 'completed',
@@ -30,7 +32,7 @@ async function putCriteria(sessionId: string, entries: MetadataEntry[]) {
   })
 }
 
-function AgentBadge({ id, agents }: { id: string; agents: import('../../stores/agents').AgentInfo[] }) {
+function AgentBadge({ id, agents }: { id: string; agents: import('../../lib/agents-actions').AgentInfo[] }) {
   const color = getAgentColor(agents, id)
   const agent = agents.find((a) => a.id === id)
   return (
@@ -41,9 +43,7 @@ function AgentBadge({ id, agents }: { id: string; agents: import('../../stores/a
 }
 
 function WorkflowBadge({ id }: { id: string }) {
-  const defaults = useWorkflowsStore((s) => s.defaults)
-  const userItems = useWorkflowsStore((s) => s.userItems)
-  const workflows = useMemo(() => [...defaults, ...userItems], [defaults, userItems])
+  const { workflows } = useWorkflows(useSessionWorkdir())
   const workflow = workflows.find((w) => w.id === id)
   const color = workflow?.color ?? '#3b82f6'
   return (
@@ -54,6 +54,7 @@ function WorkflowBadge({ id }: { id: string }) {
 }
 
 export function CriteriaEditor({ entries, sessionId }: CriteriaEditorProps) {
+  const t = useT()
   const [criteria, setCriteria] = useState<MetadataEntry[]>(entries)
   const [adding, setAdding] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -197,12 +198,12 @@ export function CriteriaEditor({ entries, sessionId }: CriteriaEditorProps) {
       <div className="bg-primary">
         {criteria.length === 0 && !adding && (
           <div className="px-1.5 py-2 text-xs text-text-muted italic text-center">
-            No criteria yet.{' '}
+            {t({ en: 'No criteria yet.', fr: 'Aucun critère pour le moment.' })}{' '}
             <button
               onClick={() => setShowInfo(true)}
               className="text-accent-primary hover:underline not-italic cursor-pointer"
             >
-              Learn more
+              {t({ en: 'Learn more', fr: 'En savoir plus' })}
             </button>
           </div>
         )}
@@ -217,7 +218,10 @@ export function CriteriaEditor({ entries, sessionId }: CriteriaEditorProps) {
               <button
                 onClick={() => handleCycleStatus(entry.id)}
                 className="text-xs leading-tight flex-shrink-0 cursor-pointer hover:opacity-70 transition-opacity"
-                title={`Status: ${entry.status} (click to cycle)`}
+                title={t(
+                  { en: 'Status: {{status}} (click to cycle)', fr: 'Statut : {{status}} (cliquez pour changer)' },
+                  { status: entry.status },
+                )}
               >
                 <MetadataStatusIcon status={status} />
               </button>
@@ -235,7 +239,7 @@ export function CriteriaEditor({ entries, sessionId }: CriteriaEditorProps) {
                   <button
                     onClick={() => handleStartEdit(entry.id, entry.description)}
                     className="text-xs text-text-primary text-left hover:text-accent-primary transition-colors w-full truncate cursor-pointer"
-                    title="Click to edit"
+                    title={t({ en: 'Click to edit', fr: 'Cliquer pour modifier' })}
                   >
                     [{entry.id}] {decodeHtmlEntities(entry.description)}
                   </button>
@@ -244,7 +248,7 @@ export function CriteriaEditor({ entries, sessionId }: CriteriaEditorProps) {
               <button
                 onClick={() => handleDelete(entry.id)}
                 className="flex-shrink-0 opacity-0 group-hover:opacity-100 text-text-muted hover:text-accent-error transition-all ml-0.5 cursor-pointer flex items-center self-center"
-                title="Delete criterion"
+                title={t({ en: 'Delete criterion', fr: 'Supprimer le critère' })}
               >
                 <XCloseIcon className="w-4 h-4" />
               </button>
@@ -264,7 +268,7 @@ export function CriteriaEditor({ entries, sessionId }: CriteriaEditorProps) {
               onChange={(e) => setNewDescription(e.target.value)}
               onKeyDown={handleAddKeyDown}
               onPaste={handleAddPaste}
-              placeholder="New criterion..."
+              placeholder={t({ en: 'New criterion...', fr: 'Nouveau critère…' })}
               className="flex-1 bg-bg-tertiary text-text-primary text-xs px-1.5 py-0.5 rounded border border-border focus:outline-none focus:border-accent-primary placeholder-text-muted"
             />
           </div>
@@ -278,97 +282,125 @@ export function CriteriaEditor({ entries, sessionId }: CriteriaEditorProps) {
             <button
               onClick={handleAdd}
               className="flex items-center gap-1 text-xs text-accent-primary hover:text-accent-primary/70 transition-colors cursor-pointer"
-              title="Add criterion"
+              title={t({ en: 'Add criterion', fr: 'Ajouter un critère' })}
             >
               <PlusIcon className="w-3 h-3" />
-              Add
+              {t({ en: 'Add', fr: 'Ajouter' })}
             </button>
             <button
               onClick={handleCancelAdd}
               className="flex items-center gap-1 text-xs text-text-muted hover:text-text-primary transition-colors cursor-pointer"
-              title="Cancel"
+              title={t({ en: 'Cancel', fr: 'Annuler' })}
             >
-              Cancel
+              {t({ en: 'Cancel', fr: 'Annuler' })}
             </button>
           </>
         ) : (
           <button
             onClick={() => setAdding(true)}
             className="flex items-center gap-1 text-xs text-text-muted hover:text-accent-primary transition-colors cursor-pointer"
-            title="Add criterion"
+            title={t({ en: 'Add criterion', fr: 'Ajouter un critère' })}
           >
             <PlusIcon className="w-3 h-3" />
-            Add
+            {t({ en: 'Add', fr: 'Ajouter' })}
           </button>
         )}
         {criteria.length > 0 &&
           (clearConfirm ? (
             <div className="flex items-center gap-2 ml-auto">
-              <span className="text-xs text-accent-error">Clear all criteria?</span>
+              <span className="text-xs text-accent-error">
+                {t({ en: 'Clear all criteria?', fr: 'Effacer tous les critères ?' })}
+              </span>
               <button
                 onClick={handleClearAll}
                 className="text-xs text-accent-error hover:text-accent-error/70 transition-colors cursor-pointer"
               >
-                Yes
+                {t({ en: 'Yes', fr: 'Oui' })}
               </button>
               <button
                 onClick={() => setClearConfirm(false)}
                 className="text-xs text-text-muted hover:text-text-primary transition-colors cursor-pointer"
               >
-                No
+                {t({ en: 'No', fr: 'Non' })}
               </button>
             </div>
           ) : (
             <button
               onClick={() => setClearConfirm(true)}
               className="flex items-center gap-1 text-xs text-text-muted hover:text-accent-error transition-colors ml-auto cursor-pointer"
-              title="Clear all criteria"
+              title={t({ en: 'Clear all criteria', fr: 'Effacer tous les critères' })}
             >
               <TrashIcon className="w-3 h-3" />
-              Clear all
+              {t({ en: 'Clear all', fr: 'Tout effacer' })}
             </button>
           ))}
         <button
           onClick={() => setShowInfo(true)}
           className="flex items-center gap-1 text-xs text-text-muted hover:text-accent-primary transition-colors cursor-pointer"
-          title="About criteria"
+          title={t({ en: 'About criteria', fr: 'À propos des critères' })}
         >
           <InfoIcon className="w-3 h-3" />
         </button>
       </div>
 
       {/* Info modal */}
-      <Modal isOpen={showInfo} onClose={() => setShowInfo(false)} title="About Acceptance Criteria" size="md">
+      <Modal
+        isOpen={showInfo}
+        onClose={() => setShowInfo(false)}
+        title={t({ en: 'About Acceptance Criteria', fr: 'À propos des critères d’acceptation' })}
+        size="md"
+      >
         <div className="space-y-3 text-sm text-text-secondary">
-          <p>Each criterion defines a specific requirement that needs to be met.</p>
           <p>
-            To use this feature, start in <AgentBadge id="planner" agents={agents} /> mode and
+            {t({
+              en: 'Each criterion defines a specific requirement that needs to be met.',
+              fr: 'Chaque critère définit une exigence spécifique à satisfaire.',
+            })}
+          </p>
+          <p>
+            {t({ en: 'To use this feature, start in', fr: 'Pour utiliser cette fonctionnalité, démarrez en mode' })}{' '}
+            <AgentBadge id="planner" agents={agents} /> {t({ en: 'mode and', fr: 'et' })}{' '}
             <strong className="text-text-primary">
               {' '}
-              ask the agent to define acceptance criteria that matches your goal
+              {t({
+                en: 'ask the agent to define acceptance criteria that matches your goal',
+                fr: 'demandez à l’agent de définir des critères d’acceptation correspondant à votre objectif',
+              })}
             </strong>
-            . Then launch the <WorkflowBadge id="default" /> builtin workflow to launch the automation part.
+            . {t({ en: 'Then launch the', fr: 'Lancez ensuite le workflow intégré' })} <WorkflowBadge id="default" />{' '}
+            {t({ en: 'builtin workflow to launch the automation part.', fr: 'pour lancer la partie automatisée.' })}
           </p>
-          <p>This workflow will automatically:</p>
+          <p>{t({ en: 'This workflow will automatically:', fr: 'Ce workflow va automatiquement :' })}</p>
           <ol className="list-decimal list-inside space-y-1">
             <li>
-              Launch the <AgentBadge id="builder" agents={agents} /> agent, that will be forced to continue until it
-              marks all criteria as "completed"
+              {t({ en: 'Launch the', fr: 'Lancer l’agent' })} <AgentBadge id="builder" agents={agents} />{' '}
+              {t({
+                en: 'agent, that will be forced to continue until it marks all criteria as "completed"',
+                fr: 'qui sera contraint de continuer jusqu’à ce que tous les critères soient marqués « terminés »',
+              })}
             </li>
             <li>
-              Then launch the <AgentBadge id="verifier" agents={agents} /> subagent, that will verify each criterion. If
-              every criterion is fulfilled, then it goes to the next step, otherwise, it gives feedback to the main
-              agent until 100% of the criteria are met.
+              {t({ en: 'Then launch the', fr: 'Lancer ensuite le sous-agent' })}{' '}
+              <AgentBadge id="verifier" agents={agents} />{' '}
+              {t({
+                en: 'subagent, that will verify each criterion. If every criterion is fulfilled, then it goes to the next step, otherwise, it gives feedback to the main agent until 100% of the criteria are met.',
+                fr: 'qui vérifiera chaque critère. Si tous les critères sont satisfaits, il passe à l’étape suivante ; sinon, il fait des retours à l’agent principal jusqu’à ce que 100 % des critères soient atteints.',
+              })}
             </li>
             <li>
-              Launch a <AgentBadge id="code_reviewer" agents={agents} /> subagent, that will analyze the code to provide
-              actionable feedback to the main agent.
+              {t({ en: 'Launch a', fr: 'Lancer un sous-agent' })} <AgentBadge id="code_reviewer" agents={agents} />{' '}
+              {t({
+                en: 'subagent, that will analyze the code to provide actionable feedback to the main agent.',
+                fr: 'qui analysera le code pour fournir des retours exploitables à l’agent principal.',
+              })}
             </li>
           </ol>
           <div className="bg-bg-tertiary rounded p-3 space-y-1.5">
             <p>
-              This lets smaller models follow complex plans to completion and improves the chances that nothing from
-              your plan is missed.
+              {t({
+                en: 'This lets smaller models follow complex plans to completion and improves the chances that nothing from your plan is missed.',
+                fr: 'Cela permet aux modèles plus petits de mener des plans complexes à terme et améliore les chances qu’aucun élément de votre plan ne soit oublié.',
+              })}
             </p>
           </div>
         </div>

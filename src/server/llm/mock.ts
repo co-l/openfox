@@ -412,6 +412,15 @@ function getConversationAwareToolResponse(request: LLMCompletionRequest): MockMa
   const prompt = getLastUserPrompt(request)
   const conversationText = getConversationText(request)
 
+  // Step-done reminder: the transition condition is already satisfied, nothing
+  // is left but to signal completion
+  if (/If you have finished the task, call step_done\(\)/i.test(prompt)) {
+    return {
+      tools: [{ name: 'step_done', arguments: {} }],
+      response: 'Finished the step.',
+    }
+  }
+
   // Builder workflow: implement criteria and call step_done
   if (
     /Implement the task and make sure you fulfil the \d+ criteria\./i.test(prompt) ||

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { useProjectStore } from '../../stores/project'
+import { useCurrentProject } from '../../hooks/useCurrentProject'
 import { useSessionStore, useIsRunning } from '../../stores/session'
 
 const SPINNER_CHARS = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧']
@@ -9,7 +9,7 @@ const SPINNER_CHARS = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧']
  * This is a presentational component that renders nothing visible.
  */
 export function PageTitle() {
-  const project = useProjectStore((state) => state.currentProject)
+  const project = useCurrentProject()
   const session = useSessionStore((state) => state.currentSession)
   const isRunning = useIsRunning()
   const isDev = import.meta.env.DEV

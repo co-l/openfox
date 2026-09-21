@@ -7,6 +7,7 @@ import { EffortChangeGateProvider } from '../plan/EffortChangeGate'
 interface MockStore {
   (selector?: (state: any) => any): any
   setState: (partial: Record<string, any>) => void
+  getState: () => Record<string, any>
 }
 
 function mockStore(initial: Record<string, any>): MockStore {
@@ -20,6 +21,7 @@ function mockStore(initial: Record<string, any>): MockStore {
         ? { ...state, ...(partial as (s: Record<string, any>) => Record<string, any>)(state) }
         : { ...state, ...partial }
   }
+  fn.getState = () => state
   return fn
 }
 const mockNavigate = vi.fn()
@@ -49,9 +51,6 @@ vi.mock('../../stores/session', () => ({
 
 vi.mock('../../stores/config', () => ({
   useConfigStore: mockStore({
-    providers: [],
-    activeProviderId: null,
-    defaultModelSelection: null,
     activating: false,
     activateProvider: vi.fn(),
     refreshModel: vi.fn(),
@@ -67,6 +66,7 @@ vi.mock('../../stores/config', () => ({
       ollama: 'Ollama',
       llamacpp: 'llama.cpp',
       lmstudio: 'LM Studio',
+      unsloth: 'Unsloth Studio',
       openai: 'OpenAI',
       anthropic: 'Anthropic',
       'opencode-go': 'OpenCode Go',
@@ -74,6 +74,29 @@ vi.mock('../../stores/config', () => ({
     }
     return map[backend] ?? backend
   },
+}))
+
+const providerHookState = {
+  providers: [] as any[],
+  activeProviderId: null as string | null,
+  defaultModelSelection: null as string | null,
+}
+
+vi.mock('../../hooks/useProviders', () => ({
+  useProviders: () => ({
+    providers: providerHookState.providers,
+    activeProviderId: providerHookState.activeProviderId,
+    refresh: vi.fn(),
+    loading: false,
+  }),
+}))
+
+vi.mock('../../hooks/useConfig', () => ({
+  useConfig: () => ({
+    config: { defaultModelSelection: providerHookState.defaultModelSelection },
+    refresh: vi.fn(),
+    loading: false,
+  }),
 }))
 
 vi.mock('../../lib/api', () => ({
@@ -92,15 +115,30 @@ vi.mock('../shared/icons', () => ({
   EditSmallIcon: ({ className }: any) => `<svg class="${className}">e</svg>`,
   StarIcon: ({ className }: any) => `<svg class="${className}">☆</svg>`,
   StarFilledIcon: ({ className }: any) => `<svg class="${className}">★</svg>`,
+  HeartIcon: ({ className }: any) => `<svg class="${className}">♡</svg>`,
+  HeartFilledIcon: ({ className }: any) => `<svg class="${className}">♥</svg>`,
   SearchIcon: ({ className }: any) => `<svg class="${className}">🔍</svg>`,
   PinIcon: ({ className }: any) => `<svg class="${className}">📍</svg>`,
   PlusLgIcon: ({ className }: any) => `<svg class="${className}">+</svg>`,
 }))
 
-vi.mock('../shared/ProviderModal', () => ({
-  ProviderModal: () => '<div>ProviderModal</div>',
-  providerFormPayload: (data: any) => data,
-}))
+vi.mock('../shared/ProviderModal', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const React = require('react')
+  return {
+    ProviderModal: ({ editProvider }: any) =>
+      React.createElement(
+        'div',
+        {
+          'data-testid': 'provider-modal',
+          'data-provider-id': editProvider?.id ?? '',
+          'data-provider-name': editProvider?.name ?? '',
+        },
+        'ProviderModal',
+      ),
+    providerFormPayload: (data: any) => data,
+  }
+})
 
 vi.mock('../onboarding/steps/ConnectLLMStep', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -127,7 +165,7 @@ const { mockAgentsData } = vi.hoisted(() => ({
   },
 }))
 
-vi.mock('../../stores/agents', () => ({
+vi.mock('../../lib/agents-actions', () => ({
   getAgentColor: () => '#a855f7',
 }))
 
@@ -151,11 +189,37 @@ vi.mock('../../hooks/useKeybindings', () => ({
   useChordBinding: vi.fn(),
 }))
 
+const { mockSettings, mockSetSetting } = vi.hoisted(() => ({
+  mockSettings: {} as Record<string, string>,
+  mockSetSetting: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock('../../hooks/useSetting', () => ({
+  useSetting: (key: string, fallback = '') => ({ value: mockSettings[key] ?? fallback, loading: false }),
+}))
+
+vi.mock('../../lib/resources', async (importOriginal) => ({
+  ...(await importOriginal()),
+  setSetting: mockSetSetting,
+}))
+
 import { ProviderSelector } from './ProviderSelector'
+
+const { SETTINGS_KEYS } = await import('../../lib/resources')
+
+async function setSettingsState(partial: Record<string, any>) {
+  // Replace, not merge — mirror the store's setState({ settings }) semantics so
+  // a setting from a previous test can never leak into the next one.
+  for (const key of Object.keys(mockSettings)) delete mockSettings[key]
+  Object.assign(mockSettings, partial.settings ?? {})
+}
 
 async function setConfigState(partial: Record<string, any>) {
   const { useConfigStore } = await import('../../stores/config')
   ;(useConfigStore as unknown as MockStore).setState(partial)
+  if ('providers' in partial) providerHookState.providers = partial.providers
+  if ('activeProviderId' in partial) providerHookState.activeProviderId = partial.activeProviderId
+  if ('defaultModelSelection' in partial) providerHookState.defaultModelSelection = partial.defaultModelSelection
 }
 
 async function setSessionState(partial: Record<string, any>) {
@@ -192,6 +256,10 @@ describe('ProviderSelector', () => {
     await setSessionState({
       currentSession: null,
       setSessionProvider: vi.fn(),
+    })
+    await setSettingsState({
+      settings: {},
+      loading: {},
     })
   })
 
@@ -1039,6 +1107,48 @@ describe('ProviderSelector search mode (AC 0-5)', () => {
     const { useConfigStore } = await import('../../stores/config')
     const state = (useConfigStore as unknown as MockStore)((s: any) => s)
     expect(state.fetchConfig).toHaveBeenCalled()
+  })
+
+  it('[AUTOMATED] provider header shows an edit button that opens the provider modal for that provider', async () => {
+    const user = userEvent.setup()
+    await setConfigState({
+      providers: [
+        {
+          id: 'provider-1',
+          name: 'OpenAI',
+          url: 'https://api.openai.com/v1',
+          backend: 'openai',
+          isLocal: false,
+          models: [{ id: 'gpt-4', name: 'GPT-4', contextWindow: 128000, selected: true }],
+          isActive: true,
+        },
+        {
+          id: 'provider-2',
+          name: 'Anthropic',
+          url: 'https://api.anthropic.com',
+          backend: 'anthropic',
+          isLocal: false,
+          models: [{ id: 'claude-3-opus', name: 'Claude 3 Opus', contextWindow: 200000, selected: true }],
+          isActive: false,
+        },
+      ],
+      activeProviderId: 'provider-1',
+      defaultModelSelection: 'provider-1/gpt-4',
+    })
+    renderProviderSelector()
+
+    await user.click(screen.getByRole('button'))
+
+    const editButtons = screen.getAllByRole('button', { name: /Edit provider/i })
+    expect(editButtons).toHaveLength(2)
+
+    // Click the edit button for the Anthropic provider
+    await user.click(screen.getByRole('button', { name: /Edit provider Anthropic/ }))
+
+    const modal = screen.getByTestId('provider-modal')
+    expect(modal).toBeTruthy()
+    expect(modal.getAttribute('data-provider-id')).toBe('provider-2')
+    expect(modal.getAttribute('data-provider-name')).toBe('Anthropic')
   })
 
   it('[AUTOMATED] highlights the effective override model as active, not the session preference', async () => {
@@ -2617,5 +2727,212 @@ describe('ProviderSelector search mode (AC 0-5)', () => {
 
     // The pick was rejected, so the model default must stay untouched.
     expect(mockUpdateModelSettings).not.toHaveBeenCalled()
+  })
+
+  it('renders with full_height height classes when configured in display settings', async () => {
+    const user = userEvent.setup()
+    await setSettingsState({
+      settings: {
+        'display.modelSelectorHeight': 'full_height',
+      },
+    })
+    await setConfigState({
+      providers: [
+        {
+          id: 'provider-1',
+          name: 'OpenAI',
+          url: 'https://api.openai.com/v1',
+          backend: 'openai',
+          isLocal: false,
+          models: [{ id: 'gpt-4', name: 'GPT-4', contextWindow: 128000, selected: true }],
+          isActive: true,
+        },
+      ],
+      activeProviderId: 'provider-1',
+      defaultModelSelection: 'provider-1/gpt-4',
+    })
+    renderProviderSelector()
+
+    await user.click(screen.getByRole('button'))
+
+    const dropdown = screen.getByPlaceholderText('Search models...').closest('div[class*="absolute bottom-full"]')
+    expect(dropdown?.className).toContain('h-[calc(100vh-6.5rem)]')
+  })
+
+  it('collapses provider model lists on open when collapseProvidersByDefault is true', async () => {
+    const user = userEvent.setup()
+    await setSettingsState({
+      settings: {
+        'display.collapseProvidersByDefault': 'true',
+      },
+    })
+    await setConfigState({
+      providers: [
+        {
+          id: 'provider-1',
+          name: 'OpenAI Provider',
+          url: 'https://api.openai.com/v1',
+          backend: 'openai',
+          isLocal: false,
+          models: [{ id: 'gpt-4', name: 'GPT-4', contextWindow: 128000, selected: true }],
+          isActive: true,
+        },
+      ],
+      activeProviderId: 'provider-1',
+      defaultModelSelection: 'provider-1/gpt-4',
+    })
+    const { rerender } = render(
+      <EffortChangeGateProvider>
+        <ProviderSelector />
+      </EffortChangeGateProvider>,
+    )
+
+    await user.click(screen.getByRole('button'))
+
+    // Provider header is visible, but model list is collapsed
+    expect(screen.getByText('OpenAI Provider')).toBeTruthy()
+    expect(screen.queryByText('GPT-4')).toBeNull()
+
+    // Clicking provider expands models
+    await user.click(screen.getByTitle('Show models'))
+    expect(screen.getByText('GPT-4')).toBeTruthy()
+
+    // When provider list in store updates (e.g. models reloaded), expanded state persists
+    await setConfigState({
+      providers: [
+        {
+          id: 'provider-1',
+          name: 'OpenAI Provider',
+          url: 'https://api.openai.com/v1',
+          backend: 'openai',
+          isLocal: false,
+          models: [
+            { id: 'gpt-4', name: 'GPT-4', contextWindow: 128000, selected: true },
+            { id: 'gpt-4o', name: 'GPT-4o', contextWindow: 128000, selected: true },
+          ],
+          isActive: true,
+        },
+      ],
+    })
+    rerender(
+      <EffortChangeGateProvider>
+        <ProviderSelector />
+      </EffortChangeGateProvider>,
+    )
+
+    expect(screen.getByText('GPT-4')).toBeTruthy()
+    expect(screen.getByText('GPT-4o')).toBeTruthy()
+  })
+
+  it('shows favorites section at the top and toggles favorite heart', async () => {
+    const user = userEvent.setup()
+    await setSettingsState({
+      settings: {
+        'display.modelFavorites': JSON.stringify(['provider-1/gpt-4']),
+      },
+    })
+    await setConfigState({
+      providers: [
+        {
+          id: 'provider-1',
+          name: 'OpenAI Provider',
+          url: 'https://api.openai.com/v1',
+          backend: 'openai',
+          isLocal: false,
+          models: [{ id: 'gpt-4', name: 'GPT-4', contextWindow: 128000, selected: true }],
+          isActive: true,
+        },
+      ],
+      activeProviderId: 'provider-1',
+      defaultModelSelection: 'provider-1/gpt-4',
+    })
+    renderProviderSelector()
+
+    await user.click(screen.getByRole('button'))
+
+    // Favorites section appears at the top
+    const favoritesHeader = screen.getByText('Favorites')
+    expect(favoritesHeader).toBeTruthy()
+    const providerHeader = screen.getByText('OpenAI Provider')
+    expect(favoritesHeader.compareDocumentPosition(providerHeader) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    // Favorite model is visible and heart is filled
+    const removeButtons = screen.getAllByTitle('Remove from favorites')
+    expect(removeButtons.length).toBeGreaterThanOrEqual(1)
+
+    // Toggle off favorite (click the first one — in the Favorites section)
+    await user.click(removeButtons[0]!)
+    expect(mockSetSetting).toHaveBeenCalledWith(SETTINGS_KEYS.DISPLAY_MODEL_FAVORITES, '[]')
+  })
+
+  it('hides favorites that no longer exist after provider/model removed', async () => {
+    const user = userEvent.setup()
+    await setSettingsState({
+      settings: {
+        'display.modelFavorites': JSON.stringify(['provider-1/gpt-4', 'provider-2/missing']),
+      },
+    })
+    await setConfigState({
+      providers: [
+        {
+          id: 'provider-1',
+          name: 'OpenAI Provider',
+          url: 'https://api.openai.com/v1',
+          backend: 'openai',
+          isLocal: false,
+          models: [{ id: 'gpt-4', name: 'GPT-4', contextWindow: 128000, selected: true }],
+          isActive: true,
+        },
+      ],
+      activeProviderId: 'provider-1',
+      defaultModelSelection: 'provider-1/gpt-4',
+    })
+    renderProviderSelector()
+
+    await user.click(screen.getByRole('button'))
+
+    // Only the valid favorite is shown; the missing one is filtered out
+    expect(screen.getByText('Favorites')).toBeTruthy()
+    const removeButtons = screen.getAllByTitle('Remove from favorites')
+    expect(removeButtons.length).toBe(2)
+  })
+
+  it('does not display backend subtitle for plugin providers (authAdapter / transportAdapter)', async () => {
+    const user = userEvent.setup()
+    await setConfigState({
+      providers: [
+        {
+          id: 'copilot-plugin',
+          name: 'GitHub Copilot',
+          url: 'https://api.githubcopilot.com',
+          backend: 'openai',
+          authAdapter: 'github-copilot-auth',
+          transportAdapter: 'github-copilot-transport',
+          isLocal: false,
+          models: [{ id: 'copilot-gpt-4', name: 'Copilot GPT-4', contextWindow: 128000, selected: true }],
+          isActive: false,
+        },
+        {
+          id: 'standard-openai',
+          name: 'Direct OpenAI',
+          url: 'https://api.openai.com/v1',
+          backend: 'openai',
+          isLocal: false,
+          models: [{ id: 'gpt-4o', name: 'GPT-4o', contextWindow: 128000, selected: true }],
+          isActive: false,
+        },
+      ],
+      activeProviderId: 'standard-openai',
+    })
+    renderProviderSelector()
+
+    await user.click(screen.getByRole('button'))
+
+    expect(screen.getByText('GitHub Copilot')).toBeTruthy()
+    expect(screen.getByText('Direct OpenAI')).toBeTruthy()
+
+    // OpenAI backend subtitle should be displayed for standard-openai but not for copilot-plugin
+    const openaiSubtitles = screen.getAllByText('OpenAI')
+    expect(openaiSubtitles.length).toBe(1)
   })
 })

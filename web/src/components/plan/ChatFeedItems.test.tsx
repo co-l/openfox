@@ -5,7 +5,8 @@ import { flushSync } from 'react-dom'
 import { act } from 'react'
 import { ChatFeedItems } from './ChatFeedItems'
 import { FEED_REVEAL_EVENT } from './feed-window'
-import { SETTINGS_KEYS, useSettingsStore } from '../../stores/settings'
+import { SETTINGS_KEYS, settingResource } from '../../lib/resources'
+import { clearCache } from '../../lib/resourceCache'
 import type { DisplayItem } from './groupMessages'
 
 class MockIntersectionObserver {
@@ -98,9 +99,11 @@ describe('ChatFeedItems stable keys', () => {
   })
 })
 
+vi.mock('../../lib/api', () => ({ authFetch: vi.fn() }))
+
 describe('ChatFeedItems paginated-history virtualization', () => {
   beforeEach(() => {
-    useSettingsStore.setState({ settings: {} })
+    clearCache()
   })
 
   it('preserves the full feed when virtualization is disabled', () => {
@@ -139,7 +142,7 @@ describe('ChatFeedItems paginated-history virtualization', () => {
 
 describe('ChatFeedItems containment styling', () => {
   it('applies no content-visibility containment to mounted items when virtualization is off', () => {
-    useSettingsStore.setState({ settings: {} })
+    clearCache()
     const items = [msg('a', 'user', 'Alpha'), msg('b', 'assistant', 'Beta')]
 
     const container = document.createElement('div')
@@ -156,8 +159,29 @@ describe('ChatFeedItems containment styling', () => {
     }
   })
 
+  it('keeps paginated live messages at natural height when experimental virtualization is off', () => {
+    clearCache()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const items = Array.from({ length: 8 }, (_, i) => msg(`m${i}`, 'assistant', `Response ${i}`))
+
+    flushSync(() => root.render(<ChatFeedItems displayItems={items} paginatedHistory />))
+
+    expect(container.querySelectorAll('[data-placeholder]')).toHaveLength(4)
+    const wrappers = container.querySelectorAll<HTMLElement>('[data-item-index]:not([data-placeholder])')
+    expect(wrappers).toHaveLength(4)
+    for (const wrapper of wrappers) {
+      expect(wrapper.style.getPropertyValue('content-visibility')).toBe('')
+      expect(wrapper.style.getPropertyValue('contain-intrinsic-size')).toBe('')
+    }
+    flushSync(() => root.unmount())
+    container.remove()
+  })
+
   it('applies content-visibility containment to mounted items when virtualization is on', () => {
-    useSettingsStore.setState({ settings: { [SETTINGS_KEYS.DISPLAY_FEED_VIRTUALIZATION]: 'true' } })
+    clearCache()
+    settingResource.write('true', SETTINGS_KEYS.DISPLAY_FEED_VIRTUALIZATION)
     const items = Array.from({ length: 34 }, (_, i) => msg(`m${i}`, 'user', `Content ${i}`))
 
     const container = document.createElement('div')
@@ -177,7 +201,8 @@ describe('ChatFeedItems containment styling', () => {
 
 describe('ChatFeedItems progressive rendering', () => {
   beforeEach(() => {
-    useSettingsStore.setState({ settings: { [SETTINGS_KEYS.DISPLAY_FEED_VIRTUALIZATION]: 'true' } })
+    clearCache()
+    settingResource.write('true', SETTINGS_KEYS.DISPLAY_FEED_VIRTUALIZATION)
     MockIntersectionObserver.instances = []
     vi.stubGlobal('IntersectionObserver', MockIntersectionObserver)
   })

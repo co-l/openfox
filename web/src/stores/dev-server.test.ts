@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useDevServerStore } from './dev-server'
-import type { DevServerStatus } from '@shared/dev-server.js'
+import { clearCache, snapshot } from '../lib/resourceCache'
+import { devServerStatusResource, devServerConfigResource } from '../lib/resources'
+import type { DevServerConfig, DevServerStatus } from '@shared/dev-server.js'
 
 vi.mock('../lib/api', () => ({
   authFetch: vi.fn(),
@@ -12,11 +14,18 @@ const { authFetch } = vi.mocked(await import('../lib/api'))
 const WORKDIR_A = '/projects/a'
 const WORKDIR_B = '/projects/b'
 
+const CONFIG: DevServerConfig = {
+  command: 'npm run dev',
+  url: 'http://localhost:3000',
+  hotReload: false,
+  disableInspect: false,
+}
+
 const STATUS_RUNNING: DevServerStatus = {
   state: 'running',
   url: 'http://localhost:3000',
   hotReload: false,
-  config: { command: 'npm run dev', url: 'http://localhost:3000', hotReload: false, disableInspect: false },
+  config: CONFIG,
   errorMessage: undefined,
   inspectProxyPort: 9333,
 }
@@ -30,46 +39,17 @@ const STATUS_STOPPED: DevServerStatus = {
   inspectProxyPort: null,
 }
 
-const entryOf = (workdir: string) => useDevServerStore.getState().byWorkdir[workdir]
+const logsOf = (workdir: string) => useDevServerStore.getState().logsByWorkdir[workdir] ?? []
 
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
 
 beforeEach(() => {
-  useDevServerStore.setState({ byWorkdir: {} })
+  useDevServerStore.setState({ logsByWorkdir: {} })
+  clearCache()
   vi.mocked(authFetch).mockReset()
 })
 
-describe('useDevServerStore per-workdir isolation', () => {
-  it('keeps status and logs independent per workdir', async () => {
-    vi.mocked(authFetch).mockImplementation(async (url: string) => {
-      const running = url.startsWith('/api/dev-server/start?workdir=' + encodeURIComponent(WORKDIR_A))
-      return {
-        ok: true,
-        json: async () => (running ? STATUS_RUNNING : STATUS_STOPPED),
-      }
-    })
-
-    await useDevServerStore.getState().start(WORKDIR_A)
-
-    expect(entryOf(WORKDIR_A)?.status).toEqual(STATUS_RUNNING)
-    expect(entryOf(WORKDIR_B)?.status).toBeUndefined()
-  })
-
-  it('routes devServer.state messages to the matching workdir only', () => {
-    useDevServerStore.getState().handleMessage({
-      type: 'devServer.state',
-      payload: { workdir: WORKDIR_A, state: 'running', errorMessage: undefined },
-    })
-    useDevServerStore.getState().handleMessage({
-      type: 'devServer.state',
-      payload: { workdir: WORKDIR_B, state: 'warning', errorMessage: 'boom' },
-    })
-
-    expect(entryOf(WORKDIR_A)?.status?.state).toBe('running')
-    expect(entryOf(WORKDIR_B)?.status?.state).toBe('warning')
-    expect(entryOf(WORKDIR_B)?.status?.errorMessage).toBe('boom')
-  })
-
+describe('useDevServerStore logs + write-through', () => {
   it('routes devServer.output chunks to the matching workdir logs only', async () => {
     useDevServerStore.getState().handleMessage({
       type: 'devServer.output',
@@ -81,8 +61,8 @@ describe('useDevServerStore per-workdir isolation', () => {
     })
     await nextFrame()
 
-    expect(entryOf(WORKDIR_A)?.logs).toEqual([{ stream: 'stdout', content: 'hello A' }])
-    expect(entryOf(WORKDIR_B)?.logs).toEqual([{ stream: 'stderr', content: 'hello B' }])
+    expect(logsOf(WORKDIR_A)).toEqual([{ stream: 'stdout', content: 'hello A' }])
+    expect(logsOf(WORKDIR_B)).toEqual([{ stream: 'stderr', content: 'hello B' }])
   })
 
   it('caps per-workdir logs to a bounded buffer so memory stays finite', async () => {
@@ -94,32 +74,108 @@ describe('useDevServerStore per-workdir isolation', () => {
     }
     await nextFrame()
 
-    const logs = entryOf(WORKDIR_A)?.logs ?? []
+    const logs = logsOf(WORKDIR_A)
     expect(logs).toHaveLength(2000)
     expect(logs[0]?.content).toBe('line-500')
     expect(logs.at(-1)?.content).toBe('line-2499')
   })
 
-  it('saveConfig persists config for the targeted workdir only', async () => {
-    vi.mocked(authFetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({ config: { command: 'npm run dev', url: 'http://localhost:3000' } }),
-    } as Response)
+  it('writes devServer.state through to the status resource, preserving prior fields', () => {
+    devServerStatusResource.write(STATUS_RUNNING, WORKDIR_A)
 
-    await useDevServerStore.getState().saveConfig(WORKDIR_A, {
-      command: 'npm run dev',
-      url: 'http://localhost:3000',
-      hotReload: false,
-      disableInspect: false,
+    useDevServerStore.getState().handleMessage({
+      type: 'devServer.state',
+      payload: { workdir: WORKDIR_A, state: 'warning', errorMessage: 'boom' },
     })
 
-    expect(entryOf(WORKDIR_A)?.config?.command).toBe('npm run dev')
-    expect(entryOf(WORKDIR_B)).toBeUndefined()
+    const status = snapshot<DevServerStatus>(devServerStatusResource.keyOf(WORKDIR_A)).data
+    expect(status?.state).toBe('warning')
+    expect(status?.errorMessage).toBe('boom')
+    expect(status?.url).toBe('http://localhost:3000')
+    expect(status?.hotReload).toBe(false)
+    expect(status?.config).toEqual(CONFIG)
+  })
+
+  it('start writes status through and clears logs for that workdir', async () => {
+    useDevServerStore.getState().handleMessage({
+      type: 'devServer.output',
+      payload: { workdir: WORKDIR_A, stream: 'stdout', content: 'old' },
+    })
+    await nextFrame()
+
+    vi.mocked(authFetch).mockImplementation(async (url: string) => {
+      const running = url.startsWith('/api/dev-server/start?workdir=' + encodeURIComponent(WORKDIR_A))
+      return { ok: true, json: async () => (running ? STATUS_RUNNING : STATUS_STOPPED) } as Response
+    })
+
+    await useDevServerStore.getState().start(WORKDIR_A)
+
+    expect(snapshot(devServerStatusResource.keyOf(WORKDIR_A)).data).toEqual(STATUS_RUNNING)
+    expect(snapshot(devServerStatusResource.keyOf(WORKDIR_B)).data).toBeUndefined()
+    expect(logsOf(WORKDIR_A)).toEqual([])
+  })
+
+  it('does not clear logs when start fails', async () => {
+    useDevServerStore.getState().handleMessage({
+      type: 'devServer.output',
+      payload: { workdir: WORKDIR_A, stream: 'stdout', content: 'keep me' },
+    })
+    await nextFrame()
+
+    vi.mocked(authFetch).mockRejectedValue(new Error('boom'))
+    await useDevServerStore.getState().start(WORKDIR_A)
+
+    expect(logsOf(WORKDIR_A)).toEqual([{ stream: 'stdout', content: 'keep me' }])
+  })
+
+  it('saveConfig writes config through and refreshes status for the targeted workdir only', async () => {
+    vi.mocked(authFetch).mockImplementation(async (url: string) => {
+      if (url.includes('/config')) return { ok: true, json: async () => ({ config: CONFIG }) } as Response
+      if (url.startsWith('/api/dev-server?workdir=')) return { ok: true, json: async () => STATUS_RUNNING } as Response
+      return { ok: true, json: async () => ({}) } as Response
+    })
+
+    await useDevServerStore.getState().saveConfig(WORKDIR_A, CONFIG)
+
+    expect(snapshot(devServerConfigResource.keyOf(WORKDIR_A)).data).toEqual(CONFIG)
+    expect(snapshot(devServerConfigResource.keyOf(WORKDIR_B)).data).toBeUndefined()
+    expect(snapshot<DevServerStatus>(devServerStatusResource.keyOf(WORKDIR_A)).data?.state).toBe('running')
+  })
+
+  it('clearLogs empties the workdir logs', async () => {
+    useDevServerStore.getState().handleMessage({
+      type: 'devServer.output',
+      payload: { workdir: WORKDIR_A, stream: 'stdout', content: 'x' },
+    })
+    await nextFrame()
+    expect(logsOf(WORKDIR_A)).toHaveLength(1)
+
+    vi.mocked(authFetch).mockResolvedValue({ ok: true, json: async () => ({ ok: true }) } as Response)
+    await useDevServerStore.getState().clearLogs(WORKDIR_A)
+
+    expect(logsOf(WORKDIR_A)).toEqual([])
+  })
+
+  it('insertMarker posts then refetches the log buffer', async () => {
+    const marker = { stream: 'stdout', content: '─'.repeat(56), type: 'marker' }
+    vi.mocked(authFetch).mockImplementation(async (url: string) => {
+      if (url.includes('insert-marker')) return { ok: true, json: async () => ({ ok: true }) } as Response
+      if (url.includes('/logs')) return { ok: true, json: async () => ({ logs: [marker] }) } as Response
+      return { ok: true, json: async () => ({}) } as Response
+    })
+
+    await useDevServerStore.getState().insertMarker(WORKDIR_A)
+
+    expect(logsOf(WORKDIR_A)).toEqual([marker])
   })
 
   it('actions are no-ops without a workdir', async () => {
     await useDevServerStore.getState().start(undefined as unknown as string)
+    await useDevServerStore.getState().stop(undefined as unknown as string)
+    await useDevServerStore.getState().restart(undefined as unknown as string)
+    await useDevServerStore.getState().saveConfig(undefined as unknown as string, CONFIG)
+
     expect(authFetch).not.toHaveBeenCalled()
-    expect(useDevServerStore.getState().byWorkdir).toEqual({})
+    expect(useDevServerStore.getState().logsByWorkdir).toEqual({})
   })
 })

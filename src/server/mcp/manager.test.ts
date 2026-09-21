@@ -68,6 +68,11 @@ async function lastHttpTransportOptions(): Promise<any> {
   return vi.mocked(StreamableHTTPClientTransport).mock.calls.at(-1)![1]
 }
 
+/** RequestOptions (3rd argument) the mock client's callTool was last invoked with. */
+function lastCallOptions(): { timeout?: number; signal?: AbortSignal } | undefined {
+  return mockClientInstance.callTool.mock.calls.at(-1)![2] as { timeout?: number; signal?: AbortSignal } | undefined
+}
+
 describe('McpManager', () => {
   let manager: McpManager
 
@@ -312,6 +317,26 @@ describe('McpManager', () => {
       expect(result.error).toContain('not found')
     })
 
+    it('should surface isError results as the error field, not output', async () => {
+      mockClientInstance.callTool.mockImplementation(async () => ({
+        content: [{ type: 'text', text: '{"error": "Something broke"}' }],
+        isError: true,
+      }))
+      try {
+        await manager.addServer('err-server', { transport: 'stdio', command: 'node' })
+
+        const result = await manager.callTool('err-server', 'get_weather', {})
+        expect(result.success).toBe(false)
+        expect(result.error).toBe('{"error": "Something broke"}')
+        expect(result.output).toBeUndefined()
+      } finally {
+        mockClientInstance.callTool.mockImplementation(async () => ({
+          content: [{ type: 'text', text: 'Sunny, 72°F' }],
+          isError: false,
+        }))
+      }
+    })
+
     it('should time out if the tool call takes longer than the configured timeout', async () => {
       mockClientInstance.callTool.mockImplementation(
         () =>
@@ -331,6 +356,59 @@ describe('McpManager', () => {
           isError: false,
         }))
       }
+    })
+
+    it('should extend the SDK request timeout for the tool timeout arg (no config timeout)', async () => {
+      await manager.addServer('test', { transport: 'stdio', command: 'node' })
+
+      const result = await manager.callTool('test', 'get_weather', { location: 'Paris', timeout: 300 })
+      expect(result.success).toBe(true)
+      expect(lastCallOptions()?.timeout).toBe(330_000)
+    })
+
+    it('should never lower the configured timeout below the tool arg plus margin', async () => {
+      await manager.addServer('test', { transport: 'stdio', command: 'node', timeout: 120 })
+
+      await manager.callTool('test', 'get_weather', { timeout: 300 })
+      expect(lastCallOptions()?.timeout).toBe(330_000)
+    })
+
+    it('should keep the configured timeout when it exceeds the tool arg plus margin', async () => {
+      await manager.addServer('test', { transport: 'stdio', command: 'node', timeout: 600 })
+
+      await manager.callTool('test', 'get_weather', { timeout: 300 })
+      expect(lastCallOptions()?.timeout).toBe(600_000)
+    })
+
+    it('should ignore invalid tool timeout args and fall back to the 60s default', async () => {
+      await manager.addServer('test', { transport: 'stdio', command: 'node' })
+
+      for (const arg of [0, -5, '300', Number.NaN]) {
+        mockClientInstance.callTool.mockClear()
+        await manager.callTool('test', 'get_weather', { timeout: arg })
+        expect(lastCallOptions()?.timeout).toBe(60_000)
+      }
+    })
+
+    it('should cap huge tool timeout args at 3600s', async () => {
+      await manager.addServer('test', { transport: 'stdio', command: 'node' })
+
+      await manager.callTool('test', 'get_weather', { timeout: 999999 })
+      expect(lastCallOptions()?.timeout).toBe(3_600_000)
+    })
+
+    it('should not shorten a configured timeout above the 3600s cap', async () => {
+      await manager.addServer('test', { transport: 'stdio', command: 'node', timeout: 7200 })
+
+      await manager.callTool('test', 'get_weather', { location: 'Paris' })
+      expect(lastCallOptions()?.timeout).toBe(7_200_000)
+    })
+
+    it('should pass the 60s default request timeout when neither config nor arg sets one', async () => {
+      await manager.addServer('test', { transport: 'stdio', command: 'node' })
+
+      await manager.callTool('test', 'get_weather', { location: 'Paris' })
+      expect(lastCallOptions()).toEqual({ timeout: 60_000, signal: expect.any(AbortSignal) })
     })
   })
 
@@ -499,6 +577,55 @@ describe('createMcpTools', () => {
     expect(result.success).toBe(true)
     expect(result.output).toBe('Sunny, 72°F')
   })
+
+  it('remaps a renamed props argument back to properties on execution', async () => {
+    mockClientInstance.listTools.mockResolvedValueOnce({
+      tools: [
+        {
+          name: 'config_tool',
+          description: 'Config tool',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              properties: { type: 'object', properties: { a: { type: 'string' } } },
+            },
+          },
+        },
+      ],
+    })
+    const manager = new McpManager()
+    await manager.addServer('test', { transport: 'stdio', command: 'node' })
+
+    const tools = createMcpTools(manager)
+    // The sanitizer renames the top-level `properties` param to `props` in the
+    // LLM-facing schema, so the model answers with `props`.
+    expect(tools[0]!.definition.function.parameters).toEqual({
+      type: 'object',
+      properties: { props: { type: 'object', properties: { a: { type: 'string' } } } },
+    })
+
+    await tools[0]!.execute({ props: { a: 'x' } }, {} as any)
+
+    // The MCP server must receive the original param name, with no stray `props` key.
+    const lastCall = mockClientInstance.callTool.mock.calls.at(-1)!
+    const payload = lastCall[0] as { arguments?: Record<string, unknown> }
+    expect(payload.arguments).toEqual({ properties: { a: 'x' } })
+    expect(payload.arguments).not.toHaveProperty('props')
+  })
+
+  it('passes the tool timeout arg through to the SDK request options (openfox_wait regression)', async () => {
+    const manager = new McpManager()
+    await manager.addServer('test', { transport: 'stdio', command: 'node' })
+
+    const tools = createMcpTools(manager)
+    const result = await tools[0]!.execute({ location: 'Paris', timeout: 300 }, {} as any)
+    expect(result.success).toBe(true)
+
+    // The SDK request must outlive the requested 300s wait (plus margin), not die at the 60s default.
+    const options = lastCallOptions()
+    expect(options?.timeout).toBeGreaterThanOrEqual(300_000)
+    expect(options?.signal).toBeInstanceOf(AbortSignal)
+  })
 })
 
 describe('estimateToolTokens', () => {
@@ -596,5 +723,26 @@ describe('McpManager token estimation', () => {
     expect(alphaRe.tools.length).toBe(2)
     expect(betaRe.status).toBe('connected')
     expect(betaRe.tools.length).toBe(2)
+  })
+
+  it('creates MCP tools with sanitized parameters schema', async () => {
+    mockClientInstance.listTools.mockResolvedValueOnce({
+      tools: [
+        {
+          name: 'get_weather',
+          description: 'Get weather',
+          inputSchema: { type: 'object', properties: { location: { type: 'string' } } },
+        },
+      ],
+    })
+    const manager = new McpManager()
+    await manager.addServer('test', { transport: 'stdio', command: 'node' })
+    const tools = createMcpTools(manager)
+    expect(tools).toHaveLength(1)
+    expect(tools[0]!.name).toBe('test_get_weather')
+    expect(tools[0]!.definition.function.parameters).toEqual({
+      type: 'object',
+      properties: { location: { type: 'string' } },
+    })
   })
 })

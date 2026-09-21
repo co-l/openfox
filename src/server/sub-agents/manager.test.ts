@@ -50,6 +50,13 @@ vi.mock('../runtime-config.js', () => ({
 vi.mock('../agents/model-overrides.js', () => ({
   getAgentModelOverride: getAgentModelOverrideMock,
   resolveLLMClientForAgent: resolveLLMClientForAgentMock,
+  buildAgentOverrideStatsIdentity: vi.fn((_pm, _client, override) => ({
+    providerId: override.providerId,
+    providerName: override.providerId,
+    backend: 'vllm',
+    model: override.model,
+    ...(override.reasoningEffort ? { reasoningEffort: override.reasoningEffort } : {}),
+  })),
   getAgentModelOverrides: vi.fn(() => ({})),
   setAgentModelOverride: vi.fn(),
   parseAgentModelOverrides: vi.fn(() => ({})),
@@ -87,6 +94,9 @@ function createMockSessionManager(): SessionManager {
     updateMessage: vi.fn(),
     getQueueState: vi.fn().mockReturnValue({ queued: 0, processing: false }),
     resolveEffectiveProviderModel: vi.fn(() => ({ providerId: null, model: null })),
+    enterPauseGate: vi.fn().mockResolvedValue('released'),
+    setActiveSubAgent: vi.fn(),
+    getActiveSubAgent: vi.fn().mockReturnValue(undefined),
   } as unknown as SessionManager
 }
 
@@ -217,6 +227,13 @@ describe('SubAgentManager', () => {
     expect(result.content).toBe('Test result content')
     expect(result.result).toBe('success')
 
+    // The active sub-agent is registered for the duration of the run, then cleared.
+    expect(mockSessionManager.setActiveSubAgent).toHaveBeenCalledWith('test-session', {
+      subAgentId: expect.any(String),
+      subAgentType: 'explorer',
+    })
+    expect(mockSessionManager.setActiveSubAgent).toHaveBeenLastCalledWith('test-session', undefined)
+
     const allCalls: Array<[unknown]> = mockOnMessage.mock.calls as Array<[unknown]>
     const chatDoneMessages = allCalls.filter(([msg]) => (msg as { type: string }).type === 'chat.done')
     expect(chatDoneMessages.length).toBe(1)
@@ -331,6 +348,35 @@ describe('SubAgentManager', () => {
       })
 
       expect(resolveLLMClientForAgentMock).toHaveBeenCalled()
+      expect(result.content).toBe('Test result content')
+    })
+
+    it('falls back to sessionManager.getProviderManager() when providerManager is omitted in options', async () => {
+      resolveLLMClientForAgentMock.mockReturnValue({
+        client: createMockLLMClient(),
+        usedOverride: true,
+        override: { providerId: 'p1', model: 'claude-x' },
+      })
+      const dedicatedClient = createMockLLMClient()
+      const pm = createMockProviderManager(dedicatedClient)
+      const parentClient = createMockLLMClient()
+
+      const mockSessionManager = createMockSessionManager()
+      mockSessionManager.getProviderManager = vi.fn(() => pm) as any
+
+      const result = await executeSubAgent({
+        subAgentType: 'explorer',
+        prompt: 'Explore.',
+        sessionManager: mockSessionManager,
+        sessionId: 'test-session',
+        llmClient: parentClient,
+        toolRegistry: createMockToolRegistry(),
+        turnMetrics: createMockTurnMetrics(),
+        statsIdentity: TEST_STATS_IDENTITY,
+      })
+
+      expect(mockSessionManager.getProviderManager).toHaveBeenCalled()
+      expect(resolveLLMClientForAgentMock).toHaveBeenCalledWith('explorer', parentClient, pm, undefined)
       expect(result.content).toBe('Test result content')
     })
 
@@ -484,6 +530,7 @@ describe('SubAgentManager', () => {
       'run_command',
       'session_metadata',
       'web_fetch',
+      'load_skill',
     ])
 
     expect(findAgentById('code_reviewer', agents)?.metadata.allowedTools).toEqual([
@@ -491,9 +538,15 @@ describe('SubAgentManager', () => {
       'run_command',
       'web_fetch',
       'session_metadata',
+      'load_skill',
     ])
 
-    expect(findAgentById('explorer', agents)?.metadata.allowedTools).toEqual(['read_file', 'run_command', 'web_fetch'])
+    expect(findAgentById('explorer', agents)?.metadata.allowedTools).toEqual([
+      'read_file',
+      'run_command',
+      'web_fetch',
+      'load_skill',
+    ])
   })
 
   describe('loadGitIgnoreRules', () => {

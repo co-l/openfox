@@ -6,12 +6,14 @@ import { getDatabase } from './index.js'
 
 export const SETTINGS_KEYS = {
   GLOBAL_INSTRUCTIONS: 'global_instructions',
+  LANGUAGE: 'agent.language',
   DISPLAY_SHOW_THINKING: 'display.showThinking',
   DISPLAY_SHOW_VERBOSE_TOOL_OUTPUT: 'display.showVerboseToolOutput',
   DISPLAY_SHOW_STATS: 'display.showStats',
   DISPLAY_SHOW_AGENT_DEFINITIONS: 'display.showAgentDefinitions',
   DISPLAY_SHOW_WORKFLOW_BARS: 'display.showWorkflowBars',
   DISPLAY_SHOW_SYNTAX_HIGHLIGHTING: 'display.showSyntaxHighlighting',
+  DISPLAY_LOCALE: 'display.locale',
   DISPLAY_THEME: 'display.theme',
   DISPLAY_USER_PRESETS: 'display.userPresets',
   DISPLAY_FOLLOW_SYSTEM_THEME: 'display.followSystemTheme',
@@ -24,9 +26,18 @@ export const SETTINGS_KEYS = {
   DISPLAY_USE_NATIVE_SCROLLBARS_CODE_BLOCKS: 'display.useNativeScrollbarsCodeBlocks',
   DISPLAY_COLLAPSE_LARGE_TOOL_CALLS: 'display.collapseLargeToolCalls',
   DISPLAY_DEFER_CODE_HIGHLIGHT_WHILE_STREAMING: 'display.deferCodeHighlightWhileStreaming',
+  DISPLAY_SHOW_TOOL_CALL_STREAMING: 'display.showToolCallStreaming',
   DISPLAY_FEED_VIRTUALIZATION: 'display.feedVirtualization',
+  DISPLAY_MODEL_SELECTOR_HEIGHT: 'display.modelSelectorHeight',
+  DISPLAY_COLLAPSE_PROVIDERS_BY_DEFAULT: 'display.collapseProvidersByDefault',
+  DISPLAY_COLLAPSE_FAVORITES_BY_DEFAULT: 'display.collapseFavoritesByDefault',
+  DISPLAY_MODEL_FAVORITES: 'display.modelFavorites',
+  DISPLAY_MOBILE_FULLSCREEN_COMPOSER: 'display.mobileFullscreenComposer',
   LLM_DYNAMIC_SYSTEM_PROMPT: 'llm.dynamicSystemPrompt',
+  LLM_CAVEMAN_THINKING: 'llm.cavemanThinking',
   CACHE_WARMING: 'cache.warming',
+  AUTO_CONTINUE_ON_BOOT: 'agent.autoContinueOnBoot',
+  AGENT_ALLOW_PARALLEL_SUB_AGENTS: 'agent.allowParallelSubAgents',
   KEYBINDINGS: 'keybindings',
   RETRY_PATTERNS: 'agent.retryPatterns',
   SKILLS_DIRECTORIES: 'skills.directories',
@@ -45,6 +56,8 @@ export const SETTINGS_KEYS = {
 } as const
 
 export const SETTINGS_DEFAULTS: Record<string, string> = {
+  [SETTINGS_KEYS.LANGUAGE]: 'automatic',
+  [SETTINGS_KEYS.DISPLAY_LOCALE]: 'automatic',
   [SETTINGS_KEYS.DISPLAY_SHOW_THINKING]: 'true',
   [SETTINGS_KEYS.DISPLAY_SHOW_VERBOSE_TOOL_OUTPUT]: 'true',
   [SETTINGS_KEYS.DISPLAY_SHOW_STATS]: 'true',
@@ -63,9 +76,18 @@ export const SETTINGS_DEFAULTS: Record<string, string> = {
   [SETTINGS_KEYS.DISPLAY_USE_NATIVE_SCROLLBARS_CODE_BLOCKS]: 'false',
   [SETTINGS_KEYS.DISPLAY_COLLAPSE_LARGE_TOOL_CALLS]: 'false',
   [SETTINGS_KEYS.DISPLAY_DEFER_CODE_HIGHLIGHT_WHILE_STREAMING]: 'false',
+  [SETTINGS_KEYS.DISPLAY_SHOW_TOOL_CALL_STREAMING]: 'false',
   [SETTINGS_KEYS.DISPLAY_FEED_VIRTUALIZATION]: 'false',
+  [SETTINGS_KEYS.DISPLAY_MODEL_SELECTOR_HEIGHT]: 'default',
+  [SETTINGS_KEYS.DISPLAY_COLLAPSE_PROVIDERS_BY_DEFAULT]: 'false',
+  [SETTINGS_KEYS.DISPLAY_COLLAPSE_FAVORITES_BY_DEFAULT]: 'false',
+  [SETTINGS_KEYS.DISPLAY_MODEL_FAVORITES]: '[]',
+  [SETTINGS_KEYS.DISPLAY_MOBILE_FULLSCREEN_COMPOSER]: 'false',
   [SETTINGS_KEYS.LLM_DYNAMIC_SYSTEM_PROMPT]: 'false',
+  [SETTINGS_KEYS.LLM_CAVEMAN_THINKING]: 'false',
   [SETTINGS_KEYS.CACHE_WARMING]: 'false',
+  [SETTINGS_KEYS.AUTO_CONTINUE_ON_BOOT]: 'false',
+  [SETTINGS_KEYS.AGENT_ALLOW_PARALLEL_SUB_AGENTS]: 'false',
   [SETTINGS_KEYS.RETRY_PATTERNS]: JSON.stringify({ patterns: [], maxRetriesPerTurn: 10 }),
   [SETTINGS_KEYS.KEYBINDINGS]: JSON.stringify({
     terminalToggle: { type: 'double-press', key: 'Control', threshold: 300 },
@@ -138,7 +160,37 @@ export function getAllSettings(): Record<string, string> {
   return result
 }
 
+export function pruneFavoriteModels(validProviders: Array<{ id: string; models?: Array<{ id: string }> }>): void {
+  const raw = getSetting(SETTINGS_KEYS.DISPLAY_MODEL_FAVORITES)
+  if (!raw) return
+  try {
+    const favorites = JSON.parse(raw) as string[]
+    if (!Array.isArray(favorites) || favorites.length === 0) return
+
+    const validSet = new Set<string>()
+    for (const provider of validProviders) {
+      for (const model of provider.models ?? []) {
+        validSet.add(`${provider.id}/${model.id}`)
+      }
+    }
+
+    const pruned = favorites.filter((fav) => validSet.has(fav))
+    if (pruned.length !== favorites.length) {
+      setSetting(SETTINGS_KEYS.DISPLAY_MODEL_FAVORITES, JSON.stringify(pruned))
+    }
+  } catch {
+    // Ignore JSON parsing errors
+  }
+}
+
 export function getMaxVisibleItems(): number {
   const setting = getSetting(SETTINGS_KEYS.DISPLAY_MAX_VISIBLE_ITEMS)
-  return setting ? parseInt(setting, 10) : 0
+  const defaultValue = Number(SETTINGS_DEFAULTS[SETTINGS_KEYS.DISPLAY_MAX_VISIBLE_ITEMS])
+
+  if (setting === null || setting.trim() === '') {
+    return defaultValue
+  }
+
+  const value = Number(setting)
+  return Number.isInteger(value) && value >= 0 ? value : defaultValue
 }

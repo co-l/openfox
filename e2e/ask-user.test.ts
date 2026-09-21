@@ -187,16 +187,17 @@ describe('Ask User Tool', () => {
       // Send answer immediately so agent completes
       await client.send('ask.answer', { callId, answer: 'Continue' })
 
-      // Wait for chat to finish
-      await client.waitFor('chat.done')
+      // Wait for the turn to actually finish. A stale chat.done from the
+      // beforeEach mode-switch reminder turn may already be buffered, so
+      // waiting on chat.done alone would observe isRunning while the resumed
+      // turn is still executing. Poll the session state instead.
+      const deadline = Date.now() + 15000
+      while (client.getSession()?.isRunning !== false && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 50))
+      }
 
       // Session should not be running after completion
-      const session = client.getSession()
-      if (session) {
-        await new Promise((r) => setTimeout(r, 100))
-        const updatedSession = client.getSession()
-        expect(updatedSession?.isRunning).toBe(false)
-      }
+      expect(client.getSession()?.isRunning).toBe(false)
     })
   })
 

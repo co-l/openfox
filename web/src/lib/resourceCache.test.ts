@@ -10,6 +10,7 @@ import {
   resource,
   snapshot,
   subscribe,
+  write,
 } from './resourceCache'
 
 describe('resourceCache', () => {
@@ -168,5 +169,43 @@ describe('resourceCache', () => {
 
     res.invalidate('x')
     expect(snapshot('item:x').data).toBeUndefined()
+  })
+
+  it('write-through updates the entry data and notifies subscribers without fetching', async () => {
+    const fetcher = vi.fn(async () => 'fetched')
+    load('k', fetcher)
+    await vi.runAllTimersAsync()
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(snapshot('k').data).toBe('fetched')
+
+    const listener = vi.fn()
+    const unsubscribe = subscribe(listener)
+    write('k', 'pushed')
+    expect(listener).toHaveBeenCalled()
+    expect(snapshot('k').data).toBe('pushed')
+    expect(fetcher).toHaveBeenCalledTimes(1)
+
+    // A later fetch still works and wins over the pushed payload.
+    fetcher.mockResolvedValueOnce('refetched')
+    await refresh('k', fetcher)
+    expect(snapshot('k').data).toBe('refetched')
+    unsubscribe()
+  })
+
+  it('write-through also works on a key that was never fetched', () => {
+    const listener = vi.fn()
+    const unsubscribe = subscribe(listener)
+    write('fresh', 'pushed')
+    expect(listener).toHaveBeenCalled()
+    expect(snapshot('fresh').data).toBe('pushed')
+    unsubscribe()
+  })
+
+  it('resource factory exposes a write-through bound to the same key', () => {
+    const fetch = vi.fn(async () => 'data')
+    const res = resource<string, []>({ key: () => 'ws:key', fetch })
+    res.write('pushed')
+    expect(snapshot('ws:key').data).toBe('pushed')
+    expect(fetch).not.toHaveBeenCalled()
   })
 })

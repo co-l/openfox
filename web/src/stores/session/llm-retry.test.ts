@@ -99,11 +99,39 @@ describe('LLM retry UI state', () => {
     useSessionStore.getState().handleServerMessage({
       type: 'chat.llm_retry',
       sessionId: 'session-1',
-      payload: { attempt: 2, retryInMs: 4000 },
+      payload: { attempt: 2, retryInMs: 4000, error: 'boom' },
     })
 
-    expect(useSessionStore.getState().llmRetry).toEqual({ status: 'retrying', attempt: 2, retryInMs: 4000 })
+    expect(useSessionStore.getState().llmRetry).toEqual({
+      status: 'retrying',
+      attempt: 2,
+      retryInMs: 4000,
+      error: 'boom',
+    })
     expect(useSessionStore.getState().error).toBeNull()
+  })
+
+  it('chat.llm_retry retains the error when a new attempt arrives (survives a retry)', async () => {
+    const useSessionStore = await loadSessionStore()
+    setBaseState(useSessionStore, makeSession('session-1'))
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.llm_retry',
+      sessionId: 'session-1',
+      payload: { attempt: 1, retryInMs: 4000, error: 'boom' },
+    })
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.llm_retry',
+      sessionId: 'session-1',
+      payload: { attempt: 2, retryInMs: 8000, error: 'rate limited' },
+    })
+
+    expect(useSessionStore.getState().llmRetry).toEqual({
+      status: 'retrying',
+      attempt: 2,
+      retryInMs: 8000,
+      error: 'rate limited',
+    })
   })
 
   it('chat.llm_retry_failed sets the definitive retry affordance state', async () => {
@@ -125,7 +153,7 @@ describe('LLM retry UI state', () => {
     setBaseState(useSessionStore, makeSession('session-1'))
     useSessionStore.setState((state: any) => ({
       ...state,
-      llmRetry: { status: 'retrying', attempt: 2, retryInMs: 4000 },
+      llmRetry: { status: 'retrying', attempt: 2, retryInMs: 4000, error: 'boom' },
     }))
 
     // success → cleared
@@ -140,7 +168,7 @@ describe('LLM retry UI state', () => {
     useSessionStore.getState().handleServerMessage({
       type: 'chat.llm_retry',
       sessionId: 'session-1',
-      payload: { attempt: 2, retryInMs: 4000 },
+      payload: { attempt: 2, retryInMs: 4000, error: 'boom' },
     })
     useSessionStore.getState().handleServerMessage({
       type: 'chat.done',
@@ -168,7 +196,7 @@ describe('LLM retry UI state', () => {
     setBaseState(useSessionStore, makeSession('session-1'))
     useSessionStore.setState((state: any) => ({
       ...state,
-      llmRetry: { status: 'retrying', attempt: 2, retryInMs: 4000 },
+      llmRetry: { status: 'retrying', attempt: 2, retryInMs: 4000, error: 'boom' },
     }))
 
     useSessionStore.getState().handleServerMessage({
@@ -192,7 +220,7 @@ describe('LLM retry UI state', () => {
     setBaseState(useSessionStore, makeSession('session-1'))
     useSessionStore.setState((state: any) => ({
       ...state,
-      llmRetry: { status: 'retrying', attempt: 2, retryInMs: 4000 },
+      llmRetry: { status: 'retrying', attempt: 2, retryInMs: 4000, error: 'boom' },
     }))
 
     useSessionStore.getState().retryLLMNow('session-1')
@@ -259,9 +287,14 @@ describe('LLM retry UI state', () => {
     useSessionStore.getState().handleServerMessage({
       type: 'chat.llm_retry',
       sessionId: 'session-1',
-      payload: { attempt: 3, retryInMs: 60_000 },
+      payload: { attempt: 3, retryInMs: 60_000, error: 'boom' },
     })
-    expect(useSessionStore.getState().llmRetry).toEqual({ status: 'retrying', attempt: 3, retryInMs: 60_000 })
+    expect(useSessionStore.getState().llmRetry).toEqual({
+      status: 'retrying',
+      attempt: 3,
+      retryInMs: 60_000,
+      error: 'boom',
+    })
 
     // A successful retry resumes streaming mid-turn — the pill is stale now
     useSessionStore.getState().handleServerMessage({
@@ -280,7 +313,7 @@ describe('LLM retry UI state', () => {
     useSessionStore.getState().handleServerMessage({
       type: 'chat.llm_retry',
       sessionId: 'session-1',
-      payload: { attempt: 2, retryInMs: 10_000 },
+      payload: { attempt: 2, retryInMs: 10_000, error: 'boom' },
     })
 
     useSessionStore.getState().handleServerMessage({

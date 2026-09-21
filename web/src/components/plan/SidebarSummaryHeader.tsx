@@ -2,10 +2,13 @@ import { ScrollArea } from '../shared/ScrollArea'
 import { useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react'
 import { LogViewer } from './LogViewer'
 import { createPortal } from 'react-dom'
+import { useT } from '../../hooks/useT'
 import { useSessionStore } from '../../stores/session'
-import { useDevServerStore, useDevServerEntry } from '../../stores/dev-server'
+import { useDevServerStore } from '../../stores/dev-server'
+import { useDevServer } from '../../hooks/useDevServer'
 import { useGitStatus } from '../../hooks/useGitStatus'
-import { useSettingsStore, SETTINGS_KEYS } from '../../stores/settings'
+import { SETTINGS_KEYS } from '../../lib/resources'
+import { useSetting } from '../../hooks/useSetting'
 import { ProgressBar } from '../shared/ProgressBar'
 import { MetadataSectionHeader } from '../shared/MetadataEntries'
 import { MetadataStatusIcon, statusOrder } from '../shared/MetadataStatusIcon'
@@ -158,13 +161,14 @@ const Popover = forwardRef<PopoverHandle, { trigger: React.ReactNode; children: 
 /* ------------------------------------------------------------------ */
 
 function MetadataStatusSummary({ entries }: { entries: { status: string }[] }) {
+  const t = useT()
   const counts = new Map<string, number>()
   for (const e of entries) {
     counts.set(e.status, (counts.get(e.status) ?? 0) + 1)
   }
   const ordered = statusOrder.filter((s) => (counts.get(s) ?? 0) > 0)
 
-  if (ordered.length === 0) return <span className="text-text-muted text-sm">None</span>
+  if (ordered.length === 0) return <span className="text-text-muted text-sm">{t({ en: 'None', fr: 'Aucun' })}</span>
 
   return (
     <span className="flex items-center gap-1.5 text-sm">
@@ -183,13 +187,11 @@ function MetadataStatusSummary({ entries }: { entries: { status: string }[] }) {
 /* ------------------------------------------------------------------ */
 
 export function SidebarSummaryHeader({ visible }: SidebarSummaryHeaderProps) {
+  const t = useT()
   const { contextState, currentSession: session } = useScopedContext()
   const queueUpdate = useSessionStore((state) => state.queueUpdate)
   const workdir = session ? (session.workspace ?? session.workdir) : undefined
-  const devServerEntry = useDevServerEntry(workdir)
-  const devServerStatus = devServerEntry.status
-  const devServerConfig = devServerEntry.config
-  const devServerLogs = devServerEntry.logs
+  const { status: devServerStatus, config: devServerConfig, logs: devServerLogs } = useDevServer(workdir)
   const devServerStart = useDevServerStore((s) => s.start)
   const { branch, diff } = useGitStatus()
   const [showLogModal, setShowLogModal] = useState(false)
@@ -202,7 +204,7 @@ export function SidebarSummaryHeader({ visible }: SidebarSummaryHeaderProps) {
   const contextPopoverRef = useRef<PopoverHandle>(null)
   const metadataPopoverRef = useRef<PopoverHandle>(null)
   const workspacePopoverRef = useRef<PopoverHandle>(null)
-  const showEditorLink = useSettingsStore((s) => s.settings[SETTINGS_KEYS.DISPLAY_SHOW_OPEN_IN_EDITOR]) === 'true'
+  const showEditorLink = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_OPEN_IN_EDITOR).value === 'true'
   if (!visible || !session) return null
 
   const workspaceName = pathBasename(session.workspace ?? '') || 'original'
@@ -251,9 +253,7 @@ export function SidebarSummaryHeader({ visible }: SidebarSummaryHeaderProps) {
           <BranchIcon className="w-3.5 h-3.5 text-text-muted flex-shrink-0" />
           <span className="truncate text-text-secondary max-w-[120px]">{branch ?? '-'}</span>
           {diffFiles.length > 0 ? (
-            <span className="text-text-muted shrink-0 font-mono">
-              +{totalAdditions} -{totalDeletions}
-            </span>
+            <span className="text-text-muted shrink-0 font-mono">{`+${totalAdditions} -${totalDeletions}`}</span>
           ) : (
             <span className="shrink-0" />
           )}
@@ -301,7 +301,10 @@ export function SidebarSummaryHeader({ visible }: SidebarSummaryHeaderProps) {
                   }}
                   className="w-full text-left cursor-pointer hover:[&_h3]:text-accent-primary transition-colors"
                 >
-                  <MetadataSectionHeader entries={criteriaEntries} title="Acceptance Criteria" />
+                  <MetadataSectionHeader
+                    entries={criteriaEntries}
+                    title={t({ en: 'Acceptance Criteria', fr: 'Critères d’acceptation' })}
+                  />
                 </button>
                 <CriteriaEditor entries={criteriaEntries} sessionId={session.id} />
               </div>
@@ -346,7 +349,23 @@ export function SidebarSummaryHeader({ visible }: SidebarSummaryHeaderProps) {
                 dangerZone={contextState.dangerZone}
                 size="sm"
               />
-              <Popover ref={contextPopoverRef} trigger={<ChevronDownIcon className="w-3 h-3" />}>
+              <Popover
+                ref={contextPopoverRef}
+                trigger={
+                  <span className="relative inline-flex">
+                    <ChevronDownIcon className="w-3 h-3" />
+                    {contextState.dynamicContextChanged && (
+                      <span
+                        className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-accent-warning"
+                        aria-label={t({
+                          en: 'System prompt changes available',
+                          fr: 'Des modifications du prompt système sont disponibles',
+                        })}
+                      />
+                    )}
+                  </span>
+                }
+              >
                 <ContextPopover
                   onUpdateSystemPrompt={() => {
                     contextPopoverRef.current?.close()
@@ -379,7 +398,7 @@ export function SidebarSummaryHeader({ visible }: SidebarSummaryHeaderProps) {
               <button
                 onClick={handleOpen}
                 className="flex items-center justify-center p-1 rounded text-sm font-medium bg-accent-primary/25 text-text-primary hover:bg-accent-primary/40 transition-colors leading-none"
-                title="Open dev server"
+                title={t({ en: 'Open dev server', fr: 'Ouvrir le serveur de dev' })}
               >
                 <OpenExternalIcon className="w-3.5 h-3.5" />
               </button>
@@ -387,13 +406,13 @@ export function SidebarSummaryHeader({ visible }: SidebarSummaryHeaderProps) {
               <button
                 onClick={handleStart}
                 className="flex items-center justify-center p-1 rounded text-sm font-medium bg-accent-primary/25 text-text-primary hover:bg-accent-primary/40 transition-colors leading-none"
-                title="Start dev server"
+                title={t({ en: 'Start dev server', fr: 'Démarrer le serveur de dev' })}
               >
                 <PlayIcon className="w-3.5 h-3.5" />
               </button>
             )
           ) : (
-            <span className="text-text-muted text-xs">No config</span>
+            <span className="text-text-muted text-xs">{t({ en: 'No config', fr: 'Aucune config' })}</span>
           )}
 
           <Popover ref={devServerPopoverRef} trigger={<ChevronDownIcon className="w-3 h-3" />}>
@@ -411,7 +430,11 @@ export function SidebarSummaryHeader({ visible }: SidebarSummaryHeaderProps) {
       </div>
 
       {showLogModal && (
-        <LogViewer title="Dev Server Logs" logs={devServerLogs} onClose={() => setShowLogModal(false)} />
+        <LogViewer
+          title={t({ en: 'Dev Server Logs', fr: 'Journaux du serveur de dev' })}
+          logs={devServerLogs}
+          onClose={() => setShowLogModal(false)}
+        />
       )}
 
       {showDevServerConfig && (

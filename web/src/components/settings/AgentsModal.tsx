@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react'
 import { Modal } from '../shared/SelfContainedModal'
-import { useAgentsStore, type AgentFull } from '../../stores/agents'
-import { useConfigStore } from '../../stores/config'
+import { createAgent, updateAgent, deleteAgent, type AgentFull } from '../../lib/agents-actions'
 import { authFetch } from '../../lib/api'
 import { useResource } from '../../hooks/useResource'
-import { agentsResource } from '../../lib/resources'
+import { useProviders } from '../../hooks/useProviders'
+import { agentsResource, agentResource, agentDefaultResource, readProviders } from '../../lib/resources'
 import { CRUDListHeader, useConfirmDialog, DestinationSelector, ModalActions } from './CRUDModal'
 import { AgentGroup } from './agents/AgentListItem'
 import { AgentForm } from './agents/AgentForm'
 import { ModelPicker } from '../shared/ModelPicker'
+import { PluginZone } from '../plugins/PluginZone'
 import { parseModelValue } from '../../lib/model-value'
+import { useT } from '../../hooks/useT'
 
 interface AgentsModalProps {
   isOpen: boolean
@@ -28,16 +30,12 @@ function toSlug(name: string): string {
 }
 
 export function AgentsModal({ isOpen, onClose, initialEditId, projectDir }: AgentsModalProps) {
+  const t = useT()
   const { data, loading } = useResource(agentsResource, projectDir)
   const defaults = data?.defaults ?? []
   const userItems = data?.userItems ?? []
   const projectItems = data?.projectItems ?? []
   const modelOverrides = data?.modelOverrides ?? {}
-  const fetchAgent = useAgentsStore((state) => state.fetchAgent)
-  const fetchDefaultContent = useAgentsStore((state) => state.fetchDefaultContent)
-  const createAgent = useAgentsStore((state) => state.createAgent)
-  const updateAgent = useAgentsStore((state) => state.updateAgent)
-  const deleteAgentAction = useAgentsStore((state) => state.deleteAgent)
 
   const [view, setView] = useState<'list' | 'edit'>('list')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -75,6 +73,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId, projectDir }: Agen
     setFormError('')
     setLoadingModel(true)
     // Fetch model override
+    // Authorized transient read: per-agent model override is a one-shot form load.
     authFetch(`/api/agents/${agent.metadata.id}/model`)
       .then((r) => r.json())
       .then((data) => {
@@ -90,7 +89,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId, projectDir }: Agen
   }
 
   const applyDuplicateFromContent = (content: AgentFull, id: string, setAsNew: boolean) => {
-    setFormName(content.metadata.name + ' (copy)')
+    setFormName(content.metadata.name + ' ' + t({ en: '(copy)', fr: '(copie)' }))
     setFormId(`${id}-copy-${Date.now()}`)
     setFormDescription(content.metadata.description)
     setFormSubagent(content.metadata.subagent)
@@ -114,6 +113,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId, projectDir }: Agen
 
   useEffect(() => {
     if (isOpen) {
+      // Authorized transient read: tools list is a one-shot modal load.
       authFetch('/api/tools')
         .then((r) => r.json())
         .then((d) => {
@@ -130,12 +130,12 @@ export function AgentsModal({ isOpen, onClose, initialEditId, projectDir }: Agen
       if (initialEditId) {
         const isDefault = defaults.some((d) => d.id === initialEditId)
         if (isDefault) {
-          fetchDefaultContent(initialEditId).then((content) => {
+          agentDefaultResource.refresh(initialEditId).then((content) => {
             if (!content) return
             applyDuplicateFromContent(content, initialEditId, true)
           })
         } else {
-          fetchAgent(initialEditId, projectDir).then((agent) => {
+          agentResource.refresh(initialEditId, projectDir).then((agent) => {
             if (!agent) return
             populateFormFromAgent(agent)
             setEditingId(initialEditId)
@@ -149,25 +149,25 @@ export function AgentsModal({ isOpen, onClose, initialEditId, projectDir }: Agen
         setIsReadOnly(false)
       }
     }
-  }, [isOpen, fetchAgent, fetchDefaultContent, initialEditId, projectDir])
+  }, [isOpen, initialEditId, projectDir])
 
   const handleView = async (agentId: string) => {
     const isDefault = defaults.some((d) => d.id === agentId)
     if (isDefault) {
-      const content = await fetchDefaultContent(agentId)
+      const content = await agentDefaultResource.refresh(agentId)
       if (!content) return
       applyViewFromContent(content, agentId)
     } else {
-      const agent = await fetchAgent(agentId, projectDir)
+      const agent = await agentResource.refresh(agentId, projectDir)
       if (!agent) return
       applyViewFromContent(agent, agentId)
     }
   }
 
   const handleDuplicate = async (agentId: string) => {
-    let content = await fetchDefaultContent(agentId)
+    let content = await agentDefaultResource.refresh(agentId)
     if (!content) {
-      content = await fetchAgent(agentId, projectDir)
+      content = await agentResource.refresh(agentId, projectDir)
     }
     if (!content) return
     applyDuplicateFromContent(content, agentId, true)
@@ -189,7 +189,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId, projectDir }: Agen
   }
 
   const handleEdit = async (agentId: string) => {
-    const agent = await fetchAgent(agentId, projectDir)
+    const agent = await agentResource.refresh(agentId, projectDir)
     if (!agent) return
     populateFormFromAgent(agent)
     setEditingId(agentId)
@@ -202,13 +202,13 @@ export function AgentsModal({ isOpen, onClose, initialEditId, projectDir }: Agen
   }
 
   const handleDelete = async (agentId: string) => {
-    await deleteAgentAction(agentId, projectDir)
+    await deleteAgent(agentId, projectDir)
   }
 
   const handleSave = async () => {
     const id = editingId ?? formId
     if (!id || !formName || !formPrompt) {
-      setFormError('Name and prompt are required.')
+      setFormError(t({ en: 'Name and prompt are required.', fr: 'Le nom et l’invite sont requis.' }))
       return
     }
 
@@ -233,7 +233,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId, projectDir }: Agen
 
     if (!result.success) {
       setSaving(false)
-      setFormError(result.error ?? 'Failed to save agent.')
+      setFormError(result.error ?? t({ en: 'Failed to save agent.', fr: 'Échec de l’enregistrement de l’agent.' }))
       return
     }
 
@@ -278,21 +278,27 @@ export function AgentsModal({ isOpen, onClose, initialEditId, projectDir }: Agen
         <Modal
           isOpen={isOpen}
           onClose={handleCancel}
-          title={isReadOnly ? `${formName}` : editingId ? 'Edit Agent' : 'New Agent'}
+          title={
+            isReadOnly
+              ? `${formName}`
+              : editingId
+                ? t({ en: 'Edit Agent', fr: 'Modifier l’agent' })
+                : t({ en: 'New Agent', fr: 'Nouvel agent' })
+          }
           size="xl"
           footer={
             isReadOnly ? (
               <div className="flex justify-end">
                 <button
                   onClick={() => {
-                    setFormName(formName + ' (copy)')
+                    setFormName(formName + ' ' + t({ en: '(copy)', fr: '(copie)' }))
                     setFormId(`${editingId}-copy-${Date.now()}`)
                     setEditingId(null)
                     setIsReadOnly(false)
                   }}
                   className="px-3 py-1.5 rounded bg-accent-primary/20 text-sm text-accent-primary font-medium hover:bg-accent-primary/30 transition-colors"
                 >
-                  Duplicate & Customize
+                  {t({ en: 'Duplicate & Customize', fr: 'Dupliquer et personnaliser' })}
                 </button>
               </div>
             ) : (
@@ -318,7 +324,7 @@ export function AgentsModal({ isOpen, onClose, initialEditId, projectDir }: Agen
             formError={formError}
             isReadOnly={isReadOnly}
             availableTools={availableTools}
-            providers={useConfigStore.getState().providers}
+            providers={readProviders()?.providers ?? []}
             onNameChange={handleNameChange}
             onIdChange={setFormId}
             onDescriptionChange={setFormDescription}
@@ -346,70 +352,85 @@ export function AgentsModal({ isOpen, onClose, initialEditId, projectDir }: Agen
 
   return (
     <>
-      <Modal isOpen={isOpen} onClose={onClose} title="Agents" size="lg">
-        <CRUDListHeader
-          description="Agents define behavior, tools, and prompts for top-level modes and sub-agents."
-          onNew={handleNew}
-          loading={loading}
-          hasItems={defaults.length > 0 || userItems.length > 0 || projectItems.length > 0}
-        >
-          <div className="space-y-4">
-            {defaults.length > 0 && (
-              <AgentGroup
-                title="Built-in"
-                agents={defaultTopLevelAgents}
-                subagents={defaultSubAgents}
-                isBuiltIn={true}
-                alwaysAllowedNames={alwaysAllowedNames}
-                modelOverrides={modelOverrides}
-                onView={handleView}
-                onEdit={handleEditBuiltInModel}
-                onDuplicate={handleDuplicate}
-              />
-            )}
+      <Modal isOpen={isOpen} onClose={onClose} title={t({ en: 'Agents', fr: 'Agents' })} size="lg">
+        <PluginZone id="agents.modal" context={{ projectDir }}>
+          <CRUDListHeader
+            description={t({
+              en: 'Agents define behavior, tools, and prompts for top-level modes and sub-agents.',
+              fr: 'Les agents définissent le comportement, les outils et les invites des modes principaux et des sous-agents.',
+            })}
+            onNew={handleNew}
+            loading={loading}
+            hasItems={defaults.length > 0 || userItems.length > 0 || projectItems.length > 0}
+          >
+            <div className="space-y-4">
+              {defaults.length > 0 && (
+                <AgentGroup
+                  title={t({ en: 'Built-in', fr: 'Intégrés' })}
+                  agents={defaultTopLevelAgents}
+                  subagents={defaultSubAgents}
+                  isBuiltIn={true}
+                  alwaysAllowedNames={alwaysAllowedNames}
+                  modelOverrides={modelOverrides}
+                  onView={handleView}
+                  onEdit={handleEditBuiltInModel}
+                  onDuplicate={handleDuplicate}
+                />
+              )}
 
-            {(userTopLevelAgents.length > 0 ||
-              userSubAgents.length > 0 ||
-              projectTopLevelAgents.length > 0 ||
-              projectSubAgents.length > 0) && (
-              <div>
-                <h3 className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wide">Custom</h3>
-                <div className="ml-3 space-y-3">
-                  {[
-                    { title: 'Global', agents: userTopLevelAgents, subagents: userSubAgents },
-                    { title: 'Project', agents: projectTopLevelAgents, subagents: projectSubAgents },
-                  ].map(
-                    (section) =>
-                      (section.agents.length > 0 || section.subagents.length > 0) && (
-                        <AgentGroup
-                          key={section.title}
-                          title={section.title}
-                          agents={section.agents}
-                          subagents={section.subagents}
-                          isBuiltIn={false}
-                          alwaysAllowedNames={alwaysAllowedNames}
-                          modelOverrides={modelOverrides}
-                          isConfirmingDelete={(id) => isConfirming(id, 'delete')}
-                          onView={handleView}
-                          onDuplicate={handleDuplicate}
-                          onEdit={handleEdit}
-                          onDelete={(id) => {
-                            if (isConfirming(id, 'delete')) {
-                              handleDelete(id)
-                              clearConfirm()
-                            } else {
-                              requestDelete(id)
-                            }
-                          }}
-                          onCancelDelete={clearConfirm}
-                        />
-                      ),
-                  )}
+              {(userTopLevelAgents.length > 0 ||
+                userSubAgents.length > 0 ||
+                projectTopLevelAgents.length > 0 ||
+                projectSubAgents.length > 0) && (
+                <div>
+                  <h3 className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wide">
+                    {t({ en: 'Custom', fr: 'Personnalisés' })}
+                  </h3>
+                  <div className="ml-3 space-y-3">
+                    {[
+                      {
+                        title: t({ en: 'Global', fr: 'Global' }),
+                        agents: userTopLevelAgents,
+                        subagents: userSubAgents,
+                      },
+                      {
+                        title: t({ en: 'Project', fr: 'Projet' }),
+                        agents: projectTopLevelAgents,
+                        subagents: projectSubAgents,
+                      },
+                    ].map(
+                      (section) =>
+                        (section.agents.length > 0 || section.subagents.length > 0) && (
+                          <AgentGroup
+                            key={section.title}
+                            title={section.title}
+                            agents={section.agents}
+                            subagents={section.subagents}
+                            isBuiltIn={false}
+                            alwaysAllowedNames={alwaysAllowedNames}
+                            modelOverrides={modelOverrides}
+                            isConfirmingDelete={(id) => isConfirming(id, 'delete')}
+                            onView={handleView}
+                            onDuplicate={handleDuplicate}
+                            onEdit={handleEdit}
+                            onDelete={(id) => {
+                              if (isConfirming(id, 'delete')) {
+                                handleDelete(id)
+                                clearConfirm()
+                              } else {
+                                requestDelete(id)
+                              }
+                            }}
+                            onCancelDelete={clearConfirm}
+                          />
+                        ),
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
-        </CRUDListHeader>
+              )}
+            </div>
+          </CRUDListHeader>
+        </PluginZone>
       </Modal>
       <BuiltInModelModal
         agentId={modelModalAgentId}
@@ -463,10 +484,11 @@ function BuiltInModelModal({
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const t = useT()
   const { data } = useResource(agentsResource, projectDir)
   const agents = data ? [...data.defaults, ...data.userItems, ...data.projectItems] : []
   const agent = agentId ? agents.find((a) => a.id === agentId) : undefined
-  const providers = useConfigStore((s) => s.providers)
+  const providers = useProviders().providers
 
   useEffect(() => {
     if (!agentId) return
@@ -491,21 +513,34 @@ function BuiltInModelModal({
       onSaved()
       onClose()
     } catch {
-      setError('Failed to save. Please try again.')
+      setError(t({ en: 'Failed to save. Please try again.', fr: 'Échec de l’enregistrement. Veuillez réessayer.' }))
     }
     setSaving(false)
   }
 
   return (
-    <Modal isOpen={!!agentId} onClose={onClose} title={`Model — ${agent?.name ?? agentId ?? ''}`} size="md">
+    <Modal
+      isOpen={!!agentId}
+      onClose={onClose}
+      title={t({ en: 'Model — {{name}}', fr: 'Modèle — {{name}}' }, { name: agent?.name ?? agentId ?? '' })}
+      size="md"
+    >
       <div className="space-y-4 p-2">
         <p className="text-xs text-text-muted">
-          Choose which model to use when this agent is active. This overrides the session/global model.
+          {t({
+            en: 'Choose which model to use when this agent is active. This overrides the session/global model.',
+            fr: 'Choisissez le modèle à utiliser lorsque cet agent est actif. Il remplace le modèle de session/global.',
+          })}
         </p>
         {loading ? (
-          <div className="text-sm text-text-muted py-2">Loading...</div>
+          <div className="text-sm text-text-muted py-2">{t({ en: 'Loading...', fr: 'Chargement...' })}</div>
         ) : (
-          <ModelPicker providers={providers} value={value} onChange={setValue} defaultLabel="Default (global model)" />
+          <ModelPicker
+            providers={providers}
+            value={value}
+            onChange={setValue}
+            defaultLabel={t({ en: 'Default (global model)', fr: 'Défaut (modèle global)' })}
+          />
         )}
         {error && <p className="text-xs text-red-500">{error}</p>}
         <div className="flex justify-end gap-2 pt-2">
@@ -513,14 +548,14 @@ function BuiltInModelModal({
             onClick={onClose}
             className="px-4 py-1.5 text-sm text-text-muted hover:text-text-secondary transition-colors"
           >
-            Cancel
+            {t({ en: 'Cancel', fr: 'Annuler' })}
           </button>
           <button
             onClick={handleSave}
             disabled={saving}
             className="px-4 py-1.5 rounded bg-accent-primary/20 text-sm text-accent-primary font-medium hover:bg-accent-primary/30 disabled:opacity-50 transition-colors"
           >
-            {saving ? 'Saving...' : 'Save'}
+            {saving ? t({ en: 'Saving...', fr: 'Enregistrement...' }) : t({ en: 'Save', fr: 'Enregistrer' })}
           </button>
         </div>
       </div>

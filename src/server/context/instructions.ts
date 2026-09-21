@@ -20,6 +20,13 @@ export interface AllInstructions {
   files: InstructionFile[]
 }
 
+export function buildLanguageInstruction(language: string | null | undefined): string | null {
+  const trimmed = language?.trim()
+  if (!trimmed || trimmed.toLowerCase() === 'automatic') return null
+  const display = trimmed[0]!.toUpperCase() + trimmed.slice(1)
+  return `## LANGUAGE\n\nAlways respond to the user in ${display}.`
+}
+
 // Filenames to look for (in order of priority within same directory)
 const INSTRUCTION_FILENAMES = ['AGENTS.md', 'CLAUDE.md']
 
@@ -100,12 +107,18 @@ export async function getInstructionsForWorkdir(workdir: string): Promise<{
 
 /**
  * Load ALL instructions from all sources for a session.
- * Order: global → project → AGENTS.md files
+ * Order: language → global → project → AGENTS.md files
  * This is the primary function that should be used when building prompts.
  */
 export async function getAllInstructions(workdir: string, projectId: string): Promise<AllInstructions> {
   const sections: string[] = []
   const allFiles: InstructionFile[] = []
+
+  // 0. Language (from settings) - always first when set
+  const languageInstruction = buildLanguageInstruction(getSetting(SETTINGS_KEYS.LANGUAGE))
+  if (languageInstruction) {
+    sections.push(languageInstruction)
+  }
 
   // 1. Global instructions (from settings)
   const globalInstructions = getSetting(SETTINGS_KEYS.GLOBAL_INSTRUCTIONS)

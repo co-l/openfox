@@ -144,8 +144,9 @@ function nudgeEvents(): any[] {
     (call: any[]) =>
       call[1]?.type === 'message.start' &&
       call[1]?.data?.isSystemGenerated &&
+      call[1]?.data?.messageKind === 'correction' &&
       typeof call[1]?.data?.content === 'string' &&
-      (call[1]?.data?.content as string).includes("You haven't called step_done()"),
+      (call[1]?.data?.content as string).includes('call step_done()'),
   )
 }
 
@@ -286,5 +287,102 @@ describe('workflow agent step LLM failure', () => {
     // The run stayed tracked: the execution completed with the reused id
     const completeCall = (secondOptions.sessionManager as any).completeWorkflow.mock.calls[0] as unknown[]
     expect(completeCall[1]).toBe('exec-1')
+  })
+})
+
+// ============================================================================
+// Step-done nudge simplification
+// ============================================================================
+
+describe('workflow step_done nudge simplification', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  function criteriaWorkflow(): WorkflowDefinition {
+    return createWorkflow({
+      settings: { maxIterations: 5 },
+      steps: [
+        {
+          id: 'build',
+          name: 'Builder',
+          type: 'agent',
+          phase: 'build',
+          agentId: 'builder',
+          prompt: 'Implement the feature according to the plan.',
+          nudgePrompt: 'Continue working on the acceptance criteria. {{reason}}.',
+          transitions: [
+            {
+              when: { type: 'metadata_all_in', key: 'criteria', field: 'status', values: ['completed', 'passed'] },
+              goto: 'verify',
+            },
+            { when: { type: 'always' }, goto: 'build' },
+          ],
+        },
+      ],
+    })
+  }
+
+  function optionsWithCriteria(statuses: string[]): OrchestratorOptions {
+    const base = createMockOptions()
+    return createMockOptions({
+      sessionManager: {
+        ...base.sessionManager,
+        requireSession: vi.fn(() => ({
+          workdir: '/tmp/test',
+          messages: [],
+          metadataEntries: {
+            criteria: statuses.map((status, i) => ({ id: `c${i + 1}`, description: `Criterion ${i + 1}`, status })),
+          },
+        })),
+      } as any,
+    })
+  }
+
+  function nudgeContents(): string[] {
+    return mockAppend.mock.calls
+      .map((call: any[]) => call[1])
+      .filter(
+        (e: any) =>
+          e?.type === 'message.start' &&
+          e?.data?.isSystemGenerated &&
+          e?.data?.messageKind === 'correction' &&
+          typeof e?.data?.content === 'string' &&
+          (e.data.content as string).includes('call step_done()'),
+      )
+      .map((e: any) => e.data.content as string)
+  }
+
+  it('emits only the simple reminder when the transition condition is already satisfied', async () => {
+    mockRunAgentTurn.mockImplementation(async () => ({ returnValueResult: 'completed' }))
+
+    const workflow = criteriaWorkflow()
+    const options = optionsWithCriteria(['completed', 'passed'])
+
+    await executeWorkflow(workflow, options)
+
+    const contents = nudgeContents()
+    expect(contents.length).toBeGreaterThan(0)
+    for (const content of contents) {
+      expect(content).toContain('If you have finished the task, call step_done()')
+      expect(content).not.toContain('Continue working on the acceptance criteria')
+    }
+  })
+
+  it('keeps the verbose nudge when the transition condition is not satisfied', async () => {
+    mockRunAgentTurn.mockImplementation(async () => ({ returnValueResult: 'completed' }))
+
+    const workflow = criteriaWorkflow()
+    const options = optionsWithCriteria(['pending', 'failed'])
+
+    await executeWorkflow(workflow, options)
+
+    const contents = nudgeContents()
+    expect(contents.length).toBeGreaterThan(0)
+    for (const content of contents) {
+      expect(content).toContain('Continue working on the acceptance criteria')
+      expect(content).toContain("You haven't called step_done()")
+      expect(content).not.toContain('If you have finished the task, call step_done()')
+    }
   })
 })

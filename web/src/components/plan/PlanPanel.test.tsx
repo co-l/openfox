@@ -25,27 +25,7 @@ vi.mock('../../hooks/useAgents', () => ({
   useAgents: () => ({ agents: [], refresh: vi.fn() }),
 }))
 
-vi.mock('../../stores/commands', () => ({
-  useCommandsStore: (selector?: (state: unknown) => unknown) => (selector ? selector({ items: [] }) : { items: [] }),
-}))
-
-const mockFetchWorkflows = vi.fn()
-const mockWorkflowsState = {
-  defaults: [],
-  userItems: [],
-  projectItems: [],
-  fetchWorkflows: mockFetchWorkflows,
-  setWorkdir: vi.fn(),
-  getState: vi.fn(),
-}
-vi.mock('../../stores/workflows', () => ({
-  useWorkflowsStore: Object.assign(
-    (selector?: (state: unknown) => unknown) => (selector ? selector(mockWorkflowsState) : mockWorkflowsState),
-    { getState: vi.fn(() => mockWorkflowsState) },
-  ),
-}))
-
-vi.mock('../../stores/settings', () => ({
+vi.mock('../../hooks/useDisplaySettings', () => ({
   useDisplaySettings: () => ({
     showThinking: true,
     showVerboseToolOutput: true,
@@ -55,17 +35,6 @@ vi.mock('../../stores/settings', () => ({
     showSyntaxHighlighting: true,
     maxVisibleItems: 300,
   }),
-  DISPLAY_SETTINGS_KEYS: [
-    'display.showThinking',
-    'display.showVerboseToolOutput',
-    'display.showStats',
-    'display.showAgentDefinitions',
-    'display.showWorkflowBars',
-    'display.showSyntaxHighlighting',
-    'display.maxVisibleItems',
-  ],
-  SETTINGS_KEYS: { DISPLAY_MAX_VISIBLE_ITEMS: 'display.maxVisibleItems' },
-  useSettingsStore: vi.fn(() => ({ settings: {}, loading: {} })),
 }))
 
 vi.mock('../../lib/api', () => ({
@@ -76,9 +45,8 @@ vi.mock('./ChatFeedItems', () => ({
   ChatFeedItems: () => <div>ChatFeedItems</div>,
 }))
 
-vi.mock('./SessionHeader', () => ({
-  default: () => <div>SessionHeader</div>,
-  SessionHeader: () => <div>SessionHeader</div>,
+vi.mock('./useQueuedRebaseTrigger', () => ({
+  useQueuedRebaseTrigger: () => undefined,
 }))
 
 let capturedMsgSearchOnClose: (() => void) | null = null

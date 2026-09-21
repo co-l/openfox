@@ -379,7 +379,7 @@ describe('SessionManager.switchWorkspace – execution context integrity (issue 
   // ==========================================================================
 
   describe('workspace commit guidance in the switch reminder', () => {
-    it('appends the commit recipe to the reminder when switching into a workspace', async () => {
+    it('appends the deterministic 7-step commit recipe to the reminder when switching into a workspace', async () => {
       const session = manager.createSession(projectId, 'Ctx-ws-commit-1')
 
       await manager.switchWorkspace(session.id, 'feat-x')
@@ -388,13 +388,27 @@ describe('SessionManager.switchWorkspace – execution context integrity (issue 
       const reminders = messages.filter((m) => m.messageKind === 'auto-prompt')
       expect(reminders.length).toBeGreaterThan(0)
       const content = reminders[reminders.length - 1]!.content!
-      expect(content).toContain('git push origin HEAD:')
-      expect(content).toContain('git merge --ff-only')
-      expect(content).toContain('git branch -d')
-      // The recipe must state the refusal condition (same branch checked out)
-      // and that a direct push works otherwise.
-      expect(content).toContain('checked out')
-      expect(content).toContain('git push origin <branch>')
+      // The recipe is unconditional: always a temp branch, always land back in
+      // the original repo, always clean up the workspace. No branch-dependent
+      // "if checked out / else push directly" conditional.
+      expect(content).not.toContain('checked out')
+      const markers = [
+        'git push origin HEAD:', // 1) push to original on a temp branch
+        'workspace switch original', // 2) switch back to original
+        'git merge --ff-only', // 3) merge the temp branch
+        'git branch -d', // 4) delete the temp branch
+        'Verify the work is present', // 5) confirm the work is present
+        'workspace delete', // 6) delete the workspace
+        'git push origin <branch>', // 7) push to the remote from original
+      ]
+      const positions = markers.map((m) => {
+        const idx = content.indexOf(m)
+        expect(idx, `expected content to contain "${m}"`).toBeGreaterThanOrEqual(0)
+        return idx
+      })
+      for (let i = 1; i < positions.length; i++) {
+        expect(positions[i]!, `step ${i + 1} should come after step ${i}`).toBeGreaterThan(positions[i - 1]!)
+      }
     })
 
     it('omits the commit recipe when switching back to the original repo', async () => {
@@ -718,15 +732,23 @@ describe('SessionManager.switchWorkspace – execution context integrity (issue 
         expect(secondCall.systemPrompt).toBe(oldSystemPrompt)
         expect(secondCall.systemPrompt).toBe(firstCall.systemPrompt)
 
-        // Tool list reuse (deep equality).
+        // Tool list reuse (deep equality). The turn-start tool check must NOT
+        // sync the cached tools to the live registry — the cached prefix is
+        // frozen so the provider prefix cache stays valid.
         expect(secondCall.tools).toEqual(firstCall.tools)
-        expect(firstCall.tools).toEqual(cachedTools)
+        const firstToolNames = new Set(
+          (firstCall.tools as Array<{ function: { name: string } }>).map((t) => t.function.name),
+        )
+        expect(Array.from(firstToolNames)).toEqual(expect.arrayContaining(cachedTools.map((t) => t.function.name)))
 
-        // Cache state after both calls — hash, system prompt, no rebuild helpers.
+        // Cache state after both calls — the ENTIRE cached prefix (system
+        // prompt, tools AND hash) is frozen. Only the user's rebase
+        // (applyDynamicContext) rebuilds it.
         const cachedAfter = manager.getCachedPrompt(session.id)
         expect(cachedAfter).toBeDefined()
         expect(cachedAfter?.hash).toBe(oldHash)
         expect(cachedAfter?.systemPrompt).toBe(oldSystemPrompt)
+        expect(cachedAfter?.tools).toEqual(cachedTools)
         expect(setCachedSpy).not.toHaveBeenCalled()
         expect(resetWarmupSpy).not.toHaveBeenCalled()
 

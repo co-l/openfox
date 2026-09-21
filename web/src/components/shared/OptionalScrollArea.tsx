@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { ScrollArea } from './ScrollArea'
-import { useDisplaySettings } from '../../stores/settings'
+import { useDisplaySettings } from '../../hooks/useDisplaySettings'
 
 interface OptionalScrollAreaProps {
   children?: ReactNode

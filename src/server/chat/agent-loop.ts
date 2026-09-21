@@ -11,6 +11,7 @@
 import type { InjectedFile, StatsIdentity, ToolCall, ToolMode, ToolResult } from '../../shared/types.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { LLMClientWithModel } from '../llm/client.js'
+import { getModelProfile } from '../llm/profiles.js'
 import type { LLMToolDefinition } from '../llm/types.js'
 import type { ProviderManager } from '../provider-manager.js'
 import type { SessionManager } from '../session/index.js'
@@ -29,26 +30,32 @@ import {
   recordLLMFailure,
   clearLLMFailure,
 } from './stream-pure.js'
+import { computeLiveEditContext } from './edit-file-preview.js'
+import { preflightPathTool } from './tool-preflight.js'
 import { getCurrentContextWindowId, getCurrentWindowMessageOptions } from '../events/index.js'
 import { getAllInstructions } from '../context/instructions.js'
 import { getEnabledSkillMetadata } from '../skills/registry.js'
 import { getRuntimeConfig } from '../runtime-config.js'
 import { getGlobalConfigDir } from '../../cli/paths.js'
+import { getSetting, SETTINGS_KEYS } from '../db/settings.js'
 import {
   createChatMessageUpdatedMessage,
   createChatDoneMessage,
   createChatLLMRetryMessage,
   createChatLLMRetryFailedMessage,
+  createChatStatsMessage,
 } from '../ws/protocol.js'
 import { executeTools, type ToolBatchContext } from './execute-tools.js'
 import { estimateToolResultTokens, isContextLengthError } from './token-budget.js'
 import { loadAllAgentsDefault, getSubAgents } from '../agents/registry.js'
 import { createRetryLimiter, type RetryLimiter } from './retry-limiter.js'
 import { drainQueue } from './drain-queue.js'
-import { COMPACTION_PROMPT } from './prompts.js'
+import { COMPACTION_PROMPT, CONTINUE_PROMPT, CONTINUE_AFTER_STREAM_ERROR_PROMPT } from './prompts.js'
 import { logger } from '../utils/logger.js'
+import { emitPluginHook } from '../plugins/hook-emitter.js'
 import type { LLMRetryPolicy } from '../runner/types.js'
 import { DEFAULT_LLM_RETRY_POLICY } from '../runner/types.js'
+import { serverT } from '../i18n.js'
 
 function emitPartialDoneEvents(
   _sessionId: string,
@@ -97,6 +104,20 @@ function emitDoneAndBreak(
     )
     onMessage(createChatDoneMessage(assistantMsgId, reason, stats, agentType))
   }
+}
+
+/**
+ * Broadcast the cumulative turn stats to the client as an LLM call completes,
+ * so the sidebar can render live numbers while the turn is still running.
+ */
+function emitLiveTurnStats(
+  turnMetrics: TurnMetrics,
+  statsIdentity: import('../../shared/types.js').StatsIdentity,
+  mode: import('../../shared/types.js').ToolMode,
+  onMessage: ((msg: ServerMessage) => void) | undefined,
+): void {
+  if (!onMessage) return
+  onMessage(createChatStatsMessage(turnMetrics.buildStats(statsIdentity, mode)))
 }
 
 // ============================================================================
@@ -151,8 +172,11 @@ export interface TopLevelLoopConfig {
   /** Called after auto-compaction completes within the loop, before the next iteration.
    *  Reinjects the agent definition reminder into the new context window. */
   injectAgentReminder?: (() => void) | undefined
+  /** Called after a compaction creates a new context window, so the fresh
+   *  system prompt + tools become canonical for that window. */
+  rebuildCachedContext?: (() => Promise<void> | void) | undefined
   /** When set, assistant messages are tagged with sub-agent metadata for scope isolation. */
-  subAgentMetadata?: { subAgentId: string; subAgentType: string }
+  subAgentMetadata?: { subAgentId: string; subAgentType: string; subAgentName?: string }
   /** When set and return_value tool is called, emit done events and break immediately. */
   breakOnReturnValue?: boolean
   /** When set, if the loop would normally break without return_value being called,
@@ -181,9 +205,6 @@ export interface TopLevelLoopConfig {
 const MAX_TRUNCATION_RETRIES = 3
 const MAX_CONTEXT_LENGTH_RETRIES = 3
 const OUTPUT_RESERVE_TOKENS = 2048
-const CONTINUE_PROMPT = 'Continue your previous response. Do NOT repeat what you already wrote.'
-const CONTINUE_AFTER_STREAM_ERROR_PROMPT =
-  'The LLM stream was interrupted mid-response. Continue exactly where you left off — do not repeat what was already written.'
 
 export async function runTopLevelAgentLoop(
   config: TopLevelLoopConfig,
@@ -192,6 +213,13 @@ export async function runTopLevelAgentLoop(
   const { mode, sessionManager, sessionId, llmClient, signal, onMessage, statsIdentity } = config
   const append = config.append
   const agentType = config.subAgentMetadata ? ('sub-agent' as const) : undefined
+  // Sub-agent identity tags spread into scoped events (assistant messages,
+  // compaction prompt/summary, rejection, nudges) so they stay in the
+  // sub-agent's context and chatfeed window. Empty for top-level runs.
+  const subAgentTags = (): { subAgentId?: string; subAgentType?: string } =>
+    config.subAgentMetadata
+      ? { subAgentId: config.subAgentMetadata.subAgentId, subAgentType: config.subAgentMetadata.subAgentType }
+      : {}
   // Fresh per attempt when a resolver is provided (provider switch mid-turn).
   const resolveClient = () => config.getLLMClient?.() ?? llmClient
 
@@ -232,6 +260,7 @@ export async function runTopLevelAgentLoop(
       const modelSettings = sessionManager.getCurrentModelSettings(sessionId, config.mode)
 
       await resolveClient().complete({
+        sessionId,
         messages: [{ role: 'system', content: assembledRequest.systemPrompt }],
         tools: assembledRequest.tools,
         maxTokens: 1,
@@ -240,6 +269,14 @@ export async function runTopLevelAgentLoop(
       })
 
       return {}
+    }
+
+    // Pause gate: block before the next LLM request if the user requested a
+    // pause. The current (in-flight) request is never aborted — the pause only
+    // takes effect here, at the request boundary.
+    const pauseOutcome = await sessionManager.enterPauseGate(sessionId, signal)
+    if (pauseOutcome === 'aborted') {
+      throw new Error('Aborted')
     }
 
     const session = sessionManager.requireSession(sessionId)
@@ -278,6 +315,13 @@ export async function runTopLevelAgentLoop(
     let assistantMessageStarted = false
 
     for (;;) {
+      // Resolve fresh per attempt: resolveClient() supports provider switches
+      // mid-turn (retries/truncation use a re-resolved client). The same client
+      // backs the profile default (used by the maxTokens fallback sites below)
+      // and the actual LLM call.
+      const attemptClient = resolveClient()
+      const profileDefaultMaxTokens = getModelProfile(attemptClient.getModel()).defaultMaxTokens
+
       const requestMessages = await config.getConversationMessages()
 
       // The format-retry continuation is appended once per round (not on
@@ -322,20 +366,25 @@ export async function runTopLevelAgentLoop(
         append(
           createMessageStartEvent(assistantMsgId, 'assistant', undefined, {
             ...(currentWindowMessageOptions ?? {}),
-            ...(config.subAgentMetadata
-              ? { subAgentId: config.subAgentMetadata.subAgentId, subAgentType: config.subAgentMetadata.subAgentType }
-              : {}),
+            ...subAgentTags(),
           }),
         )
       }
 
       const contextState = sessionManager.getContextState(sessionId)
-      previousContextTokens = contextState.currentTokens
+      // Sub-agents run in a fresh scoped context: their output budget must be
+      // clamped against their own context usage, never the parent session's
+      // (a big parent session would otherwise leave the sub-agent only the
+      // 256-token safety floor — the root cause of truncated sub-agent plans).
+      const subAgentContextTokens = config.subAgentMetadata
+        ? (sessionManager.getSubAgentContextTokens?.(config.subAgentMetadata.subAgentId) ?? 0)
+        : undefined
+      previousContextTokens = subAgentContextTokens ?? contextState.currentTokens
 
       const contextWindow = sessionManager.getCurrentModelContext(sessionId, config.mode)
       const availableForOutput = Math.max(
         256,
-        contextWindow - contextState.currentTokens - pendingToolResultTokens - OUTPUT_RESERVE_TOKENS,
+        contextWindow - previousContextTokens - pendingToolResultTokens - OUTPUT_RESERVE_TOKENS,
       )
 
       let modelSettings = config.modelSettings ?? sessionManager.getCurrentModelSettings(sessionId, config.mode)
@@ -344,7 +393,7 @@ export async function runTopLevelAgentLoop(
       }
 
       if (modelSettings) {
-        const requestedMaxTokens = modelSettings.maxTokens ?? 16384
+        const requestedMaxTokens = modelSettings.maxTokens ?? profileDefaultMaxTokens
         modelSettings = { ...modelSettings, maxTokens: Math.min(requestedMaxTokens, availableForOutput) }
       }
 
@@ -356,7 +405,8 @@ export async function runTopLevelAgentLoop(
       const streamGen = streamLLMPure({
         messageId: assistantMsgId,
         systemPrompt: assembledRequest.systemPrompt,
-        llmClient: resolveClient(),
+        llmClient: attemptClient,
+        sessionId,
         messages: assembledRequest.messages,
         tools: assembledRequest.tools,
         toolChoice: 'auto',
@@ -364,15 +414,43 @@ export async function runTopLevelAgentLoop(
         subAgentAliases,
         ...(config.retryPatterns ? { retryPatterns: config.retryPatterns } : {}),
         ...(modelSettings && { modelSettings }),
+        preflight: (path) =>
+          preflightPathTool(path, {
+            workdir: sessionManager.getEffectiveWorkdir(sessionId),
+            readFiles: sessionManager.getReadFiles(sessionId),
+          }),
       })
 
-      const attemptResult = await consumeStreamGenerator(streamGen, (event) => {
+      // Per-turn cache of file contents read to build live edit context for
+      // streaming edit_file preparing events.
+      const editFileContentCache = new Map<string, string>()
+
+      const attemptResult = await consumeStreamGenerator(streamGen, async (event) => {
         ensureAssistantMessage()
+        // While the LLM streams an edit_file call, enrich its preparing events
+        // with a live edit context (surrounding lines) computed from the file —
+        // the same shape the final tool result carries. The file content is
+        // read once per path for the whole turn.
+        if (event.type === 'tool.preparing' && event.data.name === 'edit_file') {
+          const editContext = await computeLiveEditContext(event.data.arguments, session.workdir, editFileContentCache)
+          append(editContext && editContext.length > 0 ? { ...event, data: { ...event.data, editContext } } : event)
+          return
+        }
         append(event)
       })
 
       if (!attemptResult.error) {
         result = attemptResult
+        emitPluginHook('llm.completed', {
+          sessionId,
+          data: {
+            model: attemptClient.getModel(),
+            finishReason: attemptResult.finishReason,
+            promptTokens: attemptResult.usage.promptTokens,
+            completionTokens: attemptResult.usage.completionTokens,
+            toolCalls: attemptResult.toolCalls.length,
+          },
+        })
         break
       }
 
@@ -402,7 +480,7 @@ export async function runTopLevelAgentLoop(
       // retry immediately with a reduced maxTokens instead of waiting out backoff.
       if (isContextLengthError(attemptResult.error) && contextRetryCount < MAX_CONTEXT_LENGTH_RETRIES) {
         contextRetryCount += 1
-        const currentMax = modelSettings?.maxTokens ?? currentMaxTokensOverride ?? 16384
+        const currentMax = modelSettings?.maxTokens ?? currentMaxTokensOverride ?? profileDefaultMaxTokens
         currentMaxTokensOverride = Math.max(256, Math.floor(currentMax / 2))
         continue
       }
@@ -421,7 +499,7 @@ export async function runTopLevelAgentLoop(
         return { failed: { error: attemptResult.error } }
       }
       if (!config.subAgentMetadata) {
-        config.onMessage?.(createChatLLMRetryMessage(decision.attempt, decision.delayMs))
+        config.onMessage?.(createChatLLMRetryMessage(decision.attempt, decision.delayMs, attemptResult.error))
       }
       const waitResult = await sleepThroughRetryBackoff(decision.delayMs, sessionId, signal)
       if (waitResult === 'aborted') throw new Error('Aborted')
@@ -439,7 +517,16 @@ export async function runTopLevelAgentLoop(
       if (!retryLimiter.canRetry()) {
         append({
           type: 'chat.error',
-          data: { error: `Auto-retry limit exceeded after ${retryLimiter.maxRetries()} retries`, recoverable: false },
+          data: {
+            error: serverT(
+              {
+                en: 'Auto-retry limit exceeded after {{count}} retries',
+                fr: 'Limite de relance automatique dépassée après {{count}} tentatives',
+              },
+              { count: retryLimiter.maxRetries() },
+            ),
+            recoverable: false,
+          },
         })
         append(createChatDoneEvent(assistantMsgId, 'error', undefined, agentType))
         throw new Error('Auto-retry limit exceeded')
@@ -497,6 +584,17 @@ export async function runTopLevelAgentLoop(
       previousContextTokens,
       result.modelParams,
     )
+    // Accumulate wall-clock thinking time across LLM attempts in this turn.
+    if (result.thinkingDurationMs !== undefined) {
+      turnMetrics.addThinkingTime(result.thinkingDurationMs)
+    }
+    // Stream the running turn totals to the client so the sidebar can build
+    // dynamically as each LLM call completes. Sub-agent turns run inside the
+    // parent turn — their stats would clobber the parent's live numbers, so
+    // only top-level turns broadcast.
+    if (!config.subAgentMetadata) {
+      emitLiveTurnStats(turnMetrics, statsIdentity, mode, config.onMessage)
+    }
     sessionManager.setCurrentContextSize(
       sessionId,
       result.usage.promptTokens,
@@ -512,15 +610,21 @@ export async function runTopLevelAgentLoop(
     if (!compacting) {
       const contextState = sessionManager.getContextState(sessionId)
       const { shouldCompact, appendCompactionPrompt } = await import('../context/compactor.js')
+      const compactionTokens = config.subAgentMetadata
+        ? (sessionManager.getSubAgentContextTokens?.(config.subAgentMetadata.subAgentId) ?? 0)
+        : contextState.currentTokens
+      const compactionWindow = config.subAgentMetadata
+        ? sessionManager.getCurrentModelContext(sessionId, config.mode)
+        : contextState.maxTokens
       if (
         shouldCompact(
-          contextState.currentTokens,
-          contextState.maxTokens,
+          compactionTokens,
+          compactionWindow,
           sessionManager.getModelCompactionThreshold(sessionId, config.mode) ??
             runtimeConfig.context.compactionThreshold,
         )
       ) {
-        appendCompactionPrompt(sessionId, append)
+        appendCompactionPrompt(sessionId, append, config.subAgentMetadata)
         compacting = true
         continue
       }
@@ -529,7 +633,8 @@ export async function runTopLevelAgentLoop(
     if (!compacting && result.finishReason === 'length' && result.toolCalls.length === 0) {
       if (truncationRetryCount < MAX_TRUNCATION_RETRIES) {
         truncationRetryCount += 1
-        const currentMaxTokens = result.modelParams?.maxTokens ?? 16384
+        const currentMaxTokens =
+          result.modelParams?.maxTokens ?? getModelProfile(resolveClient().getModel()).defaultMaxTokens
         const promptTokens = result.usage.promptTokens
         const contextWindow = sessionManager.getCurrentModelContext(sessionId, config.mode)
         const newMaxTokens = Math.min(
@@ -592,6 +697,7 @@ ${COMPACTION_PROMPT}`,
               ...(currentWindowMessageOptions ?? {}),
               isSystemGenerated: true,
               messageKind: 'correction',
+              ...subAgentTags(),
             },
           ),
         )
@@ -629,6 +735,7 @@ ${COMPACTION_PROMPT}`,
           batchContext.providerManager = config.providerManager
         }
         batchContext.agentTimeout = getRuntimeConfig().agent.toolTimeout
+        batchContext.allowParallelSubAgents = getSetting(SETTINGS_KEYS.AGENT_ALLOW_PARALLEL_SUB_AGENTS) === 'true'
         const batchResult = await executeTools(assistantMsgId, result.toolCalls, batchContext, append)
         pendingToolResultTokens = estimateToolResultTokens(batchResult.toolMessages)
         if (batchResult.stepDoneCalled) {
@@ -692,7 +799,13 @@ ${COMPACTION_PROMPT}`,
       if (!summary) {
         append({
           type: 'chat.error',
-          data: { error: 'Compaction produced empty summary, continuing with full context', recoverable: true },
+          data: {
+            error: serverT({
+              en: 'Compaction produced empty summary, continuing with full context',
+              fr: 'La compaction a produit un résumé vide, poursuite avec le contexte complet',
+            }),
+            recoverable: true,
+          },
         })
         logger.warn('Compaction produced empty summary, continuing', { sessionId })
         compacting = false
@@ -700,13 +813,38 @@ ${COMPACTION_PROMPT}`,
         continue
       }
 
+      // The new context window starts fresh — apply the current system prompt
+      // + tools so they are canonical and never stale there. Best-effort: a
+      // rebuild failure must not break the compaction itself. Top-level only:
+      // a sub-agent compaction must never rebuild the parent's cached context
+      // or reinject the parent's reminder.
+      if (!config.subAgentMetadata) {
+        try {
+          await config.rebuildCachedContext?.()
+        } catch (error) {
+          logger.error('Failed to rebuild cached context after compaction', {
+            sessionId,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
+      }
+
       const closedWindowId = getCurrentContextWindowId(sessionId) ?? ''
-      const newWindowId = crypto.randomUUID()
+      // Sub-agent compaction is scoped: it stays in the current window (the
+      // parent's window must not rotate), so no fresh window id is minted.
+      const newWindowId = config.subAgentMetadata ? closedWindowId : crypto.randomUUID()
       const tokenCountAtClose = result.usage.promptTokens
 
       append({
         type: 'context.compacted',
-        data: { closedWindowId, newWindowId, beforeTokens: tokenCountAtClose, afterTokens: 0, summary },
+        data: {
+          closedWindowId,
+          newWindowId,
+          beforeTokens: tokenCountAtClose,
+          afterTokens: 0,
+          summary,
+          ...subAgentTags(),
+        },
       })
 
       append({
@@ -717,13 +855,38 @@ ${COMPACTION_PROMPT}`,
           content: summary,
           contextWindowId: newWindowId,
           isCompactionSummary: true,
+          ...subAgentTags(),
         },
       })
       append(createMessageDoneEvent(assistantMsgId, { stats: turnMetrics.buildStats(statsIdentity, mode) }))
       append(createChatDoneEvent(assistantMsgId, 'complete', undefined, agentType))
 
-      // Reinject the agent reminder into the new window
-      config.injectAgentReminder?.()
+      // Sub-agent compaction: emit a fresh-context marker so the chatfeed
+      // shows a new window boundary — mirrors the reinjected agent reminder
+      // the top-level agent gets after compaction. Purely visual (excluded
+      // from LLM context), scoped to the sub-agent.
+      if (config.subAgentMetadata) {
+        const freshMsgId = crypto.randomUUID()
+        append(
+          createMessageStartEvent(
+            freshMsgId,
+            'user',
+            `Fresh Context - ${config.subAgentMetadata.subAgentName ?? config.subAgentMetadata.subAgentType} Sub-Agent`,
+            {
+              ...(currentWindowMessageOptions ?? {}),
+              isSystemGenerated: true,
+              messageKind: 'context-reset',
+              ...subAgentTags(),
+            },
+          ),
+        )
+        append({ type: 'message.done', data: { messageId: freshMsgId } })
+      }
+
+      // Reinject the agent reminder into the new window (top-level only)
+      if (!config.subAgentMetadata) {
+        config.injectAgentReminder?.()
+      }
       compacting = false
 
       // Manual compaction (initialCompacting) is a one-shot operation — break after done.
@@ -747,9 +910,7 @@ ${COMPACTION_PROMPT}`,
               ...(currentWindowMessageOptions ?? {}),
               isSystemGenerated: true,
               messageKind: 'correction',
-              ...(config.subAgentMetadata
-                ? { subAgentId: config.subAgentMetadata.subAgentId, subAgentType: config.subAgentMetadata.subAgentType }
-                : {}),
+              ...subAgentTags(),
             },
           ),
         )
@@ -775,3 +936,5 @@ ${COMPACTION_PROMPT}`,
     ...(returnValueResult ? { returnValueResult } : {}),
   }
 }
+
+export { CONTINUE_PROMPT, CONTINUE_AFTER_STREAM_ERROR_PROMPT } from './prompts.js'

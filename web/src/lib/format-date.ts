@@ -1,15 +1,32 @@
 import type { SessionSummary } from '@shared/types.js'
+import { t, getLocale } from '@shared/i18n/index.js'
 import { formatTime as formatDuration } from './format-stats.js'
+
+const RELATIVE_LABELS = {
+  today: { en: 'today {{time}}', fr: "aujourd'hui {{time}}" },
+  yesterday: { en: 'yesterday {{time}}', fr: 'hier {{time}}' },
+  daysAgo: {
+    en: { one: '{{count}} day ago {{time}}', other: '{{count}} days ago {{time}}' },
+    fr: { one: 'il y a {{count}} jour à {{time}}', other: 'il y a {{count}} jours à {{time}}' },
+  },
+} as const
+
+function weekdayName(date: Date): string {
+  // Locale-sensitive: rebuild the formatter when the active locale changes.
+  return new Intl.DateTimeFormat(getLocale(), { weekday: 'long' }).format(date)
+}
 
 /**
  * Format a date string to "Dayname YYYY/MM/DD" format
  * Example: "Monday 2024/01/15"
- * Uses local time to match user's timezone
+ * The weekday name follows the active locale (e.g. "lundi" in fr); the numeric
+ * part stays in the locale-neutral YYYY/MM/DD layout.
+ * Uses local time to match user's timezone.
  */
 export function formatDateHeader(isoString: string): string {
   const date = new Date(isoString)
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-  const dayName = days[date.getDay()]
+  if (Number.isNaN(date.getTime())) return ''
+  const dayName = weekdayName(date)
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
@@ -20,7 +37,7 @@ export function formatDateHeader(isoString: string): string {
 /**
  * Format a date string to "HH:MM" 24-hour format
  * Example: "14:30"
- * Uses local time to match user's timezone
+ * Uses local time to match user's timezone.
  */
 export function formatTime(isoString: string): string {
   const date = new Date(isoString)
@@ -61,24 +78,25 @@ export function formatDateTime(isoString: string): string {
  * - "yesterday HH:MM" if yesterday
  * - "X days ago HH:MM" if within 7 days
  * - "YYYY/MM/DD HH:MM" otherwise
- * Uses local time to match user's timezone
+ * The relative label follows the active locale (e.g. "aujourd'hui" in fr).
+ * Uses local time to match user's timezone.
  */
-export function formatRelativeDate(isoString: string): string {
+export function formatRelativeDate(isoString: string, now = Date.now()): string {
   const date = new Date(isoString)
-  const now = new Date()
+  const nowDate = new Date(now)
 
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const startOfToday = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate())
   const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate())
 
   const daysDiff = Math.floor((startOfToday.getTime() - startOfDate.getTime()) / (1000 * 60 * 60 * 24))
   const time = formatTime(isoString)
 
   if (daysDiff === 0) {
-    return `today ${time}`
+    return t(RELATIVE_LABELS.today, { time })
   } else if (daysDiff === 1) {
-    return `yesterday ${time}`
+    return t(RELATIVE_LABELS.yesterday, { time })
   } else if (daysDiff < 7) {
-    return `${daysDiff} days ago ${time}`
+    return t(RELATIVE_LABELS.daysAgo, { count: daysDiff, time })
   } else {
     const year = date.getFullYear()
     const month = String(date.getMonth() + 1).padStart(2, '0')

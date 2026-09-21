@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { FolderIcon, BranchIcon } from '../shared/icons'
+import { useT } from '../../hooks/useT'
 import { DiffViewer } from './DiffViewer'
 import { WorkspaceModal } from './WorkspaceModal'
 import { BranchModal } from './BranchModal'
@@ -26,6 +27,7 @@ export function WorkspaceBranchSection({
   onEditWorkspace,
   onEditBranch,
 }: WorkspaceBranchSectionProps) {
+  const t = useT()
   const [showWorkspaceModal, setShowWorkspaceModal] = useState(false)
   const [showBranchModal, setShowBranchModal] = useState(false)
 
@@ -39,7 +41,7 @@ export function WorkspaceBranchSection({
             <a
               href={buildWorkspaceUrl(workdir)}
               className="flex items-center gap-2 min-w-0 flex-1 no-underline group"
-              title="Open workspace in VSCode"
+              title={t({ en: 'Open workspace in VSCode', fr: 'Ouvrir l’espace de travail dans VSCode' })}
             >
               <FolderIcon className="w-4 h-4 text-text-muted flex-shrink-0" />
               <span className="truncate text-text-secondary group-hover:text-accent-primary transition-colors">
@@ -59,7 +61,7 @@ export function WorkspaceBranchSection({
             }}
             className="ml-auto px-2 py-0.5 text-xs rounded bg-bg-tertiary text-text-secondary hover:bg-bg-secondary transition-colors"
           >
-            Edit
+            {t({ en: 'Edit', fr: 'Modifier' })}
           </button>
         </div>
         <div className="h-px bg-border" />
@@ -73,7 +75,7 @@ export function WorkspaceBranchSection({
             }}
             className="ml-auto px-2 py-0.5 text-xs rounded bg-bg-tertiary text-text-secondary hover:bg-bg-secondary transition-colors"
           >
-            Edit
+            {t({ en: 'Edit', fr: 'Modifier' })}
           </button>
         </div>
       </div>

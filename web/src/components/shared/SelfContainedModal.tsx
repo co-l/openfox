@@ -2,6 +2,7 @@ import { ScrollArea } from './ScrollArea'
 import { useState, useCallback, useEffect, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { CloseButton } from './IconButton'
+import { useT } from '../../hooks/useT'
 
 interface ModalProps {
   label?: ReactNode
@@ -44,6 +45,7 @@ export function Modal({
   showCloseButton = true,
   scrollable = true,
 }: ModalProps) {
+  const t = useT()
   const [internalIsOpen, setInternalIsOpen] = useState(false)
   const isControlled = controlledIsOpen !== undefined
   const isOpen = isControlled ? controlledIsOpen : internalIsOpen
@@ -105,7 +107,12 @@ export function Modal({
                         {headerRight && <div className="flex items-center gap-2 min-w-0">{headerRight}</div>}
                       </div>
                       {showCloseButton && (
-                        <CloseButton onClick={close} aria-label="Close" className="shrink-0" iconSize="w-5 h-5" />
+                        <CloseButton
+                          onClick={close}
+                          aria-label={t({ en: 'Close', fr: 'Fermer' })}
+                          className="shrink-0"
+                          iconSize="w-5 h-5"
+                        />
                       )}
                     </div>
                   )}

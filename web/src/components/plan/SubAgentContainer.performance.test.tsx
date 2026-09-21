@@ -13,7 +13,7 @@ vi.mock('../../stores/session', () => ({
     selector({ subAgentContextStates: {} }),
 }))
 
-vi.mock('../../stores/settings', () => ({
+vi.mock('../../hooks/useDisplaySettings', () => ({
   useDisplaySettings: () => ({ showThinking: true, showVerboseToolOutput: true }),
 }))
 

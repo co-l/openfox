@@ -3,8 +3,25 @@ import '@testing-library/jest-dom/vitest'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 import { DiffViewer } from './DiffViewer'
-import { useSettingsStore, SETTINGS_KEYS } from '../../stores/settings'
-import { useConfigStore } from '../../stores/config'
+import { SETTINGS_KEYS, settingResource } from '../../lib/resources'
+import { clearCache } from '../../lib/resourceCache'
+import { configResource } from '../../lib/resources'
+
+function seedConfig(platform: { isWSL: boolean; wslDistro: string } | null): void {
+  configResource.write({
+    version: null,
+    model: null,
+    maxContext: 200000,
+    llmUrl: null,
+    llmStatus: 'unknown',
+    backend: 'unknown',
+    defaultModelSelection: null,
+    visionFallback: null,
+    platform,
+    workdir: null,
+    locale: 'automatic',
+  })
+}
 
 vi.mock('../../hooks/useGitStatus', () => ({
   useGitStatus: vi.fn(() => ({
@@ -38,8 +55,8 @@ vi.mock('../../stores/session', () => ({
 
 beforeEach(() => {
   cleanup()
-  useConfigStore.setState({ platform: null })
-  useSettingsStore.setState({ settings: {} })
+  clearCache()
+  seedConfig(null)
 })
 
 describe('DiffViewer', () => {
@@ -56,9 +73,7 @@ describe('DiffViewer', () => {
   })
 
   it('renders VSCode links when setting is enabled', () => {
-    useSettingsStore.setState((s) => ({
-      settings: { ...s.settings, [SETTINGS_KEYS.DISPLAY_SHOW_OPEN_IN_EDITOR]: 'true' },
-    }))
+    settingResource.write('true', SETTINGS_KEYS.DISPLAY_SHOW_OPEN_IN_EDITOR)
     render(<DiffViewer />)
     const links = screen.getAllByTitle(/Open .+ in VSCode/)
     expect(links.length).toBeGreaterThan(0)
@@ -66,20 +81,16 @@ describe('DiffViewer', () => {
   })
 
   it('renders VSCode links with workspace path resolved', () => {
-    useConfigStore.setState({ platform: { isWSL: false, wslDistro: '' } })
-    useSettingsStore.setState((s) => ({
-      settings: { ...s.settings, [SETTINGS_KEYS.DISPLAY_SHOW_OPEN_IN_EDITOR]: 'true' },
-    }))
+    seedConfig({ isWSL: false, wslDistro: '' })
+    settingResource.write('true', SETTINGS_KEYS.DISPLAY_SHOW_OPEN_IN_EDITOR)
     render(<DiffViewer />)
     const link = screen.getByTitle('Open src/foo.ts in VSCode')
     expect(link).toHaveAttribute('href', 'vscode://file//home/user/project/src/foo.ts')
   })
 
   it('renders WSL links when platform is WSL', () => {
-    useConfigStore.setState({ platform: { isWSL: true, wslDistro: 'Ubuntu' } })
-    useSettingsStore.setState((s) => ({
-      settings: { ...s.settings, [SETTINGS_KEYS.DISPLAY_SHOW_OPEN_IN_EDITOR]: 'true' },
-    }))
+    seedConfig({ isWSL: true, wslDistro: 'Ubuntu' })
+    settingResource.write('true', SETTINGS_KEYS.DISPLAY_SHOW_OPEN_IN_EDITOR)
     render(<DiffViewer />)
     const link = screen.getByTitle('Open src/foo.ts in VSCode')
     expect(link).toHaveAttribute('href', 'vscode://vscode-remote/wsl+Ubuntu/home/user/project/src/foo.ts:1')

@@ -135,6 +135,26 @@ function runMigrations(db: Database.Database): void {
     )
   `)
 
+  // Create notifications table for plugin-emitted in-app notifications
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id TEXT PRIMARY KEY,
+      plugin_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT,
+      level TEXT NOT NULL,
+      actions TEXT,
+      created_at TEXT NOT NULL,
+      read_at TEXT
+    )
+  `)
+
+  const notificationColumns = db.prepare(`PRAGMA table_info(notifications)`).all() as { name: string }[]
+  if (!notificationColumns.some((column) => column.name === 'actions')) {
+    logger.info('Migrating notifications table: adding actions column')
+    db.exec(`ALTER TABLE notifications ADD COLUMN actions TEXT`)
+  }
+
   // Migration: Add custom_instructions column to projects table
   const projectColumns = db.prepare(`PRAGMA table_info(projects)`).all() as { name: string }[]
   const projectColumnNames = projectColumns.map((c) => c.name)
@@ -292,6 +312,11 @@ function runMigrations(db: Database.Database): void {
     db.exec(`ALTER TABLE sessions ADD COLUMN cached_hash TEXT`)
   }
 
+  if (!columnNames.includes('cached_prompt_hash')) {
+    logger.info('Migrating sessions table: adding cached_prompt_hash column')
+    db.exec(`ALTER TABLE sessions ADD COLUMN cached_prompt_hash TEXT`)
+  }
+
   // Migration: Rename worktree → workspace
   if (!columnNames.includes('workspace') && columnNames.includes('worktree')) {
     logger.info('Migrating sessions table: renaming worktree to workspace')
@@ -373,6 +398,19 @@ function runMigrations(db: Database.Database): void {
     )
   `)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id, status)`)
+
+  // Migration: scheduled/planned tasks — `schedule` holds the JSON rule,
+  // `next_run_at` is the denormalized trigger time the scheduler queries.
+  const taskColumns = db.prepare(`PRAGMA table_info(tasks)`).all() as { name: string }[]
+  const taskColumnNames = taskColumns.map((c) => c.name)
+  if (!taskColumnNames.includes('schedule')) {
+    logger.info('Migrating tasks table: adding schedule column')
+    db.exec(`ALTER TABLE tasks ADD COLUMN schedule TEXT`)
+  }
+  if (!taskColumnNames.includes('next_run_at')) {
+    logger.info('Migrating tasks table: adding next_run_at column')
+    db.exec(`ALTER TABLE tasks ADD COLUMN next_run_at TEXT`)
+  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS task_links (

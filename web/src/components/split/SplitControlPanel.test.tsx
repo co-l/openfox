@@ -12,7 +12,6 @@ const {
   onLayoutChangeMock,
   createSessionMock,
   resetPendingSessionCreateMock,
-  listProjectsMock,
 } = vi.hoisted(() => ({
   focusPaneMock: vi.fn(),
   closePaneMock: vi.fn(),
@@ -22,7 +21,6 @@ const {
   onLayoutChangeMock: vi.fn(),
   createSessionMock: vi.fn(),
   resetPendingSessionCreateMock: vi.fn(),
-  listProjectsMock: vi.fn(async () => undefined),
 }))
 
 let storeState: Record<string, unknown> = {}
@@ -33,15 +31,15 @@ vi.mock('../../stores/session', () => ({
   }),
 }))
 
-vi.mock('../../stores/project', () => ({
-  useProjectStore: (selector: (state: unknown) => unknown) =>
-    selector({
-      projects: [
-        { id: 'p1', name: 'acme-app', workdir: '/home/dev/acme-app' },
-        { id: 'p2', name: 'other-repo', workdir: '/home/dev/other-repo' },
-      ],
-      listProjects: listProjectsMock,
-    }),
+vi.mock('../../hooks/useProjects', () => ({
+  useProjects: () => ({
+    projects: [
+      { id: 'p1', name: 'acme-app', workdir: '/home/dev/acme-app' },
+      { id: 'p2', name: 'other-repo', workdir: '/home/dev/other-repo' },
+    ],
+    refresh: vi.fn(),
+    loading: false,
+  }),
 }))
 
 const pane = (id: string, title: string, messages: unknown[] = []) => ({
@@ -111,7 +109,6 @@ describe('SplitControlPanel', () => {
     onLayoutChangeMock.mockClear()
     createSessionMock.mockClear()
     resetPendingSessionCreateMock.mockClear()
-    listProjectsMock.mockClear()
   })
 
   afterEach(() => cleanup())
@@ -221,10 +218,9 @@ describe('SplitControlPanel', () => {
     expect(section.querySelector('svg')).toBeNull()
   })
 
-  it('opens the project picker from the plus button and refreshes projects', () => {
+  it('opens the project picker from the plus button', () => {
     renderPanel()
     fireEvent.click(screen.getByLabelText('New session'))
-    expect(listProjectsMock).toHaveBeenCalled()
     expect(screen.getByText('acme-app')).toBeDefined()
     expect(screen.getByText('other-repo')).toBeDefined()
   })

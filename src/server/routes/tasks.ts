@@ -4,6 +4,17 @@ import { isTaskGateError, isTaskConflictError } from '../tasks/service.js'
 import type { TaskActor } from '../../shared/types.js'
 import { getProject } from '../db/projects.js'
 import { getGateConfig, getTaskSettings } from '../db/tasks.js'
+import { serverT } from '../i18n.js'
+
+/** Loose shape guard for an incoming schedule — the service validates deeply. */
+function isSchedule(value: unknown): value is import('../../shared/types.js').TaskSchedule {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'type' in value &&
+    ((value as { type?: unknown }).type === 'once' || (value as { type?: unknown }).type === 'recurring')
+  )
+}
 
 /**
  * REST API for the project task board. All mutations funnel through the
@@ -15,7 +26,7 @@ export function registerTaskRoutes(router: Router, tasksService: TasksService): 
   const requireProject = (req: Request, res: Response): string | null => {
     const projectId = req.params['projectId'] as string
     if (!getProject(projectId)) {
-      res.status(404).json({ error: 'Project not found' })
+      res.status(404).json({ error: serverT({ en: 'Project not found', fr: 'Projet introuvable' }) })
       return null
     }
     return projectId
@@ -33,7 +44,9 @@ export function registerTaskRoutes(router: Router, tasksService: TasksService): 
     if (isTaskConflictError(error)) {
       return res.status(409).json({ error: error.message, code: 'CONFLICT', task: error.task })
     }
-    return res.status(400).json({ error: error instanceof Error ? error.message : 'Unknown error' })
+    return res
+      .status(400)
+      .json({ error: error instanceof Error ? error.message : serverT({ en: 'Unknown error', fr: 'Erreur inconnue' }) })
   }
 
   const HUMAN: TaskActor = 'human'
@@ -62,7 +75,9 @@ export function registerTaskRoutes(router: Router, tasksService: TasksService): 
     if (!projectId) return
     const { gates } = req.body
     if (!Array.isArray(gates)) {
-      return res.status(400).json({ error: 'gates (array) is required' })
+      return res
+        .status(400)
+        .json({ error: serverT({ en: 'gates (array) is required', fr: 'gates (tableau) est requis' }) })
     }
     const normalized = gates.map(
       (
@@ -92,13 +107,20 @@ export function registerTaskRoutes(router: Router, tasksService: TasksService): 
     const settings: { slotLimit?: number; queuePaused?: boolean } = {}
     if (typeof slotLimit === 'number') {
       if (!Number.isInteger(slotLimit) || slotLimit < 1 || slotLimit > 10) {
-        return res.status(400).json({ error: 'slotLimit must be an integer between 1 and 10' })
+        return res.status(400).json({
+          error: serverT({
+            en: 'slotLimit must be an integer between 1 and 10',
+            fr: 'slotLimit doit être un entier entre 1 et 10',
+          }),
+        })
       }
       settings.slotLimit = slotLimit
     }
     if (typeof queuePaused === 'boolean') settings.queuePaused = queuePaused
     if (Object.keys(settings).length === 0) {
-      return res.status(400).json({ error: 'Provide slotLimit and/or queuePaused' })
+      return res.status(400).json({
+        error: serverT({ en: 'Provide slotLimit and/or queuePaused', fr: 'Fournissez slotLimit et/ou queuePaused' }),
+      })
     }
     tasksService.setSettings(projectId, settings).then((saved) => {
       res.json({ settings: saved })
@@ -109,9 +131,11 @@ export function registerTaskRoutes(router: Router, tasksService: TasksService): 
   router.post('/projects/:projectId/tasks', (req: Request, res: Response) => {
     const projectId = requireProject(req, res)
     if (!projectId) return
-    const { prompt, attachments, agentId, providerId, model } = req.body
+    const { prompt, attachments, agentId, providerId, model, schedule } = req.body
     if (typeof prompt !== 'string') {
-      return res.status(400).json({ error: 'prompt (string) is required' })
+      return res
+        .status(400)
+        .json({ error: serverT({ en: 'prompt (string) is required', fr: 'prompt (chaîne) est requis' }) })
     }
     try {
       const task = tasksService.create(
@@ -122,6 +146,7 @@ export function registerTaskRoutes(router: Router, tasksService: TasksService): 
           ...(typeof agentId === 'string' ? { agentId } : {}),
           ...(typeof providerId === 'string' ? { providerId } : {}),
           ...(typeof model === 'string' ? { model } : {}),
+          ...(isSchedule(schedule) ? { schedule } : {}),
         },
         { actor: HUMAN },
       )
@@ -135,20 +160,21 @@ export function registerTaskRoutes(router: Router, tasksService: TasksService): 
     const projectId = requireProject(req, res)
     if (!projectId) return
     const task = tasksService.get(projectId, req.params['taskId'] as string)
-    if (!task) return res.status(404).json({ error: 'Task not found' })
+    if (!task) return res.status(404).json({ error: serverT({ en: 'Task not found', fr: 'Tâche introuvable' }) })
     res.json({ task })
   })
 
   router.put('/projects/:projectId/tasks/:taskId', (req: Request, res: Response) => {
     const projectId = requireProject(req, res)
     if (!projectId) return
-    const { prompt, attachments, agentId, providerId, model, expectedVersion } = req.body
+    const { prompt, attachments, agentId, providerId, model, schedule, expectedVersion } = req.body
     const patch: {
       prompt?: string
       attachments?: import('../../shared/types.js').Attachment[]
       agentId?: string | null
       providerId?: string | null
       model?: string | null
+      schedule?: import('../../shared/types.js').TaskSchedule | null
     } = {}
     if (typeof prompt === 'string') patch.prompt = prompt
     if (Array.isArray(attachments)) {
@@ -157,8 +183,12 @@ export function registerTaskRoutes(router: Router, tasksService: TasksService): 
     if (typeof agentId === 'string' || agentId === null) patch.agentId = agentId
     if (typeof providerId === 'string' || providerId === null) patch.providerId = providerId
     if (typeof model === 'string' || model === null) patch.model = model
+    if (schedule === null || isSchedule(schedule))
+      patch.schedule = schedule as import('../../shared/types.js').TaskSchedule | null
     if (Object.keys(patch).length === 0) {
-      return res.status(400).json({ error: 'No updatable fields provided' })
+      return res
+        .status(400)
+        .json({ error: serverT({ en: 'No updatable fields provided', fr: 'Aucun champ modifiable fourni' }) })
     }
     tasksService
       .update(projectId, req.params['taskId'] as string, patch, { actor: HUMAN }, expectedVersion)
@@ -191,7 +221,12 @@ export function registerTaskRoutes(router: Router, tasksService: TasksService): 
     if (!projectId) return
     const { to, reason, expectedVersion, sessionId } = req.body
     if (!['todo', 'in_progress', 'done'].includes(to)) {
-      return res.status(400).json({ error: 'to must be one of: todo, in_progress, done' })
+      return res.status(400).json({
+        error: serverT({
+          en: 'to must be one of: todo, in_progress, done',
+          fr: 'to doit être l’un de : todo, in_progress, done',
+        }),
+      })
     }
     tasksService
       .move(projectId, req.params['taskId'] as string, to, {
@@ -209,7 +244,9 @@ export function registerTaskRoutes(router: Router, tasksService: TasksService): 
     if (!projectId) return
     const { value, expectedVersion } = req.body
     if (typeof value !== 'string') {
-      return res.status(400).json({ error: 'value (string) is required' })
+      return res
+        .status(400)
+        .json({ error: serverT({ en: 'value (string) is required', fr: 'value (chaîne) est requise' }) })
     }
     tasksService
       .setGateValue(
@@ -230,7 +267,9 @@ export function registerTaskRoutes(router: Router, tasksService: TasksService): 
     if (!projectId) return
     const { status, index } = req.body
     if (!['todo', 'in_progress', 'done'].includes(status) || typeof index !== 'number') {
-      return res.status(400).json({ error: 'status and index (number) are required' })
+      return res.status(400).json({
+        error: serverT({ en: 'status and index (number) are required', fr: 'status et index (nombre) sont requis' }),
+      })
     }
     try {
       res.json({ task: tasksService.reorder(projectId, req.params['taskId'] as string, status, index) })

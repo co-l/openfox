@@ -9,6 +9,7 @@ import {
 } from '../../stores/notifications'
 import { requestNotificationPermission } from '../../lib/sound'
 import { ChevronDownIcon } from '../shared/icons'
+import { useT } from '../../hooks/useT'
 
 function SoundPicker({
   value,
@@ -45,15 +46,12 @@ function SoundPicker({
   )
 }
 
-const AGENT_COLUMNS = [
-  { key: 'general', label: 'General' },
-  { key: 'build', label: 'Agent' },
-  { key: 'sub-agent', label: 'Sub-agent' },
-] as const
+const AGENT_COLUMNS = [{ key: 'general' }, { key: 'build' }, { key: 'sub-agent' }] as const
 
 type ColumnKey = (typeof AGENT_COLUMNS)[number]['key']
 
 export function NotificationSettings() {
+  const t = useT()
   const settings = useNotificationSettingsStore((s) => s.settings)
   const update = useNotificationSettingsStore((s) => s.update)
   const updateEvent = useNotificationSettingsStore((s) => s.updateEvent)
@@ -92,19 +90,33 @@ export function NotificationSettings() {
     }
   }
 
+  const columnLabels: Record<ColumnKey, string> = {
+    general: t({ en: 'General', fr: 'Général' }),
+    build: t({ en: 'Agent', fr: 'Agent' }),
+    'sub-agent': t({ en: 'Sub-agent', fr: 'Sous-agent' }),
+  }
+
   return (
     <div className="space-y-6">
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-text-primary">Master Controls</h3>
+        <h3 className="text-sm font-medium text-text-primary">
+          {t({ en: 'Master Controls', fr: 'Contrôles principaux' })}
+        </h3>
         <Toggle
-          label="Sound notifications"
-          description="Play sounds when events occur"
+          label={t({ en: 'Sound notifications', fr: 'Notifications sonores' })}
+          description={t({
+            en: 'Play sounds when events occur',
+            fr: 'Jouer des sons lorsque des événements se produisent',
+          })}
           checked={settings.soundEnabled}
           onChange={(v) => update({ ...settings, soundEnabled: v })}
         />
         <Toggle
-          label="Browser notifications"
-          description="Show desktop notifications when the window is not focused"
+          label={t({ en: 'Browser notifications', fr: 'Notifications du navigateur' })}
+          description={t({
+            en: 'Show desktop notifications when the window is not focused',
+            fr: 'Afficher des notifications de bureau lorsque la fenêtre n’est pas ciblée',
+          })}
           checked={settings.browserNotificationEnabled}
           onChange={(v) => {
             if (v && typeof Notification !== 'undefined' && Notification.permission !== 'granted') {
@@ -118,21 +130,28 @@ export function NotificationSettings() {
           Notification.permission === 'denied' &&
           settings.browserNotificationEnabled && (
             <p className="text-xs text-accent-error ml-6">
-              Browser notifications are blocked. Please enable them in your browser settings.
+              {t({
+                en: 'Browser notifications are blocked. Please enable them in your browser settings.',
+                fr: 'Les notifications du navigateur sont bloquées. Veuillez les activer dans les paramètres de votre navigateur.',
+              })}
             </p>
           )}
       </div>
 
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-text-primary">Notification Settings</h3>
+        <h3 className="text-sm font-medium text-text-primary">
+          {t({ en: 'Notification Settings', fr: 'Paramètres de notification' })}
+        </h3>
         <div className="border border-border rounded overflow-hidden">
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-bg-tertiary">
               <tr className="border-b border-border">
-                <th className="text-left px-3 py-2 text-text-primary font-medium w-40">Event</th>
+                <th className="text-left px-3 py-2 text-text-primary font-medium w-40">
+                  {t({ en: 'Event', fr: 'Événement' })}
+                </th>
                 {AGENT_COLUMNS.map((col) => (
                   <th key={col.key} className="text-center px-2 py-2 text-text-primary font-medium">
-                    {col.label}
+                    {columnLabels[col.key]}
                   </th>
                 ))}
               </tr>
@@ -161,7 +180,7 @@ export function NotificationSettings() {
                                 onChange={(e) => handleToggle(col.key, event.key, 'soundEnabled', e.target.checked)}
                                 disabled={!settings.soundEnabled}
                                 className="rounded border-border"
-                                title="Sound"
+                                title={t({ en: 'Sound', fr: 'Son' })}
                               />
                             </label>
                             <label className="flex items-center gap-1 text-text-secondary">
@@ -173,7 +192,7 @@ export function NotificationSettings() {
                                 }
                                 disabled={!settings.browserNotificationEnabled}
                                 className="rounded border-border"
-                                title="Browser"
+                                title={t({ en: 'Browser', fr: 'Navigateur' })}
                               />
                             </label>
                           </div>

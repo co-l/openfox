@@ -13,6 +13,7 @@ import { createToolProgressHandler } from './tool-streaming.js'
 import { createToolCallEvent, createToolResultEvent, createChatDoneEvent } from './stream-pure.js'
 import { PathAccessDeniedError, AskUserInterrupt } from '../tools/index.js'
 import { loadAllAgentsDefault, findAgentById } from '../agents/registry.js'
+import { serverT } from '../i18n.js'
 import { logger } from '../utils/logger.js'
 import { sanitizeUtf8 } from '../utils/utf8.js'
 import stripAnsi from 'strip-ansi'
@@ -32,6 +33,7 @@ export interface ToolBatchContext {
   providerManager?: ProviderManager | undefined
   onToolExecuted?: ((toolCall: ToolCall, result: ToolResult) => void) | undefined
   agentTimeout?: number
+  allowParallelSubAgents?: boolean | undefined
 }
 
 export interface ToolBatchResult {
@@ -42,7 +44,19 @@ export interface ToolBatchResult {
   stepDoneCalled?: boolean | undefined
 }
 
-const INTERRUPTED_ERROR = 'Tool execution was interrupted by user'
+export interface ExecutedToolCall {
+  toolCall: ToolCall
+  toolResult: ToolResult
+  content: string
+  index: number
+}
+
+function interruptedError(): string {
+  return serverT({
+    en: 'Tool execution was interrupted by user',
+    fr: 'L’exécution de l’outil a été interrompue par l’utilisateur',
+  })
+}
 
 /**
  * Extract a prompt string from tool call arguments, trying common keys.
@@ -80,7 +94,7 @@ export async function transformSubAgentAliases(
 function createInterruptedResult(startTime?: number): ToolResult {
   return {
     success: false,
-    error: INTERRUPTED_ERROR,
+    error: interruptedError(),
     durationMs: startTime ? Date.now() - startTime : 0,
     truncated: false,
   }
@@ -118,7 +132,13 @@ export async function executeTools(
     if (error instanceof PathAccessDeniedError) {
       return {
         success: false,
-        error: `User denied access to ${error.paths.join(', ')}. If you need this file, explain why and ask for permission.`,
+        error: serverT(
+          {
+            en: 'User denied access to {{paths}}. If you need this file, explain why and ask for permission.',
+            fr: 'Accès refusé par l’utilisateur : {{paths}}. Si vous avez besoin de ce fichier, expliquez pourquoi et demandez l’autorisation.',
+          },
+          { paths: error.paths.join(', ') },
+        ),
         durationMs: Date.now() - startTime,
         truncated: false,
       }
@@ -134,7 +154,15 @@ export async function executeTools(
       const { awaitAnswer } = await import('../tools/ask.js')
       const answerPromise = awaitAnswer(error.callId)
       if (!answerPromise) {
-        throw new Error(`No pending question found for callId: ${error.callId}`)
+        throw new Error(
+          serverT(
+            {
+              en: 'No pending question found for callId: {{id}}',
+              fr: 'Aucune question en attente trouvée pour callId : {{id}}',
+            },
+            { id: error.callId },
+          ),
+        )
       }
       const answer = await answerPromise
       return {
@@ -150,22 +178,14 @@ export async function executeTools(
     }
   }
 
-  const executeTool = async (
-    toolCall: ToolCall,
-    index: number,
-  ): Promise<{
-    toolCall: ToolCall
-    toolResult: ToolResult
-    content: string
-    index: number
-  }> => {
+  const executeTool = async (toolCall: ToolCall, index: number): Promise<ExecutedToolCall> => {
     if (ctx.signal?.aborted) {
       const toolResult = createInterruptedResult()
       append(createToolResultEvent(assistantMsgId, toolCall.id, toolResult))
       return {
         toolCall,
         toolResult,
-        content: `Error: ${INTERRUPTED_ERROR}`,
+        content: serverT({ en: 'Error: {{message}}', fr: 'Erreur : {{message}}' }, { message: interruptedError() }),
         index,
       }
     }
@@ -177,7 +197,13 @@ export async function executeTools(
       } else {
         const toolResult: ToolResult = {
           success: false,
-          error: `Failed to parse tool call arguments: ${toolCall.parseError}. Please ensure your JSON function call arguments are valid.`,
+          error: serverT(
+            {
+              en: 'Failed to parse tool call arguments: {{error}}. Please ensure your JSON function call arguments are valid.',
+              fr: 'Échec de l’analyse des arguments de l’appel d’outil : {{error}}. Assurez-vous que vos arguments JSON d’appel de fonction sont valides.',
+            },
+            { error: toolCall.parseError ?? '' },
+          ),
           durationMs: 0,
           truncated: false,
         }
@@ -185,7 +211,10 @@ export async function executeTools(
         return {
           toolCall,
           toolResult,
-          content: `Error: ${toolResult.error}`,
+          content: serverT(
+            { en: 'Error: {{message}}', fr: 'Erreur : {{message}}' },
+            { message: toolResult.error ?? '' },
+          ),
           index,
         }
       }
@@ -219,10 +248,22 @@ export async function executeTools(
 
     const startTime = Date.now()
     let toolResult: ToolResult
-    try {
-      toolResult = await ctx.toolRegistry.execute(toolCall.name, toolCall.arguments, toolContext)
-    } catch (error) {
-      toolResult = await handleToolExecutionError(error, ctx.sessionId, startTime)
+    // Preflight-rejected calls must never execute: their arguments were cut
+    // short (path-only), so running the tool would either crash or produce a
+    // misleading result. Surface the preflight error directly instead.
+    if (toolCall.preflightError) {
+      toolResult = {
+        success: false,
+        error: toolCall.preflightError,
+        durationMs: Date.now() - startTime,
+        truncated: false,
+      }
+    } else {
+      try {
+        toolResult = await ctx.toolRegistry.execute(toolCall.name, toolCall.arguments, toolContext)
+      } catch (error) {
+        toolResult = await handleToolExecutionError(error, ctx.sessionId, startTime)
+      }
     }
 
     ctx.onToolExecuted?.(toolCall, toolResult)
@@ -244,10 +285,13 @@ export async function executeTools(
 
     const rawContent = stripAnsi(
       toolResult.success
-        ? (toolResult.output ?? 'Success')
+        ? (toolResult.output ?? serverT({ en: 'Success', fr: 'Succès' }))
         : toolResult.output
-          ? `${toolResult.output}\n\nError: ${toolResult.error}`
-          : `Error: ${toolResult.error}`,
+          ? serverT(
+              { en: '{{output}}\n\nError: {{error}}', fr: '{{output}}\n\nErreur : {{error}}' },
+              { output: toolResult.output, error: toolResult.error ?? '' },
+            )
+          : serverT({ en: 'Error: {{error}}', fr: 'Erreur : {{error}}' }, { error: toolResult.error ?? '' }),
     )
     const { clean: content, corrupted } = sanitizeUtf8(rawContent)
     if (corrupted) {
@@ -268,8 +312,38 @@ export async function executeTools(
   }
 
   const batchStart = Date.now()
-  const executionPromises = toolCalls.map((toolCall, index) => executeTool(toolCall, index))
-  const results = await Promise.all(executionPromises)
+
+  const runParallel = (calls: Array<{ toolCall: ToolCall; index: number }>) =>
+    Promise.all(calls.map(({ toolCall, index }) => executeTool(toolCall, index)))
+
+  const runSubAgentsSequentially = async (
+    calls: Array<{ toolCall: ToolCall; index: number }>,
+  ): Promise<ExecutedToolCall[]> => {
+    const executed: ExecutedToolCall[] = []
+    for (const { toolCall, index } of calls) {
+      executed.push(await executeTool(toolCall, index))
+    }
+    return executed
+  }
+
+  const allCalls = toolCalls.map((toolCall, index) => ({ toolCall, index }))
+  const subAgentCalls = allCalls.filter(({ toolCall }) => toolCall.name === 'call_sub_agent')
+
+  // Sub-agents are expensive on local models (context + compute), so by
+  // default several sub-agent calls in one batch run one after the other,
+  // while other tools in the batch stay in parallel. The advanced
+  // "allowParallelSubAgents" setting restores full parallelism.
+  let results: ExecutedToolCall[]
+  if (subAgentCalls.length > 1 && !ctx.allowParallelSubAgents) {
+    const [others, sequential] = await Promise.all([
+      runParallel(allCalls.filter(({ toolCall }) => toolCall.name !== 'call_sub_agent')),
+      runSubAgentsSequentially(subAgentCalls),
+    ])
+    results = [...others, ...sequential]
+  } else {
+    results = await runParallel(allCalls)
+  }
+
   ctx.turnMetrics.addToolTime(Date.now() - batchStart)
 
   results.sort((a, b) => a.index - b.index)

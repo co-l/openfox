@@ -170,7 +170,21 @@ describe('Session REST API', () => {
         emitUserMessage(sessionId, `User ${turn}`)
         const assistantId = emitAssistantMessageStart(sessionId)
         emitMessageDelta(sessionId, assistantId, `Assistant ${turn}`)
-        emitMessageDone(sessionId, assistantId)
+        emitMessageDone(sessionId, assistantId, {
+          stats: {
+            providerId: 'mock',
+            providerName: 'Mock',
+            backend: 'unknown',
+            model: 'mock-model',
+            mode: 'planner',
+            totalTime: 1,
+            toolTime: 0,
+            prefillTokens: 10,
+            prefillSpeed: 10,
+            generationTokens: 5,
+            generationSpeed: 5,
+          },
+        })
       }
 
       const recentRes = await fetch(`${server.url}/api/sessions/${sessionId}?history=recent`)
@@ -179,6 +193,8 @@ describe('Session REST API', () => {
       expect(recent.messages[0].content).toBe('User 13')
       expect(recent.messages.at(-1).content).toBe('Assistant 22')
       expect(recent.hiddenCount).toBe(24)
+      expect(recent.sessionStats.responseCount).toBe(22)
+      expect(recent.sessionStats.generationTokens).toBe(110)
 
       const olderRes = await fetch(
         `${server.url}/api/sessions/${sessionId}/messages?before=${encodeURIComponent(recent.messages[0].id)}`,
@@ -196,6 +212,7 @@ describe('Session REST API', () => {
       const full: any = await fullRes.json()
       expect(full.messages).toHaveLength(44)
       expect(full.hiddenCount).toBe(0)
+      expect(recent.sessionStats).toEqual(full.sessionStats)
     })
   })
 

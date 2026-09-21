@@ -7,6 +7,7 @@ import { authFetch } from '../../lib/api'
 import { pathBreadcrumbs } from '../../lib/path'
 import { shouldAutofocus } from '../../lib/device'
 import { Input } from './Input'
+import { useT } from '../../hooks/useT'
 
 interface DirectoryEntry {
   name: string
@@ -27,6 +28,7 @@ interface DirectoryBrowserProps {
 }
 
 export function DirectoryBrowser({ onSelect, onClose, initialPath }: DirectoryBrowserProps) {
+  const t = useT()
   const [listing, setListing] = useState<DirectoryListing | null>(null)
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
@@ -40,6 +42,7 @@ export function DirectoryBrowser({ onSelect, onClose, initialPath }: DirectoryBr
     setFocusedIndex(-1)
     try {
       const url = path ? `/api/directories?path=${encodeURIComponent(path)}` : '/api/directories'
+      // Authorized transient read: directory listings are interactive browser queries, not shared state.
       const response = await authFetch(url)
       const data = await response.json()
       setListing(data)
@@ -102,13 +105,20 @@ export function DirectoryBrowser({ onSelect, onClose, initialPath }: DirectoryBr
   const footer = (
     <div className="flex flex-col gap-2">
       <button onClick={onClose} className="w-full text-center text-text-muted hover:text-text-secondary text-sm">
-        Cancel
+        {t({ en: 'Cancel', fr: 'Annuler' })}
       </button>
     </div>
   )
 
   return (
-    <Modal isOpen={true} onClose={onClose} title="Select Folder" size="lg" footer={footer} scrollable={false}>
+    <Modal
+      isOpen={true}
+      onClose={onClose}
+      title={t({ en: 'Select Folder', fr: 'Sélectionner un dossier' })}
+      size="lg"
+      footer={footer}
+      scrollable={false}
+    >
       <div ref={containerRef} className="flex flex-col flex-1 min-h-0 -m-4" onKeyDown={handleKeyDown}>
         <div className="flex-shrink-0 bg-bg-secondary border-b border-border">
           {listing && (
@@ -137,7 +147,7 @@ export function DirectoryBrowser({ onSelect, onClose, initialPath }: DirectoryBr
                     onClick={() => onSelect(listing.current)}
                     className="ml-auto shrink-0 px-4 py-2 text-sm font-medium rounded-lg bg-accent-primary text-text-primary hover:bg-accent-primary/90"
                   >
-                    Select
+                    {t({ en: 'Select', fr: 'Sélectionner' })}
                   </button>
                 )}
               </div>
@@ -154,7 +164,7 @@ export function DirectoryBrowser({ onSelect, onClose, initialPath }: DirectoryBr
                 ref={inputRef}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Filter directories..."
+                placeholder={t({ en: 'Filter directories...', fr: 'Filtrer les dossiers...' })}
                 className="w-full pl-9"
               />
             </div>
@@ -168,7 +178,9 @@ export function DirectoryBrowser({ onSelect, onClose, initialPath }: DirectoryBr
             </div>
           ) : visibleItems.length === 0 ? (
             <div className="p-8 text-center text-text-muted text-sm">
-              {searchQuery ? 'No matching directories' : 'No subdirectories'}
+              {searchQuery
+                ? t({ en: 'No matching directories', fr: 'Aucun dossier correspondant' })
+                : t({ en: 'No subdirectories', fr: 'Aucun sous-dossier' })}
             </div>
           ) : (
             <div className="divide-y divide-border">
@@ -213,9 +225,9 @@ export function DirectoryBrowser({ onSelect, onClose, initialPath }: DirectoryBr
                       className={`mr-2 shrink-0 px-4 py-2 text-sm font-medium rounded-lg bg-accent-primary text-text-primary hover:bg-accent-primary/90 ${
                         index === focusedIndex ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
                       }`}
-                      aria-label={`Select ${item.name}`}
+                      aria-label={t({ en: `Select ${item.name}`, fr: `Sélectionner ${item.name}` })}
                     >
-                      Select
+                      {t({ en: 'Select', fr: 'Sélectionner' })}
                     </button>
                   )}
                 </div>

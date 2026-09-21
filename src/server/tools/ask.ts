@@ -43,18 +43,13 @@ export const askUserTool: Tool = {
             description:
               'Options for choice-type questions. Each entry may be a plain string or an object {value, label, description?} (or legacy {label, description?}). The server normalizes everything to {value, label, description?}.',
             items: {
-              oneOf: [
-                { type: 'string' },
-                {
-                  type: 'object',
-                  properties: {
-                    value: { type: 'string' },
-                    label: { type: 'string' },
-                    description: { type: 'string' },
-                  },
-                  required: ['label'],
-                },
-              ],
+              type: 'object',
+              properties: {
+                value: { type: 'string' },
+                label: { type: 'string' },
+                description: { type: 'string' },
+              },
+              required: ['label'],
             },
           },
         },

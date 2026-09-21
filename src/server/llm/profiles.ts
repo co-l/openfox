@@ -17,6 +17,13 @@ export interface ModelProfile {
 
   /** Whether the model supports vision/images */
   supportsVision: boolean
+
+  /**
+   * Preferred API protocol for the model family (e.g. gpt-5 → responses,
+   * where tools + reasoning effort work together). Used to route the request
+   * on backends that speak that protocol (currently `openai`).
+   */
+  apiProtocol?: 'chat-completions' | 'responses'
 }
 
 /** Default profile for unknown models */
@@ -63,6 +70,21 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       // "This model supports only non-thinking mode and does not generate <think></think> blocks"
       defaultMaxTokens: 16384,
       supportsVision: false,
+    },
+  },
+  {
+    pattern: 'qwen3.8',
+    profile: {
+      name: 'Qwen3.8',
+      // Per Qwen3.8-27B model card (thinking mode — the default for coding
+      // sessions): "temperature=1.0, top_p=0.95, top_k=20"
+      temperature: 1.0,
+      topP: 0.95,
+      topK: 20,
+      // Qwen3.8 over-thinks; keep a large output budget (clamped to the
+      // model's context window at request time).
+      defaultMaxTokens: 50000,
+      supportsVision: true,
     },
   },
   {
@@ -168,6 +190,23 @@ const MODEL_PROFILES: Array<{ pattern: string; profile: ModelProfile }> = [
       topP: 0.9,
       defaultMaxTokens: 16384,
       supportsVision: false,
+    },
+  },
+  {
+    pattern: 'gpt-5',
+    profile: {
+      name: 'GPT-5',
+      // OpenAI's gpt-5 family only accepts temperature = 1 (and top_p = 1);
+      // any other value is rejected with a 400.
+      temperature: 1.0,
+      topP: 1.0,
+      defaultMaxTokens: 16384,
+      supportsVision: true,
+      // gpt-5 is a Responses-API family: /v1/chat/completions rejects tools
+      // with any reasoning_effort other than "none", while /v1/responses
+      // supports tools + effort together. Route it there on the openai
+      // backend; on chat completions the request builder clamps the effort.
+      apiProtocol: 'responses',
     },
   },
   {

@@ -19,7 +19,8 @@ import { getEventStore, getCurrentContextWindowId, getCurrentWindowMessageOption
 import { buildSnapshotFromSessionState } from '../events/folding.js'
 import type { SessionManager } from '../session/index.js'
 import { getToolRegistryForAgent, PathAccessDeniedError } from '../tools/index.js'
-import { buildAgentReminder, buildAgentSmallReminder } from './prompts.js'
+import { buildAgentReminder, buildAgentSmallReminder, buildTopLevelSystemPrompt } from './prompts.js'
+import { serverT } from '../i18n.js'
 import {
   TurnMetrics,
   createMessageStartEvent,
@@ -30,15 +31,21 @@ import {
 } from './stream-pure.js'
 import { createAssemblyResult } from './request-context.js'
 import type { RequestContextMessage } from './request-context.js'
-import { buildCachedPrompt, computeDynamicContextHash, getToolFingerprint } from './dynamic-context.js'
+import {
+  buildCachedPrompt,
+  checkToolChangesAndInject,
+  computeDynamicContextHash,
+  getToolFingerprint,
+} from './dynamic-context.js'
 import { runTopLevelAgentLoop } from './agent-loop.js'
-import { loadAllAgentsDefault, findAgentById, resolveDefaultAgentId } from '../agents/registry.js'
+import { loadAllAgentsDefault, findAgentById, resolveDefaultAgentId, getSubAgents } from '../agents/registry.js'
 import { getAllInstructions } from '../context/instructions.js'
 import { getEnabledSkillMetadata } from '../skills/registry.js'
 import { getRuntimeConfig } from '../runtime-config.js'
 import { getGlobalConfigDir } from '../../cli/paths.js'
 import { logger } from '../utils/logger.js'
 import type { RetryPatternConfig } from './auto-patterns.js'
+import { sanitizeRetryPatterns } from './auto-patterns.js'
 import { getConversationMessages, processEventsForConversation } from './conversation-history.js'
 
 // Re-export for runner orchestrator
@@ -51,7 +58,10 @@ export {
   createChatDoneEvent,
 }
 
-async function buildRetryPatterns(): Promise<{ retryPatterns: RetryPatternConfig[]; maxRetriesPerTurn: number }> {
+export async function buildRetryPatterns(): Promise<{
+  retryPatterns: RetryPatternConfig[]
+  maxRetriesPerTurn: number
+}> {
   const { getSetting, SETTINGS_KEYS } = await import('../db/settings.js')
   const raw = getSetting(SETTINGS_KEYS.RETRY_PATTERNS)
   if (!raw) {
@@ -61,9 +71,18 @@ async function buildRetryPatterns(): Promise<{ retryPatterns: RetryPatternConfig
       // User had the old setting — migrate to retry patterns
       const disabled = oldXmlProtection === 'true'
       return {
-        retryPatterns: disabled
-          ? []
-          : [{ field: 'both', pattern: '<(tool_call|function=|/tool_call|parameter=)', action: 'retry', active: true }],
+        retryPatterns: sanitizeRetryPatterns(
+          disabled
+            ? []
+            : [
+                {
+                  field: 'both',
+                  pattern: '<(tool_call|function=|/tool_call|parameter=)',
+                  action: 'retry',
+                  active: true,
+                },
+              ],
+        ),
         maxRetriesPerTurn: 10,
       }
     }
@@ -72,7 +91,7 @@ async function buildRetryPatterns(): Promise<{ retryPatterns: RetryPatternConfig
   try {
     const parsed = JSON.parse(raw)
     return {
-      retryPatterns: Array.isArray(parsed.patterns) ? parsed.patterns : [],
+      retryPatterns: sanitizeRetryPatterns(Array.isArray(parsed.patterns) ? parsed.patterns : []),
       maxRetriesPerTurn: typeof parsed.maxRetriesPerTurn === 'number' ? parsed.maxRetriesPerTurn : 10,
     }
   } catch {
@@ -200,14 +219,23 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
       const errorMsgId = crypto.randomUUID()
       const reasonText =
         error.reason === 'sensitive_file'
-          ? 'sensitive files that may contain secrets'
+          ? serverT({
+              en: 'sensitive files that may contain secrets',
+              fr: 'des fichiers sensibles pouvant contenir des secrets',
+            })
           : error.reason === 'both'
-            ? 'files outside the project and sensitive files'
-            : 'files outside the project directory'
+            ? serverT({
+                en: 'files outside the project and sensitive files',
+                fr: 'des fichiers hors du projet et des fichiers sensibles',
+              })
+            : serverT({ en: 'files outside the project directory', fr: 'des fichiers hors du dossier du projet' })
       eventStore.append(sessionId, {
         type: 'chat.error',
         data: {
-          error: `User denied access to ${reasonText}.`,
+          error: serverT(
+            { en: 'User denied access to {{reason}}.', fr: 'Accès refusé par l’utilisateur : {{reason}}.' },
+            { reason: reasonText },
+          ),
           recoverable: false,
         },
       })
@@ -216,7 +244,13 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
         createMessageStartEvent(
           errorMsgId,
           'user',
-          `Access denied: ${error.paths.join(', ')}. If you need this file, explain why and ask the user for permission.`,
+          serverT(
+            {
+              en: 'Access denied: {{paths}}. If you need this file, explain why and ask the user for permission.',
+              fr: 'Accès refusé : {{paths}}. Si vous avez besoin de ce fichier, expliquez pourquoi et demandez l’autorisation à l’utilisateur.',
+            },
+            { paths: error.paths.join(', ') },
+          ),
           {
             ...(getCurrentWindowMessageOptions(sessionId) ?? {}),
             isSystemGenerated: true,
@@ -243,7 +277,7 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
     eventStore.append(sessionId, {
       type: 'chat.error',
       data: {
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: error instanceof Error ? error.message : serverT({ en: 'Unknown error', fr: 'Erreur inconnue' }),
         recoverable: false,
       },
     })
@@ -252,7 +286,10 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
       createMessageStartEvent(
         errorMsgId,
         'user',
-        `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        serverT(
+          { en: 'Error: {{message}}', fr: 'Erreur : {{message}}' },
+          { message: error instanceof Error ? error.message : serverT({ en: 'Unknown error', fr: 'Erreur inconnue' }) },
+        ),
         {
           ...(getCurrentWindowMessageOptions(sessionId) ?? {}),
           isSystemGenerated: true,
@@ -381,6 +418,29 @@ export async function runAgentTurn(
   const configDir = getGlobalConfigDir(runtimeConfig.mode ?? 'production')
   const skills = await getEnabledSkillMetadata(configDir, options.sessionManager.getProjectWorkdir(options.sessionId))
 
+  if (!options.warmup) {
+    const modelName = agentLlmClient.getModel()
+    await checkToolChangesAndInject(
+      options.sessionManager,
+      options.sessionId,
+      agentDef,
+      {
+        modelName,
+        instructionContent: instructionContent ?? '',
+        skills,
+        buildNewSystemPrompt: () =>
+          buildTopLevelSystemPrompt(
+            session.workdir,
+            instructionContent || undefined,
+            skills,
+            getSubAgents(allAgents),
+            modelName,
+          ),
+      },
+      append,
+    )
+  }
+
   return runTopLevelAgentLoop(
     {
       mode: agentId,
@@ -427,7 +487,14 @@ export async function runAgentTurn(
           agentDef,
           agentLlmClient.getModel(),
         )
-        options.sessionManager.setCachedPrompt(options.sessionId, result.systemPrompt, result.tools, result.hash)
+        options.sessionManager.setCachedPrompt(
+          options.sessionId,
+          result.systemPrompt,
+          result.tools,
+          result.hash,
+          result.promptHash,
+        )
+        options.sessionManager.setAnnouncedPromptHash(options.sessionId, result.promptHash)
         return createAssemblyResult({
           systemPrompt: result.systemPrompt,
           messages: input.messages,
@@ -439,6 +506,10 @@ export async function runAgentTurn(
       getToolRegistry: () => getToolRegistryForAgent(agentDef, options.sessionId),
       getConversationMessages: buildGetConversationMessages(options.sessionId, resolveAgentClient, append),
       injectAgentReminder: () => injectAgentReminder(options.sessionId, agentDef),
+      rebuildCachedContext: async () => {
+        const { applyDynamicContext } = await import('./dynamic-context.js')
+        await applyDynamicContext(options.sessionManager, options.sessionId, agentLlmClient.getModel())
+      },
       ...(options.initialCompacting ? { initialCompacting: true } : {}),
       ...(callbacks?.injectKickoff ? { injectKickoff: callbacks.injectKickoff } : {}),
       ...(callbacks?.onToolExecuted ? { onToolExecuted: callbacks.onToolExecuted } : {}),

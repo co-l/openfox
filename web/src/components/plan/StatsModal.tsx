@@ -1,16 +1,28 @@
 import { ScrollArea } from '../shared/ScrollArea'
+import { getLocale } from '@shared/i18n/index.js'
+import { useT } from '../../hooks/useT'
 import { Fragment, useRef, useCallback, useEffect, useMemo, useState } from 'react'
 import { Modal } from '../shared/SelfContainedModal'
 import { DualSparkline } from '../shared/Sparkline'
 import { buildPerformanceChartData, buildResponseLogRows, type ResponseLogRow } from '@shared/stats-view.js'
-import type { CallStatsDataPoint, ModelSessionStats, SessionStats } from '@shared/types.js'
+import type { CallStatsDataPoint, ModelSessionStats, SessionStats, SessionStatsSummary } from '@shared/types.js'
 import { formatTime } from '../../lib/format-stats'
+import { authFetch } from '../../lib/api'
+import { PluginZone } from '../plugins/PluginZone'
 
 interface StatsModalProps {
   isOpen: boolean
   onClose: () => void
-  stats: SessionStats
+  summary: SessionStatsSummary | null
+  sessionId: string
 }
+
+/**
+ * Sessions at or below this response count auto-load the full response log
+ * (it's cheap); larger sessions defer it behind the "Load full stats" button
+ * so the always-on payload stays lean.
+ */
+const AUTO_LOAD_THRESHOLD = 50
 
 /**
  * Format token count with k/M suffix
@@ -52,7 +64,7 @@ function formatRate(value: number): string {
 function formatTimestamp(ts: string): string {
   try {
     const date = new Date(ts)
-    return date.toLocaleTimeString('en-US', { hour12: false })
+    return date.toLocaleTimeString(getLocale(), { hour12: false })
   } catch {
     return ts
   }
@@ -109,20 +121,75 @@ function createExportData(stats: ModelSessionStats) {
   }
 }
 
-export function StatsModal({ isOpen, onClose, stats }: StatsModalProps) {
+export function StatsModal({ isOpen, onClose, summary, sessionId }: StatsModalProps) {
+  const t = useT()
   const contentRef = useRef<HTMLDivElement>(null)
   const [expandedResponses, setExpandedResponses] = useState<Record<string, boolean>>({})
-  const [selectedModelKey, setSelectedModelKey] = useState(() => stats.modelGroups[0]?.key ?? '')
+  const [selectedModelKey, setSelectedModelKey] = useState(() => summary?.modelGroups[0]?.key ?? '')
+  const [fullStats, setFullStats] = useState<SessionStats | null>(null)
+  const [loadingFull, setLoadingFull] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  // Guards against a stale in-flight fetch landing after a session switch.
+  const loadRequestRef = useRef(0)
+
+  const modelGroups = fullStats?.modelGroups ?? summary?.modelGroups ?? []
 
   useEffect(() => {
-    if (!stats.modelGroups.some((group) => group.key === selectedModelKey)) {
-      setSelectedModelKey(stats.modelGroups[0]?.key ?? '')
+    if (!modelGroups.some((group) => group.key === selectedModelKey)) {
+      setSelectedModelKey(modelGroups[0]?.key ?? '')
     }
-  }, [selectedModelKey, stats.modelGroups])
+  }, [selectedModelKey, modelGroups])
 
-  const currentStats = useMemo(
-    () => stats.modelGroups.find((group) => group.key === selectedModelKey) ?? stats.modelGroups[0],
-    [selectedModelKey, stats.modelGroups],
+  // The fetched detail belongs to a specific session — drop it when the pane
+  // switches, and invalidate any in-flight request so it can't land late.
+  useEffect(() => {
+    loadRequestRef.current += 1
+    setFullStats(null)
+    setLoadError(null)
+    setLoadingFull(false)
+  }, [sessionId])
+
+  const loadFull = useCallback(async () => {
+    if (!sessionId || loadingFull) return
+    const requestId = loadRequestRef.current + 1
+    loadRequestRef.current = requestId
+    setLoadingFull(true)
+    setLoadError(null)
+    try {
+      const res = await authFetch(`/api/sessions/${sessionId}/stats`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = (await res.json()) as { stats: SessionStats | null }
+      if (loadRequestRef.current === requestId) {
+        setFullStats(data.stats)
+      }
+    } catch (e) {
+      if (loadRequestRef.current === requestId) {
+        setLoadError(e instanceof Error ? e.message : String(e))
+      }
+    } finally {
+      if (loadRequestRef.current === requestId) {
+        setLoadingFull(false)
+      }
+    }
+  }, [sessionId, loadingFull])
+
+  // Small sessions auto-load the full log so a handful of rows never hides
+  // behind a button. Once loaded it stays cached across re-opens.
+  useEffect(() => {
+    if (!isOpen) return
+    if (fullStats || loadingFull || !summary) return
+    if (summary.responseCount > 0 && summary.responseCount <= AUTO_LOAD_THRESHOLD) {
+      void loadFull()
+    }
+  }, [isOpen, fullStats, loadingFull, summary, loadFull])
+
+  const currentStats = useMemo(() => {
+    if (!fullStats) return undefined
+    return fullStats.modelGroups.find((group) => group.key === selectedModelKey) ?? fullStats.modelGroups[0]
+  }, [fullStats, selectedModelKey])
+  const currentSummary = useMemo(
+    () => modelGroups.find((group) => group.key === selectedModelKey) ?? modelGroups[0],
+    [modelGroups, selectedModelKey],
   )
 
   const responseRows = useMemo(() => (currentStats ? buildResponseLogRows(currentStats) : []), [currentStats])
@@ -173,149 +240,212 @@ export function StatsModal({ isOpen, onClose, stats }: StatsModalProps) {
     }
   }, [handleCopyJson])
 
+  const detailLoaded = fullStats !== null
+  const canLoadDetail = summary !== null && summary.responseCount > 0 && !detailLoaded
+  // Small sessions auto-load seamlessly — hide the warning/button while that
+  // fetch is in flight so it never flashes for them.
+  const autoLoading =
+    loadingFull && summary !== null && summary.responseCount > 0 && summary.responseCount <= AUTO_LOAD_THRESHOLD
+  const showDeferredDetail = canLoadDetail && !autoLoading
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Session Stats" size="lg">
-      <div ref={contentRef} className="space-y-6">
-        <section>
-          <div className="flex flex-wrap gap-2">
-            {stats.modelGroups.map((group) => (
-              <button
-                key={group.key}
-                onClick={() => setSelectedModelKey(group.key)}
-                className={`px-3 py-1.5 rounded border text-xs transition-colors ${
-                  group.key === currentStats?.key
-                    ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
-                    : 'border-border text-text-muted hover:text-text-primary hover:bg-bg-tertiary/40'
-                }`}
-                title={group.label}
-              >
-                {group.label}
-              </button>
-            ))}
-          </div>
-        </section>
-
-        {/* Summary Section */}
-        {currentStats && (
-          <section>
-            <h3 className="text-sm font-semibold text-text-secondary mb-3 uppercase tracking-wide">Summary</h3>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              <StatCard label="AI Time" value={formatTime(currentStats.aiTime)} />
-              <StatCard label="Total Time" value={formatTime(currentStats.totalTime)} />
-              <StatCard label="Tool Time" value={formatTime(currentStats.toolTime)} />
-              <StatCard label="Responses" value={currentStats.responseCount.toString()} />
-              <StatCard label="LLM Calls" value={currentStats.llmCallCount.toString()} />
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-3">
-              <StatCard
-                label="Prefill Tokens"
-                value={formatTokens(currentStats.prefillTokens)}
-                subValue={`@ ${formatSpeed(currentStats.avgPrefillSpeed)} tok/s`}
-              />
-              <StatCard
-                label="Gen Tokens"
-                value={formatTokens(currentStats.generationTokens)}
-                subValue={`@ ${formatSpeed(currentStats.avgGenerationSpeed)} tok/s`}
-              />
-              <StatCard label="Avg PP Speed" value={`${formatSpeed(currentStats.avgPrefillSpeed)}`} subValue="tok/s" />
-              <StatCard
-                label="Avg TG Speed"
-                value={`${formatSpeed(currentStats.avgGenerationSpeed)}`}
-                subValue="tok/s"
-              />
-            </div>
-          </section>
-        )}
-
-        {/* Progression Charts */}
-        {currentStats && chartData.points.length > 1 && (
-          <section>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wide">
-                Performance Progression
-              </h3>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleCopyJson}
-                  className="px-2 py-1 text-xs text-text-muted hover:text-text-primary hover:bg-bg-tertiary rounded transition-colors"
-                >
-                  Copy JSON
-                </button>
-                <button
-                  onClick={handleExportPng}
-                  className="px-2 py-1 text-xs text-text-muted hover:text-text-primary hover:bg-bg-tertiary rounded transition-colors"
-                >
-                  Save PNG
-                </button>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={t({ en: 'Session Stats', fr: 'Statistiques de la session' })}
+      size="lg"
+    >
+      <PluginZone id="stats.modal" context={{ sessionId }}>
+        <div ref={contentRef} className="space-y-6">
+          {modelGroups.length > 1 && (
+            <section>
+              <div className="flex flex-wrap gap-2">
+                {modelGroups.map((group) => (
+                  <button
+                    key={group.key}
+                    onClick={() => setSelectedModelKey(group.key)}
+                    className={`px-3 py-1.5 rounded border text-xs transition-colors ${
+                      group.key === currentSummary?.key
+                        ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
+                        : 'border-border text-text-muted hover:text-text-primary hover:bg-bg-tertiary/40'
+                    }`}
+                    title={group.label}
+                  >
+                    {group.label}
+                  </button>
+                ))}
               </div>
-            </div>
-            <div className="bg-bg-tertiary/50 rounded p-4">
-              <DualSparkline
-                data={chartData.points}
-                width={50}
-                prefillLabel={chartData.prefillLabel}
-                generationLabel={chartData.generationLabel}
-                xLabel={chartData.xLabel}
-              />
-            </div>
-          </section>
-        )}
+            </section>
+          )}
 
-        {/* Response Log */}
-        {currentStats && (
-          <section>
-            <h3 className="text-sm font-semibold text-text-secondary mb-3 uppercase tracking-wide">
-              Response Log ({currentStats.responseCount} responses)
-            </h3>
-            <ScrollArea className="bg-bg-tertiary/30 rounded">
-              <table className="w-full table-fixed border-separate border-spacing-0 text-xs">
-                <colgroup>
-                  <col className="w-[7%]" />
-                  <col className="w-[14%]" />
-                  <col className="w-[10%]" />
-                  <col className="w-[14%]" />
-                  <col className="w-[14%]" />
-                  <col className="w-[14%]" />
-                  <col className="w-[11%]" />
-                  <col className="w-[2%]" />
-                </colgroup>
-                <thead>
-                  <tr className="text-[10px] uppercase tracking-wide text-text-muted/80">
-                    <th className="px-3 py-2 text-center font-medium">#</th>
-                    <th className="px-2 py-2 text-center font-medium">At</th>
-                    <th className="px-2 py-2 text-center font-medium">Time</th>
-                    <th className="px-2 py-2 text-center font-medium">Context</th>
-                    <th className="px-2 py-2 text-center font-medium">PP t/s</th>
-                    <th className="px-2 py-2 text-center font-medium">TG t/s</th>
-                    <th className="px-2 py-2 text-center font-medium">Calls</th>
-                    <th className="px-2 py-2" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {responseRows.map((row, i) => (
-                    <Fragment key={row.messageId}>
-                      <ResponseRow
-                        row={row}
-                        index={i}
-                        isExpanded={expandedResponses[row.messageId] ?? false}
-                        onToggle={row.isExpandable ? () => toggleResponse(row.messageId) : undefined}
-                      />
-                      {(expandedResponses[row.messageId] ?? false) &&
-                        row.calls.map((call, callIndex) => (
-                          <CallDataPointRow
-                            key={`${call.messageId}-${call.callIndex}`}
-                            dataPoint={call}
-                            index={callIndex}
-                          />
-                        ))}
-                    </Fragment>
-                  ))}
-                </tbody>
-              </table>
-            </ScrollArea>
-          </section>
-        )}
-      </div>
+          {/* Summary Section — always available from the lean payload */}
+          {currentSummary && (
+            <section>
+              <h3 className="text-sm font-semibold text-text-secondary mb-3 uppercase tracking-wide">
+                {t({ en: 'Summary', fr: 'Résumé' })}
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <StatCard label={t({ en: 'AI Time', fr: 'Temps IA' })} value={formatTime(currentSummary.aiTime)} />
+                <StatCard
+                  label={t({ en: 'Total Time', fr: 'Temps total' })}
+                  value={formatTime(currentSummary.totalTime)}
+                />
+                <StatCard
+                  label={t({ en: 'Tool Time', fr: 'Temps outils' })}
+                  value={formatTime(currentSummary.toolTime)}
+                />
+                <StatCard
+                  label={t({ en: 'Responses', fr: 'Réponses' })}
+                  value={currentSummary.responseCount.toString()}
+                />
+                <StatCard
+                  label={t({ en: 'LLM Calls', fr: 'Appels LLM' })}
+                  value={currentSummary.llmCallCount.toString()}
+                />
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-3">
+                <StatCard
+                  label={t({ en: 'Prefill Tokens', fr: 'Jetons de préremplissage' })}
+                  value={formatTokens(currentSummary.prefillTokens)}
+                  subValue={`@ ${formatSpeed(currentSummary.avgPrefillSpeed)} tok/s`}
+                />
+                <StatCard
+                  label={t({ en: 'Gen Tokens', fr: 'Jetons générés' })}
+                  value={formatTokens(currentSummary.generationTokens)}
+                  subValue={`@ ${formatSpeed(currentSummary.avgGenerationSpeed)} tok/s`}
+                />
+                <StatCard
+                  label={t({ en: 'Avg PP Speed', fr: 'Vitesse PP moyenne' })}
+                  value={`${formatSpeed(currentSummary.avgPrefillSpeed)}`}
+                  subValue="tok/s"
+                />
+                <StatCard
+                  label={t({ en: 'Avg TG Speed', fr: 'Vitesse TG moyenne' })}
+                  value={`${formatSpeed(currentSummary.avgGenerationSpeed)}`}
+                  subValue="tok/s"
+                />
+              </div>
+            </section>
+          )}
+
+          {/* Deferred detail — warning + one-time load */}
+          {showDeferredDetail && (
+            <section className="rounded border border-border bg-bg-tertiary/40 p-4">
+              <p className="text-xs text-text-muted mb-3">
+                {t(
+                  {
+                    en: 'The full response log is not loaded. Load it once to see per-response and per-call details ({{n}} responses, {{c}} calls).',
+                    fr: 'Le journal complet des réponses n’est pas chargé. Chargez-le une fois pour voir le détail par réponse et par appel ({{n}} réponses, {{c}} appels).',
+                  },
+                  { n: summary!.responseCount, c: summary!.llmCallCount },
+                )}
+              </p>
+              {loadError && <p className="text-xs text-accent-error mb-3">{loadError}</p>}
+              <button
+                onClick={() => void loadFull()}
+                disabled={loadingFull}
+                className="px-3 py-1.5 rounded bg-accent-primary/25 text-text-primary hover:bg-accent-primary/40 transition-colors text-xs font-medium disabled:opacity-50"
+              >
+                {loadingFull
+                  ? t({ en: 'Loading…', fr: 'Chargement…' })
+                  : t({ en: 'Load full stats', fr: 'Charger toutes les statistiques' })}
+              </button>
+            </section>
+          )}
+
+          {/* Progression Charts */}
+          {currentStats && chartData.points.length > 1 && (
+            <section>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wide">
+                  {t({ en: 'Performance Progression', fr: 'Progression des performances' })}
+                </h3>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleCopyJson}
+                    className="px-2 py-1 text-xs text-text-muted hover:text-text-primary hover:bg-bg-tertiary rounded transition-colors"
+                  >
+                    {t({ en: 'Copy JSON', fr: 'Copier le JSON' })}
+                  </button>
+                  <button
+                    onClick={handleExportPng}
+                    className="px-2 py-1 text-xs text-text-muted hover:text-text-primary hover:bg-bg-tertiary rounded transition-colors"
+                  >
+                    {t({ en: 'Save PNG', fr: 'Enregistrer le PNG' })}
+                  </button>
+                </div>
+              </div>
+              <div className="bg-bg-tertiary/50 rounded p-4">
+                <DualSparkline
+                  data={chartData.points}
+                  width={50}
+                  prefillLabel={chartData.prefillLabel}
+                  generationLabel={chartData.generationLabel}
+                  xLabel={chartData.xLabel}
+                />
+              </div>
+            </section>
+          )}
+
+          {/* Response Log */}
+          {currentStats && (
+            <section>
+              <h3 className="text-sm font-semibold text-text-secondary mb-3 uppercase tracking-wide">
+                {t(
+                  { en: 'Response Log ({{count}} responses)', fr: 'Journal des réponses ({{count}} réponses)' },
+                  { count: currentStats.responseCount },
+                )}
+              </h3>
+              <ScrollArea className="bg-bg-tertiary/30 rounded">
+                <table className="w-full table-fixed border-separate border-spacing-0 text-xs">
+                  <colgroup>
+                    <col className="w-[7%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[11%]" />
+                    <col className="w-[2%]" />
+                  </colgroup>
+                  <thead>
+                    <tr className="text-[10px] uppercase tracking-wide text-text-muted/80">
+                      <th className="px-3 py-2 text-center font-medium">#</th>
+                      <th className="px-2 py-2 text-center font-medium">{t({ en: 'At', fr: 'À' })}</th>
+                      <th className="px-2 py-2 text-center font-medium">{t({ en: 'Time', fr: 'Durée' })}</th>
+                      <th className="px-2 py-2 text-center font-medium">{t({ en: 'Context', fr: 'Contexte' })}</th>
+                      <th className="px-2 py-2 text-center font-medium">PP t/s</th>
+                      <th className="px-2 py-2 text-center font-medium">TG t/s</th>
+                      <th className="px-2 py-2 text-center font-medium">{t({ en: 'Calls', fr: 'Appels' })}</th>
+                      <th className="px-2 py-2" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {responseRows.map((row, i) => (
+                      <Fragment key={row.messageId}>
+                        <ResponseRow
+                          row={row}
+                          index={i}
+                          isExpanded={expandedResponses[row.messageId] ?? false}
+                          onToggle={row.isExpandable ? () => toggleResponse(row.messageId) : undefined}
+                        />
+                        {(expandedResponses[row.messageId] ?? false) &&
+                          row.calls.map((call, callIndex) => (
+                            <CallDataPointRow
+                              key={`${call.messageId}-${call.callIndex}`}
+                              dataPoint={call}
+                              index={callIndex}
+                            />
+                          ))}
+                      </Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              </ScrollArea>
+            </section>
+          )}
+        </div>
+      </PluginZone>
     </Modal>
   )
 }
@@ -394,7 +524,7 @@ function CallDataPointRow({ dataPoint, index }: { dataPoint: CallStatsDataPoint;
     <>
       <tr className={`${index % 2 === 0 ? 'bg-bg-tertiary/10' : 'bg-bg-tertiary/5'}`}>
         <td className="px-3 py-2 pl-6 text-center text-text-muted align-middle border-l border-border/60">
-          c{dataPoint.callIndex}
+          {`c${dataPoint.callIndex}`}
         </td>
         <td className="px-2 py-2 text-center text-text-muted font-mono align-middle whitespace-nowrap">
           {formatTimestamp(dataPoint.timestamp)}
@@ -420,10 +550,10 @@ function CallDataPointRow({ dataPoint, index }: { dataPoint: CallStatsDataPoint;
         <tr className={`${index % 2 === 0 ? 'bg-bg-tertiary/5' : 'bg-bg-tertiary/[2.5%]'}`}>
           <td colSpan={8} className="px-6 py-1.5 border-l border-border/60">
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-text-muted">
-              {dataPoint.temperature !== undefined && <span>temp: {dataPoint.temperature.toFixed(2)}</span>}
-              {dataPoint.topP !== undefined && <span>topP: {dataPoint.topP.toFixed(2)}</span>}
-              {dataPoint.topK !== undefined && <span>topK: {dataPoint.topK}</span>}
-              {dataPoint.maxTokens !== undefined && <span>maxTok: {dataPoint.maxTokens}</span>}
+              {dataPoint.temperature !== undefined && <span>{`temp: ${dataPoint.temperature.toFixed(2)}`}</span>}
+              {dataPoint.topP !== undefined && <span>{`topP: ${dataPoint.topP.toFixed(2)}`}</span>}
+              {dataPoint.topK !== undefined && <span>{`topK: ${dataPoint.topK}`}</span>}
+              {dataPoint.maxTokens !== undefined && <span>{`maxTok: ${dataPoint.maxTokens}`}</span>}
             </div>
           </td>
         </tr>

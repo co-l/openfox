@@ -18,6 +18,12 @@ describe('Verifier Sub-Agent Integration', () => {
     expect(verifier?.metadata.name).toBe('Verifier')
     expect(typeof verifier?.metadata.description).toBe('string')
     expect(typeof verifier?.prompt).toBe('string')
-    expect(verifier?.metadata.allowedTools).toEqual(['read_file', 'run_command', 'session_metadata', 'web_fetch'])
+    expect(verifier?.metadata.allowedTools).toEqual([
+      'read_file',
+      'run_command',
+      'session_metadata',
+      'web_fetch',
+      'load_skill',
+    ])
   })
 })

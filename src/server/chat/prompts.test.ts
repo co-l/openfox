@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   buildBasePrompt,
   buildTopLevelSystemPrompt,
@@ -7,6 +7,15 @@ import {
   buildSubAgentsSection,
 } from './prompts.js'
 import type { AgentDefinition } from '../agents/types.js'
+
+const { getSettingMock } = vi.hoisted(() => ({
+  getSettingMock: vi.fn<(key: string) => string | null>(() => null),
+}))
+
+vi.mock('../db/settings.js', () => ({
+  getSetting: getSettingMock,
+  SETTINGS_KEYS: { CAVEMAN_THINKING: 'llm.cavemanThinking' },
+}))
 
 const mockVerifier: AgentDefinition = {
   metadata: {
@@ -266,5 +275,25 @@ describe('static-prompt contract is preserved across top-level and sub-agent bui
     expect(reminder.startsWith('<system-reminder>')).toBe(true)
     expect(reminder.endsWith('</system-reminder>')).toBe(true)
     expect(reminder).toContain('Plan mode ACTIVE')
+  })
+})
+
+describe('caveman thinking option (llm.cavemanThinking)', () => {
+  beforeEach(() => {
+    getSettingMock.mockReset()
+    getSettingMock.mockReturnValue(null)
+  })
+
+  it('omits the THINKING STYLE section by default', () => {
+    const prompt = buildBasePrompt('/tmp/project')
+    expect(prompt).not.toContain('THINKING STYLE')
+  })
+
+  it('includes the THINKING STYLE section when the setting is enabled', () => {
+    getSettingMock.mockReturnValue('true')
+    const prompt = buildBasePrompt('/tmp/project')
+    expect(prompt).toContain('## THINKING STYLE')
+    expect(prompt).toContain('caveman style')
+    expect(prompt).toContain('Same meaning, far fewer tokens.')
   })
 })

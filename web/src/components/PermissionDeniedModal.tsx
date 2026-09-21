@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import { Modal } from './shared/SelfContainedModal'
 import { Button } from './shared/Button'
+import { useT } from '../hooks/useT'
 import { authFetch } from '../lib/api'
 
 interface PermissionDeniedModalProps {
@@ -10,6 +11,8 @@ interface PermissionDeniedModalProps {
   onRetry: () => void
 }
 
+type PermissionFixAction = 'group' | 'join_group' | 'join_group_and_group'
+
 interface PermissionOptions {
   sudoAvailable: boolean
   userInGroup: boolean
@@ -18,6 +21,7 @@ interface PermissionOptions {
 }
 
 export function PermissionDeniedModal({ isOpen, onClose, path, onRetry }: PermissionDeniedModalProps) {
+  const t = useT()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [options, setOptions] = useState<PermissionOptions | null>(null)
@@ -48,7 +52,7 @@ export function PermissionDeniedModal({ isOpen, onClose, path, onRetry }: Permis
   }
 
   const handleFixPermissions = useCallback(
-    async (action: 'group' | 'join_group' | 'join_group_and_group') => {
+    async (action: PermissionFixAction) => {
       setLoading(true)
       setError(null)
       try {
@@ -63,19 +67,31 @@ export function PermissionDeniedModal({ isOpen, onClose, path, onRetry }: Permis
           onClose()
         } else if (!data.sudoAvailable) {
           setError(
-            'Passwordless sudo is not available. Please fix permissions manually:\n\n' +
+            t({
+              en: 'Passwordless sudo is not available. Please fix permissions manually:',
+              fr: 'Le sudo sans mot de passe n’est pas disponible. Veuillez corriger les permissions manuellement :',
+            }) +
+              '\n\n' +
               (action === 'group' ? `sudo chmod g+w "${path}"` : `sudo usermod -aG <group> $USER`),
           )
         } else {
-          setError('Failed to fix permissions: ' + (data.error || 'Unknown error'))
+          setError(
+            t({ en: 'Failed to fix permissions:', fr: 'Échec de la correction des permissions :' }) +
+              ' ' +
+              (data.error || t({ en: 'Unknown error', fr: 'Erreur inconnue' })),
+          )
         }
       } catch (err) {
-        setError('Failed to fix permissions: ' + (err instanceof Error ? err.message : 'Unknown error'))
+        setError(
+          t({ en: 'Failed to fix permissions:', fr: 'Échec de la correction des permissions :' }) +
+            ' ' +
+            (err instanceof Error ? err.message : t({ en: 'Unknown error', fr: 'Erreur inconnue' })),
+        )
       } finally {
         setLoading(false)
       }
     },
-    [path, onRetry, onClose],
+    [path, onRetry, onClose, t],
   )
 
   const userInGroup = options?.userInGroup ?? false
@@ -91,12 +107,12 @@ export function PermissionDeniedModal({ isOpen, onClose, path, onRetry }: Permis
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Permission Denied"
+      title={t({ en: 'Permission Denied', fr: 'Permission refusée' })}
       size="sm"
       footer={
         <div className="flex justify-end">
           <Button type="button" variant="secondary" onClick={onClose} disabled={loading}>
-            Cancel
+            {t({ en: 'Cancel', fr: 'Annuler' })}
           </Button>
         </div>
       }
@@ -106,15 +122,20 @@ export function PermissionDeniedModal({ isOpen, onClose, path, onRetry }: Permis
           <p>
             {showExtendGroup ? (
               <>
-                The group <strong>{groupName}</strong> doesn't have write access:
+                {t({ en: 'The group', fr: 'Le groupe' })} <strong>{groupName}</strong>{' '}
+                {t({ en: "doesn't have write access:", fr: "n'a pas les droits d'écriture :" })}
               </>
             ) : showJoinGroup ? (
               <>
-                You're not a member of group <strong>{groupName}</strong>:
+                {t({ en: "You're not a member of group", fr: "Vous n'êtes pas membre du groupe" })}{' '}
+                <strong>{groupName}</strong>
+                {t({ en: ':', fr: ' :' })}
               </>
             ) : (
               <>
-                You're not a member of group <strong>{groupName}</strong> and it doesn't have write access:
+                {t({ en: "You're not a member of group", fr: "Vous n'êtes pas membre du groupe" })}{' '}
+                <strong>{groupName}</strong>{' '}
+                {t({ en: 'and it does not have write access:', fr: "et il n'a pas les droits d'écriture :" })}
               </>
             )}
           </p>
@@ -128,61 +149,49 @@ export function PermissionDeniedModal({ isOpen, onClose, path, onRetry }: Permis
         ) : options ? (
           <div className="flex flex-col gap-2">
             {showExtendGroup && (
-              <>
-                <Button
-                  type="button"
-                  variant="primary"
-                  onClick={() => handleFixPermissions('group')}
-                  disabled={loading || !sudoAvailable}
-                  className="w-full"
-                >
-                  {loading ? 'Granting access...' : 'Extend group permissions'}
-                </Button>
-                <div className="text-xs text-text-secondary">Or manually execute:</div>
-                <code className="text-xs text-text-muted p-2 bg-bg-tertiary rounded break-all">
-                  sudo chmod g+w "{path}"
-                </code>
-              </>
+              <SudoAction
+                action="group"
+                loadingLabel={t({ en: 'Granting access...', fr: 'Octroi des accès…' })}
+                label={t({ en: 'Extend group permissions', fr: 'Étendre les permissions du groupe' })}
+                command={`sudo chmod g+w "${path}"`}
+                loading={loading}
+                sudoAvailable={sudoAvailable}
+                onFix={handleFixPermissions}
+              />
             )}
             {showJoinGroup && (
-              <>
-                <Button
-                  type="button"
-                  variant="primary"
-                  onClick={() => handleFixPermissions('join_group')}
-                  disabled={loading || !sudoAvailable}
-                  className="w-full"
-                >
-                  {loading ? 'Joining group...' : 'Join group'}
-                </Button>
-                <div className="text-xs text-text-secondary">Or manually execute:</div>
-                <code className="text-xs text-text-muted p-2 bg-bg-tertiary rounded break-all">
-                  sudo usermod -aG {groupName} $USER
-                </code>
-              </>
+              <SudoAction
+                action="join_group"
+                loadingLabel={t({ en: 'Joining group...', fr: 'Adhésion au groupe…' })}
+                label={t({ en: 'Join group', fr: 'Rejoindre le groupe' })}
+                command={`sudo usermod -aG ${groupName} $USER`}
+                loading={loading}
+                sudoAvailable={sudoAvailable}
+                onFix={handleFixPermissions}
+              />
             )}
             {showJoinGroupAndExtend && (
-              <>
-                <Button
-                  type="button"
-                  variant="primary"
-                  onClick={() => handleFixPermissions('join_group_and_group')}
-                  disabled={loading || !sudoAvailable}
-                  className="w-full"
-                >
-                  {loading ? 'Joining group...' : 'Join group & grant write permissions'}
-                </Button>
-                <div className="text-xs text-text-secondary">Or manually execute:</div>
-                <code className="text-xs text-text-muted p-2 bg-bg-tertiary rounded break-all">
-                  sudo usermod -aG {groupName} $USER
-                  <br />
-                  sudo chmod g+w "{path}"
-                </code>
-              </>
+              <SudoAction
+                action="join_group_and_group"
+                loadingLabel={t({ en: 'Joining group...', fr: 'Adhésion au groupe…' })}
+                label={t({
+                  en: 'Join group & grant write permissions',
+                  fr: 'Rejoindre le groupe et accorder les droits d’écriture',
+                })}
+                command={`sudo usermod -aG ${groupName} $USER\nsudo chmod g+w "${path}"`}
+                loading={loading}
+                sudoAvailable={sudoAvailable}
+                onFix={handleFixPermissions}
+              />
             )}
             {!sudoAvailable && !error && (
               <div className="text-xs text-text-secondary">
-                <p>Passwordless sudo is not available. Please fix permissions manually:</p>
+                <p>
+                  {t({
+                    en: 'Passwordless sudo is not available. Please fix permissions manually:',
+                    fr: 'Le sudo sans mot de passe n’est pas disponible. Veuillez corriger les permissions manuellement :',
+                  })}
+                </p>
                 <code className="block mt-1 p-2 bg-bg-tertiary rounded break-all">sudo chmod g+w "{path}"</code>
               </div>
             )}
@@ -190,5 +199,44 @@ export function PermissionDeniedModal({ isOpen, onClose, path, onRetry }: Permis
         ) : null}
       </div>
     </Modal>
+  )
+}
+
+function SudoAction({
+  action,
+  loadingLabel,
+  label,
+  command,
+  loading,
+  sudoAvailable,
+  onFix,
+}: {
+  action: PermissionFixAction
+  loadingLabel: string
+  label: string
+  command: string
+  loading: boolean
+  sudoAvailable: boolean
+  onFix: (action: PermissionFixAction) => void
+}) {
+  const t = useT()
+  return (
+    <>
+      <Button
+        type="button"
+        variant="primary"
+        onClick={() => onFix(action)}
+        disabled={loading || !sudoAvailable}
+        className="w-full"
+      >
+        {loading ? loadingLabel : label}
+      </Button>
+      <div className="text-xs text-text-secondary">
+        {t({ en: 'Or manually execute:', fr: 'Ou exécutez manuellement :' })}
+      </div>
+      <code className="text-xs text-text-muted p-2 bg-bg-tertiary rounded break-all whitespace-pre-line">
+        {command}
+      </code>
+    </>
   )
 }

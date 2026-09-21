@@ -141,4 +141,37 @@ describe('CriteriaGroupDisplay', () => {
     render(<CriteriaGroupDisplay toolCalls={calls} />)
     expect(screen.getByText(/No output/)).toBeTruthy()
   })
+
+  it('renders in-flight metadata adds as live rows alongside completed ones', () => {
+    const calls = [
+      tc('session_metadata', { action: 'add', key: 'criteria', description: 'First done', status: 'pending' }),
+    ]
+    const preparing = [
+      {
+        index: 1,
+        name: 'session_metadata',
+        arguments: JSON.stringify({ action: 'add', key: 'criteria', description: 'Second streaming' }),
+      },
+    ]
+    render(<CriteriaGroupDisplay toolCalls={calls} preparing={preparing} />)
+    expect(screen.getByText('First done')).toBeTruthy()
+    expect(screen.getByText('Second streaming')).toBeTruthy()
+  })
+
+  it('renders a pulsing placeholder row while an add description is still streaming', () => {
+    const preparing = [{ index: 0, name: 'session_metadata', arguments: '{"action":"add","key":"criteria"' }]
+    const { container } = render(<CriteriaGroupDisplay toolCalls={[]} preparing={preparing} />)
+    expect(screen.getByText('Acceptance Criteria')).toBeTruthy()
+    expect(container.querySelector('.animate-pulse')).not.toBeNull()
+  })
+
+  it('ignores non-add preparing calls when building live rows', () => {
+    const preparing = [
+      { index: 0, name: 'session_metadata', arguments: JSON.stringify({ action: 'get', key: 'criteria' }) },
+      { index: 1, name: 'read_file', arguments: '{"path":"x"}' },
+    ]
+    const { container } = render(<CriteriaGroupDisplay toolCalls={[]} preparing={preparing} />)
+    expect(screen.queryByText('Acceptance Criteria')).toBeNull()
+    expect(container.textContent).toBe('')
+  })
 })

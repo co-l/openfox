@@ -3,6 +3,7 @@ import { useSessionStore } from '../../stores/session'
 import { SessionPane } from './SessionPane'
 import { SplitControlPanel } from './SplitControlPanel'
 import { readSplitLayoutMode, writeSplitLayoutMode } from '../../lib/splitPersistence'
+import { useT } from '../../hooks/useT'
 
 interface SplitViewProps {
   /** When false the left control column collapses (toggled from the header). */
@@ -10,6 +11,7 @@ interface SplitViewProps {
 }
 
 export function SplitView({ controlOpen = true }: SplitViewProps) {
+  const t = useT()
   const openSessionIds = useSessionStore((state) => state.openSessionIds)
   const focusedSessionId = useSessionStore((state) => state.focusedSessionId ?? state.currentSession?.id)
   const focusPane = useSessionStore((state) => state.focusPane)
@@ -42,7 +44,10 @@ export function SplitView({ controlOpen = true }: SplitViewProps) {
     openSessionIds.length === 0 ? (
       <div className="flex-1 flex items-center justify-center">
         <p className="text-sm text-text-muted px-4 text-center">
-          No panes open — pick a session on the left to open it in split view.
+          {t({
+            en: 'No panes open — pick a session on the left to open it in split view.',
+            fr: 'Aucun panneau ouvert — choisissez une session à gauche pour l’ouvrir en vue divisée.',
+          })}
         </p>
       </div>
     ) : layout === 'columns' ? (

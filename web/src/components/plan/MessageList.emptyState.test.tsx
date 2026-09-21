@@ -23,28 +23,18 @@ vi.mock('../../stores/session', () => ({
   useIsRunning: () => false,
 }))
 
-vi.mock('../../stores/workflows', () => ({
-  useWorkflowsStore: Object.assign(
-    (selector?: (state: unknown) => unknown) =>
-      selector
-        ? selector({
-            defaults: [{ id: 'default', name: 'Build & Verify', color: '#3b82f6' }],
-            userItems: [],
-            projectItems: [],
-            fetchWorkflows: vi.fn(),
-          })
-        : { defaults: [], userItems: [], projectItems: [], fetchWorkflows: vi.fn() },
-    { getState: vi.fn() },
-  ),
-  selectAllWorkflows: (state: { defaults: unknown[]; userItems: unknown[]; projectItems: unknown[] }) => [
-    ...state.defaults,
-    ...state.userItems,
-    ...state.projectItems,
-  ],
-  useAllWorkflows: () => [{ id: 'default', name: 'Build & Verify', color: '#3b82f6' }],
+vi.mock('../../hooks/useWorkflows', () => ({
+  useWorkflows: () => ({
+    workflows: [{ id: 'default', name: 'Build & Verify', color: '#3b82f6' }],
+    refresh: vi.fn(),
+  }),
 }))
 
-vi.mock('../../stores/settings', () => ({
+vi.mock('../../hooks/useSessionWorkdir', () => ({
+  useSessionWorkdir: () => '/tmp',
+}))
+
+vi.mock('../../hooks/useDisplaySettings', () => ({
   useDisplaySettings: () => ({
     showThinking: true,
     showVerboseToolOutput: true,

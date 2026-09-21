@@ -185,8 +185,9 @@ describe('workflow resume nudge injection', () => {
       (call: any[]) =>
         call[1]?.type === 'message.start' &&
         call[1]?.data?.isSystemGenerated &&
+        call[1]?.data?.messageKind === 'correction' &&
         typeof call[1]?.data?.content === 'string' &&
-        (call[1]?.data?.content as string).includes("You haven't called step_done()"),
+        (call[1]?.data?.content as string).includes('call step_done()'),
     )
 
     expect(nudgeEvents.length).toBeGreaterThan(0)
@@ -230,9 +231,8 @@ describe('workflow resume nudge injection', () => {
     // NOT the agent prompt or step_done nudge
     const promptOrNudge = workflowMessages.filter(
       (e: any) =>
-        (e.data.content as string).includes('Implement the feature') ||
-        (e.data.content as string).includes("You haven't called step_done()") ||
-        (e.data.content as string).includes("Once you're done, call step_done()"),
+        (e.data.messageKind === 'auto-prompt' && (e.data.content as string).includes('Implement the feature')) ||
+        (e.data.messageKind === 'correction' && (e.data.content as string).includes('call step_done()')),
     )
 
     expect(promptOrNudge).toHaveLength(0)
@@ -271,8 +271,9 @@ describe('workflow resume nudge injection', () => {
       (call: any[]) =>
         call[1]?.type === 'message.start' &&
         call[1]?.data?.isSystemGenerated &&
+        call[1]?.data?.messageKind === 'correction' &&
         typeof call[1]?.data?.content === 'string' &&
-        (call[1]?.data?.content as string).includes("You haven't called step_done()"),
+        (call[1]?.data?.content as string).includes('call step_done()'),
     )
 
     expect(nudgeEvents.length).toBe(3)

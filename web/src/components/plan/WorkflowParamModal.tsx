@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Modal } from '../shared/SelfContainedModal'
+import { useT } from '../../hooks/useT'
 import type { WorkflowParameter } from '@shared/types.js'
 import { shouldAutofocus } from '../../lib/device'
 
@@ -18,6 +19,7 @@ export function WorkflowParamModal({
   onCancel,
   confirmLabel = 'Run workflow',
 }: WorkflowParamModalProps) {
+  const t = useT()
   const [values, setValues] = useState<Record<string, string>>({})
 
   const sorted = [...parameters].sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
@@ -37,7 +39,7 @@ export function WorkflowParamModal({
     <Modal
       isOpen
       onClose={onCancel}
-      title={`Run: ${workflowName}`}
+      title={t({ en: 'Run: {{name}}', fr: 'Exécuter : {{name}}' }, { name: workflowName })}
       size="sm"
       closeOnEscape
       closeOnBackdropClick
@@ -47,14 +49,14 @@ export function WorkflowParamModal({
             onClick={onCancel}
             className="px-3 py-1.5 text-sm text-text-muted hover:text-text-primary transition-colors"
           >
-            Cancel
+            {t({ en: 'Cancel', fr: 'Annuler' })}
           </button>
           <button
             onClick={handleSubmit}
             disabled={!allRequiredFilled}
             className="px-4 py-1.5 text-sm font-medium rounded bg-accent-primary/20 text-accent-primary hover:bg-accent-primary/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
-            {confirmLabel}
+            {confirmLabel === 'Run workflow' ? t({ en: 'Run workflow', fr: 'Exécuter le workflow' }) : confirmLabel}
           </button>
         </div>
       }

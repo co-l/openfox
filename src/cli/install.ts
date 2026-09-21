@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
+import { cliT } from './i18n.js'
 
 export interface InstallEnvironment {
   platform?: NodeJS.Platform
@@ -95,14 +96,38 @@ export async function checkInstall(env: InstallEnvironment = {}): Promise<Instal
 }
 
 function printCheck(check: InstallCheck): void {
-  console.log('OpenFox CLI installation:')
-  console.log(`  Current executable: ${check.currentExecutable}`)
-  console.log(`  Node executable: ${check.nodeExecutable}`)
-  console.log(`  npm global prefix: ${check.npmPrefix}`)
-  console.log(`  Persistent launcher: ${check.launcherPath}`)
-  console.log(`  Launcher exists: ${check.launcherExists ? 'yes' : 'no'}`)
-  console.log(`  Launcher is current: ${check.launcherPersistent ? 'yes' : 'no'}`)
-  console.log(`  Launcher directory in PATH: ${check.directoryInPath ? 'yes' : 'no'}`)
+  console.log(cliT({ en: 'OpenFox CLI installation:', fr: 'Installation de l’interface OpenFox :' }))
+  console.log(
+    cliT({
+      en: `  Current executable: ${check.currentExecutable}`,
+      fr: `  Exécutable actuel : ${check.currentExecutable}`,
+    }),
+  )
+  console.log(
+    cliT({ en: `  Node executable: ${check.nodeExecutable}`, fr: `  Exécutable Node : ${check.nodeExecutable}` }),
+  )
+  console.log(cliT({ en: `  npm global prefix: ${check.npmPrefix}`, fr: `  Préfixe global npm : ${check.npmPrefix}` }))
+  console.log(
+    cliT({ en: `  Persistent launcher: ${check.launcherPath}`, fr: `  Lanceur persistant : ${check.launcherPath}` }),
+  )
+  console.log(
+    cliT({
+      en: `  Launcher exists: ${check.launcherExists ? 'yes' : 'no'}`,
+      fr: `  Lanceur existant : ${check.launcherExists ? 'oui' : 'non'}`,
+    }),
+  )
+  console.log(
+    cliT({
+      en: `  Launcher is current: ${check.launcherPersistent ? 'yes' : 'no'}`,
+      fr: `  Lanceur à jour : ${check.launcherPersistent ? 'oui' : 'non'}`,
+    }),
+  )
+  console.log(
+    cliT({
+      en: `  Launcher directory in PATH: ${check.directoryInPath ? 'yes' : 'no'}`,
+      fr: `  Répertoire du lanceur dans le PATH : ${check.directoryInPath ? 'oui' : 'non'}`,
+    }),
+  )
 }
 
 export async function runInstall(
@@ -120,7 +145,12 @@ export async function runInstall(
   const nodeExecutable = env.nodeExecutable ?? process.execPath
   const cliExecutable = env.cliExecutable ?? process.argv[1]
   if (!cliExecutable) {
-    console.error('Unable to determine the OpenFox CLI executable path.')
+    console.error(
+      cliT({
+        en: 'Unable to determine the OpenFox CLI executable path.',
+        fr: 'Impossible de déterminer le chemin de l’exécutable CLI d’OpenFox.',
+      }),
+    )
     return 1
   }
 
@@ -131,14 +161,29 @@ export async function runInstall(
 
   const check = await checkInstall({ ...env, nodeExecutable, cliExecutable })
   if (!options.quiet) {
-    console.log(`Persistent OpenFox launcher installed: ${launcherPath}`)
+    console.log(
+      cliT({
+        en: `Persistent OpenFox launcher installed: ${launcherPath}`,
+        fr: `Lanceur OpenFox persistant installé : ${launcherPath}`,
+      }),
+    )
   }
 
   if (!check.directoryInPath) {
     if (platform === 'win32') {
-      console.log(`Add this directory to your user PATH:\n${check.launcherDirectory}`)
+      console.log(
+        cliT({
+          en: `Add this directory to your user PATH:\n${check.launcherDirectory}`,
+          fr: `Ajoutez ce répertoire à votre PATH utilisateur :\n${check.launcherDirectory}`,
+        }),
+      )
     } else {
-      console.log(`Add this line to your shell configuration:\nexport PATH="$HOME/.local/bin:$PATH"`)
+      console.log(
+        cliT({
+          en: 'Add this line to your shell configuration:\nexport PATH="$HOME/.local/bin:$PATH"',
+          fr: 'Ajoutez cette ligne à votre configuration de shell :\nexport PATH="$HOME/.local/bin:$PATH"',
+        }),
+      )
     }
   }
 

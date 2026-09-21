@@ -1,5 +1,42 @@
-import { describe, expect, it } from 'vitest'
-import { shouldCompact } from './compactor.js'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { appendCompactionPrompt, shouldCompact } from './compactor.js'
+import type { TurnEvent } from '../events/types.js'
+
+vi.mock('../events/index.js', () => ({
+  getCurrentWindowMessageOptions: vi.fn(() => ({ contextWindowId: 'window-1' })),
+}))
+
+describe('appendCompactionPrompt', () => {
+  let events: TurnEvent[]
+
+  beforeEach(() => {
+    events = []
+  })
+
+  it('tags the compaction prompt with sub-agent metadata when provided', () => {
+    appendCompactionPrompt('session-1', (event) => events.push(event), {
+      subAgentId: 'sub-1',
+      subAgentType: 'verifier',
+    })
+
+    const start = events[0]
+    expect(start?.type).toBe('message.start')
+    const data = (start as Extract<TurnEvent, { type: 'message.start' }>).data
+    expect(data.subAgentId).toBe('sub-1')
+    expect(data.subAgentType).toBe('verifier')
+    expect(data.messageKind).toBe('auto-prompt')
+  })
+
+  it('does not tag the compaction prompt for top-level compaction', () => {
+    appendCompactionPrompt('session-1', (event) => events.push(event))
+
+    const start = events[0]
+    expect(start?.type).toBe('message.start')
+    const data = (start as Extract<TurnEvent, { type: 'message.start' }>).data
+    expect(data.subAgentId).toBeUndefined()
+    expect(data.subAgentType).toBeUndefined()
+  })
+})
 
 describe('context compactor helpers', () => {
   it('decides when compaction should happen', () => {

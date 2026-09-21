@@ -16,29 +16,31 @@ vi.mock('../lib/ws', () => ({
 
 vi.mock('wouter', () => ({
   Link: ({ children, href }: { children: React.ReactNode; href: string }) => <a href={href}>{children}</a>,
-  useLocation: () => [undefined, vi.fn()],
+  useLocation: () => [undefined, navigateMock],
 }))
 
 vi.mock('../lib/api', () => ({
   authFetch: vi.fn(),
 }))
 
-import { useTasksStore } from '../stores/tasks'
 import { authFetch } from '../lib/api'
+import { summariesResource } from '../lib/resources'
+import { clearCache } from '../lib/resourceCache'
 
-const { listHomeSessionsMock, listSessionsMock, ensureFullSessionListMock } = vi.hoisted(() => ({
+const { listHomeSessionsMock, listSessionsMock, ensureFullSessionListMock, navigateMock } = vi.hoisted(() => ({
   listHomeSessionsMock: vi.fn(),
   listSessionsMock: vi.fn(),
   ensureFullSessionListMock: vi.fn(),
+  navigateMock: vi.fn(),
 }))
 
-const sessionStore = { sessions: [] as any[] }
+const sessionStore = { sessions: [] as any[], sessionsWithPendingConfirmations: [] as string[] }
 vi.mock('../stores/session', () => ({
   useSessionStore: (selector?: any) => {
     const state = {
       sessions: sessionStore.sessions,
       searchSessions: null,
-      sessionsWithPendingConfirmations: [],
+      sessionsWithPendingConfirmations: sessionStore.sessionsWithPendingConfirmations,
       listSessions: listSessionsMock,
       listHomeSessions: listHomeSessionsMock,
       ensureFullSessionList: ensureFullSessionListMock,
@@ -48,32 +50,44 @@ vi.mock('../stores/session', () => ({
   },
 }))
 
-const { listProjectsMock, deleteProjectMock } = vi.hoisted(() => ({
-  listProjectsMock: vi.fn(),
+const { deleteProjectMock } = vi.hoisted(() => ({
   deleteProjectMock: vi.fn(),
+}))
+
+const projectFixtures = [
+  {
+    id: 'p1',
+    name: 'Project Alpha',
+    workdir: '/tmp/alpha',
+    isStarred: false,
+    createdAt: '2024-01-01',
+    updatedAt: '2024-01-01',
+  },
+  {
+    id: 'p2',
+    name: 'Project Beta',
+    workdir: '/tmp/beta',
+    isStarred: true,
+    createdAt: '2024-01-02',
+    updatedAt: '2024-01-02',
+  },
+  {
+    id: 'p3',
+    name: 'Project Gamma',
+    workdir: '/tmp/gamma',
+    isStarred: false,
+    createdAt: '2024-01-03',
+    updatedAt: '2024-01-03',
+  },
+]
+
+vi.mock('../hooks/useProjects', () => ({
+  useProjects: () => ({ projects: projectFixtures, refresh: vi.fn(), loading: false }),
 }))
 
 vi.mock('../stores/project', () => ({
   useProjectStore: (selector?: any) => {
     const state = {
-      projects: [
-        {
-          id: 'p1',
-          name: 'Project Alpha',
-          workdir: '/tmp/alpha',
-          createdAt: '2024-01-01',
-          updatedAt: '2024-01-01',
-        },
-        {
-          id: 'p2',
-          name: 'Project Beta',
-          workdir: '/tmp/beta',
-          createdAt: '2024-01-02',
-          updatedAt: '2024-01-02',
-        },
-      ],
-      loading: false,
-      listProjects: listProjectsMock,
       deleteProject: deleteProjectMock,
     }
     return selector ? selector(state) : state
@@ -97,6 +111,23 @@ function textOf(el: HTMLElement | null): string {
   return el?.textContent ?? ''
 }
 
+function makeSession(id: string, overrides: Record<string, unknown> = {}) {
+  return {
+    id,
+    projectId: 'p1',
+    title: `Session ${id}`,
+    phase: 'plan',
+    isRunning: false,
+    isFavorite: false,
+    createdAt: '2024-06-15T09:00:00Z',
+    updatedAt: '2024-06-15T10:00:00Z',
+    criteriaCount: 0,
+    criteriaCompleted: 0,
+    messageCount: 1,
+    ...overrides,
+  }
+}
+
 afterEach(() => {
   for (const root of mountedRoots.splice(0)) {
     act(() => root.unmount())
@@ -106,20 +137,18 @@ afterEach(() => {
 
 beforeEach(() => {
   sessionStore.sessions = []
+  sessionStore.sessionsWithPendingConfirmations = []
   document.body.innerHTML = ''
+  navigateMock.mockClear()
   listHomeSessionsMock.mockClear()
   listSessionsMock.mockClear()
   ensureFullSessionListMock.mockClear()
-  useTasksStore.setState({
-    tasks: [],
-    gates: [],
-    settings: { slotLimit: 1, queuePaused: false },
-    counts: { open: 0, todo: 0, inProgress: 0, running: 0, queued: 0, done: 0 },
-    summaries: {},
-    activeProjectId: null,
-    lastError: null,
-    lastAutoLaunch: null,
-  })
+  // Seed the per-project counts so useResource serves from cache and no
+  // out-of-act fetch fires on mount.
+  clearCache()
+  summariesResource.write({ counts: { open: 4, todo: 1, inProgress: 2, running: 1, queued: 1, done: 3 } }, 'p1')
+  summariesResource.write({ counts: { open: 0, todo: 0, inProgress: 0, running: 0, queued: 0, done: 0 } }, 'p2')
+  summariesResource.write({ counts: { open: 0, todo: 0, inProgress: 0, running: 0, queued: 0, done: 0 } }, 'p3')
   const authFetchMock = vi.mocked(authFetch)
   authFetchMock.mockReset()
   authFetchMock.mockImplementation(async (url: string) => {
@@ -131,7 +160,7 @@ beforeEach(() => {
         }),
       } as unknown as Response
     }
-    if (url.endsWith('/p2/tasks/count')) {
+    if (url.endsWith('/p2/tasks/count') || url.endsWith('/p3/tasks/count')) {
       return {
         ok: true,
         json: async () => ({
@@ -166,45 +195,22 @@ describe('HomePage', () => {
   })
 
   it('renders the search bar when sessions exist', async () => {
-    sessionStore.sessions = [
-      {
-        id: 's1',
-        projectId: 'p1',
-        title: 'Test session',
-        updatedAt: '2024-06-15T10:00:00Z',
-        messageCount: 1,
-        createdAt: '2024-06-15T09:00:00Z',
-      },
-    ]
+    sessionStore.sessions = [makeSession('s1')]
     const { HomePage } = await import('./HomePage')
     const container = render(<HomePage />)
     expect(container.querySelector('[placeholder="Search sessions by title or keyword..."]')).toBeTruthy()
   })
 
-  it('hides the search bar when no sessions exist', async () => {
+  it('shows the search bar even when no sessions exist', async () => {
     const { HomePage } = await import('./HomePage')
     const container = render(<HomePage />)
-    expect(container.querySelector('[placeholder="Search sessions by title or keyword..."]')).toBeNull()
+    expect(container.querySelector('[placeholder="Search sessions by title or keyword..."]')).toBeTruthy()
   })
 
   it('filters sessions by title match', async () => {
     sessionStore.sessions = [
-      {
-        id: 's1',
-        projectId: 'p1',
-        title: 'Search feature implementation',
-        updatedAt: '2024-06-15T10:00:00Z',
-        messageCount: 5,
-        createdAt: '2024-06-15T09:00:00Z',
-      },
-      {
-        id: 's2',
-        projectId: 'p1',
-        title: 'Bug fix login',
-        updatedAt: '2024-06-16T10:00:00Z',
-        messageCount: 3,
-        createdAt: '2024-06-16T09:00:00Z',
-      },
+      makeSession('s1', { title: 'Search feature implementation', messageCount: 5 }),
+      makeSession('s2', { title: 'Bug fix login', updatedAt: '2024-06-16T10:00:00Z', messageCount: 3 }),
     ]
     const { HomePage } = await import('./HomePage')
     const container = render(<HomePage />)
@@ -221,24 +227,16 @@ describe('HomePage', () => {
 
   it('filters sessions by recent prompt content', async () => {
     sessionStore.sessions = [
-      {
-        id: 's1',
-        projectId: 'p1',
+      makeSession('s1', {
         title: 'Session alpha',
         recentUserPrompts: [{ id: 'p1', content: 'Fix the login bug', timestamp: '2024-06-15T10:00:00Z' }],
-        updatedAt: '2024-06-15T10:00:00Z',
-        messageCount: 2,
-        createdAt: '2024-06-15T09:00:00Z',
-      },
-      {
-        id: 's2',
-        projectId: 'p1',
+      }),
+      makeSession('s2', {
         title: 'Session beta',
         recentUserPrompts: [{ id: 'p2', content: 'Add dark mode', timestamp: '2024-06-16T10:00:00Z' }],
         updatedAt: '2024-06-16T10:00:00Z',
         messageCount: 4,
-        createdAt: '2024-06-16T09:00:00Z',
-      },
+      }),
     ]
     const { HomePage } = await import('./HomePage')
     const container = render(<HomePage />)
@@ -254,16 +252,7 @@ describe('HomePage', () => {
   })
 
   it('shows clear button when search has text and clears on click', async () => {
-    sessionStore.sessions = [
-      {
-        id: 's1',
-        projectId: 'p1',
-        title: 'Test session',
-        updatedAt: '2024-06-15T10:00:00Z',
-        messageCount: 1,
-        createdAt: '2024-06-15T09:00:00Z',
-      },
-    ]
+    sessionStore.sessions = [makeSession('s1')]
     const { HomePage } = await import('./HomePage')
     const container = render(<HomePage />)
 
@@ -279,22 +268,8 @@ describe('HomePage', () => {
 
   it('shows match count when searching', async () => {
     sessionStore.sessions = [
-      {
-        id: 's1',
-        projectId: 'p1',
-        title: 'Deploy pipeline',
-        updatedAt: '2024-06-15T10:00:00Z',
-        messageCount: 5,
-        createdAt: '2024-06-15T09:00:00Z',
-      },
-      {
-        id: 's2',
-        projectId: 'p1',
-        title: 'DB migration',
-        updatedAt: '2024-06-16T10:00:00Z',
-        messageCount: 3,
-        createdAt: '2024-06-16T09:00:00Z',
-      },
+      makeSession('s1', { title: 'Deploy pipeline', messageCount: 5 }),
+      makeSession('s2', { title: 'DB migration', updatedAt: '2024-06-16T10:00:00Z', messageCount: 3 }),
     ]
     const { HomePage } = await import('./HomePage')
     const container = render(<HomePage />)
@@ -308,16 +283,7 @@ describe('HomePage', () => {
   })
 
   it('shows empty state when no sessions match', async () => {
-    sessionStore.sessions = [
-      {
-        id: 's1',
-        projectId: 'p1',
-        title: 'Some session',
-        updatedAt: '2024-06-15T10:00:00Z',
-        messageCount: 1,
-        createdAt: '2024-06-15T09:00:00Z',
-      },
-    ]
+    sessionStore.sessions = [makeSession('s1', { title: 'Some session' })]
     const { HomePage } = await import('./HomePage')
     const container = render(<HomePage />)
 
@@ -331,17 +297,8 @@ describe('HomePage', () => {
     expect(container.textContent).toContain('zzzzz')
   })
 
-  it('shows projects and sessions when search is cleared', async () => {
-    sessionStore.sessions = [
-      {
-        id: 's1',
-        projectId: 'p1',
-        title: 'My session',
-        updatedAt: '2024-06-15T10:00:00Z',
-        messageCount: 1,
-        createdAt: '2024-06-15T09:00:00Z',
-      },
-    ]
+  it('shows sessions when search is cleared', async () => {
+    sessionStore.sessions = [makeSession('s1', { title: 'My session' })]
     const { HomePage } = await import('./HomePage')
     const container = render(<HomePage />)
 
@@ -361,22 +318,8 @@ describe('HomePage', () => {
 
   it('filters by project name', async () => {
     sessionStore.sessions = [
-      {
-        id: 's1',
-        projectId: 'p1',
-        title: 'Setup docs',
-        updatedAt: '2024-06-15T10:00:00Z',
-        messageCount: 1,
-        createdAt: '2024-06-15T09:00:00Z',
-      },
-      {
-        id: 's2',
-        projectId: 'p2',
-        title: 'Analysis',
-        updatedAt: '2024-06-16T10:00:00Z',
-        messageCount: 1,
-        createdAt: '2024-06-16T09:00:00Z',
-      },
+      makeSession('s1', { title: 'Setup docs' }),
+      makeSession('s2', { projectId: 'p2', title: 'Analysis', updatedAt: '2024-06-16T10:00:00Z' }),
     ]
     const { HomePage } = await import('./HomePage')
     const container = render(<HomePage />)
@@ -389,22 +332,8 @@ describe('HomePage', () => {
 
   it('filters by case-insensitive matching', async () => {
     sessionStore.sessions = [
-      {
-        id: 's1',
-        projectId: 'p1',
-        title: 'Deploy Pipeline',
-        updatedAt: '2024-06-15T10:00:00Z',
-        messageCount: 1,
-        createdAt: '2024-06-15T09:00:00Z',
-      },
-      {
-        id: 's2',
-        projectId: 'p1',
-        title: 'Database migration',
-        updatedAt: '2024-06-16T10:00:00Z',
-        messageCount: 1,
-        createdAt: '2024-06-16T09:00:00Z',
-      },
+      makeSession('s1', { title: 'Deploy Pipeline' }),
+      makeSession('s2', { title: 'Database migration', updatedAt: '2024-06-16T10:00:00Z' }),
     ]
     const { HomePage } = await import('./HomePage')
     const container = render(<HomePage />)
@@ -416,22 +345,8 @@ describe('HomePage', () => {
 
   it('requires all space-separated query words to match', async () => {
     sessionStore.sessions = [
-      {
-        id: 's1',
-        projectId: 'p1',
-        title: 'Fix bug open frontend',
-        updatedAt: '2024-06-15T10:00:00Z',
-        messageCount: 1,
-        createdAt: '2024-06-15T09:00:00Z',
-      },
-      {
-        id: 's2',
-        projectId: 'p1',
-        title: 'Open source bug tracker',
-        updatedAt: '2024-06-16T10:00:00Z',
-        messageCount: 1,
-        createdAt: '2024-06-16T09:00:00Z',
-      },
+      makeSession('s1', { title: 'Fix bug open frontend' }),
+      makeSession('s2', { title: 'Open source bug tracker', updatedAt: '2024-06-16T10:00:00Z' }),
     ]
     const { HomePage } = await import('./HomePage')
     const container = render(<HomePage />)
@@ -442,80 +357,160 @@ describe('HomePage', () => {
     expect(container.textContent).toContain('Open source bug')
   })
 
-  it('shows only projects with matching sessions', async () => {
-    sessionStore.sessions = [
-      {
-        id: 's1',
-        projectId: 'p1',
-        title: 'Database setup',
-        updatedAt: '2024-06-15T10:00:00Z',
-        messageCount: 1,
-        createdAt: '2024-06-15T09:00:00Z',
-      },
-      {
-        id: 's2',
-        projectId: 'p2',
-        title: 'Frontend',
-        updatedAt: '2024-06-16T10:00:00Z',
-        messageCount: 1,
-        createdAt: '2024-06-16T09:00:00Z',
-      },
-    ]
-    const { HomePage } = await import('./HomePage')
-    const container = render(<HomePage />)
-    const input = container.querySelector('[placeholder="Search sessions by title or keyword..."]')!
-    await userEvent.type(input, 'database')
-    await vi.waitFor(() => expect(container.textContent).toContain('1 match'))
-    expect(container.textContent).toContain('Project Alpha')
-    expect(container.textContent).not.toContain('Project Beta')
-  })
-
-  it('limits to 5 sessions per project when not searching', async () => {
-    const sessions = Array.from({ length: 7 }, (_, i) => ({
-      id: `s${i}`,
-      projectId: 'p1',
-      title: `Session ${i}`,
-      updatedAt: `2024-06-${String(15 - i).padStart(2, '0')}T10:00:00Z`,
-      messageCount: 1,
-      createdAt: '2024-06-01',
-    }))
-    sessionStore.sessions = sessions
-    const { HomePage } = await import('./HomePage')
-    const container = render(<HomePage />)
-    const visible = container.querySelectorAll('a[href*="/s/"]')
-    expect(visible.length).toBe(5)
-  })
-
-  it('shows all matching sessions when searching (no 5-session limit)', async () => {
-    const sessions = Array.from({ length: 7 }, (_, i) => ({
-      id: `s${i}`,
-      projectId: 'p1',
-      title: `Fix bug ${i}`,
-      updatedAt: `2024-06-${String(15 - i).padStart(2, '0')}T10:00:00Z`,
-      messageCount: 1,
-      createdAt: '2024-06-01',
-    }))
+  it('shows all matching sessions when searching (no 20-session limit)', async () => {
+    const sessions = Array.from({ length: 25 }, (_, i) =>
+      makeSession(`s${i}`, {
+        title: `Fix bug ${i}`,
+        updatedAt: `2024-06-${String(15 - (i % 15)).padStart(2, '0')}T10:00:00Z`,
+      }),
+    )
     sessionStore.sessions = sessions
     const { HomePage } = await import('./HomePage')
     const container = render(<HomePage />)
     const input = container.querySelector('[placeholder="Search sessions by title or keyword..."]')!
     await userEvent.type(input, 'fix')
-    await vi.waitFor(() => expect(container.textContent).toContain('7 matches'))
+    await vi.waitFor(() => expect(container.textContent).toContain('25 matches'))
     const visible = container.querySelectorAll('a[href*="/s/"]')
-    expect(visible.length).toBe(7)
+    expect(visible.length).toBe(25)
+  })
+
+  it('shows up to 20 most recent sessions ordered by last activity', async () => {
+    const sessions = Array.from({ length: 25 }, (_, i) =>
+      makeSession(`s${i}`, {
+        title: `Session ${i}`,
+        updatedAt: `2024-06-${String(25 - i).padStart(2, '0')}T10:00:00Z`,
+      }),
+    )
+    sessionStore.sessions = sessions
+    const { HomePage } = await import('./HomePage')
+    const container = render(<HomePage />)
+    const links = container.querySelectorAll('a[href*="/s/"]')
+    expect(links.length).toBe(20)
+    // Most recently updated first: s0 (06-25) down to s19 (06-06).
+    expect(textOf(links[0] as HTMLElement | null)).toContain('Session 0')
+    expect(textOf(links[1] as HTMLElement | null)).toContain('Session 1')
+    expect(textOf(links[19] as HTMLElement | null)).toContain('Session 19')
+  })
+
+  it('orders recent sessions by last activity across projects', async () => {
+    sessionStore.sessions = [
+      makeSession('s1', { projectId: 'p1', title: 'Older', updatedAt: '2024-06-14T10:00:00Z' }),
+      makeSession('s2', { projectId: 'p2', title: 'Newer', updatedAt: '2024-06-16T10:00:00Z' }),
+      makeSession('s3', { projectId: 'p3', title: 'Middle', updatedAt: '2024-06-15T10:00:00Z' }),
+    ]
+    const { HomePage } = await import('./HomePage')
+    const container = render(<HomePage />)
+    const links = container.querySelectorAll('a[href*="/s/"]')
+    expect(textOf(links[0] as HTMLElement | null)).toContain('Newer')
+    expect(textOf(links[1] as HTMLElement | null)).toContain('Middle')
+    expect(textOf(links[2] as HTMLElement | null)).toContain('Older')
+  })
+
+  it('renders session rows as links (anchors), not buttons', async () => {
+    sessionStore.sessions = [makeSession('s1', { title: 'Clickable session' })]
+    const { HomePage } = await import('./HomePage')
+    const container = render(<HomePage />)
+    const row = container.querySelector('a[href="/p/p1/s/s1"]')
+    expect(row).toBeTruthy()
+    expect(row!.tagName).toBe('A')
+    // No button navigates to a session.
+    expect(container.querySelector('button[title="Clickable session"]')).toBeNull()
+  })
+
+  it('shows a status dot for running and waiting sessions', async () => {
+    sessionStore.sessions = [
+      makeSession('s1', { isRunning: true, title: 'Busy' }),
+      makeSession('s2', { title: 'Needs input', phase: 'blocked' }),
+    ]
+    sessionStore.sessionsWithPendingConfirmations = ['s2']
+    const { HomePage } = await import('./HomePage')
+    const container = render(<HomePage />)
+    expect(container.querySelector('[title="Running"]')).toBeTruthy()
+    expect(container.querySelector('[title="Waiting for your input"]')).toBeTruthy()
+  })
+
+  it('shows the project name on each session row', async () => {
+    sessionStore.sessions = [makeSession('s1', { projectId: 'p1' })]
+    const { HomePage } = await import('./HomePage')
+    const container = render(<HomePage />)
+    const row = container.querySelector('a[href="/p/p1/s/s1"]')!.closest('div')
+    expect(row?.textContent).toContain('Project Alpha')
+  })
+
+  it('opens a project dropdown from the session row with a New Session link and a Tasks action', async () => {
+    sessionStore.sessions = [makeSession('s1', { projectId: 'p1' })]
+    const { HomePage } = await import('./HomePage')
+    const container = render(<HomePage />)
+
+    const trigger = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Project Alpha'),
+    )
+    expect(trigger).toBeTruthy()
+    await userEvent.click(trigger!)
+
+    const menu = document.querySelector('[data-testid="session-dropdown-menu"]')
+    expect(menu).toBeTruthy()
+    const newSession = menu!.querySelector('a[href="/p/p1/new"]')
+    expect(newSession).toBeTruthy()
+    expect(newSession?.textContent).toContain('New Session')
+    expect(menu!.textContent).toContain('Tasks')
+    await userEvent.click(newSession!)
+    expect(navigateMock).not.toHaveBeenCalled()
+  })
+
+  it('opens the Tasks modal from the session-row project dropdown', async () => {
+    sessionStore.sessions = [makeSession('s1', { projectId: 'p1' })]
+    const { HomePage } = await import('./HomePage')
+    const container = render(<HomePage />)
+
+    const trigger = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Project Alpha'),
+    )!
+    await userEvent.click(trigger!)
+
+    const menu = document.querySelector('[data-testid="session-dropdown-menu"]')!
+    const tasksItem = Array.from(menu.querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Tasks')
+    expect(tasksItem).toBeTruthy()
+    await userEvent.click(tasksItem!)
+
+    await vi.waitFor(() => {
+      expect(document.querySelector('[placeholder="Search tasks…"]')).toBeTruthy()
+    })
+    expect(navigateMock).not.toHaveBeenCalled()
+  })
+
+  it('keeps the project dropdown trigger outside the session link', async () => {
+    sessionStore.sessions = [makeSession('s1', { projectId: 'p1' })]
+    const { HomePage } = await import('./HomePage')
+    const container = render(<HomePage />)
+
+    const link = container.querySelector('a[href="/p/p1/s/s1"]')!
+    const trigger = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Project Alpha'),
+    )!
+    expect(trigger).toBeTruthy()
+    expect(link.contains(trigger)).toBe(false)
+
+    await userEvent.click(trigger)
+    expect(navigateMock).not.toHaveBeenCalled()
+  })
+
+  it('navigates to the session when clicking the row outside the link (status dot)', async () => {
+    sessionStore.sessions = [makeSession('s1', { projectId: 'p1' })]
+    const { HomePage } = await import('./HomePage')
+    const container = render(<HomePage />)
+
+    const row = container.querySelector('a[href="/p/p1/s/s1"]')!.closest('div')!
+    await userEvent.click(row.children[0] as HTMLElement)
+    expect(navigateMock).toHaveBeenCalledWith('/p/p1/s/s1')
   })
 
   it('shows prompts badge when session matches by prompts only', async () => {
     sessionStore.sessions = [
-      {
-        id: 's1',
-        projectId: 'p1',
+      makeSession('s1', {
         title: 'Session alpha',
         recentUserPrompts: [{ id: 'p1', content: 'Please review the PR', timestamp: '2024-06-15T10:00:00Z' }],
-        updatedAt: '2024-06-15T10:00:00Z',
-        messageCount: 1,
-        createdAt: '2024-06-15T09:00:00Z',
-      },
+      }),
     ]
     const { HomePage } = await import('./HomePage')
     const container = render(<HomePage />)
@@ -527,15 +522,10 @@ describe('HomePage', () => {
 
   it('does not show prompts badge when session matches by title', async () => {
     sessionStore.sessions = [
-      {
-        id: 's1',
-        projectId: 'p1',
+      makeSession('s1', {
         title: 'Review PR 123',
         recentUserPrompts: [{ id: 'p1', content: 'Please check this', timestamp: '2024-06-15T10:00:00Z' }],
-        updatedAt: '2024-06-15T10:00:00Z',
-        messageCount: 1,
-        createdAt: '2024-06-15T09:00:00Z',
-      },
+      }),
     ]
     const { HomePage } = await import('./HomePage')
     const container = render(<HomePage />)
@@ -547,17 +537,12 @@ describe('HomePage', () => {
 
   it('shows snippet with highlighted keyword in prompts match', async () => {
     sessionStore.sessions = [
-      {
-        id: 's1',
-        projectId: 'p1',
+      makeSession('s1', {
         title: 'QA workflow',
         recentUserPrompts: [
           { id: 'p1', content: 'Run full code review on the project', timestamp: '2024-06-15T10:00:00Z' },
         ],
-        updatedAt: '2024-06-15T10:00:00Z',
-        messageCount: 1,
-        createdAt: '2024-06-15T09:00:00Z',
-      },
+      }),
     ]
     const { HomePage } = await import('./HomePage')
     const container = render(<HomePage />)
@@ -569,24 +554,16 @@ describe('HomePage', () => {
 
   it('ranks title matches above prompt matches', async () => {
     sessionStore.sessions = [
-      {
-        id: 's1',
-        projectId: 'p1',
+      makeSession('s1', {
         title: 'Error in checkout flow',
         recentUserPrompts: [{ id: 'p1', content: 'Check error handling', timestamp: '2024-06-14T10:00:00Z' }],
         updatedAt: '2024-06-14T10:00:00Z',
-        messageCount: 1,
-        createdAt: '2024-06-14T09:00:00Z',
-      },
-      {
-        id: 's2',
-        projectId: 'p1',
+      }),
+      makeSession('s2', {
         title: 'UI improvements',
         recentUserPrompts: [{ id: 'p2', content: 'Fix the error in modal', timestamp: '2024-06-15T10:00:00Z' }],
         updatedAt: '2024-06-15T10:00:00Z',
-        messageCount: 1,
-        createdAt: '2024-06-15T09:00:00Z',
-      },
+      }),
     ]
     const { HomePage } = await import('./HomePage')
     const container = render(<HomePage />)
@@ -594,21 +571,12 @@ describe('HomePage', () => {
     await userEvent.type(input, 'error')
     await vi.waitFor(() => expect(container.textContent).toContain('2 matches'))
     const links = container.querySelectorAll('a[href*="/s/"]')
-    expect(links[0]?.textContent).toContain('Error in checkout')
-    expect(links[1]?.textContent).toContain('UI improvements')
+    expect(textOf(links[0] as HTMLElement | null)).toContain('Error in checkout')
+    expect(textOf(links[1] as HTMLElement | null)).toContain('UI improvements')
   })
 
   it('clears search on Escape key', async () => {
-    sessionStore.sessions = [
-      {
-        id: 's1',
-        projectId: 'p1',
-        title: 'My session',
-        updatedAt: '2024-06-15T10:00:00Z',
-        messageCount: 1,
-        createdAt: '2024-06-15T09:00:00Z',
-      },
-    ]
+    sessionStore.sessions = [makeSession('s1', { title: 'My session' })]
     const { HomePage } = await import('./HomePage')
     const container = render(<HomePage />)
     const input = container.querySelector('[placeholder="Search sessions by title or keyword..."]')! as HTMLInputElement
@@ -620,31 +588,23 @@ describe('HomePage', () => {
   })
 
   it('handles session without a title by falling back to id slice', async () => {
-    sessionStore.sessions = [
-      {
-        id: 'abcdef123456',
-        projectId: 'p1',
-        updatedAt: '2024-06-15T10:00:00Z',
-        messageCount: 1,
-        createdAt: '2024-06-15T09:00:00Z',
-      },
-    ]
+    sessionStore.sessions = [makeSession('abcdef123456', { title: undefined, projectId: 'p1' })]
     const { HomePage } = await import('./HomePage')
     const container = render(<HomePage />)
     expect(container.textContent).toContain('abcdef12')
   })
 
+  it('renders a session with a missing project as a plain row, not a dead link', async () => {
+    sessionStore.sessions = [makeSession('s1', { projectId: 'ghost', title: 'Orphan' })]
+    const { HomePage } = await import('./HomePage')
+    const container = render(<HomePage />)
+    expect(container.querySelector('a[href="#"]')).toBeNull()
+    expect(container.querySelector('a[href*="/s/"]')).toBeNull()
+    expect(container.textContent).toContain('Orphan')
+  })
+
   it('mounts with the lean home list and lazily loads the full corpus only when searching', async () => {
-    sessionStore.sessions = [
-      {
-        id: 's1',
-        projectId: 'p1',
-        title: 'Alpha session',
-        updatedAt: '2024-06-15T10:00:00Z',
-        messageCount: 1,
-        createdAt: '2024-06-15T09:00:00Z',
-      },
-    ]
+    sessionStore.sessions = [makeSession('s1', { title: 'Alpha session' })]
     const { HomePage } = await import('./HomePage')
     const container = render(<HomePage />)
 
@@ -658,6 +618,49 @@ describe('HomePage', () => {
     await vi.waitFor(() => {
       expect(ensureFullSessionListMock).toHaveBeenCalledTimes(1)
     })
+  })
+
+  it('keeps the projects section visible while searching, even with no session matches', async () => {
+    sessionStore.sessions = [makeSession('s1', { title: 'Some session' })]
+    const { HomePage } = await import('./HomePage')
+    const container = render(<HomePage />)
+
+    const input = container.querySelector('[placeholder="Search sessions by title or keyword..."]')!
+    await userEvent.type(input, 'zzzzz')
+
+    await vi.waitFor(() => {
+      expect(container.textContent).toMatch(/No sessions matching/)
+    })
+    expect(container.querySelector('[aria-label="Projects"]')).toBeTruthy()
+    expect(container.querySelector('a[href="/p/p1"]')).toBeTruthy()
+  })
+
+  it('orders projects starred first, then alphabetically', async () => {
+    const { HomePage } = await import('./HomePage')
+    const container = render(<HomePage />)
+    const projectLinks = Array.from(container.querySelectorAll('a[href="/p/p1"], a[href="/p/p2"], a[href="/p/p3"]'))
+    const names = projectLinks.map((a) => a.textContent?.trim())
+    // Starred Beta first, then Alpha and Gamma alphabetically.
+    expect(names).toEqual(['Project Beta', 'Project Alpha', 'Project Gamma'])
+  })
+
+  it('shows a star icon for starred projects and a folder icon for others', async () => {
+    const { HomePage } = await import('./HomePage')
+    const container = render(<HomePage />)
+    const betaCard = container.querySelector('a[href="/p/p2"]')!.closest('div.bg-bg-secondary')!
+    expect(betaCard.querySelector('svg.text-yellow-500')).toBeTruthy()
+    const alphaCard = container.querySelector('a[href="/p/p1"]')!.closest('div.bg-bg-secondary')!
+    expect(alphaCard.querySelector('svg.text-yellow-500')).toBeNull()
+  })
+
+  it('keeps project cards free of session rows', async () => {
+    sessionStore.sessions = [makeSession('s1', { projectId: 'p1' })]
+    const { HomePage } = await import('./HomePage')
+    const container = render(<HomePage />)
+    const projectsSection = container.querySelector('[aria-label="Projects"]')
+    expect(projectsSection?.querySelectorAll('a[href*="/s/"]').length).toBe(0)
+    const sessionsSection = container.querySelector('[aria-label="Recent sessions"]')
+    expect(sessionsSection?.querySelectorAll('a[href*="/s/"]').length).toBe(1)
   })
 
   it('shows a per-project Tasks button with color-coded state counts', async () => {
@@ -690,6 +693,29 @@ describe('HomePage', () => {
     // homepage wrapper.
     await vi.waitFor(() => {
       expect(document.querySelector('[placeholder="Search tasks…"]')).toBeTruthy()
+    })
+  })
+
+  it('deletes a project after confirming in the modal', async () => {
+    const { HomePage } = await import('./HomePage')
+    const container = render(<HomePage />)
+
+    const alphaCard = container.querySelector('a[href="/p/p1"]')!.closest('div.bg-bg-secondary')!
+    const trash = alphaCard.querySelector<HTMLElement>('[title="Delete project"]')!
+    await userEvent.click(trash)
+
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain('Delete Project')
+    })
+
+    const confirmButton = Array.from(document.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === 'Delete',
+    )
+    expect(confirmButton).toBeTruthy()
+    await userEvent.click(confirmButton!)
+
+    await vi.waitFor(() => {
+      expect(deleteProjectMock).toHaveBeenCalledWith('p1')
     })
   })
 })

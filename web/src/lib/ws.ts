@@ -18,6 +18,7 @@ export class WebSocketClient {
   private reconnectAttempts: number = 0
   private manualReconnectScheduled = false // User triggered reconnect pending
   private pwaRecoveryAttempted = false
+  private intentionalClose = false
 
   constructor(url: string) {
     this.baseUrl = url
@@ -72,6 +73,7 @@ export class WebSocketClient {
       return this.connectingPromise
     }
 
+    this.intentionalClose = false
     this.connectingPromise = new Promise((resolve, reject) => {
       try {
         const url = this.getUrl()
@@ -148,6 +150,9 @@ export class WebSocketClient {
   }
 
   private attemptReconnect(): void {
+    // A user-initiated disconnect must never be overridden by auto-reconnect.
+    if (this.intentionalClose) return
+
     const isAuthFailure = this.lastCloseCode === 4000
 
     // Only auto-reconnect if NO token - with token, expect user to manually reconnect
@@ -188,10 +193,20 @@ export class WebSocketClient {
   disconnect(): void {
     this.isReconnecting = false
     this.reconnectAttempts = 0
+    this.intentionalClose = true
     if (this.ws) {
-      this.ws.close()
+      const socket = this.ws
       this.ws = null
+      // Detach handlers so a delayed close() completion (real browsers fire
+      // onclose asynchronously) cannot schedule an auto-reconnect or race a
+      // freshly-created socket from a subsequent connect().
+      socket.onopen = null
+      socket.onclose = null
+      socket.onerror = null
+      socket.onmessage = null
+      socket.close()
     }
+    this.connectingPromise = null
   }
 
   resetReconnectAttempts(): void {

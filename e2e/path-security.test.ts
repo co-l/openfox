@@ -25,11 +25,13 @@ import {
   createProject,
   createSession,
   setSessionMode,
+  setSessionDangerLevel,
   answerPathConfirmation,
   type TestClient,
   type TestProject,
   type TestServerHandle,
 } from './utils/index.js'
+import type { ServerMessage } from '@openfox/shared/protocol'
 // Type for path confirmation payload
 interface PathConfirmationPayload {
   callId: string
@@ -37,6 +39,26 @@ interface PathConfirmationPayload {
   paths: string[]
   workdir: string
   reason: 'outside_workdir' | 'sensitive_file' | 'both'
+}
+
+/**
+ * Wait until at least `count` chat.tool_result events are buffered.
+ *
+ * A session freshly switched to builder mode runs an agent-reminder
+ * acknowledgment turn whose chat.done can already sit in the event buffer when
+ * a test starts. Waiting on `chat.done` would match that stale event and check
+ * too early. Tool results only arrive from the turn under test, so polling for
+ * them is the deterministic completion signal.
+ */
+async function waitForToolResults(client: TestClient, count: number, timeoutMs = 20000): Promise<ServerMessage[]> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const results = client.allEvents().filter((e) => e.type === 'chat.tool_result')
+    if (results.length >= count || Date.now() >= deadline) {
+      return results
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
 }
 
 describe('Path Security', () => {
@@ -118,6 +140,32 @@ describe('Path Security', () => {
       const payload = confirmationEvent!.payload as PathConfirmationPayload
       expect(payload.paths.some((p: string) => p.includes('home'))).toBe(true)
     })
+
+    it('emits path_confirmation for a path nested in quotes inside run_command', async () => {
+      client.clearEvents()
+
+      // The path lives in single quotes nested inside a double-quoted program
+      // string. Without quote-aware extraction no path is detected at all and
+      // the command would run unconfirmed, so this assertion stays unconditional.
+      await client.send('chat.send', {
+        content: `Run the exact command: python3 -c "print(open('/home/test/nested.txt').read())"`,
+      })
+
+      const confirmationEvent = await client.waitFor('chat.path_confirmation', undefined, 500).catch(() => null)
+
+      expect(confirmationEvent).not.toBeNull()
+
+      const payload = confirmationEvent!.payload as PathConfirmationPayload
+      expect(payload.tool).toBe('run_command')
+      expect(payload.reason).toBe('outside_workdir')
+      expect(payload.paths.some((p: string) => p.includes('/home/test/nested.txt'))).toBe(true)
+
+      // Resolve the confirmation: an unanswered one leaves the tool call
+      // suspended for the rest of the file's shared server.
+      const session = client.getSession()!
+      await answerPathConfirmation(server.url, session.id, payload.callId, false)
+      await client.waitFor('chat.done').catch(() => null)
+    })
   })
 
   describe('Sensitive File Detection', () => {
@@ -191,12 +239,9 @@ describe('Path Security', () => {
       const session = client.getSession()!
       await answerPathConfirmation(server.url, session.id, payload.callId, true)
 
-      // The operation should proceed after approval
-      await client.waitFor('chat.done').catch(() => null)
-
-      // Check for successful tool result
-      const allEvents = client.allEvents()
-      const toolResults = allEvents.filter((e) => e.type === 'chat.tool_result')
+      // The operation should proceed after approval — poll for the tool result
+      // rather than chat.done (a stale chat.done may already be buffered).
+      const toolResults = await waitForToolResults(client, 1)
       expect(toolResults.length).toBeGreaterThan(0)
     })
 
@@ -364,6 +409,94 @@ describe('Path Security', () => {
       }
 
       await client.waitFor('chat.done').catch(() => null)
+    })
+  })
+
+  describe('Danger Mode Switch', () => {
+    async function collectConfirmations(): Promise<string[]> {
+      const callIds: string[] = []
+      const deadline = Date.now() + 15000
+      while (Date.now() < deadline && callIds.length < 3) {
+        const pending = client
+          .allEvents()
+          .filter((e) => e.type === 'chat.path_confirmation')
+          .map((e) => (e.payload as PathConfirmationPayload).callId)
+        for (const callId of pending) {
+          if (!callIds.includes(callId)) {
+            callIds.push(callId)
+          }
+        }
+        if (callIds.length < 3) {
+          await new Promise((resolve) => setTimeout(resolve, 25))
+        }
+      }
+      return callIds
+    }
+
+    it('auto-approves every pending confirmation of a batch when switching to dangerous mode', async () => {
+      client.clearEvents()
+
+      // The mock LLM emits three write_file calls to outside-workdir paths in a
+      // single response, so three path confirmations go pending in parallel.
+      await client.send('chat.send', {
+        content: 'Write three files outside the project',
+      })
+
+      const callIds = await collectConfirmations()
+      expect(callIds.length).toBe(3)
+
+      // Switching to dangerous mode must resolve all three pending confirmations.
+      const session = client.getSession()!
+      await setSessionDangerLevel(server.url, session.id, 'dangerous')
+
+      // Wait for the broadcast of each resolved confirmation.
+      const resolved = await client.waitFor('session.confirmation_resolved', undefined, 3000).catch(() => null)
+      expect(resolved).not.toBeNull()
+      for (const callId of callIds) {
+        const msg = await client
+          .waitFor<{ callId: string }>('session.confirmation_resolved', (p) => p.callId === callId, 5000)
+          .catch(() => null)
+        expect(msg, `expected confirmation_resolved for ${callId}`).not.toBeNull()
+      }
+
+      // The whole batch completes without further prompting. Poll for the tool
+      // results: a stale chat.done from the beforeEach mode-switch reminder turn
+      // may already be buffered, so waiting on chat.done would check too early.
+      const toolResults = await waitForToolResults(client, 3)
+      expect(toolResults.length).toBeGreaterThanOrEqual(3)
+    })
+
+    it('switching to dangerous mid-confirmation lets the turn finish and the next turn skips prompting', async () => {
+      client.clearEvents()
+
+      await client.send('chat.send', {
+        content: 'Write to /home/test/approved.txt with content "approved"',
+      })
+
+      const confirmation = await client.waitFor('chat.path_confirmation', undefined, 3000).catch(() => null)
+      expect(confirmation).not.toBeNull()
+      const callId = (confirmation!.payload as PathConfirmationPayload).callId
+
+      // Switch to dangerous while the confirmation is pending: it must resolve
+      // and the tool call must complete.
+      const session = client.getSession()!
+      await setSessionDangerLevel(server.url, session.id, 'dangerous')
+
+      const resolved = await client
+        .waitFor<{ callId: string }>('session.confirmation_resolved', (p) => p.callId === callId, 3000)
+        .catch(() => null)
+      expect(resolved).not.toBeNull()
+      await client.waitFor('chat.done', undefined, 5000).catch(() => null)
+
+      // A follow-up message to an outside path must not prompt again: the new
+      // run starts in dangerous mode.
+      client.clearEvents()
+      await client.send('chat.send', {
+        content: 'Write to /home/test/approved.txt with content "approved"',
+      })
+      await client.waitFor('chat.done', undefined, 5000).catch(() => null)
+      const confirmations = client.allEvents().filter((e) => e.type === 'chat.path_confirmation')
+      expect(confirmations.length).toBe(0)
     })
   })
 })

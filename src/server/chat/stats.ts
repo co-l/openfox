@@ -122,6 +122,7 @@ export function computeAggregatedStats(input: {
   totalGenTime: number // sum of completionTime across all calls
   totalToolTime: number // seconds
   totalTime: number // wall clock seconds
+  thinkingDuration?: number // seconds
   llmCalls?: LLMCallStats[]
 }): MessageStats {
   const {
@@ -134,6 +135,7 @@ export function computeAggregatedStats(input: {
     totalGenTime,
     totalToolTime,
     totalTime,
+    thinkingDuration,
     llmCalls,
   } = input
 
@@ -144,6 +146,7 @@ export function computeAggregatedStats(input: {
     mode,
     totalTime,
     toolTime: totalToolTime,
+    ...(thinkingDuration !== undefined && { thinkingDuration }),
     prefillTokens: totalPrefillTokens,
     ...(totalPrefillIncrement !== undefined && { prefTokenIncrement: totalPrefillIncrement }),
     prefillSpeed: totalPrefillTime > 0 ? roundTo1(prefillSource / totalPrefillTime) : 0,

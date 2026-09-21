@@ -10,39 +10,22 @@ vi.mock('wouter', () => ({
   useLocation: () => ['/', vi.fn()],
 }))
 
-const mockSettings: Record<string, string> = {}
-const mockGetSetting = vi.fn().mockResolvedValue('')
-const mockSetSetting = vi.fn()
+const { mockSettings, mockSetSetting } = vi.hoisted(() => ({
+  mockSettings: {} as Record<string, string>,
+  mockSetSetting: vi.fn(),
+}))
 
-vi.mock('../../stores/settings', () => ({
-  SETTINGS_KEYS: {
-    DISPLAY_SHOW_OPEN_IN_EDITOR: 'display.showOpenInEditorLinks',
-    LLM_DYNAMIC_SYSTEM_PROMPT: 'llm.dynamicSystemPrompt',
-    CACHE_WARMING: 'cache.warming',
-    RETRY_PATTERNS: 'agent.retryPatterns',
-    PROXY_URL: 'network.proxyUrl',
-    DEFAULT_AGENT: 'agent.defaultAgent',
-  },
-  useSettingsStore: vi.fn((selector) => {
-    const state = {
-      settings: mockSettings,
-      getSetting: mockGetSetting,
-      setSetting: mockSetSetting,
-    }
-    return selector(state)
-  }),
+vi.mock('../../../hooks/useSetting', () => ({
+  useSetting: (key: string, fallback = '') => ({ value: mockSettings[key] ?? fallback, loading: false }),
+}))
+
+vi.mock('../../../lib/resources', async (importOriginal) => ({
+  ...(await importOriginal()),
+  setSetting: mockSetSetting,
 }))
 
 vi.mock('../../../hooks/useAgents', () => ({
   useAgents: () => ({ agents: [], refresh: vi.fn() }),
-}))
-
-vi.mock('../useSettingsStore', () => ({
-  useSettingsStoreState: () => ({
-    settings: mockSettings,
-    getSetting: mockGetSetting,
-    setSetting: mockSetSetting,
-  }),
 }))
 
 describe('AdvancedTab', () => {
@@ -54,6 +37,33 @@ describe('AdvancedTab', () => {
   it('renders the Dynamic System Prompt toggle', () => {
     const { container } = render(<AdvancedTab onClose={vi.fn()} />)
     expect(container.textContent).toContain('Dynamic System Prompt')
+  })
+
+  it('renders the Caveman thinking toggle and persists it', async () => {
+    const { container } = render(<AdvancedTab onClose={vi.fn()} />)
+    const toggles = container.querySelectorAll('label')
+    const cavemanToggle = Array.from(toggles).find((t) => t.textContent?.includes('Caveman thinking'))
+    expect(cavemanToggle).toBeTruthy()
+    await userEvent.setup().click(cavemanToggle!)
+    expect(mockSetSetting).toHaveBeenCalledWith('llm.cavemanThinking', 'true')
+  })
+
+  it('renders the auto-continue-on-boot toggle and persists it', async () => {
+    const { container } = render(<AdvancedTab onClose={vi.fn()} />)
+    const toggles = container.querySelectorAll('label')
+    const toggle = Array.from(toggles).find((t) => t.textContent?.includes('Auto-continue on boot'))
+    expect(toggle).toBeTruthy()
+    await userEvent.setup().click(toggle!)
+    expect(mockSetSetting).toHaveBeenCalledWith('agent.autoContinueOnBoot', 'true')
+  })
+
+  it('renders the parallel sub-agent calls toggle and persists it', async () => {
+    const { container } = render(<AdvancedTab onClose={vi.fn()} />)
+    const toggles = container.querySelectorAll('label')
+    const toggle = Array.from(toggles).find((t) => t.textContent?.includes('Parallel sub-agent calls'))
+    expect(toggle).toBeTruthy()
+    await userEvent.setup().click(toggle!)
+    expect(mockSetSetting).toHaveBeenCalledWith('agent.allowParallelSubAgents', 'true')
   })
 
   it('renders the Speculative Cache Warming toggle', () => {

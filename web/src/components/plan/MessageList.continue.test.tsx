@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { act, render, screen, cleanup, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, cleanup, waitFor } from '@testing-library/react'
 import type { PropsWithChildren } from 'react'
 import { MessageList } from './MessageList'
+import { useLocaleStore } from '../../stores/locale'
 
 const mockContinueWorkflow = vi.fn()
 
@@ -11,9 +12,15 @@ const mockContinueWorkflow = vi.fn()
 const mockState = {
   phase: 'waiting',
   hasWaitingWorkflow: true,
+  execStatus: 'waiting' as 'waiting' | 'blocked',
+  isRunning: false,
   criteriaPending: false,
   displayItems: [] as Array<Record<string, unknown>>,
   pendingChoices: undefined as Array<{ id: string; label: string; goto: string; nextStepName?: string }> | undefined,
+  llmRetry: null as
+    | { status: 'retrying'; attempt: number; retryInMs: number; error: string }
+    | { status: 'failed'; error: string }
+    | null,
 }
 
 function buildSessionState() {
@@ -22,6 +29,7 @@ function buildSessionState() {
       id: 's1',
       phase: mockState.phase,
       mode: 'planner',
+      isRunning: mockState.isRunning,
       criteria: [],
       metadata: {},
       metadataEntries: mockState.criteriaPending
@@ -46,7 +54,7 @@ function buildSessionState() {
           sessionId: 's1',
           workflowId: 'pr-review',
           workflowName: 'PR Review',
-          status: 'waiting' as const,
+          status: mockState.execStatus,
           currentStepId: 'user_test',
           currentStepName: 'Manual Testing',
           stepOutput: {} as Record<string, string>,
@@ -62,36 +70,29 @@ function buildSessionState() {
     clearError: vi.fn(),
     continueWorkflow: mockContinueWorkflow,
     exitWorkflow: vi.fn(),
+    retryLLMNow: vi.fn(),
+    retryLLM: vi.fn(),
+    llmRetry: mockState.llmRetry,
   }
 }
 
 vi.mock('../../stores/session', () => ({
   useSessionStore: (selector: (state: unknown) => unknown) => selector(buildSessionState()),
-  useIsRunning: () => false,
+  useIsRunning: () => mockState.isRunning,
 }))
 
-vi.mock('../../stores/workflows', () => ({
-  useWorkflowsStore: Object.assign(
-    (selector?: (state: unknown) => unknown) =>
-      selector
-        ? selector({
-            defaults: [{ id: 'default', name: 'Build & Verify', color: '#3b82f6' }],
-            userItems: [],
-            projectItems: [],
-            fetchWorkflows: vi.fn(),
-          })
-        : { defaults: [], userItems: [], projectItems: [], fetchWorkflows: vi.fn() },
-    { getState: vi.fn() },
-  ),
-  selectAllWorkflows: (state: { defaults: unknown[]; userItems: unknown[]; projectItems: unknown[] }) => [
-    ...state.defaults,
-    ...state.userItems,
-    ...state.projectItems,
-  ],
-  useAllWorkflows: () => [{ id: 'default', name: 'Build & Verify', color: '#3b82f6' }],
+vi.mock('../../hooks/useWorkflows', () => ({
+  useWorkflows: () => ({
+    workflows: [{ id: 'default', name: 'Build & Verify', color: '#3b82f6' }],
+    refresh: vi.fn(),
+  }),
 }))
 
-vi.mock('../../stores/settings', () => ({
+vi.mock('../../hooks/useSessionWorkdir', () => ({
+  useSessionWorkdir: () => '/tmp',
+}))
+
+vi.mock('../../hooks/useDisplaySettings', () => ({
   useDisplaySettings: () => ({
     showThinking: true,
     showVerboseToolOutput: true,
@@ -245,6 +246,7 @@ describe('MessageList paginated history', () => {
   afterEach(() => {
     cleanup()
     vi.unstubAllGlobals()
+    useLocaleStore.getState().applyLocale('en')
   })
 
   beforeEach(() => {
@@ -265,6 +267,14 @@ describe('MessageList paginated history', () => {
 
     await waitFor(() => expect(onLoadOlder).toHaveBeenCalledWith(30))
     expect(screen.getByTestId('chat-feed').getAttribute('data-paginated-history')).toBe('true')
+  })
+
+  it('translates the history controls when the locale is French', () => {
+    useLocaleStore.getState().applyLocale('fr')
+    renderMessageList({ hiddenCount: 8, onLoadOlder: vi.fn(async () => 2) })
+
+    expect(screen.getByRole('button', { name: 'Charger l’historique précédent (8 restants)' })).toBeDefined()
+    expect(screen.getByRole('button', { name: 'Ouvrir l’historique complet dans un nouvel onglet' })).toBeDefined()
   })
 
   it('does not force virtualization when the full history is already present', () => {
@@ -331,5 +341,119 @@ describe('MessageList paginated history', () => {
     })
 
     expect(onLoadOlder).not.toHaveBeenCalled()
+  })
+})
+
+describe('MessageList blocked workflow step', () => {
+  afterEach(() => {
+    cleanup()
+  })
+
+  beforeEach(() => {
+    mockState.hasWaitingWorkflow = true
+    mockState.execStatus = 'waiting'
+    mockState.isRunning = false
+    mockState.displayItems = []
+    mockState.pendingChoices = undefined
+  })
+
+  it('renders the blocked-step message with Retry step when blocked and idle', () => {
+    mockState.execStatus = 'blocked'
+    mockState.isRunning = false
+    renderMessageList()
+    expect(screen.getByText(/step stopped before finishing/i)).toBeDefined()
+    expect(screen.getByRole('button', { name: /retry step/i })).toBeDefined()
+  })
+
+  it('does not render the blocked-step message while the session is running', () => {
+    mockState.execStatus = 'blocked'
+    mockState.isRunning = true
+    renderMessageList()
+    expect(screen.queryByText(/step stopped before finishing/i)).toBeNull()
+    expect(screen.queryByRole('button', { name: /resuming/i })).toBeNull()
+  })
+})
+
+describe('MessageList LLM retry error modal', () => {
+  afterEach(() => {
+    cleanup()
+  })
+
+  beforeEach(() => {
+    mockState.hasWaitingWorkflow = false
+    mockState.isRunning = false
+    mockState.llmRetry = null
+    mockState.displayItems = []
+    mockState.pendingChoices = undefined
+  })
+
+  it('opens the error modal from the retrying pill info button', () => {
+    mockState.isRunning = true
+    mockState.llmRetry = { status: 'retrying', attempt: 2, retryInMs: 4000, error: 'HTTP 500: boom' }
+    renderMessageList()
+
+    fireEvent.click(screen.getByRole('button', { name: /error details/i }))
+
+    expect(screen.getByRole('dialog')).toBeDefined()
+    expect(screen.getByText('HTTP 500: boom')).toBeDefined()
+  })
+
+  it('keeps the modal open when a new retry attempt arrives with a new error', () => {
+    mockState.isRunning = true
+    mockState.llmRetry = { status: 'retrying', attempt: 1, retryInMs: 4000, error: 'boom' }
+    const { rerender } = renderMessageList()
+
+    fireEvent.click(screen.getByRole('button', { name: /error details/i }))
+    expect(screen.getByText('boom')).toBeDefined()
+
+    mockState.llmRetry = { status: 'retrying', attempt: 2, retryInMs: 8000, error: 'rate limited' }
+    rerender(
+      <MessageList
+        displayItems={mockState.displayItems as never}
+        scrollContainerRef={{
+          current: { osInstance: () => null, getElement: () => null },
+        }}
+        highlightedMessageId={null}
+        onLaunchWorkflow={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('rate limited')).toBeDefined()
+    expect(screen.queryByText('boom')).toBeNull()
+  })
+
+  it('closes the modal when the retry state clears', () => {
+    mockState.isRunning = true
+    mockState.llmRetry = { status: 'retrying', attempt: 1, retryInMs: 4000, error: 'boom' }
+    const { rerender } = renderMessageList()
+
+    fireEvent.click(screen.getByRole('button', { name: /error details/i }))
+    expect(screen.getByText('boom')).toBeDefined()
+
+    mockState.llmRetry = null
+    rerender(
+      <MessageList
+        displayItems={mockState.displayItems as never}
+        scrollContainerRef={{
+          current: { osInstance: () => null, getElement: () => null },
+        }}
+        highlightedMessageId={null}
+        onLaunchWorkflow={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByText('boom')).toBeNull()
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('opens the error modal from the failed bubble info button and pretty-prints JSON', () => {
+    mockState.isRunning = false
+    mockState.llmRetry = { status: 'failed', error: '{"error":"boom"}' }
+    renderMessageList()
+
+    fireEvent.click(screen.getByRole('button', { name: /error details/i }))
+
+    expect(screen.getByRole('dialog')).toBeDefined()
+    expect(screen.getByText(/"error": "boom"/)).toBeDefined()
   })
 })

@@ -3,19 +3,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-const { mockStoreState, mockFetchConfig, mockSaveConfig, mockUpdateProject, mockWsSend, mockAuthFetch } = vi.hoisted(
-  () => {
-    const state = { config: null as Record<string, unknown> | null, loading: false }
-    return {
-      mockStoreState: state,
-      mockFetchConfig: vi.fn(),
-      mockSaveConfig: vi.fn(),
-      mockUpdateProject: vi.fn(),
-      mockWsSend: vi.fn(),
-      mockAuthFetch: vi.fn(),
-    }
-  },
-)
+const { mockStoreState, mockUpdateProject, mockWsSend, mockAuthFetch } = vi.hoisted(() => {
+  const state = { config: null as Record<string, unknown> | null, loading: false }
+  return {
+    mockStoreState: state,
+    mockUpdateProject: vi.fn(),
+    mockWsSend: vi.fn(),
+    mockAuthFetch: vi.fn(),
+  }
+})
 
 const { mockDefaultAgents, mockUserAgents, mockProjectAgents, mockRefreshAgents } = vi.hoisted(() => ({
   mockDefaultAgents: [
@@ -30,34 +26,40 @@ const { mockDefaultAgents, mockUserAgents, mockProjectAgents, mockRefreshAgents 
   mockRefreshAgents: vi.fn(),
 }))
 
-vi.mock('../../hooks/useResource', () => ({
-  useResource: vi.fn(() => ({
-    data: {
-      defaults: mockDefaultAgents,
-      userItems: mockUserAgents,
-      projectItems: mockProjectAgents,
-      modelOverrides: {},
-    },
-    loading: false,
-    error: undefined,
-    refresh: mockRefreshAgents,
-  })),
-}))
+vi.mock('../../hooks/useResource', async () => {
+  const { workspaceConfigResource, mcpServersResource } = await import('../../lib/resources')
+  return {
+    useResource: vi.fn((res: unknown) => {
+      if (res === workspaceConfigResource) {
+        return {
+          data: mockStoreState.config,
+          loading: mockStoreState.loading,
+          error: undefined,
+          refresh: vi.fn(),
+        }
+      }
+      if (res === mcpServersResource) {
+        return { data: [], loading: false, error: undefined, refresh: vi.fn() }
+      }
+      return {
+        data: {
+          defaults: mockDefaultAgents,
+          userItems: mockUserAgents,
+          projectItems: mockProjectAgents,
+          modelOverrides: {},
+        },
+        loading: false,
+        error: undefined,
+        refresh: mockRefreshAgents,
+      }
+    }),
+  }
+})
 
 vi.mock('../../stores/project', () => ({
   useProjectStore: (selector: any) =>
     selector({
       updateProject: mockUpdateProject,
-    }),
-}))
-
-vi.mock('../../stores/workspace-config', () => ({
-  useWorkspaceConfigStore: (selector: any) =>
-    selector({
-      config: mockStoreState.config,
-      loading: mockStoreState.loading,
-      fetchConfig: mockFetchConfig,
-      saveConfig: mockSaveConfig,
     }),
 }))
 
@@ -92,6 +94,8 @@ vi.mock('../shared/ModalFooter', () => ({
 }))
 
 import { ProjectSettingsModal } from './ProjectSettingsModal'
+import { workspaceConfigResource } from '../../lib/resources'
+import { useResource } from '../../hooks/useResource'
 
 const defaultProject = {
   id: 'test-project',
@@ -107,6 +111,27 @@ beforeEach(() => {
   mockStoreState.loading = false
   mockAuthFetch.mockReset()
 })
+
+const SAVE_URL = `/api/workspace/config?workdir=${encodeURIComponent(defaultProject.workdir)}`
+
+/** Last saveWorkspaceConfig POST (the /api/workspace/config call, not /validate). */
+function lastSaveCall(): [string, RequestInit] | undefined {
+  const call = mockAuthFetch.mock.calls.find(([url]) => url === SAVE_URL)
+  if (!call) return undefined
+  return [String(call[0]), (call[1] ?? {}) as RequestInit]
+}
+
+function expectSavedConfig(partial: Record<string, unknown>) {
+  const saveCall = lastSaveCall()
+  expect(saveCall, 'expected a workspace config save').toBeTruthy()
+  const [, opts] = saveCall!
+  expect(opts.method).toBe('POST')
+  expect(JSON.parse(String(opts.body))).toEqual(expect.objectContaining(partial))
+}
+
+function expectNoSave() {
+  expect(lastSaveCall()).toBeUndefined()
+}
 
 afterEach(cleanup)
 
@@ -144,7 +169,7 @@ describe('ProjectSettingsModal', () => {
   it('calls fetchConfig on open', () => {
     render(<ProjectSettingsModal isOpen={true} onClose={vi.fn()} project={defaultProject} />)
 
-    expect(mockFetchConfig).toHaveBeenCalledWith(defaultProject.workdir)
+    expect(useResource).toHaveBeenCalledWith(workspaceConfigResource, defaultProject.workdir)
   })
 
   it('saves rootDir when user types and saves', async () => {
@@ -165,10 +190,7 @@ describe('ProjectSettingsModal', () => {
     const saveBtn = screen.getByTestId('save-btn')
     await user.click(saveBtn)
 
-    expect(mockSaveConfig).toHaveBeenCalledWith(
-      defaultProject.workdir,
-      expect.objectContaining({ rootDir: '/my/custom/path' }),
-    )
+    expectSavedConfig({ rootDir: '/my/custom/path' })
   })
 
   it('sends only changed workspace fields when saving', async () => {
@@ -182,10 +204,7 @@ describe('ProjectSettingsModal', () => {
     const saveBtn = screen.getByTestId('save-btn')
     await user.click(saveBtn)
 
-    expect(mockSaveConfig).toHaveBeenCalledWith(
-      defaultProject.workdir,
-      expect.objectContaining({ setup: ['npm install'] }),
-    )
+    expectSavedConfig({ setup: ['npm install'] })
   })
 
   it('sends an empty setup array when the setup command is cleared', async () => {
@@ -201,7 +220,7 @@ describe('ProjectSettingsModal', () => {
     const saveBtn = screen.getByTestId('save-btn')
     await user.click(saveBtn)
 
-    expect(mockSaveConfig).toHaveBeenCalledWith(defaultProject.workdir, expect.objectContaining({ setup: [] }))
+    expectSavedConfig({ setup: [] })
   })
 
   it('does not call saveConfig when only project instructions change', async () => {
@@ -215,7 +234,7 @@ describe('ProjectSettingsModal', () => {
     const saveBtn = screen.getByTestId('save-btn')
     await user.click(saveBtn)
 
-    expect(mockSaveConfig).not.toHaveBeenCalled()
+    expectNoSave()
     expect(mockUpdateProject).toHaveBeenCalled()
   })
 })
@@ -465,7 +484,7 @@ describe('ProjectSettingsModal — rootDir validation (Criterion 0 & 1)', () => 
         body: expect.stringContaining('"createIfMissing":true'),
       }),
     )
-    expect(mockSaveConfig).toHaveBeenCalled()
+    expect(lastSaveCall()).toBeTruthy()
   })
 
   it('does not save when user clicks Cancel on directory confirmation', async () => {
@@ -491,7 +510,7 @@ describe('ProjectSettingsModal — rootDir validation (Criterion 0 & 1)', () => 
     const cancelBtn = screen.getAllByText('Cancel')[0]!
     await user.click(cancelBtn)
 
-    expect(mockSaveConfig).not.toHaveBeenCalled()
+    expectNoSave()
   })
 
   it('shows migration warning when rootDir changes and workspaces exist in old location', async () => {
@@ -560,7 +579,7 @@ describe('ProjectSettingsModal — rootDir validation (Criterion 0 & 1)', () => 
 
     await user.click(confirmBtn)
 
-    expect(mockSaveConfig).toHaveBeenCalled()
+    expect(lastSaveCall()).toBeTruthy()
   })
 
   it('does not save when user dismisses migration warning without confirming', async () => {
@@ -594,7 +613,7 @@ describe('ProjectSettingsModal — rootDir validation (Criterion 0 & 1)', () => 
     const cancelBtn = screen.getAllByText('Cancel')[0]!
     await user.click(cancelBtn)
 
-    expect(mockSaveConfig).not.toHaveBeenCalled()
+    expectNoSave()
   })
 
   it('skips validation when rootDir field is empty', async () => {
@@ -614,6 +633,6 @@ describe('ProjectSettingsModal — rootDir validation (Criterion 0 & 1)', () => 
       expect.stringContaining('/api/workspace/config/validate'),
       expect.anything(),
     )
-    expect(mockSaveConfig).toHaveBeenCalled()
+    expect(lastSaveCall()).toBeTruthy()
   })
 })

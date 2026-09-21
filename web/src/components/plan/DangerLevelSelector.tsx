@@ -1,7 +1,9 @@
 import { useSessionStore } from '../../stores/session'
+import { useT } from '../../hooks/useT'
 import { useSessionScope, useScopedPaneState } from '../../stores/session/session-scope'
 
 export function DangerLevelSelector() {
+  const t = useT()
   const sessionId = useSessionScope()
   const dangerLevel = useScopedPaneState(
     sessionId,
@@ -23,9 +25,12 @@ export function DangerLevelSelector() {
             ? 'bg-accent-success/20 text-accent-success'
             : 'text-text-muted hover:text-text-primary hover:bg-bg-tertiary'
         }`}
-        title="Normal mode - requires path confirmation"
+        title={t({
+          en: 'Normal mode - requires path confirmation',
+          fr: 'Mode normal - confirmation des chemins requise',
+        })}
       >
-        Normal
+        {t({ en: 'Normal', fr: 'Normal' })}
       </button>
       <button
         type="button"
@@ -35,9 +40,12 @@ export function DangerLevelSelector() {
             ? 'bg-red-500/20 text-red-400'
             : 'text-text-muted hover:text-text-primary hover:bg-bg-tertiary'
         }`}
-        title="Dangerous mode - bypasses all confirmations"
+        title={t({
+          en: 'Dangerous mode - bypasses all confirmations',
+          fr: 'Mode dangereux - contourne toutes les confirmations',
+        })}
       >
-        Dangerous
+        {t({ en: 'Dangerous', fr: 'Dangereux' })}
       </button>
     </div>
   )

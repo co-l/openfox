@@ -1,8 +1,15 @@
+import { getLocale } from '@shared/i18n/index.js'
+
 /**
- * Format token count with space as thousand separator (e.g., 125000 -> "125 000")
+ * Format token count with space as thousand separator (e.g., 125000 -> "125 000").
+ * Digit grouping follows the active locale via Intl.NumberFormat; the group
+ * separator is normalized to a regular space (project-wide display choice).
  */
 export function formatTokens(tokens: number): string {
-  return tokens.toLocaleString('en-US').replace(/,/g, ' ')
+  return new Intl.NumberFormat(getLocale())
+    .format(tokens)
+    .replace(/[\s\u00a0\u202f]/g, ' ')
+    .replace(/,/g, ' ')
 }
 
 /**

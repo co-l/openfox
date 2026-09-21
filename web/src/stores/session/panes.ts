@@ -19,6 +19,8 @@ export function emptyPane(): SessionPane {
     gitStatus: null,
     error: null,
     llmRetry: null,
+    liveTurnStats: null,
+    sessionStats: null,
   }
 }
 
@@ -41,6 +43,8 @@ export function paneFromFlat(state: SessionState): SessionPane {
     gitStatus: state.gitStatus,
     error: state.error,
     llmRetry: state.llmRetry,
+    liveTurnStats: state.liveTurnStats,
+    sessionStats: state.sessionStats,
   }
 }
 
@@ -63,6 +67,8 @@ export function mirror(pane: SessionPane): Partial<SessionState> {
     gitStatus: pane.gitStatus,
     error: pane.error,
     llmRetry: pane.llmRetry,
+    liveTurnStats: pane.liveTurnStats,
+    sessionStats: pane.sessionStats,
   }
 }
 
@@ -72,6 +78,20 @@ export function mirror(pane: SessionPane): Partial<SessionState> {
  */
 export function effectiveFocusedId(state: SessionState): string | null {
   return state.focusedSessionId ?? state.currentSession?.id ?? null
+}
+
+// Resolve a session's projectId from any source available in state: the
+// sessions list, the live pane, or the current session. Used to scope
+// post-mutation reloads to the right project instead of fetching globally.
+export function resolveSessionProjectId(state: SessionState, sessionId: string): string | undefined {
+  const summary = state.sessions.find((s) => s.id === sessionId)
+  if (summary?.projectId) return summary.projectId
+  const pane = state.panes[sessionId]
+  if (pane?.session?.projectId) return pane.session.projectId
+  if (state.currentSession?.id === sessionId && state.currentSession.projectId) {
+    return state.currentSession.projectId
+  }
+  return undefined
 }
 
 /** True when the session is focused or already an open pane (live updates). */

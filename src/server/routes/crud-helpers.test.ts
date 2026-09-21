@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { resolveProjectDir, resolveScope, createCrudRoutes, type CrudRouteConfig } from './crud-helpers.js'
-import express from 'express'
+import express, { type Router } from 'express'
 import type { AddressInfo } from 'node:net'
 
 function req(query: Record<string, unknown>): { query: Record<string, unknown> } {
@@ -96,10 +96,20 @@ function makeStubConfig(calls: StubCalls, opts: { annotateScope?: boolean } = {}
   }
 }
 
-async function mountRouter(calls: StubCalls, opts: { annotateScope?: boolean } = {}) {
+async function mountRouter(
+  calls: StubCalls,
+  opts: { annotateScope?: boolean; extraRoutes?: (router: Router) => void } = {},
+) {
   const app = express()
   app.use(express.json())
-  app.use('/api/items', createCrudRoutes(makeStubConfig(calls, opts), '/config', '/project'))
+  app.use(
+    '/api/items',
+    createCrudRoutes(
+      { ...makeStubConfig(calls, opts), ...(opts.extraRoutes ? { extraRoutes: opts.extraRoutes } : {}) },
+      '/config',
+      '/project',
+    ),
+  )
   const server = await new Promise<ReturnType<express.Express['listen']>>((resolve) => {
     const s = app.listen(0, () => resolve(s))
   })
@@ -108,6 +118,25 @@ async function mountRouter(calls: StubCalls, opts: { annotateScope?: boolean } =
 }
 
 describe('createCrudRoutes scope support', () => {
+  it('extraRoutes are matched before the /:id bucket route (template-variables must not 404)', async () => {
+    const calls: StubCalls = { save: [], delete: [], saveProject: [], deleteProject: [] }
+    const { server, baseUrl } = await mountRouter(calls, {
+      extraRoutes: (router) => {
+        router.get('/template-variables', (_req, res) => {
+          res.json({ variables: ['topic', 'stepOutput'] })
+        })
+      },
+    })
+    try {
+      const res = await fetch(`${baseUrl}/api/items/template-variables`)
+      expect(res.status).toBe(200)
+      const data = (await res.json()) as { variables: string[] }
+      expect(data.variables).toEqual(['topic', 'stepOutput'])
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
+
   it('annotates every item with its scope in GET / when annotateScope is enabled', async () => {
     const calls: StubCalls = { save: [], delete: [], saveProject: [], deleteProject: [] }
     const { server, baseUrl } = await mountRouter(calls, { annotateScope: true })

@@ -3,8 +3,7 @@
  * editor, so both honor the same slash-command / @-mention splice semantics.
  */
 
-import { useWorkflowsStore, selectAllWorkflows } from '../stores/workflows'
-import { useCommandsStore } from '../stores/commands'
+import { readAllWorkflows, readCommands } from './resources'
 import { dedupById } from './modal-utils'
 
 export interface SuggestionInsertion {
@@ -45,14 +44,17 @@ export function focusTextareaAt(textarea: HTMLTextAreaElement | null, cursorPos:
  * server-computed param names. Identical for the chat composer and the task
  * editor so both render the same hints.
  */
-export function resolveSlashParamIds(suggestion: { type: string; id: string; scope?: unknown }): string[] {
+export function resolveSlashParamIds(
+  suggestion: { type: string; id: string; scope?: unknown },
+  workdir?: string,
+): string[] {
   if (suggestion.type === 'workflow') {
-    const wf = selectAllWorkflows(useWorkflowsStore.getState()).find(
-      (w) => w.id === suggestion.id && w.scope === suggestion.scope,
-    )
+    const wf = readAllWorkflows(workdir).find((w) => w.id === suggestion.id && w.scope === suggestion.scope)
     return (wf?.parameters ?? []).map((p) => p.id)
   }
-  const all = useCommandsStore.getState()
-  const cmd = dedupById(dedupById(all.defaults, all.userItems), all.projectItems).find((c) => c.id === suggestion.id)
+  const data = readCommands(workdir)
+  const cmd = data
+    ? dedupById(dedupById(data.defaults, data.userItems), data.projectItems).find((c) => c.id === suggestion.id)
+    : undefined
   return cmd?.paramNames ?? []
 }

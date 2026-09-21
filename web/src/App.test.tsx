@@ -19,6 +19,15 @@ vi.mock('./lib/ws', () => ({
   },
 }))
 
+const mockAuthFetch = vi.fn()
+vi.mock('./lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./lib/api')>()
+  return {
+    ...actual,
+    authFetch: mockAuthFetch,
+  }
+})
+
 const mockNavigate = vi.fn()
 vi.mock('wouter', () => ({
   Route: ({ children, path }: { children: React.ReactNode; path: string }) => <div data-path={path}>{children}</div>,
@@ -84,39 +93,22 @@ vi.mock('./stores/session', () => ({
   },
 }))
 
-vi.mock('./stores/project', () => ({
-  useProjectStore: (selector?: any) => {
-    const state = {
-      currentProject: { id: 'test-project', name: 'Test Project', workdir: '/test' },
-      loadProject: vi.fn(),
-      handleServerMessage: vi.fn(),
-    }
-    return selector ? selector(state) : state
-  },
+vi.mock('./hooks/useCurrentProject', () => ({
+  useCurrentProject: () => ({ id: 'test-project', name: 'Test Project', workdir: '/test' }),
+}))
+
+const configStoreState = vi.hoisted(() => ({
+  providers: [],
+  activeProviderId: null,
+  configFetched: true,
+  fetchConfig: vi.fn(async () => {}),
+  refreshProviderModels: vi.fn(async () => {}),
 }))
 
 vi.mock('./stores/config', () => ({
   useConfigStore: (selector?: any) => {
-    const state = {
-      providers: [],
-      activeProviderId: null,
-      configFetched: true,
-      fetchConfig: vi.fn(async () => {}),
-      refreshProviderModels: vi.fn(async () => {}),
-    }
-    return selector ? selector(state) : state
+    return selector ? selector(configStoreState) : configStoreState
   },
-}))
-
-vi.mock('./stores/mcp', () => ({
-  useMcpStore: Object.assign(
-    (selector?: any) => {
-      return selector ? selector({}) : {}
-    },
-    {
-      getState: () => ({ fetchServers: vi.fn() }),
-    },
-  ),
 }))
 
 const themeStoreState = vi.hoisted(() => ({
@@ -139,27 +131,6 @@ vi.mock('./stores/theme', () => ({
     },
     {
       getState: () => themeStoreState,
-      setState: vi.fn(),
-    },
-  ),
-}))
-
-vi.mock('./stores/settings', () => ({
-  SETTINGS_KEYS: [],
-  DISPLAY_SETTINGS_KEYS: [],
-  useSettingsStore: Object.assign(
-    (selector?: any) => {
-      const state = {
-        settings: {},
-        fetchDisplaySettings: vi.fn(),
-      }
-      return selector ? selector(state) : state
-    },
-    {
-      getState: () => ({
-        settings: {},
-        getSettings: vi.fn(),
-      }),
       setState: vi.fn(),
     },
   ),
@@ -260,6 +231,8 @@ beforeEach(() => {
   layoutProps.rightSidebar.overlay = undefined
   layoutProps.header.onMenuClick = undefined
   layoutProps.header.onCriteriaToggle = undefined
+  mockAuthFetch.mockReset()
+  mockAuthFetch.mockResolvedValue({ ok: true, json: async () => ({}) } as unknown as Response)
 })
 
 describe('App - imports', () => {
@@ -291,6 +264,17 @@ describe('App - Password modal rendering', () => {
 
     expect(container.querySelector('[data-testid="password-modal"]')).not.toBeNull()
     expect(container.textContent).toContain('Password Required')
+  })
+
+  it('does not fetch per-key settings while unauthenticated (no pre-login 401 noise)', async () => {
+    sessionState.connectionStatus = 'disconnected'
+    sessionState.showPasswordModal = true
+    localStorage.removeItem('openfox_token')
+
+    await renderAppAsync()
+
+    const settingsCalls = mockAuthFetch.mock.calls.filter((c) => String(c[0]).includes('/api/settings'))
+    expect(settingsCalls).toHaveLength(0)
   })
 })
 

@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTasksStore } from '../../stores/tasks'
+import { useResource } from '../../hooks/useResource'
+import { boardResource } from '../../lib/resources'
 import { Button } from '../shared/Button'
 import { TasksIcon, ArrowRightIcon } from '../shared/icons'
 import { TasksModal } from './TasksModal'
 import type { ProjectTask } from '@shared/types.js'
+import { useT } from '../../hooks/useT'
 
 const MAX_VISIBLE_TASKS = 4
 
@@ -20,20 +23,14 @@ interface FeedTaskPreviewProps {
  * its task with one click, and a Manage tasks button opens the full board.
  */
 export function FeedTaskPreview({ projectId, sessionId }: FeedTaskPreviewProps) {
-  const tasks = useTasksStore((state) => state.tasks)
-  const activeProjectId = useTasksStore((state) => state.activeProjectId)
-  const loadBoard = useTasksStore((state) => state.loadBoard)
+  const t = useT()
+  const { data: board } = useResource(boardResource, projectId)
+  const tasks = board?.tasks ?? []
   const moveTask = useTasksStore((state) => state.moveTask)
   const lastError = useTasksStore((state) => state.lastError)
 
   const [tasksModalOpen, setTasksModalOpen] = useState(false)
   const [queuedNotice, setQueuedNotice] = useState<{ label: string } | null>(null)
-
-  useEffect(() => {
-    if (activeProjectId !== projectId) {
-      void loadBoard(projectId)
-    }
-  }, [activeProjectId, projectId, loadBoard])
 
   const nextTasks = useMemo(
     () =>
@@ -58,7 +55,7 @@ export function FeedTaskPreview({ projectId, sessionId }: FeedTaskPreviewProps) 
     // still lands here.
     const result = await moveTask(projectId, task.id, 'in_progress', { sessionId })
     if (result?.task && result.task.status === 'in_progress' && result.task.runState === 'queued') {
-      setQueuedNotice({ label: task.prompt.split('\n')[0]?.slice(0, 60) || 'This task' })
+      setQueuedNotice({ label: task.prompt.split('\n')[0]?.slice(0, 60) || t({ en: 'This task', fr: 'Cette tâche' }) })
     }
   }
 
@@ -68,19 +65,25 @@ export function FeedTaskPreview({ projectId, sessionId }: FeedTaskPreviewProps) 
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-text-muted">
             <TasksIcon className="w-3.5 h-3.5" />
-            Up next
+            {t({ en: 'Up next', fr: 'À suivre' })}
             {runningCount > 0 && (
               <span
                 className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-xs font-medium normal-case tracking-normal text-emerald-400"
-                title={`${runningCount} task${runningCount !== 1 ? 's' : ''} currently running`}
+                title={t(
+                  {
+                    en: { one: '{{count}} task currently running', other: '{{count}} tasks currently running' },
+                    fr: { one: '{{count}} tâche en cours d’exécution', other: '{{count}} tâches en cours d’exécution' },
+                  },
+                  { count: runningCount },
+                )}
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                {runningCount} running
+                {t({ en: '{{count}} running', fr: '{{count}} en cours' }, { count: runningCount })}
               </span>
             )}
           </div>
           <Button size="sm" onClick={() => setTasksModalOpen(true)}>
-            Manage tasks
+            {t({ en: 'Manage tasks', fr: 'Gérer les tâches' })}
           </Button>
         </div>
 
@@ -88,15 +91,21 @@ export function FeedTaskPreview({ projectId, sessionId }: FeedTaskPreviewProps) 
           <div className="mt-3 rounded-md border border-amber-400/40 bg-amber-400/10 p-2.5">
             <div className="flex items-start justify-between gap-2">
               <p className="text-xs text-text-primary">
-                “{queuedNotice.label}” is queued — it’ll start automatically when a slot frees.
+                {t(
+                  {
+                    en: '“{{label}}” is queued — it’ll start automatically when a slot frees.',
+                    fr: '« {{label}} » est en file — elle démarrera automatiquement dès qu’un emplacement se libère.',
+                  },
+                  { label: queuedNotice.label },
+                )}
               </p>
               <button
                 type="button"
                 onClick={() => setQueuedNotice(null)}
-                title="Dismiss"
+                title={t({ en: 'Dismiss', fr: 'Ignorer' })}
                 className="shrink-0 text-xs text-text-muted underline hover:text-text-primary transition-colors"
               >
-                Dismiss
+                {t({ en: 'Dismiss', fr: 'Ignorer' })}
               </button>
             </div>
           </div>
@@ -113,7 +122,7 @@ export function FeedTaskPreview({ projectId, sessionId }: FeedTaskPreviewProps) 
                   {task.prompt}
                 </p>
                 <div className="mt-1 flex items-center gap-2 text-xs text-text-muted">
-                  {task.attachments.length > 0 && <span>📎 {task.attachments.length}</span>}
+                  {task.attachments.length > 0 && <span>{`📎 ${task.attachments.length}`}</span>}
                   {task.model && (
                     <span className="px-1.5 py-0.5 rounded bg-bg-tertiary border border-border">{task.model}</span>
                   )}
@@ -125,7 +134,7 @@ export function FeedTaskPreview({ projectId, sessionId }: FeedTaskPreviewProps) 
                 onClick={() => void startTask(task)}
                 className="shrink-0 flex items-center gap-1"
               >
-                Start <ArrowRightIcon className="w-3 h-3" />
+                {t({ en: 'Start', fr: 'Démarrer' })} <ArrowRightIcon className="w-3 h-3" />
               </Button>
             </li>
           ))}

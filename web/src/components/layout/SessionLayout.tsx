@@ -1,12 +1,12 @@
 import { ScrollArea } from '../shared/ScrollArea'
 import { ResizeHandle } from '../shared/ResizeHandle'
+import { PluginZone } from '../plugins/PluginZone'
 import type { ReactNode } from 'react'
 import { useEffect } from 'react'
 import { useScopedPaneState } from '../../stores/session/session-scope'
 import { useResizable } from '../../hooks/useResizable'
 import { useSidebarStore } from '../../stores/sidebar'
 import { SessionSidebar } from '../plan/SessionSidebar'
-import type { Message } from '@shared/types.js'
 
 interface SessionLayoutProps {
   children: ReactNode
@@ -14,7 +14,6 @@ interface SessionLayoutProps {
   /** When true, render the criteria sidebar as an overlay. When false, inline. */
   criteriaSidebarOverlay?: boolean
   onCriteriaSidebarToggle?: () => void
-  messages: Message[]
   /** When set, resolve the session/workdir from this pane instead of the focused session. */
   sessionId?: string | null
 }
@@ -24,7 +23,6 @@ export function SessionLayout({
   criteriaSidebarOpen = true,
   criteriaSidebarOverlay = false,
   onCriteriaSidebarToggle,
-  messages,
   sessionId,
 }: SessionLayoutProps) {
   const session = useScopedPaneState(
@@ -54,7 +52,19 @@ export function SessionLayout({
 
       {/* Main Content */}
       <div className="flex h-full">
-        <div className="flex-1 min-w-0 flex flex-col overflow-hidden bg-secondary">{children}</div>
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden bg-secondary">
+          <PluginZone
+            id="session.content"
+            context={{
+              ...(session?.id ? { sessionId: session.id } : {}),
+              ...(session?.workdir ? { workdir: session.workdir } : {}),
+              ...(session?.projectId ? { projectId: session.projectId } : {}),
+            }}
+            className="flex-1 min-w-0 flex flex-col overflow-hidden"
+          >
+            {children}
+          </PluginZone>
+        </div>
 
         {criteriaSidebarOverlay ? (
           /* Overlay sidebar - floats over the feed so it keeps its full width */
@@ -65,7 +75,7 @@ export function SessionLayout({
           >
             <div className="h-full p-4">
               <ScrollArea className="h-full">
-                <SessionSidebar messages={messages} workdir={session?.workspace ?? session?.workdir} />
+                <SessionSidebar workdir={session?.workspace ?? session?.workdir} />
               </ScrollArea>
             </div>
           </aside>
@@ -74,7 +84,7 @@ export function SessionLayout({
           <aside className="shrink-0 border-l border-border bg-secondary relative" style={{ width: rightSidebarWidth }}>
             <ResizeHandle side="left" onMouseDown={handleResizeMouseDown} />
             <ScrollArea className="h-full p-4">
-              <SessionSidebar messages={messages} workdir={session?.workspace ?? session?.workdir} />
+              <SessionSidebar workdir={session?.workspace ?? session?.workdir} />
             </ScrollArea>
           </aside>
         ) : (

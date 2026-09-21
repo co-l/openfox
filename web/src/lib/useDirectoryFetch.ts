@@ -16,6 +16,7 @@ export async function fetchDirectory(
   } else if (baseDir) {
     url = `/api/directories?path=${encodeURIComponent(baseDir)}`
   }
+  // Authorized transient read: directory listings are interactive browser queries, not shared state.
   const response = await authFetch(url)
   return response.json()
 }

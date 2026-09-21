@@ -49,6 +49,8 @@ export interface LLMCompletionRequest {
   /** When true, the client-level reasoningEffort (from thinkingLevel) is NOT applied.
    *  Used by non-thinking callers (e.g. title generation) that want to opt out. */
   skipClientReasoningEffort?: boolean
+  /** Stable per-conversation id, sent as x-opencode-session to opencode.ai endpoints. */
+  sessionId?: string
 }
 
 export interface LLMCompletionResponse {

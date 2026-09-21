@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react'
 import { ChevronDownIcon } from './icons'
+import { useT } from '../../hooks/useT'
 
 interface AutoScrollToggleProps {
   isActive: boolean
@@ -9,6 +10,7 @@ interface AutoScrollToggleProps {
 }
 
 export function AutoScrollToggle({ isActive, onToggle, className, style }: AutoScrollToggleProps) {
+  const t = useT()
   return (
     <button type="button" onClick={() => onToggle(!isActive)} className={className} style={style}>
       {isActive ? (
@@ -16,7 +18,7 @@ export function AutoScrollToggle({ isActive, onToggle, className, style }: AutoS
       ) : (
         <ChevronDownIcon className="w-3 h-3" />
       )}
-      {isActive ? 'live' : 'scroll to bottom'}
+      {isActive ? t({ en: 'Live', fr: 'Live' }) : t({ en: 'Scroll to bottom', fr: 'Défiler en bas' })}
     </button>
   )
 }

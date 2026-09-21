@@ -29,10 +29,11 @@ export {
   stripOrphanedToolCalls,
   reorderToolMessages,
   buildContextMessagesFromEventHistory,
+  buildSessionStatsMessages,
   foldTurnEventsToSnapshotMessages,
   foldTurnEventsToSnapshotMessagesFromInitial,
-  getMessagesForWindow,
   buildContextMessagesFromMessages,
+  snapshotMessagesToEvents,
 } from './fold-messages.js'
 
 export {

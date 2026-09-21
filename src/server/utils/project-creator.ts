@@ -1,6 +1,7 @@
 import { execSync } from 'node:child_process'
 import { join } from 'node:path'
 import { createProject as createProjectDb } from '../db/projects.js'
+import { logger } from './logger.js'
 import type { Project } from '../../shared/types.js'
 
 export function validateProjectName(name: string): { valid: true } | { valid: false; error: string } {
@@ -30,7 +31,15 @@ async function directoryExists(path: string): Promise<boolean> {
   }
 }
 
-export async function createDirectoryWithGit(projectName: string, workdir: string): Promise<Project> {
+function isGitMissing(err: unknown): boolean {
+  if (!(err instanceof Error)) return false
+  const e = err as Error & { code?: string; status?: number }
+  if (e.code === 'ENOENT') return true
+  if (e.status === 127 || e.status === 9009) return true
+  return /is not recognized as an internal or external command/i.test(e.message)
+}
+
+export async function createProjectDirectory(projectName: string, workdir: string): Promise<Project> {
   const validation = validateProjectName(projectName)
   if (!validation.valid) {
     throw new Error(validation.error)
@@ -87,42 +96,46 @@ export async function createDirectoryWithGit(projectName: string, workdir: strin
     try {
       execSync('git init', { cwd: fullPath, stdio: 'pipe', windowsHide: true, env: cleanExecEnv() })
     } catch (gitErr) {
-      const errMsg = gitErr instanceof Error ? gitErr.message : 'Unknown'
-      const exitCode = (gitErr as { status?: number }).status ?? (gitErr as { exitCode?: number }).exitCode
-      const isPermission = errMsg.includes('Permission denied') || exitCode === 128
+      if (isGitMissing(gitErr)) {
+        logger.warn(`git is not installed, skipping git init for project "${projectName}"`)
+      } else {
+        const errMsg = gitErr instanceof Error ? gitErr.message : 'Unknown'
+        const exitCode = (gitErr as { status?: number }).status ?? (gitErr as { exitCode?: number }).exitCode
+        const isPermission = errMsg.includes('Permission denied') || exitCode === 128
 
-      // Try via sudo -u $USER if permission denied (process may not have correct groups).
-      // No sudo/id on Windows — skip straight to the error.
-      let sudoSuccess = false
-      if (isPermission && process.platform !== 'win32') {
-        try {
-          const currentUser = execSync('id -un', { encoding: 'utf-8', windowsHide: true }).trim()
-          execSync(`sudo -u ${currentUser} git init`, {
-            cwd: fullPath,
-            stdio: 'pipe',
-            windowsHide: true,
-            env: cleanExecEnv(),
-          })
-          sudoSuccess = true
-        } catch {
-          // sudo also failed, fall through to error
-        }
-      }
-
-      if (!sudoSuccess) {
-        const permError = new Error(`Failed to initialize git: ${errMsg}`) as Error & { code?: string }
-        if (isPermission) {
-          permError.code = 'EACCES'
-        }
-        // Only clean up if we created this directory ourselves
-        if (!dirAlreadyExisted) {
+        // Try via sudo -u $USER if permission denied (process may not have correct groups).
+        // No sudo/id on Windows — skip straight to the error.
+        let sudoSuccess = false
+        if (isPermission && process.platform !== 'win32') {
           try {
-            await rm(fullPath, { recursive: true, force: true })
+            const currentUser = execSync('id -un', { encoding: 'utf-8', windowsHide: true }).trim()
+            execSync(`sudo -u ${currentUser} git init`, {
+              cwd: fullPath,
+              stdio: 'pipe',
+              windowsHide: true,
+              env: cleanExecEnv(),
+            })
+            sudoSuccess = true
           } catch {
-            // ignore cleanup errors
+            // sudo also failed, fall through to error
           }
         }
-        throw permError
+
+        if (!sudoSuccess) {
+          const permError = new Error(`Failed to initialize git: ${errMsg}`) as Error & { code?: string }
+          if (isPermission) {
+            permError.code = 'EACCES'
+          }
+          // Only clean up if we created this directory ourselves
+          if (!dirAlreadyExisted) {
+            try {
+              await rm(fullPath, { recursive: true, force: true })
+            } catch {
+              // ignore cleanup errors
+            }
+          }
+          throw permError
+        }
       }
     }
   }

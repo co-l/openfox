@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import fg from 'fast-glob'
+import { serverT } from '../i18n.js'
 
 const IGNORED_PATTERNS = [
   '**/node_modules/**',
@@ -23,7 +24,7 @@ export function createFileSearchRoutes(): Router {
       const results = await searchFiles(query, workdir)
       res.json(results)
     } catch {
-      res.status(500).json({ error: 'File search failed' })
+      res.status(500).json({ error: serverT({ en: 'File search failed', fr: 'Échec de la recherche de fichiers' }) })
     }
   })
 

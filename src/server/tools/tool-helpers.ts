@@ -8,6 +8,7 @@ import { requestPathAccess, PathAccessDeniedError, registerPathConfirmation } fr
 import { AskUserInterrupt } from './ask.js'
 import { createChatPathConfirmationMessage } from '../ws/protocol.js'
 import { getEventStore } from '../events/index.js'
+import { serverT } from '../i18n.js'
 
 /**
  * Counter for generating unique confirmation callIds within a single tool invocation.
@@ -139,7 +140,13 @@ export function validateAction(
   if (!action || !allowed.includes(action)) {
     return {
       success: false,
-      error: `Invalid action: ${action}. Must be one of: ${allowed.join(', ')}`,
+      error: serverT(
+        {
+          en: 'Invalid action: {{action}}. Must be one of: {{allowed}}',
+          fr: 'Action invalide : {{action}}. Doit être l’une des actions suivantes : {{allowed}}',
+        },
+        { action: action ?? '', allowed: allowed.join(', ') },
+      ),
       durationMs: Date.now() - startTime,
       truncated: false,
     }
@@ -155,7 +162,13 @@ export function checkActionPermission(
   if (action && permittedActions && permittedActions.length > 0 && !permittedActions.includes(action)) {
     return {
       success: false,
-      error: `Action '${action}' not allowed. Available: ${permittedActions.join(', ')}`,
+      error: serverT(
+        {
+          en: "Action '{{action}}' not allowed. Available: {{available}}",
+          fr: 'Action « {{action}} » non autorisée. Disponibles : {{available}}',
+        },
+        { action: action ?? '', available: permittedActions.join(', ') },
+      ),
       durationMs: Date.now() - startTime,
       truncated: false,
     }
@@ -173,7 +186,7 @@ export function requireSession(
 export function unexpectedError(startTime: number): ToolResult {
   return {
     success: false,
-    error: 'Unexpected error',
+    error: serverT({ en: 'Unexpected error', fr: 'Erreur inattendue' }),
     durationMs: Date.now() - startTime,
     truncated: false,
   }
@@ -182,7 +195,7 @@ export function unexpectedError(startTime: number): ToolResult {
 export function catchError(error: unknown, startTime: number): ToolResult {
   return {
     success: false,
-    error: error instanceof Error ? error.message : 'Unknown error',
+    error: error instanceof Error ? error.message : serverT({ en: 'Unknown error', fr: 'Erreur inconnue' }),
     durationMs: Date.now() - startTime,
     truncated: false,
   }
@@ -258,7 +271,13 @@ export function createTool<TArgs>(name: string, definition: LLMToolDefinition, h
 
         return {
           success: false,
-          error: error instanceof Error ? error.message : 'Unknown error in tool execution',
+          error:
+            error instanceof Error
+              ? error.message
+              : serverT({
+                  en: 'Unknown error in tool execution',
+                  fr: 'Erreur inconnue lors de l’exécution de l’outil',
+                }),
           durationMs: Date.now() - startTime,
           truncated: false,
         }

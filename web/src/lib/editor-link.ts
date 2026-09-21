@@ -1,7 +1,8 @@
-import { useConfigStore, type PlatformInfo } from '../stores/config'
+import { readConfig } from './resources'
+import type { PlatformInfo } from '../stores/config'
 
 function getPlatform(): PlatformInfo | null {
-  return useConfigStore.getState().platform ?? null
+  return readConfig()?.platform ?? null
 }
 
 function encodePath(path: string): string {

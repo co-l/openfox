@@ -29,6 +29,8 @@ import {
   updateSessionPhase,
   updateSessionRunning,
   updateSessionMessageCount,
+  updateSessionCachedPrompt,
+  getSessionCachedPrompt,
 } from './sessions.js'
 import { getDatabase } from './index.js'
 
@@ -427,29 +429,65 @@ describe('db sessions', () => {
       getDatabase().prepare('UPDATE sessions SET updated_at = ? WHERE id = ?').run(iso, id)
     }
 
-    it('returns at most N most recent sessions per project, ordered by last activity', () => {
-      const a1 = createSession(projectAId, rootA, 'A1')
-      const a2 = createSession(projectAId, rootA, 'A2')
-      const a3 = createSession(projectAId, rootA, 'A3')
-      const bs = Array.from({ length: 7 }, (_, i) => createSession(projectBId, rootB, `B${i + 1}`))
+    it('returns up to 20 most recent sessions across all projects, ordered by last activity', () => {
+      const aSessions = Array.from({ length: 8 }, (_, i) => createSession(projectAId, rootA, `A${i + 1}`))
+      const b1 = createSession(projectBId, rootB, 'B1')
+      const b2 = createSession(projectBId, rootB, 'B2')
 
-      setUpdatedAt(a1.id, '2024-01-01T00:00:00.000Z')
-      setUpdatedAt(a2.id, '2024-01-01T00:00:01.000Z')
-      setUpdatedAt(a3.id, '2024-01-01T00:00:02.000Z')
-      bs.forEach((s, i) => setUpdatedAt(s.id, `2024-01-01T00:00:${String(i + 3).padStart(2, '0')}.000Z`))
+      aSessions.forEach((s, i) => setUpdatedAt(s.id, `2024-01-01T00:00:${String(i).padStart(2, '0')}.000Z`))
+      setUpdatedAt(b1.id, '2024-01-01T00:01:00.000Z')
+      setUpdatedAt(b2.id, '2024-01-01T00:01:01.000Z')
 
       const home = listHomeSessions()
 
-      const aIds = home.filter((s) => s.projectId === projectAId).map((s) => s.id)
-      const bIds = home.filter((s) => s.projectId === projectBId).map((s) => s.id)
-      expect(aIds).toEqual([a3.id, a2.id, a1.id]) // 3 sessions ≤ 5, all included, newest first
-      expect(bIds).toEqual(
-        bs
-          .slice(2)
-          .reverse()
-          .map((s) => s.id),
-      ) // B7, B6, B5, B4, B3
-      expect(home).toHaveLength(8)
+      // Flat list ordered by last activity — no per-project cap: project A's
+      // 8 sessions all qualify even though they exceed the old 5-per-project
+      // limit.
+      expect(home).toHaveLength(10)
+      expect(home.map((s) => s.id)).toEqual([b2.id, b1.id, ...aSessions.map((s) => s.id).reverse()])
+    })
+
+    it('caps the list at 20 sessions across all projects', () => {
+      const sessions = Array.from({ length: 25 }, (_, i) =>
+        i % 2 === 0 ? createSession(projectAId, rootA, `A${i}`) : createSession(projectBId, rootB, `B${i}`),
+      )
+      sessions.forEach((s, i) => setUpdatedAt(s.id, `2024-01-01T00:00:${String(i % 60).padStart(2, '0')}.000Z`))
+
+      const home = listHomeSessions()
+
+      expect(home).toHaveLength(20)
+      const times = home.map((s) => new Date(s.updatedAt).getTime())
+      expect(times).toEqual([...times].sort((a, b) => b - a))
+    })
+
+    it('pins running, waiting, and blocked sessions even when they fall outside the limit', () => {
+      const sessions = Array.from({ length: 25 }, (_, i) =>
+        i % 2 === 0 ? createSession(projectAId, rootA, `A${i}`) : createSession(projectBId, rootB, `B${i}`),
+      )
+      sessions.forEach((s, i) => setUpdatedAt(s.id, `2024-01-01T00:00:${String(i % 60).padStart(2, '0')}.000Z`))
+
+      // Mark three sessions as needing attention, then age them far outside
+      // the top 20 (status updates bump updated_at to now, so age them last).
+      const running = sessions[0]!
+      const waiting = sessions[1]!
+      const blocked = sessions[2]!
+      updateSessionRunning(running.id, true)
+      updateSessionPhase(waiting.id, 'waiting')
+      updateSessionPhase(blocked.id, 'blocked')
+      setUpdatedAt(running.id, '2023-01-01T00:00:00.000Z')
+      setUpdatedAt(waiting.id, '2023-01-01T00:00:00.000Z')
+      setUpdatedAt(blocked.id, '2023-01-01T00:00:00.000Z')
+
+      const home = listHomeSessions()
+
+      expect(home.length).toBe(23)
+      const ids = new Set(home.map((s) => s.id))
+      expect(ids.has(running.id)).toBe(true)
+      expect(ids.has(waiting.id)).toBe(true)
+      expect(ids.has(blocked.id)).toBe(true)
+      // Still globally ordered by last activity.
+      const times = home.map((s) => new Date(s.updatedAt).getTime())
+      expect(times).toEqual([...times].sort((a, b) => b - a))
     })
 
     it('excludes projects with no sessions and returns summaries only', () => {
@@ -462,12 +500,12 @@ describe('db sessions', () => {
       expect(home[0]).not.toHaveProperty('recentUserPrompts')
     })
 
-    it('supports a custom per-project limit', () => {
+    it('supports a custom total limit', () => {
       createSession(projectAId, rootA, 'A1')
       createSession(projectAId, rootA, 'A2')
       createSession(projectBId, rootB, 'B1')
 
-      expect(listHomeSessions(1)).toHaveLength(2)
+      expect(listHomeSessions(1)).toHaveLength(1)
     })
   })
 
@@ -495,6 +533,37 @@ describe('db sessions', () => {
       const page2 = listSessionsLimited(2, 2)
       expect(page2.sessions.map((s) => s.id)).toEqual([b2.id, b3.id])
       expect(page2.hasMore).toBe(false)
+    })
+  })
+
+  describe('cached prompt', () => {
+    it('round-trips the tool-independent promptHash alongside the cached prompt', () => {
+      const session = createSession(projectAId, rootA, 'Cached')
+      const tools = [
+        {
+          type: 'function' as const,
+          function: { name: 'read_file', description: 'Read', parameters: {} },
+        },
+      ]
+
+      updateSessionCachedPrompt(session.id, 'system prompt', tools, 'hash-1', 'prompt-hash-1')
+
+      const cached = getSessionCachedPrompt(session.id)
+      expect(cached).not.toBeNull()
+      expect(cached?.systemPrompt).toBe('system prompt')
+      expect(cached?.hash).toBe('hash-1')
+      expect(cached?.promptHash).toBe('prompt-hash-1')
+    })
+
+    it('returns null when only promptHash is set without the cached prompt', () => {
+      const session = createSession(projectAId, rootA, 'Cached-2')
+
+      updateSessionCachedPrompt(session.id, 'sp', [], 'h')
+
+      const cached = getSessionCachedPrompt(session.id)
+      expect(cached).not.toBeNull()
+      // No promptHash persisted → omitted from the result (optional field).
+      expect(cached?.promptHash).toBeUndefined()
     })
   })
 })

@@ -9,17 +9,19 @@ interface UseProjectLoaderOptions {
 }
 
 export function useProjectLoader({ canLoad, projectId, currentProjectId }: UseProjectLoaderOptions) {
-  const loadProject = useProjectStore((state) => state.loadProject)
+  const setCurrentProjectId = useProjectStore((state) => state.setCurrentProjectId)
   const listSessions = useSessionStore((state) => state.listSessions)
   const clearSession = useSessionStore((state) => state.clearSession)
 
   useEffect(() => {
     if (canLoad && projectId) {
       if (currentProjectId !== projectId) {
-        loadProject(projectId)
+        // Local UI state only — the project detail loads implicitly via
+        // useCurrentProject()'s resource subscription.
+        setCurrentProjectId(projectId)
       }
       listSessions(projectId)
       clearSession()
     }
-  }, [canLoad, projectId, currentProjectId, loadProject, listSessions, clearSession])
+  }, [canLoad, projectId, currentProjectId, setCurrentProjectId, listSessions, clearSession])
 }

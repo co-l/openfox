@@ -116,6 +116,7 @@ describe('agent loop retry history (real EventStore)', () => {
     store.append('session-1', { type: 'message.done', data: { messageId: 'user-1' } })
 
     mockSessionManager = {
+      enterPauseGate: vi.fn().mockResolvedValue('released'),
       requireSession: vi.fn().mockReturnValue({
         workdir: '/test',
         projectId: 'test-project',

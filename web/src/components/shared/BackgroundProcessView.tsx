@@ -2,6 +2,7 @@ import { OptionalScrollArea } from './OptionalScrollArea'
 import { memo } from 'react'
 import type { BackgroundProcess, LogLine } from '@shared/protocol.js'
 import { tryParseResult } from './tryParseResult'
+import { useT } from '../../hooks/useT'
 
 interface BackgroundProcessViewProps {
   result: string
@@ -12,30 +13,33 @@ export const BackgroundProcessView = memo(function BackgroundProcessView({
   result,
   action,
 }: BackgroundProcessViewProps) {
+  const t = useT()
   const result_ = tryParseResult(result, 'BackgroundProcessView')
   if (!result_.success) return result_.error
   const parsed = result_.parsed
 
   if (action === 'logs') {
-    return renderLogs(parsed)
+    return renderLogs(parsed, t)
   }
 
   if (action === 'list') {
-    return renderProcessList(parsed)
+    return renderProcessList(parsed, t)
   }
 
   if (action === 'status') {
-    return renderProcessStatus(parsed)
+    return renderProcessStatus(parsed, t)
   }
 
   if (action === 'start' || action === 'stop') {
-    return renderStartStop(parsed)
+    return renderStartStop(parsed, t)
   }
 
   // Unknown action
   return (
     <div className="space-y-2 text-xs">
-      <div className="text-accent-warning">Unknown action: {action}</div>
+      <div className="text-accent-warning">
+        {t({ en: 'Unknown action: {{action}}', fr: 'Action inconnue : {{action}}' }, { action })}
+      </div>
       <OptionalScrollArea horizontal className="max-h-[60vh]">
         <pre className="text-xs bg-bg-primary p-1.5 rounded break-words">{result}</pre>
       </OptionalScrollArea>
@@ -43,13 +47,18 @@ export const BackgroundProcessView = memo(function BackgroundProcessView({
   )
 })
 
-function renderLogs(parsed: Record<string, unknown>) {
+function renderLogs(
+  parsed: Record<string, unknown>,
+  t: (tx: import('@shared/i18n/index.js').Translation, vars?: Record<string, string | number>) => string,
+) {
   const lines = parsed.lines as LogLine[] | undefined
   const hasMore = parsed.hasMore as boolean | undefined
   const totalLines = parsed.totalLines as number | undefined
 
   if (!lines || lines.length === 0) {
-    return <div className="text-xs text-text-muted italic">No log output</div>
+    return (
+      <div className="text-xs text-text-muted italic">{t({ en: 'No log output', fr: 'Aucune sortie de journal' })}</div>
+    )
   }
 
   return (
@@ -63,20 +72,30 @@ function renderLogs(parsed: Record<string, unknown>) {
       </OptionalScrollArea>
       {hasMore && totalLines != null && (
         <div className="text-[10px] text-text-muted">
-          Showing {lines.length} of {totalLines} lines
+          {t(
+            { en: 'Showing {{shown}} of {{total}} lines', fr: 'Affichage de {{shown}} sur {{total}} lignes' },
+            { shown: lines.length, total: totalLines },
+          )}
         </div>
       )}
     </div>
   )
 }
 
-function renderProcessList(parsed: Record<string, unknown>) {
+function renderProcessList(
+  parsed: Record<string, unknown>,
+  t: (tx: import('@shared/i18n/index.js').Translation, vars?: Record<string, string | number>) => string,
+) {
   const processes = parsed.processes as BackgroundProcess[] | undefined
   const currentCount = parsed.currentCount as number | undefined
   const maxPerSession = parsed.maxPerSession as number | undefined
 
   if (!processes || processes.length === 0) {
-    return <div className="text-xs text-text-muted italic">No background processes</div>
+    return (
+      <div className="text-xs text-text-muted italic">
+        {t({ en: 'No background processes', fr: 'Aucun processus en arrière-plan' })}
+      </div>
+    )
   }
 
   return (
@@ -86,30 +105,50 @@ function renderProcessList(parsed: Record<string, unknown>) {
       ))}
       {currentCount != null && maxPerSession != null && (
         <div className="text-[10px] text-text-muted">
-          {currentCount} of {maxPerSession} slots used
+          {t(
+            { en: '{{count}} of {{max}} slots used', fr: '{{count}} sur {{max}} emplacements utilisés' },
+            { count: currentCount, max: maxPerSession },
+          )}
         </div>
       )}
     </div>
   )
 }
 
-function renderProcessStatus(parsed: Record<string, unknown>) {
+function renderProcessStatus(
+  parsed: Record<string, unknown>,
+  t: (tx: import('@shared/i18n/index.js').Translation, vars?: Record<string, string | number>) => string,
+) {
   const proc = parsed.process as BackgroundProcess | undefined
   const uptime = parsed.uptime as number | null | undefined
 
   if (!proc) {
-    return <div className="text-xs text-text-muted italic">Process not found</div>
+    return (
+      <div className="text-xs text-text-muted italic">
+        {t({ en: 'Process not found', fr: 'Processus introuvable' })}
+      </div>
+    )
   }
 
   return (
     <div className="space-y-2">
       <ProcessCard process={proc} />
-      {uptime != null && <div className="text-[10px] text-text-muted">Uptime: {formatDuration(uptime)}</div>}
+      {uptime != null && (
+        <div className="text-[10px] text-text-muted">
+          {t(
+            { en: 'Uptime: {{duration}}', fr: 'Temps de fonctionnement : {{duration}}' },
+            { duration: formatDuration(uptime) },
+          )}
+        </div>
+      )}
     </div>
   )
 }
 
-function renderStartStop(parsed: Record<string, unknown>) {
+function renderStartStop(
+  parsed: Record<string, unknown>,
+  t: (tx: import('@shared/i18n/index.js').Translation, vars?: Record<string, string | number>) => string,
+) {
   const procId = parsed.processId as string | undefined
   const procName = parsed.name as string | undefined
   const pid = parsed.pid as number | undefined
@@ -126,25 +165,25 @@ function renderStartStop(parsed: Record<string, unknown>) {
     <div className="space-y-2 text-xs">
       {procName && (
         <div className="flex items-center gap-2">
-          <span className="text-text-muted">Name:</span>
+          <span className="text-text-muted">{t({ en: 'Name:', fr: 'Nom :' })}</span>
           <span className="font-medium">{procName}</span>
         </div>
       )}
       {procId && (
         <div className="flex items-center gap-2">
-          <span className="text-text-muted">ID:</span>
+          <span className="text-text-muted">{t({ en: 'ID:', fr: 'ID :' })}</span>
           <span className="font-mono">{procId}</span>
         </div>
       )}
       {pid != null && (
         <div className="flex items-center gap-2">
-          <span className="text-text-muted">PID:</span>
+          <span className="text-text-muted">{t({ en: 'PID:', fr: 'PID :' })}</span>
           <span className="font-mono">{pid}</span>
         </div>
       )}
       {procStatus && (
         <div className="flex items-center gap-2">
-          <span className="text-text-muted">Status:</span>
+          <span className="text-text-muted">{t({ en: 'Status:', fr: 'Statut :' })}</span>
           <span className={`font-medium ${statusColor}`}>{procStatus}</span>
         </div>
       )}
@@ -153,6 +192,7 @@ function renderStartStop(parsed: Record<string, unknown>) {
 }
 
 function ProcessCard({ process }: { process: BackgroundProcess }) {
+  const t = useT()
   const statusColor =
     process.status === 'running'
       ? 'text-accent-success'
@@ -168,7 +208,7 @@ function ProcessCard({ process }: { process: BackgroundProcess }) {
       </div>
       {process.pid != null && (
         <div className="text-text-muted">
-          PID: <span className="font-mono">{process.pid}</span>
+          {t({ en: 'PID:', fr: 'PID :' })} <span className="font-mono">{process.pid}</span>
         </div>
       )}
       {process.command && <div className="text-text-muted font-mono truncate">{process.command}</div>}

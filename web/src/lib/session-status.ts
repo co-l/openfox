@@ -1,6 +1,6 @@
-import type { Message, Session, SessionPhase, WorkflowExecution } from '@shared/types.js'
+import type { Message, Session, SessionPhase, WorkflowExecution, PauseState } from '@shared/types.js'
 
-export type SessionStatusState = 'waiting' | 'blocked' | 'completed' | 'running' | null
+export type SessionStatusState = 'waiting' | 'blocked' | 'completed' | 'running' | 'pausing' | 'paused' | null
 
 export interface ProjectSessionStatusInputs {
   phase: SessionPhase
@@ -8,6 +8,7 @@ export interface ProjectSessionStatusInputs {
   pendingQuestionsCount: number
   pendingConfirmationsCount: number
   activeWorkflow: WorkflowExecution | null | undefined
+  pauseState?: PauseState
 }
 
 export interface SessionStatusView {
@@ -18,7 +19,7 @@ export interface SessionStatusView {
 }
 
 export function projectClientSessionStatus(inputs: ProjectSessionStatusInputs): SessionStatusView {
-  const { phase, isRunning, pendingQuestionsCount, pendingConfirmationsCount, activeWorkflow } = inputs
+  const { phase, isRunning, pendingQuestionsCount, pendingConfirmationsCount, activeWorkflow, pauseState } = inputs
 
   let state: SessionStatusState = null
   if (phase === 'waiting' || pendingQuestionsCount > 0 || pendingConfirmationsCount > 0) {
@@ -27,6 +28,12 @@ export function projectClientSessionStatus(inputs: ProjectSessionStatusInputs): 
     state = 'blocked'
   } else if (phase === 'done' && !isRunning) {
     state = 'completed'
+  } else if (isRunning && pauseState === 'pending') {
+    // Pause requested, the current turn is still finishing
+    state = 'pausing'
+  } else if (isRunning && (pauseState === 'paused' || pauseState === 'resuming')) {
+    // Agent is blocked before the next LLM request (or just released)
+    state = 'paused'
   } else if (isRunning) {
     state = 'running'
   }
@@ -64,9 +71,9 @@ export function lastUserPromptAt(messages: Message[] | undefined): string | null
 export interface ProjectFromSessionStoreInputs {
   currentSession: Session | null
   messages?: Message[]
-  pendingQuestions: unknown[]
-  pendingPathConfirmations: unknown[]
-  activeWorkflowExecution: WorkflowExecution | null | undefined
+  pendingQuestions?: unknown[]
+  pendingPathConfirmations?: unknown[]
+  activeWorkflowExecution?: WorkflowExecution | null | undefined
 }
 
 export function projectFromSessionStore(inputs: ProjectFromSessionStoreInputs): SessionStatusView & {
@@ -89,6 +96,7 @@ export function projectFromSessionStore(inputs: ProjectFromSessionStoreInputs): 
     pendingQuestionsCount: pendingQuestions?.length ?? 0,
     pendingConfirmationsCount: pendingPathConfirmations?.length ?? 0,
     activeWorkflow: activeWorkflowExecution,
+    pauseState: currentSession.pauseState,
   })
 
   return {
@@ -101,6 +109,10 @@ export function statusLabel(state: SessionStatusState): string {
   switch (state) {
     case 'running':
       return 'Running'
+    case 'pausing':
+      return 'Pausing…'
+    case 'paused':
+      return 'Paused'
     case 'waiting':
       return 'Waiting for input'
     case 'completed':

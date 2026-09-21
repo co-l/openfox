@@ -69,6 +69,19 @@ vi.mock('./shell.js', () => ({
   executeShellCommand: vi.fn(async () => ({ stdout: '', stderr: '', exitCode: 0 })),
 }))
 
+// Mock agent model overrides
+vi.mock('../agents/model-overrides.js', () => ({
+  resolveLLMClientForAgent: vi.fn(),
+  buildAgentOverrideStatsIdentity: vi.fn((_pm, _client, override) => ({
+    providerId: override.providerId,
+    providerName: override.providerId,
+    backend: 'vllm',
+    model: override.model,
+    ...(override.reasoningEffort ? { reasoningEffort: override.reasoningEffort } : {}),
+  })),
+  getAgentModelOverride: vi.fn(),
+}))
+
 // Mock logger
 vi.mock('../utils/logger.js', () => ({
   logger: { debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -725,5 +738,131 @@ describe('executeWorkflow mode changes', () => {
 
     // Should complete successfully (reach $done)
     expect(result.finalAction).toHaveProperty('type', 'DONE')
+  })
+
+  it('passes providerManager to executeSubAgent when executing sub_agent steps', async () => {
+    const { executeSubAgent } = await import('../sub-agents/manager.js')
+    const { findAgentById } = await import('../agents/registry.js')
+
+    const mockProviderManager = { createClient: vi.fn(), getProviders: vi.fn(() => []) }
+    const sessionManagerWithPm = {
+      ...mockSessionManager,
+      getProviderManager: vi.fn(() => mockProviderManager),
+    }
+
+    vi.mocked(findAgentById).mockReturnValue({
+      metadata: {
+        id: 'jira_agent',
+        name: 'Jira Agent',
+        description: 'Jira sub-agent',
+        subagent: true,
+        allowedTools: ['run_command'],
+      },
+      prompt: 'Do Jira tasks',
+    })
+
+    const workflowWithSubAgent: WorkflowDefinition = {
+      metadata: { id: 'test-subagent-wf', name: 'Test Subagent WF', description: '', version: '1' },
+      entryStep: 'step-subagent',
+      settings: { maxIterations: 10 },
+      steps: [
+        {
+          id: 'step-subagent',
+          name: 'Jira Step',
+          type: 'sub_agent',
+          phase: 'build',
+          subAgentType: 'jira_agent',
+          prompt: 'Process ticket',
+          transitions: [{ when: { type: 'step_result', result: 'success' }, goto: '$done' }],
+        },
+      ],
+    }
+
+    const result = await executeWorkflow(workflowWithSubAgent, {
+      ...options,
+      sessionManager: sessionManagerWithPm as any,
+      sessionId: 'test-session',
+      llmClient: { getModel: () => 'gpt-4', complete: vi.fn() } as any,
+    })
+
+    expect(result.finalAction).toHaveProperty('type', 'DONE')
+    expect(sessionManagerWithPm.getProviderManager).toHaveBeenCalled()
+    expect(executeSubAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subAgentType: 'jira_agent',
+        providerManager: mockProviderManager,
+      }),
+    )
+  })
+
+  it('runs agent steps on the per-agent override client when one is configured', async () => {
+    const { resolveLLMClientForAgent } = await import('../agents/model-overrides.js')
+    const { runAgentTurn } = await import('../chat/orchestrator.js')
+
+    const overrideClient = { getModel: () => 'qwen3.8-27b' }
+    const mockProviderManager = {
+      createClient: vi.fn(() => overrideClient),
+      getProviders: vi.fn(() => [{ id: '5090', name: '5090', backend: 'vllm' }]),
+    }
+    const sessionManagerWithPm = {
+      ...mockSessionManager,
+      getProviderManager: vi.fn(() => mockProviderManager),
+    }
+
+    vi.mocked(resolveLLMClientForAgent).mockReturnValue({
+      client: overrideClient as never,
+      usedOverride: true,
+      override: { providerId: '5090', model: 'qwen3.8-27b' },
+    })
+
+    await executeWorkflow(workflow, {
+      ...options,
+      sessionManager: sessionManagerWithPm as any,
+      llmClient: { getModel: () => 'deepseek-v4-flash' } as never,
+    })
+
+    expect(resolveLLMClientForAgent).toHaveBeenCalledWith('builder', expect.anything(), mockProviderManager, undefined)
+    expect(runAgentTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        llmClient: overrideClient,
+        statsIdentity: expect.objectContaining({
+          providerId: '5090',
+          providerName: '5090',
+          backend: 'vllm',
+          model: 'qwen3.8-27b',
+        }),
+      }),
+      expect.anything(),
+      'builder',
+      expect.anything(),
+      expect.anything(),
+    )
+    expect(runAgentTurn).not.toHaveBeenCalledWith(
+      expect.objectContaining({ getSessionLLMClient: expect.anything() }),
+      expect.anything(),
+      'builder',
+      expect.anything(),
+      expect.anything(),
+    )
+  })
+
+  it('keeps the session client when the agent has no override', async () => {
+    const { resolveLLMClientForAgent } = await import('../agents/model-overrides.js')
+    const { runAgentTurn } = await import('../chat/orchestrator.js')
+
+    vi.mocked(resolveLLMClientForAgent).mockReturnValue({
+      client: options.llmClient,
+      usedOverride: false,
+    })
+
+    await executeWorkflow(workflow, options)
+
+    expect(runAgentTurn).toHaveBeenCalledWith(
+      expect.objectContaining({ llmClient: options.llmClient }),
+      expect.anything(),
+      'builder',
+      expect.anything(),
+      expect.anything(),
+    )
   })
 })

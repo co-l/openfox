@@ -2,16 +2,28 @@ import { create } from 'zustand'
 import { authFetch } from '../../lib/api'
 import { appUrl } from '../../lib/basePath'
 import { consumePrefetchedSession } from '../../lib/sessionPrefetch'
-import type { SessionSummary, Message, Session, ContextState, WorkflowExecution } from '@shared/types.js'
+import type {
+  SessionSummary,
+  Message,
+  Session,
+  ContextState,
+  WorkflowExecution,
+  SessionStatsSummary,
+} from '@shared/types.js'
 import type { QueuedMessage, PendingQuestionPayload } from '@shared/protocol.js'
 import { wsClient } from '../../lib/ws'
 import { useConfigStore } from '../config'
-import { useProjectStore } from '../project'
+import { projectsResource } from '../../lib/resources'
 import { useBackgroundProcessesStore } from '../background-processes'
 import { writeSplitLayout, isSplitRoute } from '../../lib/splitPersistence'
 import type { SessionState, SessionPane, PendingPathConfirmation } from './types'
 import { getBuffer, setFlushFn, cancelStreamingFlush, releaseStreamingBuffer } from './streamingBuffer'
-import { handleServerMessage as handleMessage } from './messageHandler'
+import {
+  handleServerMessage as handleMessage,
+  trimPaneMessages,
+  getMaxVisibleItems,
+  appendStreamingOutput,
+} from './messageHandler'
 import {
   emptyPane,
   paneFromFlat,
@@ -22,6 +34,7 @@ import {
   replacePane,
   updatePaneSession,
   dropPane,
+  resolveSessionProjectId,
 } from './panes'
 
 let isSubscribed = false
@@ -37,6 +50,7 @@ interface SessionLoadData {
   session: Session
   messages?: Message[]
   hiddenCount?: number
+  sessionStats?: SessionStatsSummary | null
   contextState?: ContextState | null
   queueState?: QueuedMessage[]
   pendingConfirmations?: PendingPathConfirmation[]
@@ -55,10 +69,10 @@ function applyToolOutputs(
     matchedCallIds.add(tc.id)
     return {
       ...tc,
-      streamingOutput: [
-        ...(tc.streamingOutput ?? []),
-        ...outputs.map((o) => ({ stream: o.stream, content: o.content, timestamp: Date.now() })),
-      ],
+      streamingOutput: appendStreamingOutput(
+        tc.streamingOutput,
+        outputs.map((o) => ({ stream: o.stream, content: o.content, timestamp: Date.now() })),
+      ),
     }
   })
 }
@@ -92,8 +106,19 @@ async function postMessage(
 // Merge a freshly fetched session list into the store: keep the live
 // focusedSession's mode/phase, preserve titles/prompts already in state, and
 // never resurrect a session the server reports as not running.
-function mergeSessionSummaries(incoming: SessionSummary[], state: SessionState): SessionSummary[] {
-  return incoming.map((s) => {
+//
+// When `projectId` is provided (scoped reload), incoming represents the
+// complete current set of sessions for that project: it REPLACES that
+// project's slice while preserving every other project's sessions. This is
+// what makes a per-project refresh after a mutation (delete/rename/favorite)
+// not drop other projects from the sidebar.
+//
+// When `projectId` is undefined (home/global reload), incoming is the
+// authoritative full result (e.g. the curated 5-per-project home list) and
+// REPLACES the list entirely — so sessions that fall out of the curated set
+// are removed. This preserves the original listHomeSessions behavior.
+function mergeSessionSummaries(incoming: SessionSummary[], state: SessionState, projectId?: string): SessionSummary[] {
+  const merged = incoming.map((s) => {
     const existing = state.sessions.find((e) => e.id === s.id)
     const pane = state.panes[s.id]
     const liveSession = pane?.session
@@ -107,6 +132,10 @@ function mergeSessionSummaries(incoming: SessionSummary[], state: SessionState):
       ...(s.recentUserPrompts !== undefined && { recentUserPrompts: s.recentUserPrompts }),
     }
   })
+  if (!projectId) return merged
+  const incomingIds = new Set(incoming.map((s) => s.id))
+  const preserved = state.sessions.filter((s) => s.projectId !== projectId && !incomingIds.has(s.id))
+  return [...merged, ...preserved]
 }
 
 /** Resolve the pane backing a session, materializing from flat when needed. */
@@ -163,7 +192,13 @@ export const useSessionStore = create<SessionState>((set, get) => {
           applied = true
         }
         if (!applied) return pane
-        return { ...pane, messages: pane.messages.map((m) => (m.id === buf.messageId ? updated : m)) }
+        return {
+          ...pane,
+          messages: trimPaneMessages(
+            pane.messages.map((m) => (m.id === buf.messageId ? updated : m)),
+            getMaxVisibleItems(),
+          ),
+        }
       })
     })
   })
@@ -294,6 +329,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
           session: data.session,
           messages: loadedMessages,
           hiddenCount: (data.hiddenCount as number | undefined) ?? 0,
+          sessionStats: (data.sessionStats as SessionStatsSummary | null | undefined) ?? null,
           contextState: data.contextState ?? null,
           queuedMessages: (data.queueState as QueuedMessage[] | undefined) ?? [],
           pendingPathConfirmations: (data.pendingConfirmations ?? []) as PendingPathConfirmation[],
@@ -352,6 +388,8 @@ export const useSessionStore = create<SessionState>((set, get) => {
     error: null,
     activeWorkflowExecution: null,
     llmRetry: null,
+    liveTurnStats: null,
+    sessionStats: null,
     sessionsHasMore: true,
     sessionsPaginationLoading: false,
     pendingSessionCreate: false as boolean | string,
@@ -398,7 +436,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
               get().listSessions(activeProjectId)
             }
           }
-          useProjectStore.getState().listProjects()
+          void projectsResource.refresh()
           // Reload the active session on (re)connect only when it has not been
           // loaded yet (first connect, or after any disconnect/reconnect which
           // clears loadedSessionIds). The route-level useSessionLoader already
@@ -464,6 +502,22 @@ export const useSessionStore = create<SessionState>((set, get) => {
       set({ connectionStatus: 'disconnected', showPasswordModal: false })
     },
 
+    logout: async () => {
+      wsClient.clearToken()
+      get().disconnect()
+
+      let requiresAuth = false
+      try {
+        const res = await authFetch('/api/auth')
+        const auth = await res.json()
+        requiresAuth = auth.requiresAuth === true
+      } catch {
+        /* server unreachable — stay disconnected without prompting */
+      }
+
+      set({ passwordModalRetry: false, showPasswordModal: requiresAuth })
+    },
+
     submitPassword: async (password: string) => {
       try {
         const res = await fetch(appUrl('/api/auth/login'), {
@@ -480,9 +534,8 @@ export const useSessionStore = create<SessionState>((set, get) => {
         set({ showPasswordModal: false })
         get().connect()
 
-        const { listProjects } = useProjectStore.getState()
+        void projectsResource.refresh()
         const { fetchConfig } = useConfigStore.getState()
-        listProjects()
         fetchConfig()
 
         get().connect()
@@ -670,7 +723,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
           const data = await res.json()
           const incoming = (data.sessions ?? []) as SessionSummary[]
           set((state) => ({
-            sessions: mergeSessionSummaries(incoming, state),
+            sessions: mergeSessionSummaries(incoming, state, projectId),
             sessionsHasMore: projectId ? (data.hasMore ?? false) : true,
           }))
 
@@ -744,7 +797,11 @@ export const useSessionStore = create<SessionState>((set, get) => {
       try {
         const params = new URLSearchParams()
         params.set('limit', '20')
-        params.set('offset', String(state.sessions.length))
+        // Offset is the count of sessions already loaded for THIS project,
+        // not the global sessions length — the store now holds sessions from
+        // multiple projects (preserved across scoped reloads), so the global
+        // length would skip real sessions of the target project.
+        params.set('offset', String(state.sessions.filter((s) => s.projectId === projectId).length))
         params.set('projectId', projectId)
         const res = await authFetch(`/api/sessions?${params.toString()}`)
         const data = await res.json()
@@ -766,11 +823,16 @@ export const useSessionStore = create<SessionState>((set, get) => {
     },
 
     deleteSession: async (sessionId) => {
+      // Resolve the project BEFORE the request: the server broadcasts
+      // session.deleted before answering the DELETE, and that handler wipes
+      // the session from state. Resolving afterwards would yield undefined and
+      // fall back to an unscoped global reload, dropping other projects.
+      const projectId = resolveSessionProjectId(get(), sessionId)
       try {
         const res = await authFetch(`/api/sessions/${sessionId}`, { method: 'DELETE' })
         if (!res.ok) return false
         set({ searchSessions: null })
-        await get().listSessions()
+        await get().listSessions(projectId)
         if (get().focusedSessionId === sessionId || get().currentSession?.id === sessionId) {
           get().clearSession()
         }
@@ -781,6 +843,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
     },
 
     renameSession: async (sessionId: string, title: string) => {
+      const projectId = resolveSessionProjectId(get(), sessionId)
       try {
         const res = await authFetch(`/api/sessions/${sessionId}/title`, {
           method: 'PUT',
@@ -789,7 +852,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
         })
         if (!res.ok) return false
         set({ searchSessions: null })
-        await get().listSessions()
+        await get().listSessions(projectId)
         set((state) => {
           const pane = state.panes[sessionId]
           if (!pane) return {}
@@ -805,6 +868,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
     },
 
     toggleFavorite: async (sessionId: string, isFavorite: boolean) => {
+      const projectId = resolveSessionProjectId(get(), sessionId)
       // Optimistic update: flip immediately for responsive UI
       set((state) => ({
         sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, isFavorite } : s)),
@@ -823,7 +887,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
           }))
           return false
         }
-        await get().listSessions()
+        await get().listSessions(projectId)
         return true
       } catch (error) {
         console.error('Error toggling favorite:', error)
@@ -840,7 +904,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
         const res = await authFetch(`/api/projects/${projectId}/sessions`, { method: 'DELETE' })
         if (!res.ok) return false
         set({ searchSessions: null })
-        await get().listSessions()
+        await get().listSessions(projectId)
         return true
       } catch {
         return false
@@ -862,6 +926,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
           currentSession: null,
           messages: [],
           hiddenCount: 0,
+          sessionStats: null,
           currentTodos: [],
           contextState: null,
           restoredInput: null,
@@ -942,6 +1007,24 @@ export const useSessionStore = create<SessionState>((set, get) => {
       }
     },
 
+    pauseGeneration: async (sessionId) => {
+      if (!paneFor(get(), sessionId)?.session) return
+      try {
+        await authFetch(`/api/sessions/${sessionId}/pause`, { method: 'POST' })
+      } catch (error) {
+        console.error('Error pausing generation:', error)
+      }
+    },
+
+    resumeGeneration: async (sessionId) => {
+      if (!paneFor(get(), sessionId)?.session) return
+      try {
+        await authFetch(`/api/sessions/${sessionId}/resume`, { method: 'POST' })
+      } catch (error) {
+        console.error('Error resuming generation:', error)
+      }
+    },
+
     launchWorkflow: (sessionId, content?, attachments?, workflowId?, subGroup?, params?, scope?) => {
       if (!paneFor(get(), sessionId)?.session) return
       const payload: Record<string, unknown> = { sessionId }
@@ -1007,6 +1090,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
               ...p,
               messages: data.messages,
               hiddenCount: (data.hiddenCount as number) ?? 0,
+              sessionStats: (data.sessionStats as SessionStatsSummary | null | undefined) ?? p.sessionStats,
             })),
           )
         }
@@ -1015,8 +1099,8 @@ export const useSessionStore = create<SessionState>((set, get) => {
       }
     },
 
-    switchDangerLevel: async (sessionId, dangerLevel) => {
-      if (!paneFor(get(), sessionId)?.session) return
+    switchDangerLevel: async (sessionId, dangerLevel): Promise<boolean> => {
+      if (!paneFor(get(), sessionId)?.session) return false
       try {
         const res = await authFetch(`/api/sessions/${sessionId}/danger-level`, {
           method: 'PUT',
@@ -1025,14 +1109,16 @@ export const useSessionStore = create<SessionState>((set, get) => {
         })
         if (!res.ok) {
           console.error('Failed to switch danger level:', await res.json())
-          return
+          return false
         }
         const data = await res.json()
         if (data.session) {
           set((state) => updatePaneSession(state, sessionId, () => data.session))
         }
+        return true
       } catch (error) {
         console.error('Error switching danger level:', error)
+        return false
       }
     },
 
@@ -1079,6 +1165,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
             session: data.session,
             messages: data.messages ?? prior.messages,
             hiddenCount: (data.hiddenCount as number | undefined) ?? prior.hiddenCount,
+            sessionStats: (data.sessionStats as SessionStatsSummary | null | undefined) ?? prior.sessionStats,
             contextState: data.contextState ?? prior.contextState,
           }
           return replacePane(state, sessionId, nextPane)
@@ -1102,6 +1189,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
             session: data.session,
             messages: data.messages ?? prior.messages,
             hiddenCount: (data.hiddenCount as number | undefined) ?? prior.hiddenCount,
+            sessionStats: (data.sessionStats as SessionStatsSummary | null | undefined) ?? prior.sessionStats,
           }
           return replacePane(state, sessionId, nextPane)
         })
@@ -1128,6 +1216,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
             session: data.session,
             messages: data.messages ?? prior.messages,
             hiddenCount: (data.hiddenCount as number | undefined) ?? prior.hiddenCount,
+            sessionStats: (data.sessionStats as SessionStatsSummary | null | undefined) ?? prior.sessionStats,
           }
           return replacePane(state, sessionId, nextPane)
         })
@@ -1150,6 +1239,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
             session: data.session,
             messages: data.messages ?? prior.messages,
             hiddenCount: (data.hiddenCount as number | undefined) ?? prior.hiddenCount,
+            sessionStats: (data.sessionStats as SessionStatsSummary | null | undefined) ?? prior.sessionStats,
           }
           return replacePane(state, sessionId, nextPane)
         })

@@ -5,12 +5,12 @@
  * The EventStore is the single source of truth for session events.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import Database from 'better-sqlite3'
 import { mkdtempSync, rmSync, existsSync, statSync, writeFileSync, utimesSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { EventStore, initEventStore } from './store.js'
+import { EventStore, initEventStore, getStaleRunningSessionIds } from './store.js'
 import { SETTINGS_KEYS } from '../db/settings.js'
 import type { TurnEvent, StoredEvent, SessionSnapshot } from './types.js'
 
@@ -73,6 +73,28 @@ describe('EventStore', () => {
       expect(stored2.seq).toBe(2)
     })
 
+    it('probes past a seq already taken by a concurrent writer (UNIQUE retry)', () => {
+      // Simulate a concurrent writer having taken seq 1 while our MAX read
+      // was stale (returned 1 too).
+      db.prepare(`INSERT INTO events (session_id, seq, timestamp, event_type, payload) VALUES (?, ?, ?, ?, ?)`).run(
+        'session-race',
+        1,
+        Date.now(),
+        'message.start',
+        JSON.stringify({ messageId: 'x', role: 'user' }),
+      )
+      const getNextSeqSpy = vi.spyOn(store as unknown as { getNextSeq: () => number }, 'getNextSeq').mockReturnValue(1)
+
+      const stored = store.append('session-race', {
+        type: 'message.start',
+        data: { messageId: 'msg-1', role: 'user', content: 'Hello' },
+      })
+
+      expect(stored.seq).toBe(2)
+      expect((stored.data as { messageId: string }).messageId).toBe('msg-1')
+      getNextSeqSpy.mockRestore()
+    })
+
     it('should maintain separate seq per session', () => {
       const event: TurnEvent = {
         type: 'message.start',
@@ -120,6 +142,28 @@ describe('EventStore', () => {
 
       expect(stored[0]!.seq).toBe(2)
       expect(stored[1]!.seq).toBe(3)
+    })
+
+    it('restarts with a fresh base seq when a concurrent writer took the range', () => {
+      // Concurrent writer took seqs 1 and 2; our MAX read was stale (returned 1).
+      const insert = db.prepare(
+        `INSERT INTO events (session_id, seq, timestamp, event_type, payload) VALUES (?, ?, ?, ?, ?)`,
+      )
+      insert.run('session-batch-race', 1, Date.now(), 'message.start', JSON.stringify({ messageId: 'x', role: 'user' }))
+      insert.run('session-batch-race', 2, Date.now(), 'message.start', JSON.stringify({ messageId: 'y', role: 'user' }))
+      const getNextSeqSpy = vi.spyOn(store as unknown as { getNextSeq: () => number }, 'getNextSeq').mockReturnValue(1)
+
+      const events: TurnEvent[] = [
+        { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hi' } },
+        { type: 'message.done', data: { messageId: 'msg-1' } },
+      ]
+
+      const stored = store.appendBatch('session-batch-race', events)
+
+      expect(stored).toHaveLength(2)
+      expect(stored[0]!.seq).toBe(3)
+      expect(stored[1]!.seq).toBe(4)
+      getNextSeqSpy.mockRestore()
     })
   })
 
@@ -857,6 +901,42 @@ describe('initEventStore', () => {
 
     // Should have one more event than before
     expect(eventsAfterRestart.length).toBe(eventsBeforeRestart.length + 1)
+
+    db.close()
+  })
+
+  it('records stale running session ids for boot auto-continuation', () => {
+    const db = new Database(':memory:')
+
+    db.exec(`
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        workdir TEXT NOT NULL,
+        is_running INTEGER NOT NULL DEFAULT 0
+      )
+    `)
+
+    db.prepare(`INSERT INTO sessions (id, project_id, workdir, is_running) VALUES (?, ?, ?, 1)`).run(
+      'session-stale',
+      'project-1',
+      '/tmp/test',
+    )
+    db.prepare(`INSERT INTO sessions (id, project_id, workdir, is_running) VALUES (?, ?, ?, 0)`).run(
+      'session-idle',
+      'project-1',
+      '/tmp/test',
+    )
+
+    const firstStore = new EventStore(db)
+    firstStore.append('session-stale', { type: 'running.changed', data: { isRunning: true } })
+    firstStore.append('session-idle', { type: 'running.changed', data: { isRunning: false } })
+
+    initEventStore(db)
+
+    const staleIds = getStaleRunningSessionIds()
+    expect(staleIds).toContain('session-stale')
+    expect(staleIds).not.toContain('session-idle')
 
     db.close()
   })

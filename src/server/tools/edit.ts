@@ -4,8 +4,9 @@ import type { Diagnostic, EditContextRegion } from '../../shared/types.js'
 import { createTool } from './tool-helpers.js'
 import { formatDiagnosticsForLLM, appendLspInstallHint } from './diagnostics.js'
 import { validateFileForWrite, computeFileHash } from './file-tracker.js'
-import { extractEditContext } from './edit-context.js'
+import { extractEditContext } from '../../shared/edit-context.js'
 import { detectEncoding, decodeContent, encodeContent } from '../utils/encoding.js'
+import { serverT } from '../i18n.js'
 
 // Per-file mutex to serialize parallel edits on the same file.
 // Prevents the read-modify-write race condition where concurrent edits
@@ -87,7 +88,10 @@ export const editFileTool = createTool<EditFileArgs>(
       const readFiles = context.sessionManager.getReadFiles(context.sessionId)
       const validation = await validateFileForWrite(fullPath, readFiles, context.workdir)
       if (!validation.valid) {
-        return helpers.error(validation.error?.message ?? 'File validation failed')
+        return helpers.error(
+          validation.error?.message ??
+            serverT({ en: 'File validation failed', fr: 'Échec de la validation du fichier' }),
+        )
       }
       // jscpd:ignore-end
 
@@ -95,7 +99,9 @@ export const editFileTool = createTool<EditFileArgs>(
       try {
         rawBuffer = await readFile(fullPath)
       } catch {
-        return helpers.error(`File not found: ${args.path}`)
+        return helpers.error(
+          serverT({ en: 'File not found: {{path}}', fr: 'Fichier introuvable : {{path}}' }, { path: args.path }),
+        )
       }
 
       const { encoding, bomSize } = detectEncoding(rawBuffer)
@@ -110,13 +116,25 @@ export const editFileTool = createTool<EditFileArgs>(
         const preview = args.old_string.length > 100 ? args.old_string.slice(0, 100) + '...' : args.old_string
 
         return helpers.error(
-          `old_string not found in file.\n\nSearched for:\n${preview}\n\nMake sure whitespace and indentation match exactly.`,
+          serverT(
+            {
+              en: 'old_string not found in file.\n\nSearched for:\n{{preview}}\n\nMake sure whitespace and indentation match exactly.',
+              fr: 'old_string introuvable dans le fichier.\n\nRecherché :\n{{preview}}\n\nVérifiez que les espaces et l’indentation correspondent exactement.',
+            },
+            { preview },
+          ),
         )
       }
 
       if (occurrences > 1 && !replaceAll) {
         return helpers.error(
-          `Found ${occurrences} matches for old_string. Use replace_all: true to replace all, or provide more context to make the match unique.`,
+          serverT(
+            {
+              en: 'Found {{count}} matches for old_string. Use replace_all: true to replace all, or provide more context to make the match unique.',
+              fr: '{{count}} correspondances trouvées pour old_string. Utilisez replace_all : true pour tout remplacer, ou fournissez plus de contexte pour rendre la correspondance unique.',
+            },
+            { count: occurrences },
+          ),
         )
       }
 
@@ -159,7 +177,12 @@ export const editFileTool = createTool<EditFileArgs>(
       } else {
         const index = normalizedContent.indexOf(normalizedOldString)
         if (index === -1) {
-          return helpers.error('old_string not found in file (unexpected)')
+          return helpers.error(
+            serverT({
+              en: 'old_string not found in file (unexpected)',
+              fr: 'old_string introuvable dans le fichier (inattendu)',
+            }),
+          )
         }
         replacedContent =
           normalizedContent.slice(0, index) +
@@ -175,7 +198,13 @@ export const editFileTool = createTool<EditFileArgs>(
       const encoded = encodeContent(restoredContent, encoding, bomSize > 0)
       await writeFile(fullPath, encoded)
 
-      let output = `Successfully replaced ${replaceAll ? occurrences : 1} occurrence(s) in ${args.path}`
+      let output = serverT(
+        {
+          en: 'Successfully replaced {{count}} occurrence(s) in {{path}}',
+          fr: '{{count}} occurrence(s) remplacée(s) avec succès dans {{path}}',
+        },
+        { count: replaceAll ? occurrences : 1, path: args.path },
+      )
       let diagnostics: Diagnostic[] = []
 
       if (context.lspManager) {

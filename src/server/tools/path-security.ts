@@ -274,7 +274,11 @@ function normalizeExtracted(path: string): string {
  */
 function isPlaceholderToken(str: string): boolean {
   return (
-    str.includes('__URL__') || str.includes('__FILEURL__') || str.includes('__SED__') || str.includes('__COMMIT_MSG__')
+    str.includes('__URL__') ||
+    str.includes('__FILEURL__') ||
+    str.includes('__SED__') ||
+    str.includes('__COMMIT_MSG__') ||
+    str.includes('__PATTERN__')
   )
 }
 
@@ -335,6 +339,202 @@ function isRegexAddress(
  * honoring shell quoting: inner quotes in a pattern (e.g. the `"Add session"`
  * inside '/heading "Add session"/') are literal and must not split the scan.
  */
+/** Tools whose first non-option operand is a PATTERN, not a file. */
+const SEARCH_TOOL_RE = /^(?:grep|egrep|fgrep|rg|ag|ack)$/
+
+/** Search-tool options that consume the next argument as their value. */
+const SEARCH_OPTS_WITH_VALUE = new Set([
+  '-e',
+  '--regexp',
+  '-f',
+  '--file',
+  '-m',
+  '--max-count',
+  '-A',
+  '--after-context',
+  '-B',
+  '--before-context',
+  '-C',
+  '--context',
+  '-d',
+  '--directories',
+  '-D',
+  '--devices',
+  '--include',
+  '--exclude',
+  '--exclude-dir',
+  '--binary-files',
+  '--color',
+  '--colour',
+  '--label',
+  '-g',
+  '--glob',
+  '-t',
+  '--type',
+])
+
+/** Options whose value IS the pattern (mask it, and no operand is a pattern). */
+const PATTERN_VALUE_OPTS = new Set(['-e', '--regexp'])
+
+/** Options that supply the pattern from a file (keep the file, no operand is a pattern). */
+const PATTERN_FILE_OPTS = new Set(['-f', '--file'])
+
+interface ShellToken {
+  text: string
+  start: number
+  end: number
+  isOperator: boolean
+}
+
+/**
+ * Split a command into words and operators, honouring quotes so a quoted
+ * operand stays one token (spans include the quotes, so masking is exact).
+ */
+function tokenizeShell(command: string): ShellToken[] {
+  const out: ShellToken[] = []
+  const n = command.length
+  let i = 0
+  while (i < n) {
+    const ch = command[i]!
+    if (/\s/.test(ch)) {
+      i += 1
+      continue
+    }
+    if (/[|&;()<>]/.test(ch)) {
+      let j = i + 1
+      if ((ch === '|' && command[j] === '|') || (ch === '&' && command[j] === '&')) j += 1
+      out.push({ text: command.slice(i, j), start: i, end: j, isOperator: true })
+      i = j
+      continue
+    }
+    const start = i
+    let quote: string | null = null
+    while (i < n) {
+      const c = command[i]!
+      if (quote !== null) {
+        if (c === '\\' && quote !== "'") {
+          i += 2
+          continue
+        }
+        if (c === quote) {
+          quote = null
+          i += 1
+          continue
+        }
+        i += 1
+        continue
+      }
+      if (c === "'" || c === '"' || c === '`') {
+        quote = c
+        i += 1
+        continue
+      }
+      if (/[\s|&;()<>]/.test(c)) break
+      if (c === '\\') {
+        i += 2
+        continue
+      }
+      i += 1
+    }
+    out.push({ text: command.slice(start, i), start, end: i, isOperator: false })
+  }
+  return out
+}
+
+/** Strip surrounding quotes and any directory prefix: "/usr/bin/grep" -> grep. */
+function commandBasename(token: string): string {
+  const bare = token.replace(/^["'`]|["'`]$/g, '')
+  const slash = bare.lastIndexOf('/')
+  return slash >= 0 ? bare.slice(slash + 1) : bare
+}
+
+/**
+ * Mask the PATTERN operand of search tools so it is not mistaken for a path.
+ *
+ * `grep [OPTIONS] PATTERN [FILE...]`: the first non-option operand is the
+ * pattern. Agents grepping their own codebase for a route (`grep -rn
+ * "/api/users" src/`) otherwise trigger an outside-workdir confirmation for a
+ * string that never touches the filesystem — and in headless runs nobody
+ * answers it. File operands after the pattern are untouched, so
+ * `grep ERROR '/var/log/messages'` still asks for confirmation.
+ *
+ * `-e PATTERN` supplies the pattern by option: its value is masked and every
+ * operand is then a file. `-f FILE` reads patterns from a file: the file is a
+ * genuine read and stays visible, but no operand is a pattern either.
+ */
+function maskSearchToolPatterns(command: string): string {
+  if (!command.includes('/')) return command
+  const tokens = tokenizeShell(command)
+  const spans: Array<[number, number]> = []
+  let atCommandStart = true
+  let i = 0
+
+  while (i < tokens.length) {
+    const tok = tokens[i]!
+    if (tok.isOperator) {
+      atCommandStart = true
+      i += 1
+      continue
+    }
+    if (!atCommandStart || !SEARCH_TOOL_RE.test(commandBasename(tok.text))) {
+      // A leading VAR=value assignment keeps the command start alive
+      // (LC_ALL=C grep …); anything else means the command word is behind us.
+      atCommandStart = atCommandStart && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tok.text)
+      i += 1
+      continue
+    }
+
+    let patternSupplied = false
+    let patternSpan: [number, number] | null = null
+    let j = i + 1
+    while (j < tokens.length && !tokens[j]!.isOperator) {
+      const arg = tokens[j]!
+      if (arg.text.startsWith('-') && arg.text !== '-' && arg.text !== '--') {
+        const eq = arg.text.indexOf('=')
+        if (eq > 0) {
+          const name = arg.text.slice(0, eq)
+          if (PATTERN_VALUE_OPTS.has(name)) {
+            patternSupplied = true
+            spans.push([arg.start + eq + 1, arg.end])
+          } else if (PATTERN_FILE_OPTS.has(name)) {
+            patternSupplied = true
+          }
+          j += 1
+          continue
+        }
+        if (SEARCH_OPTS_WITH_VALUE.has(arg.text)) {
+          const value = tokens[j + 1]
+          if (value && !value.isOperator) {
+            if (PATTERN_VALUE_OPTS.has(arg.text)) {
+              patternSupplied = true
+              spans.push([value.start, value.end])
+            } else if (PATTERN_FILE_OPTS.has(arg.text)) {
+              patternSupplied = true
+            }
+            j += 2
+            continue
+          }
+        }
+        j += 1
+        continue
+      }
+      // First non-option operand: the pattern, unless an option supplied one.
+      if (!patternSupplied) patternSpan = [arg.start, arg.end]
+      break
+    }
+    if (patternSpan) spans.push(patternSpan)
+    atCommandStart = false
+    i = j
+  }
+
+  if (spans.length === 0) return command
+  let out = command
+  for (const [start, end] of spans.sort((a, b) => b[0] - a[0])) {
+    out = `${out.slice(0, start)} __PATTERN__ ${out.slice(end)}`
+  }
+  return out
+}
+
 function maskRegexAddresses(command: string): string {
   // Neutralize the perl/ruby/bash match operators `=~` / `!~` so their `~` is
   // not read as a tilde expansion downstream. Assignments like CFG=~/config
@@ -601,15 +801,70 @@ export function resolveRelativeTraversals(command: string, workdir: string): str
 }
 
 /**
+ * Blank out heredoc bodies (`<<DELIM` … `DELIM`) so path extraction ignores
+ * literal file content written by a command. Heredoc bodies are stdin data,
+ * not shell commands: relative `..`, absolute, and sensitive paths inside
+ * them must never trigger a path confirmation. Handles unquoted (`<<EOF`),
+ * quoted (`<<'EOF'`, `<<"EOF"`), tab-stripped (`<<-EOF`), whitespace-separated
+ * (`<< 'EOF'`) delimiters, and multiple heredocs in one command. Body lines
+ * are replaced with spaces (newlines preserved) so line-based logic still
+ * sees the original line structure. Unterminated heredocs are left untouched.
+ */
+function maskHeredocs(command: string): string {
+  if (!command.includes('<<')) return command
+
+  const lines = command.split('\n')
+  const starts: Array<{ line: number; delimiter: string; stripTabs: boolean }> = []
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i]!.match(/<<\s*(-?)(['"]?)([A-Za-z_][A-Za-z0-9_]*)\2/)
+    if (m) {
+      starts.push({ line: i, delimiter: m[3]!, stripTabs: m[1] === '-' })
+    }
+  }
+
+  // Mask the [bodyStart, closeLine) span of each heredoc whose closing
+  // delimiter exists later. A `<<` found inside an already-masked body is
+  // literal data, not another heredoc.
+  const maskSpans: Array<[number, number]> = []
+  let searchFrom = 0
+  for (const start of starts) {
+    if (start.line < searchFrom) continue
+    let end = -1
+    for (let j = start.line + 1; j < lines.length; j++) {
+      const candidate = start.stripTabs ? lines[j]!.replace(/^\t+/, '') : lines[j]!
+      if (candidate === start.delimiter) {
+        end = j
+        break
+      }
+    }
+    if (end !== -1) {
+      maskSpans.push([start.line + 1, end])
+      searchFrom = end + 1
+    }
+  }
+
+  if (maskSpans.length === 0) return command
+
+  return lines
+    .map((line, idx) => (maskSpans.some(([s, e]) => idx >= s && idx < e) ? ' '.repeat(line.length) : line))
+    .join('\n')
+}
+
+/**
  * Mask non-path content in a shell command so path extraction ignores it:
- * URL schemes, sed substitution patterns, sed/awk/perl/ruby regex addresses,
- * and git commit -m/--message bodies (which may contain slashes that look
- * like absolute paths).
+ * heredoc bodies, URL schemes, sed substitution patterns, sed/awk/perl/ruby
+ * regex addresses, and git commit -m/--message bodies (which may contain
+ * slashes that look like absolute paths).
  */
 function maskCommandForPathScan(command: string): string {
+  // Blank out heredoc bodies first so none of the masks below ever see the
+  // literal file/script content they are fed (e.g. a `../` import or an
+  // absolute path written into a file via `cat > file <<'EOF'`).
+  let sanitized = maskHeredocs(command)
+
   // Remove URL schemes to avoid false positives
   // Replace http://, https://, ftp:// with markers
-  let sanitized = command.replace(/https?:\/\/[^\s'"]+/g, ' __URL__ ').replace(/ftp:\/\/[^\s'"]+/g, ' __URL__ ')
+  sanitized = sanitized.replace(/https?:\/\/[^\s'"]+/g, ' __URL__ ').replace(/ftp:\/\/[^\s'"]+/g, ' __URL__ ')
 
   // Strip sed substitution patterns to avoid false positives from regex replacements
   // Handles: s/pattern/replacement/flags and s|pattern|replacement|flags etc.
@@ -620,6 +875,10 @@ function maskCommandForPathScan(command: string): string {
   // Strip sed/awk/perl/ruby regex addresses (/pat/, /pat/p, /a/,/b/p), which
   // are otherwise mistaken for absolute paths. Runs after substitution
   // masking so URLs and s/// replacements are already gone.
+  // Mask search-tool PATTERN operands (grep/rg …) before the regex-address
+  // pass: a route-shaped pattern is not a path and must never be confirmed.
+  sanitized = maskSearchToolPatterns(sanitized)
+
   sanitized = maskRegexAddresses(sanitized)
 
   // Strip git commit -m/--message content to avoid treating commit message
@@ -726,7 +985,14 @@ export function extractAbsolutePathsFromCommand(command: string): string[] {
     }
   }
   if (posixShell) {
-    const absolutePattern = /(?:^|[\s=(])(\/[^\s"'|&;<>`()]+)/g
+    // A quote can precede a real path operand. Nested quoting puts the path
+    // right after a quote (python3 -c "open('/etc/passwd')", bash -c "cat
+    // '/etc/passwd'"), and the quoted-string pass above cannot see it: pairing
+    // quotes without regard to type makes the path a delimiter between two
+    // pseudo-strings. The path's own character class stops at the closing quote,
+    // so the captured span stays exact. Regex-tool operands are unaffected: they
+    // are already masked upstream by maskRegexAddresses.
+    const absolutePattern = /(?:^|([\s=('"]))(\/[^\s"'|&;<>`()]+)/g
 
     // A lone `/` token is the root filesystem — flag it (find /, ls /, cd /).
     // `//` comment lines and JSX `/>` self-closing tags are not roots.
@@ -748,7 +1014,12 @@ export function extractAbsolutePathsFromCommand(command: string): string[] {
     }
 
     while ((match = absolutePattern.exec(scanCommand)) !== null) {
-      const candidate = match[1]!
+      const opener = match[1] ?? ''
+      const candidate = match[2]!
+
+      // A quoted span that both opens and closes with `/` is a regex address
+      // (grep '/foo/'), never a path — same rule the quoted-string pass applies.
+      if ((opener === "'" || opener === '"') && candidate.endsWith('/')) continue
 
       // Skip placeholder markers left by sanitization
       if (isPlaceholderToken(candidate)) continue
@@ -786,6 +1057,9 @@ export function extractSensitivePathsFromCommand(command: string): string[] {
   }
 
   const paths: string[] = []
+  // Heredoc bodies are literal data (e.g. `.env` written into a script), not
+  // files the command touches — skip them before scanning.
+  const scanCommand = maskHeredocs(command)
 
   // Pattern to match potential file paths (relative or in subdirectories)
   // Matches: .env, config/.env, "./file", 'file', paths with common extensions
@@ -794,7 +1068,7 @@ export function extractSensitivePathsFromCommand(command: string): string[] {
   // Pattern 1: Quoted strings that might contain sensitive paths
   const quotedPattern = /["']([^"']+)["']/g
   let match
-  while ((match = quotedPattern.exec(command)) !== null) {
+  while ((match = quotedPattern.exec(scanCommand)) !== null) {
     const content = match[1]!
     if (isSensitivePath(content)) {
       paths.push(content)
@@ -804,7 +1078,7 @@ export function extractSensitivePathsFromCommand(command: string): string[] {
   // Pattern 2: Unquoted paths - look for tokens that could be file paths
   // Split by common shell delimiters and check each token
   // Remove quoted sections first to avoid double-matching
-  const unquoted = command
+  const unquoted = scanCommand
     .replace(/["'][^"']*["']/g, ' ') // Remove quoted strings
     .replace(/[|&;><]/g, ' ') // Replace shell operators with spaces
 
@@ -947,24 +1221,72 @@ export function extractDangerousPatterns(command: string): string[] {
 /** Git subcommands where `-n` is the documented shorthand for `--no-verify`. */
 const GIT_N_NO_VERIFY_SUBCOMMANDS = new Set(['commit', 'am'])
 
-export function extractGitNoVerify(command: string): boolean {
-  const subCommands = command.split(/\s*(?:&&|\|\||\||;)\s*/)
-  for (const sub of subCommands) {
-    const parts = sub.trim().split(/\s+/)
-    const gitIndex = parts.indexOf('git')
-    const subCmd = parts[gitIndex + 1]
-    if (gitIndex >= 0 && subCmd && !subCmd.startsWith('-')) {
-      const gitArgs = parts.slice(gitIndex + 2)
-      // Explicit --no-verify always counts: it bypasses hooks on any
-      // supporting subcommand (commit, am, rebase, merge, push, ...).
-      if (gitArgs.includes('--no-verify')) return true
-      // `-n` is only `--no-verify` for commit/am. Elsewhere git assigns it a
-      // harmless meaning (--dry-run, --no-stat, line numbers, commit-count
-      // limits, --no-tags, ...), so flagging it is a false positive.
-      if (GIT_N_NO_VERIFY_SUBCOMMANDS.has(subCmd) && gitArgs.includes('-n')) return true
+/** Shell operators that separate one command from the next. */
+const COMMAND_SEPARATORS = new Set([';', '&&', '||', '|'])
+
+/** True when a `'`, `"` or backtick opens without closing (escapes honored). */
+function hasDanglingQuote(command: string): boolean {
+  let quote: string | null = null
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i]!
+    if (quote !== null) {
+      if (ch === '\\' && quote !== "'") {
+        i += 1
+        continue
+      }
+      if (ch === quote) quote = null
+      continue
     }
+    if (ch === "'" || ch === '"' || ch === '`') quote = ch
+  }
+  return quote !== null
+}
+
+function gitSubHasNoVerify(sub: string[]): boolean {
+  const gitIndex = sub.indexOf('git')
+  const subCmd = sub[gitIndex + 1]
+  if (gitIndex >= 0 && subCmd && !subCmd.startsWith('-')) {
+    const gitArgs = sub.slice(gitIndex + 2)
+    // Explicit --no-verify always counts: it bypasses hooks on any
+    // supporting subcommand (commit, am, rebase, merge, push, ...).
+    if (gitArgs.includes('--no-verify')) return true
+    // `-n` is only `--no-verify` for commit/am. Elsewhere git assigns it a
+    // harmless meaning (--dry-run, --no-stat, line numbers, commit-count
+    // limits, --no-tags, ...), so flagging it is a false positive.
+    if (GIT_N_NO_VERIFY_SUBCOMMANDS.has(subCmd) && gitArgs.includes('-n')) return true
   }
   return false
+}
+
+export function extractGitNoVerify(command: string): boolean {
+  // Tokenize with shell quoting honored: a `;`, `|` or `&&` inside a quoted
+  // argument (e.g. a commit message) is literal text, not a command boundary.
+  // Splitting blindly on those characters orphans a trailing --no-verify into
+  // a "subcommand" that has no git token, silently bypassing the confirmation.
+  if (hasDanglingQuote(command)) {
+    // A dangling quote would make the tokenizer swallow the rest of the
+    // command as one quoted token and miss a trailing --no-verify. The shell
+    // refuses to run unterminated quotes anyway, but fall back to the
+    // quote-blind separator split to keep detection parity.
+    for (const sub of command.split(/\s*(?:&&|\|\||\||;)\s*/)) {
+      if (gitSubHasNoVerify(sub.trim().split(/\s+/))) return true
+    }
+    return false
+  }
+
+  const tokens = tokenizeShell(command)
+  let sub: string[] = []
+  for (const token of tokens) {
+    if (token.isOperator && COMMAND_SEPARATORS.has(token.text)) {
+      if (gitSubHasNoVerify(sub)) return true
+      sub = []
+      continue
+    }
+    // Only plain words belong to a subcommand; redirects, parens and the like
+    // are operators and carry no argument meaning here.
+    if (!token.isOperator) sub.push(token.text)
+  }
+  return gitSubHasNoVerify(sub)
 }
 
 // ===========================================================================
@@ -1276,6 +1598,36 @@ export function cancelPathConfirmationsForSession(sessionId: string, reason: str
   }
 
   return cancelledCount
+}
+
+/**
+ * Auto-approve every pending path confirmation for a session.
+ * Used when a session switches to dangerous mode: pending confirmations
+ * (e.g. sibling tool calls of the same batch) resolve as approved so their
+ * tool calls continue without further prompting.
+ *
+ * git_no_verify confirmations are never auto-approved — they always require
+ * explicit user confirmation, even in dangerous mode.
+ *
+ * @param sessionId - The session whose confirmations should be resolved
+ * @returns The callIds that were auto-approved
+ */
+export function autoApprovePendingConfirmationsForSession(sessionId: string): string[] {
+  const resolvedCallIds: string[] = []
+  for (const callId of [...pendingConfirmations.keys()]) {
+    const pending = pendingConfirmations.get(callId)
+    if (!pending || pending.sessionId !== sessionId) {
+      continue
+    }
+    if (pending.reason === 'git_no_verify') {
+      continue
+    }
+    const result = providePathConfirmation(callId, true, false)
+    if (result.found) {
+      resolvedCallIds.push(callId)
+    }
+  }
+  return resolvedCallIds
 }
 
 /**

@@ -1,6 +1,8 @@
 import { OptionalScrollArea } from './OptionalScrollArea'
 import { memo } from 'react'
 import { tryParseResult } from './tryParseResult'
+import { useT } from '../../hooks/useT'
+import type { Translation } from '@shared/i18n/index.js'
 
 interface DevServerViewProps {
   result: string
@@ -22,20 +24,25 @@ interface StatusData {
 }
 
 export const DevServerView = memo(function DevServerView({ result, action }: DevServerViewProps) {
+  const t = useT()
   const result_ = tryParseResult(result, 'DevServerView')
   if (!result_.success) return result_.error
   const parsed = result_.parsed
 
   if (action === 'logs') {
-    return renderLogs(parsed as LogsData)
+    return renderLogs(parsed as LogsData, t)
   }
 
-  return renderStatus(parsed as StatusData)
+  return renderStatus(parsed as StatusData, t)
 })
 
-function renderLogs(data: LogsData) {
+type TFunc = (tx: Translation, vars?: Record<string, string | number>) => string
+
+function renderLogs(data: LogsData, t: TFunc) {
   if (!data.logs) {
-    return <div className="text-xs text-text-muted italic">No log output</div>
+    return (
+      <div className="text-xs text-text-muted italic">{t({ en: 'No log output', fr: 'Aucune sortie de journal' })}</div>
+    )
   }
 
   const lines = data.logs.split('\n')
@@ -53,14 +60,17 @@ function renderLogs(data: LogsData) {
       </OptionalScrollArea>
       {data.hasMore && (
         <div className="text-[10px] text-text-muted">
-          Showing {data.limit} of {data.total} lines
+          {t(
+            { en: 'Showing {{shown}} of {{total}} lines', fr: 'Affichage de {{shown}} sur {{total}} lignes' },
+            { shown: data.limit ?? 0, total: data.total ?? 0 },
+          )}
         </div>
       )}
     </div>
   )
 }
 
-function renderStatus(data: StatusData) {
+function renderStatus(data: StatusData, t: TFunc) {
   const state = String(data.state ?? '')
   const url = String(data.url ?? '')
   const errorMsg = data.error ? String(data.error) : undefined
@@ -77,12 +87,12 @@ function renderStatus(data: StatusData) {
   return (
     <div className="space-y-2 text-xs">
       <div className="flex items-center gap-2">
-        <span className="text-text-muted">State:</span>
+        <span className="text-text-muted">{t({ en: 'State:', fr: 'État :' })}</span>
         <span className={`font-medium ${stateColor}`}>{state}</span>
       </div>
       {url && url !== 'undefined' && (
         <div className="flex items-center gap-2">
-          <span className="text-text-muted">URL:</span>
+          <span className="text-text-muted">{t({ en: 'URL:', fr: 'URL :' })}</span>
           <a href={url} className="text-accent-primary hover:underline" target="_blank" rel="noopener noreferrer">
             {url}
           </a>

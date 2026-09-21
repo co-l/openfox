@@ -139,12 +139,12 @@ describe('reconnect refreshes current session content', () => {
     expect(useSessionStore.getState().queuedMessages).toHaveLength(2)
   })
 
-  it('calls listProjects when connection status becomes connected', async () => {
+  it('refreshes the projects resource when connection status becomes connected', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const useSessionStore = await loadSessionStore()
 
-    const { useProjectStore } = await import('../project')
-    const listProjectsSpy = vi.spyOn(useProjectStore.getState(), 'listProjects')
+    const { projectsResource } = await import('../../lib/resources')
+    const refreshSpy = vi.spyOn(projectsResource, 'refresh')
 
     await useSessionStore.getState().connect()
 
@@ -154,7 +154,7 @@ describe('reconnect refreshes current session content', () => {
     const cb = (wsStatusMock.mock.calls[0] as Array<(s: string) => void>)[0]!
     ;(cb as (s: string) => void)('connected')
 
-    expect(listProjectsSpy).toHaveBeenCalled()
+    expect(refreshSpy).toHaveBeenCalled()
   })
 
   it('refetches the active session after an automatic reconnect (reconnecting status clears the guard)', async () => {

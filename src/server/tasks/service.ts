@@ -50,8 +50,14 @@ import {
   addAuditEntry as dbAddAuditEntry,
   getTaskSettings as dbGetTaskSettings,
   setTaskSettings as dbSetTaskSettings,
+  listDueScheduledTasks as dbListDueScheduledTasks,
+  setTaskSchedule as dbSetTaskSchedule,
+  clearTaskSchedule as dbClearTaskSchedule,
 } from '../db/tasks.js'
-import type { TaskGateConfig, TaskActor } from '../../shared/types.js'
+import type { TaskGateConfig, TaskActor, TaskSchedule } from '../../shared/types.js'
+import { serverT } from '../i18n.js'
+import { logger } from '../utils/logger.js'
+import { nextOccurrence } from './recurrence.js'
 
 export type TaskDestination = 'todo' | 'in_progress' | 'done'
 
@@ -125,6 +131,8 @@ export interface TasksService {
   setSettings(projectId: string, settings: Partial<ProjectTaskSettings>): Promise<ProjectTaskSettings>
   reorder(projectId: string, taskId: string, status: TaskDestination, toIndex: number): ProjectTask
   counts(projectId: string): ProjectTaskCounts
+  /** Trigger every due scheduled task (boot catch-up + periodic tick). */
+  runScheduled(now?: Date): Promise<void>
 }
 
 export interface CreateTaskServiceInput {
@@ -133,6 +141,7 @@ export interface CreateTaskServiceInput {
   agentId?: string
   providerId?: string
   model?: string
+  schedule?: TaskSchedule
 }
 
 export interface UpdateTaskServiceInput {
@@ -141,6 +150,8 @@ export interface UpdateTaskServiceInput {
   agentId?: string | null
   providerId?: string | null
   model?: string | null
+  /** `undefined` = leave unchanged, `null` = clear, otherwise replace (counter resets). */
+  schedule?: TaskSchedule | null
 }
 
 export interface TasksServiceDeps {
@@ -234,14 +245,16 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
   function assertOwned(projectId: string, taskId: string): ProjectTask {
     const task = dbGetTask(taskId)
     if (!task || task.projectId !== projectId) {
-      throw new Error(`Task not found: ${taskId}`)
+      throw new Error(serverT({ en: 'Task not found: {{id}}', fr: 'Tâche introuvable : {{id}}' }, { id: taskId }))
     }
     return task
   }
 
   function assertNotStale(task: ProjectTask, expectedVersion?: number): void {
     if (expectedVersion !== undefined && task.version !== expectedVersion) {
-      const err = new Error('Task changed, refresh and retry') as TaskConflictError
+      const err = new Error(
+        serverT({ en: 'Task changed, refresh and retry', fr: 'Tâche modifiée, actualisez et réessayez' }),
+      ) as TaskConflictError
       err.code = 'CONFLICT'
       err.task = task
       throw err
@@ -252,7 +265,12 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
     const hasContent = input.prompt.trim().length > 0
     const hasAttachments = (input.attachments?.length ?? 0) > 0
     if (!hasContent && !hasAttachments) {
-      throw new Error('Task requires at least a prompt or an attachment')
+      throw new Error(
+        serverT({
+          en: 'Task requires at least a prompt or an attachment',
+          fr: 'La tâche requiert au moins un prompt ou une pièce jointe',
+        }),
+      )
     }
     const task = dbCreateTask(projectId, {
       prompt: input.prompt,
@@ -260,6 +278,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
       ...(input.agentId ? { agentId: input.agentId } : {}),
       ...(input.providerId ? { providerId: input.providerId } : {}),
       ...(input.model ? { model: input.model } : {}),
+      ...(input.schedule ? { schedule: normalizeSchedule(input.schedule) } : {}),
     })
     dbAddAuditEntry(task.id, actor.actor, 'create', `Task created in To Do`, actor.actorName)
     const fresh = dbGetTask(task.id)!
@@ -278,7 +297,13 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
       const task = assertOwned(projectId, taskId)
       assertNotStale(task, expectedVersion)
 
-      const next = dbUpdateTask(taskId, patch) ?? dbGetTask(taskId)!
+      const next =
+        dbUpdateTask(taskId, {
+          ...patch,
+          ...(patch.schedule !== undefined
+            ? { schedule: patch.schedule === null ? null : normalizeSchedule(patch.schedule) }
+            : {}),
+        }) ?? dbGetTask(taskId)!
       const changed = summarizeChanges(task, next)
       dbAddAuditEntry(taskId, actor.actor, 'edit', changed || 'Task updated', actor.actorName)
       const fresh = dbGetTask(taskId)!
@@ -290,7 +315,8 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
   function duplicate(projectId: string, taskId: string, actor: TaskActorInfo) {
     const source = assertOwned(projectId, taskId)
     const copy = dbCloneTask(taskId)
-    if (!copy) throw new Error(`Task not found: ${taskId}`)
+    if (!copy)
+      throw new Error(serverT({ en: 'Task not found: {{id}}', fr: 'Tâche introuvable : {{id}}' }, { id: taskId }))
     dbAddAuditEntry(
       copy.id,
       actor.actor,
@@ -317,98 +343,203 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
   }
 
   function move(projectId: string, taskId: string, to: TaskDestination, opts: MoveOptions) {
-    return withLock(projectId, async () => {
-      const task = assertOwned(projectId, taskId)
-      assertNotStale(task, opts.expectedVersion)
+    // Locked here so the scheduler can reuse moveLocked inside its own lock
+    // without deadlocking on a nested withLock.
+    return withLock(projectId, () => moveLocked(projectId, taskId, to, opts))
+  }
 
-      const from = task.status
-      if (from === to) {
-        // No-op transition (e.g. already done) — still return the task.
-        return { task }
+  async function moveLocked(projectId: string, taskId: string, to: TaskDestination, opts: MoveOptions) {
+    const task = assertOwned(projectId, taskId)
+    assertNotStale(task, opts.expectedVersion)
+
+    const from = task.status
+    if (from === to) {
+      // No-op transition (e.g. already done) — still return the task.
+      return { task }
+    }
+
+    let sessionId: string | undefined
+    const wasRunning = task.status === 'in_progress' && task.runState === 'running'
+
+    if (to === 'in_progress') {
+      const readyGates = requiredGates(projectId, 'ready')
+      const missing = missingGateFields(task, readyGates)
+      if (missing.length > 0) {
+        throw gateBlockedError(task, 'In Progress', missing)
       }
 
-      let sessionId: string | undefined
-      const wasRunning = task.status === 'in_progress' && task.runState === 'running'
+      dbSetTaskStatus(taskId, 'in_progress')
+      const settings = dbGetTaskSettings(projectId)
 
-      if (to === 'in_progress') {
-        const readyGates = requiredGates(projectId, 'ready')
-        const missing = missingGateFields(task, readyGates)
-        if (missing.length > 0) {
-          throw gateBlockedError(task, 'In Progress', missing)
+      if (opts.actor === 'agent') {
+        if (!opts.sessionId) {
+          throw new Error(
+            serverT({
+              en: 'Agent moves must bind to the current session (sessionId is required)',
+              fr: 'Les déplacements d’agent doivent être liés à la session courante (sessionId requis)',
+            }),
+          )
         }
-
-        dbSetTaskStatus(taskId, 'in_progress')
-        const settings = dbGetTaskSettings(projectId)
-
-        if (opts.actor === 'agent') {
-          if (!opts.sessionId) {
-            throw new Error('Agent moves must bind to the current session (sessionId is required)')
-          }
-          // Current-session rule: the agent is working in its own session NOW.
-          dbSetTaskRunState(taskId, 'running')
-          dbAddTaskLink(taskId, opts.sessionId, true)
-          dbAddAuditEntry(taskId, 'agent', 'move', `Moved to In Progress (running)`, opts.actorName)
-          emitReminder(opts.sessionId, reminderForInProgress(task, opts.sessionId, from))
-          sessionId = opts.sessionId
-        } else {
-          // Human drag / Start task: allocate a slot or queue.
-          const runningCount = activeCount(projectId)
-          const launched = runningCount < settings.slotLimit && !settings.queuePaused
-          dbSetTaskRunState(taskId, launched ? 'running' : 'queued')
-          if (launched) {
-            // Reuse the session the human is already in when it's still fresh
-            // (Up-next Start) — otherwise seed a new one.
-            const seeded = await seedSession(projectId, task, from, reusableTarget(projectId, opts.sessionId))
-            dbAddTaskLink(taskId, seeded.session.id, true)
-            dbAddAuditEntry(taskId, 'human', 'move', `Moved to In Progress (running)`, opts.actorName)
-            sessionId = seeded.session.id
-          } else {
-            // Queued: append at the bottom of In Progress so FIFO order (oldest
-            // first) matches the visible stacking and the per-task queue rank.
-            dbAppendToBottom(taskId, 'in_progress')
-            // Remember where the human wants it to run (Up-next Start) so a
-            // later auto-launch lands in the same session, not an orphan.
-            const earmarked = reusableTarget(projectId, opts.sessionId)
-            if (earmarked) dbAddTaskLink(taskId, earmarked, false)
-            dbAddAuditEntry(taskId, 'human', 'move', `Moved to In Progress (queued)`, opts.actorName)
-          }
-        }
-      } else if (to === 'done') {
-        const doneGates = requiredGates(projectId, 'done')
-        const missing = missingGateFields(task, doneGates)
-        if (missing.length > 0) {
-          throw gateBlockedError(task, 'Done', missing)
-        }
-        dbSetTaskStatus(taskId, 'done')
-        dbClearActiveTaskLink(taskId)
-        dbAddAuditEntry(taskId, opts.actor, 'move', `Moved to Done`, opts.actorName)
-        if (task.activeSessionId) {
-          emitReminder(task.activeSessionId, reminderForDone(task))
-        }
+        // Current-session rule: the agent is working in its own session NOW.
+        dbSetTaskRunState(taskId, 'running')
+        dbAddTaskLink(taskId, opts.sessionId, true)
+        dbAddAuditEntry(taskId, 'agent', 'move', `Moved to In Progress (running)`, opts.actorName)
+        emitReminder(opts.sessionId, reminderForInProgress(task, opts.sessionId, from))
+        sessionId = opts.sessionId
       } else {
-        // → todo (revert / unbind) from in_progress or done
-        dbSetTaskStatus(taskId, 'todo')
-        dbRemoveTaskLinks(taskId)
-        const detailParts = [`Moved back to To Do`]
-        if (opts.reason) detailParts.push(`Reason: ${opts.reason}`)
-        dbAddAuditEntry(taskId, opts.actor, 'move', detailParts.join('. '), opts.actorName)
-        if (task.activeSessionId) {
-          emitReminder(task.activeSessionId, reminderForTodo(task))
+        // Human drag / Start task / system trigger: allocate a slot or queue.
+        const runningCount = activeCount(projectId)
+        const launched = runningCount < settings.slotLimit && !settings.queuePaused
+        dbSetTaskRunState(taskId, launched ? 'running' : 'queued')
+        if (task.schedule) {
+          // A planned task manually started (or system-triggered) is no longer
+          // "planned" — it becomes a plain task.
+          dbClearTaskSchedule(taskId)
+        }
+        if (launched) {
+          // Reuse the session the human is already in when it's still fresh
+          // (Up-next Start) — otherwise seed a new one.
+          const seeded = await seedSession(projectId, task, from, reusableTarget(projectId, opts.sessionId))
+          dbAddTaskLink(taskId, seeded.session.id, true)
+          dbAddAuditEntry(taskId, opts.actor, 'move', `Moved to In Progress (running)`, opts.actorName)
+          sessionId = seeded.session.id
+        } else {
+          // Queued: append at the bottom of In Progress so FIFO order (oldest
+          // first) matches the visible stacking and the per-task queue rank.
+          dbAppendToBottom(taskId, 'in_progress')
+          // Remember where the human wants it to run (Up-next Start) so a
+          // later auto-launch lands in the same session, not an orphan.
+          const earmarked = reusableTarget(projectId, opts.sessionId)
+          if (earmarked) dbAddTaskLink(taskId, earmarked, false)
+          dbAddAuditEntry(taskId, opts.actor, 'move', `Moved to In Progress (queued)`, opts.actorName)
         }
       }
+    } else if (to === 'done') {
+      const doneGates = requiredGates(projectId, 'done')
+      const missing = missingGateFields(task, doneGates)
+      if (missing.length > 0) {
+        throw gateBlockedError(task, 'Done', missing)
+      }
+      dbSetTaskStatus(taskId, 'done')
+      dbClearActiveTaskLink(taskId)
+      if (task.schedule) dbClearTaskSchedule(taskId)
+      dbAddAuditEntry(taskId, opts.actor, 'move', `Moved to Done`, opts.actorName)
+      if (task.activeSessionId) {
+        emitReminder(task.activeSessionId, reminderForDone(task))
+      }
+    } else {
+      // → todo (revert / unbind) from in_progress or done
+      dbSetTaskStatus(taskId, 'todo')
+      dbRemoveTaskLinks(taskId)
+      const detailParts = [`Moved back to To Do`]
+      if (opts.reason) detailParts.push(`Reason: ${opts.reason}`)
+      dbAddAuditEntry(taskId, opts.actor, 'move', detailParts.join('. '), opts.actorName)
+      if (task.activeSessionId) {
+        emitReminder(task.activeSessionId, reminderForTodo(task))
+      }
+    }
 
-      const fresh = dbGetTask(taskId)!
-      let autoLaunched: TasksUpdatePayload['autoLaunched'] | undefined
-      if (wasRunning || (to === 'todo' && from === 'in_progress')) {
-        autoLaunched = await maybeAutoLaunch(projectId)
+    const fresh = dbGetTask(taskId)!
+    let autoLaunched: TasksUpdatePayload['autoLaunched'] | undefined
+    if (wasRunning || (to === 'todo' && from === 'in_progress')) {
+      autoLaunched = await maybeAutoLaunch(projectId)
+    }
+    publish(projectId, fresh.id, autoLaunched)
+    return {
+      task: fresh,
+      ...(sessionId ? { sessionId } : {}),
+      ...(autoLaunched ? { autoLaunched } : {}),
+    }
+  }
+
+  /**
+   * Trigger every due scheduled task. Runs once at boot (catch-up) and then on
+   * the scheduler tick. One-off tasks launch themselves; recurring templates
+   * spawn a schedule-free run and advance to the next occurrence (single
+   * catch-up — several missed intervals collapse into one run).
+   */
+  async function runScheduled(now = new Date()) {
+    const due = dbListDueScheduledTasks(now.toISOString())
+    for (const task of due) {
+      try {
+        await withLock(task.projectId, async () => {
+          const fresh = dbGetTask(task.id)
+          if (!fresh || fresh.status !== 'todo' || !fresh.schedule) return
+          const schedule = fresh.schedule
+
+          if (schedule.type === 'once') {
+            // The task itself runs; moveLocked clears the schedule for it.
+            await moveLocked(fresh.projectId, fresh.id, 'in_progress', { actor: 'system' })
+            return
+          }
+
+          // Recurring: spawn one run (a plain clone), then advance the template.
+          // Skip when ready gates would block the run — a clone carries no gate
+          // values, so spawning would fail and orphan a duplicate every tick.
+          const readyGates = requiredGates(fresh.projectId, 'ready')
+          if (missingGateFields(fresh, readyGates).length > 0) {
+            logger.warn('Scheduled recurring spawn skipped: missing ready gates', {
+              taskId: fresh.id,
+              gates: readyGates.map((g) => g.name).join(', '),
+            })
+            return
+          }
+          const run = dbCloneTask(fresh.id, false)
+          if (run) {
+            try {
+              await moveLocked(run.projectId, run.id, 'in_progress', { actor: 'system' })
+            } catch (error) {
+              // Never leave an orphaned clone behind when the launch fails.
+              dbDeleteTask(run.id)
+              throw error
+            }
+            dbAddAuditEntry(
+              run.id,
+              'system',
+              'scheduled_run',
+              `Spawned from recurring task "${promptLabel(fresh.prompt)}"`,
+              'system',
+            )
+          }
+          const rule = {
+            freq: schedule.freq,
+            interval: schedule.interval,
+            ...(schedule.weekdays ? { weekdays: schedule.weekdays } : {}),
+            ...(schedule.monthDay ? { monthDay: schedule.monthDay } : {}),
+            ...(schedule.yearMonth ? { yearMonth: schedule.yearMonth } : {}),
+            startAt: schedule.startAt,
+            end: schedule.end,
+            occurrencesDone: schedule.occurrencesDone + 1,
+          }
+          const next = nextOccurrence(now, rule)
+          if (next) {
+            const advanced: TaskSchedule = {
+              ...schedule,
+              occurrencesDone: schedule.occurrencesDone + 1,
+              nextRunAt: next.toISOString(),
+            }
+            dbSetTaskSchedule(fresh.id, advanced, next.toISOString())
+            dbAddAuditEntry(
+              fresh.id,
+              'system',
+              'scheduled_run',
+              `Triggered occurrence ${schedule.occurrencesDone + 1}, next run ${next.toISOString()}`,
+              'system',
+            )
+          } else {
+            // Recurrence ended (count reached or past until) — the template
+            // becomes a plain To Do task, nothing is auto-deleted.
+            dbClearTaskSchedule(fresh.id)
+            dbAddAuditEntry(fresh.id, 'system', 'schedule_ended', 'Recurrence ended — schedule cleared', 'system')
+          }
+          publish(fresh.projectId, fresh.id)
+        })
+      } catch (error) {
+        // A blocked trigger (e.g. unfilled ready gates) must not abort the
+        // whole tick — the task stays due and retries on the next one.
+        logger.warn('Scheduled task trigger failed', { taskId: task.id, error: String(error) })
       }
-      publish(projectId, fresh.id, autoLaunched)
-      return {
-        task: fresh,
-        ...(sessionId ? { sessionId } : {}),
-        ...(autoLaunched ? { autoLaunched } : {}),
-      }
-    })
+    }
   }
 
   function setGateValue(
@@ -426,7 +557,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
       const gates = dbGetGateConfig(projectId)
       const gate = gates.find((g) => g.id === gateId)
       if (!gate) {
-        throw new Error(`Unknown gate: ${gateId}`)
+        throw new Error(serverT({ en: 'Unknown gate: {{id}}', fr: 'Porte inconnue : {{id}}' }, { id: gateId }))
       }
       dbSetGateValue(taskId, gateId, value, actor.actor, actor.actorName, sessionId)
       dbAddAuditEntry(taskId, actor.actor, 'gate_value', `Set gate "${gate.name}" = "${value}"`, actor.actorName)
@@ -460,7 +591,15 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
   function reorder(projectId: string, taskId: string, status: TaskDestination, toIndex: number) {
     const task = assertOwned(projectId, taskId)
     if (task.status !== status) {
-      throw new Error(`Cannot reorder task: status mismatch (${task.status} != ${status})`)
+      throw new Error(
+        serverT(
+          {
+            en: 'Cannot reorder task: status mismatch ({{current}} != {{target}})',
+            fr: 'Impossible de réordonner la tâche : statut incohérent ({{current}} != {{target}})',
+          },
+          { current: task.status, target: status },
+        ),
+      )
     }
     dbReorderTask(taskId, status, toIndex)
     const fresh = dbGetTask(taskId)!
@@ -502,7 +641,13 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
     missing: { gateId: string; name: string; description: string }[],
   ) {
     const err = new Error(
-      `Cannot move to ${destination}: missing required gate fields: ${missing.map((m) => m.name).join(', ')}`,
+      serverT(
+        {
+          en: 'Cannot move to {{destination}}: missing required gate fields: {{missing}}',
+          fr: 'Impossible de déplacer vers {{destination}} : champs de porte requis manquants : {{missing}}',
+        },
+        { destination, missing: missing.map((m) => m.name).join(', ') },
+      ),
     ) as TaskGateError
     err.code = 'GATE_BLOCKED'
     err.missing = missing
@@ -697,6 +842,112 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
     setSettings,
     reorder,
     counts,
+    runScheduled,
+  }
+}
+
+/**
+ * Validate + normalize an incoming schedule. The server is authoritative: the
+ * first trigger of a recurring task is always its `startAt`, and an edited
+ * schedule restarts the occurrence counter.
+ */
+function normalizeSchedule(input: TaskSchedule): TaskSchedule {
+  if (input.type === 'once') {
+    if (!Number.isFinite(new Date(input.runAt).getTime())) {
+      throw new Error(
+        serverT(
+          { en: 'Invalid schedule time: {{time}}', fr: 'Heure de planification invalide : {{time}}' },
+          {
+            time: input.runAt,
+          },
+        ),
+      )
+    }
+    return { type: 'once', runAt: input.runAt }
+  }
+
+  const { freq, interval, startAt, end } = input
+  if (!Number.isInteger(interval) || interval < 1) {
+    throw new Error(
+      serverT({
+        en: 'Recurring interval must be a positive integer',
+        fr: 'L’intervalle de récurrence doit être un entier positif',
+      }),
+    )
+  }
+  if (freq === 'week') {
+    const days = input.weekdays ?? []
+    if (days.length === 0 || !days.every((d) => Number.isInteger(d) && d >= 0 && d <= 6)) {
+      throw new Error(
+        serverT({
+          en: 'Weekly recurrence requires at least one selected weekday',
+          fr: 'La récurrence hebdomadaire requiert au moins un jour de la semaine sélectionné',
+        }),
+      )
+    }
+  }
+  if ((freq === 'month' || freq === 'year') && input.monthDay !== undefined) {
+    if (!Number.isInteger(input.monthDay) || input.monthDay < 1 || input.monthDay > 31) {
+      throw new Error(
+        serverT({
+          en: 'Day of month must be between 1 and 31',
+          fr: 'Le jour du mois doit être compris entre 1 et 31',
+        }),
+      )
+    }
+  }
+  if (freq === 'year' && input.yearMonth !== undefined) {
+    if (!Number.isInteger(input.yearMonth) || input.yearMonth < 1 || input.yearMonth > 12) {
+      throw new Error(
+        serverT({
+          en: 'Month must be between 1 and 12',
+          fr: 'Le mois doit être compris entre 1 et 12',
+        }),
+      )
+    }
+  }
+  if (!Number.isFinite(new Date(startAt).getTime())) {
+    throw new Error(
+      serverT(
+        {
+          en: 'Invalid schedule start time: {{time}}',
+          fr: 'Heure de départ de planification invalide : {{time}}',
+        },
+        { time: startAt },
+      ),
+    )
+  }
+  if (end.kind === 'until' && !Number.isFinite(new Date(end.until).getTime())) {
+    throw new Error(
+      serverT(
+        {
+          en: 'Invalid recurrence end date: {{time}}',
+          fr: 'Date de fin de récurrence invalide : {{time}}',
+        },
+        { time: end.until },
+      ),
+    )
+  }
+  if (end.kind === 'count' && (!Number.isInteger(end.count) || end.count < 1)) {
+    throw new Error(
+      serverT({
+        en: 'Occurrence count must be a positive integer',
+        fr: 'Le nombre d’occurrences doit être un entier positif',
+      }),
+    )
+  }
+
+  return {
+    type: 'recurring',
+    freq,
+    interval,
+    ...(input.weekdays ? { weekdays: input.weekdays } : {}),
+    ...(input.monthDay !== undefined ? { monthDay: input.monthDay } : {}),
+    ...(input.yearMonth !== undefined ? { yearMonth: input.yearMonth } : {}),
+    startAt,
+    end,
+    occurrencesDone: 0,
+    nextRunAt: startAt,
   }
 }
 

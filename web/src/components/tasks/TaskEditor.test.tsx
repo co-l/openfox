@@ -4,9 +4,8 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { TaskEditor } from './TaskEditor'
 import { useTasksStore } from '../../stores/tasks'
-import { useWorkflowsStore } from '../../stores/workflows'
-import { useCommandsStore } from '../../stores/commands'
-import { useProjectStore } from '../../stores/project'
+import { clearCache } from '../../lib/resourceCache'
+import { workflowsResource, projectsResource } from '../../lib/resources'
 import { authFetch } from '../../lib/api'
 import type { ProjectTask } from '@shared/types.js'
 
@@ -61,11 +60,6 @@ describe('TaskEditor', () => {
     document.body.innerHTML = ''
     localStorage.clear()
     useTasksStore.setState({
-      tasks: [],
-      gates: [],
-      settings: { slotLimit: 1, queuePaused: false },
-      counts: { open: 0, todo: 0, inProgress: 0, running: 0, queued: 0, done: 0 },
-      activeProjectId: null,
       lastError: null,
       lastAutoLaunch: null,
     })
@@ -80,8 +74,7 @@ describe('TaskEditor', () => {
     )
     // Neutralize the cold-start fetches (asserted in their own test) so other
     // tests can seed the stores directly without an async refetch wiping them.
-    useWorkflowsStore.setState({ defaults: [], userItems: [], projectItems: [], fetchWorkflows: vi.fn() })
-    useCommandsStore.setState({ defaults: [], userItems: [], projectItems: [], fetchCommands: vi.fn() })
+    clearCache()
     vi.mocked(authFetch).mockReset()
     vi.mocked(authFetch).mockResolvedValue({ ok: true, json: async () => ({}) } as unknown as Response)
   })
@@ -243,12 +236,20 @@ describe('TaskEditor', () => {
   })
 
   it('renders the slash autocomplete into a portal so it is not clipped by the modal', async () => {
-    useWorkflowsStore.setState({
-      defaults: [{ id: 'review', name: 'PR Review', description: '', version: '1', scope: 'builtin' }],
-      userItems: [],
-      projectItems: [],
+    vi.mocked(authFetch).mockImplementation(async (url: string) => {
+      if (url === '/api/workflows') {
+        return {
+          ok: true,
+          json: async () => ({
+            defaults: [{ id: 'review', name: 'PR Review', description: '', version: '1', scope: 'builtin' }],
+            userItems: [],
+            projectItems: [],
+          }),
+        } as unknown as Response
+      }
+      return { ok: true, json: async () => ({}) } as unknown as Response
     })
-    useCommandsStore.setState({ defaults: [], userItems: [], projectItems: [] })
+    await workflowsResource.refresh()
     render(<TaskEditor projectId="proj-1" onClose={() => {}} onSaved={() => {}} />)
     const promptEl = screen.getByPlaceholderText(/Describe the task/i) as HTMLTextAreaElement
     const user = userEvent.setup()
@@ -261,30 +262,26 @@ describe('TaskEditor', () => {
     })
   })
 
-  it('fetches workflows and commands on mount so the slash menu is populated from a cold start', async () => {
-    const wfState = useWorkflowsStore.getState()
-    const cmdState = useCommandsStore.getState()
-    const projState = useProjectStore.getState()
-    const fetchWorkflows = vi.fn()
-    const fetchCommands = vi.fn()
-    useWorkflowsStore.setState({ fetchWorkflows })
-    useCommandsStore.setState({ fetchCommands })
-    useProjectStore.setState({
-      projects: [
-        { id: 'proj-1', name: 'Proj', workdir: '/tmp/proj', createdAt: '2026-01-01', updatedAt: '2026-01-01' },
-      ],
+  it('loads workflows and commands via the resource cache so the slash menu is populated from a cold start', async () => {
+    vi.mocked(authFetch).mockImplementation(async (url: string) => {
+      if (url === '/api/projects') {
+        return {
+          ok: true,
+          json: async () => ({
+            projects: [
+              { id: 'proj-1', name: 'Proj', workdir: '/tmp/proj', createdAt: '2026-01-01', updatedAt: '2026-01-01' },
+            ],
+          }),
+        } as unknown as Response
+      }
+      return { ok: true, json: async () => ({}) } as unknown as Response
     })
-    try {
-      render(<TaskEditor projectId="proj-1" onClose={() => {}} onSaved={() => {}} />)
-      await waitFor(() => {
-        expect(fetchWorkflows).toHaveBeenCalledWith('/tmp/proj')
-        expect(fetchCommands).toHaveBeenCalledWith('/tmp/proj')
-      })
-    } finally {
-      useWorkflowsStore.setState(wfState)
-      useCommandsStore.setState(cmdState)
-      useProjectStore.setState(projState)
-    }
+    await projectsResource.refresh()
+    render(<TaskEditor projectId="proj-1" onClose={() => {}} onSaved={() => {}} />)
+    await waitFor(() => {
+      expect(authFetch).toHaveBeenCalledWith('/api/workflows?workdir=%2Ftmp%2Fproj')
+      expect(authFetch).toHaveBeenCalledWith('/api/commands?workdir=%2Ftmp%2Fproj')
+    })
   })
 
   describe('agent selection', () => {
@@ -458,6 +455,173 @@ describe('TaskEditor', () => {
       await waitFor(() => expect(putBody()).toBeTruthy())
       expect(putBody().model).toBeNull()
       expect(putBody().providerId).toBeNull()
+    })
+  })
+
+  describe('schedule', () => {
+    const promptEl = () => screen.getByPlaceholderText(/Describe the task/i) as HTMLTextAreaElement
+    const typePrompt = () => {
+      fireEvent.change(promptEl(), { target: { value: 'Do the thing' } })
+    }
+    const save = async () => {
+      fireEvent.keyDown(promptEl(), { key: 'Enter', ctrlKey: true })
+    }
+    const postedBody = () => {
+      const post = vi
+        .mocked(authFetch)
+        .mock.calls.find(([url, init]) => url === '/api/projects/proj-1/tasks' && init?.method === 'POST')
+      return post ? JSON.parse(String(post[1]?.body)) : null
+    }
+    const putBody = () => {
+      const put = vi
+        .mocked(authFetch)
+        .mock.calls.find(([url, init]) => url === '/api/projects/proj-1/tasks/t-edit' && init?.method === 'PUT')
+      return put ? JSON.parse(String(put[1]?.body)) : null
+    }
+    const mockSave = () => {
+      vi.mocked(authFetch).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ task: task({ prompt: 'Do the thing' }) }),
+      } as unknown as Response)
+      vi.mocked(authFetch).mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          tasks: [],
+          settings: { slotLimit: 1, queuePaused: false },
+          counts: { open: 0, todo: 0, inProgress: 0, running: 0, queued: 0, done: 0 },
+        }),
+      } as unknown as Response)
+    }
+
+    it('submits a one-off schedule with the chosen run time', async () => {
+      mockSave()
+      render(<TaskEditor projectId="proj-1" onClose={() => {}} onSaved={() => {}} />)
+      fireEvent.click(screen.getByRole('button', { name: /run once/i }))
+      fireEvent.change(screen.getByLabelText(/run at/i), { target: { value: '2030-01-01T09:00' } })
+      typePrompt()
+      await save()
+      await waitFor(() => expect(postedBody()).toBeTruthy())
+      expect(postedBody().schedule).toMatchObject({ type: 'once' })
+      expect(new Date(postedBody().schedule.runAt).toISOString()).toBe(new Date('2030-01-01T09:00').toISOString())
+    })
+
+    it('submits a weekly recurring schedule with selected weekdays', async () => {
+      mockSave()
+      render(<TaskEditor projectId="proj-1" onClose={() => {}} onSaved={() => {}} />)
+      fireEvent.click(screen.getByRole('button', { name: /repeat/i }))
+      fireEvent.change(screen.getByLabelText(/first run/i), { target: { value: '2030-01-01T09:00' } })
+      fireEvent.change(screen.getByLabelText(/repeat unit/i), { target: { value: 'week' } })
+      const thuBtn = screen.getByRole('button', { name: /^thu$/i })
+      if (thuBtn.getAttribute('aria-pressed') !== 'true') {
+        fireEvent.click(thuBtn)
+      }
+      typePrompt()
+      await save()
+      await waitFor(() => expect(postedBody()).toBeTruthy())
+      expect(postedBody().schedule.type).toBe('recurring')
+      expect(postedBody().schedule.freq).toBe('week')
+      expect(postedBody().schedule.weekdays).toContain(4)
+      expect(postedBody().schedule.end).toEqual({ kind: 'never' })
+      expect(postedBody().schedule.startAt).toBe(new Date('2030-01-01T09:00').toISOString())
+    })
+
+    it('submits a monthly recurrence ending after N occurrences', async () => {
+      mockSave()
+      render(<TaskEditor projectId="proj-1" onClose={() => {}} onSaved={() => {}} />)
+      fireEvent.click(screen.getByRole('button', { name: /repeat/i }))
+      fireEvent.change(screen.getByLabelText(/repeat unit/i), { target: { value: 'month' } })
+      fireEvent.change(screen.getByLabelText(/day of month/i), { target: { value: '15' } })
+      fireEvent.click(screen.getByLabelText(/after .*occurrences/i))
+      fireEvent.change(screen.getByLabelText('Occurrences'), { target: { value: '5' } })
+      typePrompt()
+      await save()
+      await waitFor(() => expect(postedBody()).toBeTruthy())
+      expect(postedBody().schedule.type).toBe('recurring')
+      expect(postedBody().schedule.freq).toBe('month')
+      expect(postedBody().schedule.monthDay).toBe(15)
+      expect(postedBody().schedule.end).toEqual({ kind: 'count', count: 5 })
+    })
+
+    it('clearing the schedule on edit sends schedule null', async () => {
+      vi.mocked(authFetch).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ task: task({ prompt: 'Do the thing' }) }),
+      } as unknown as Response)
+      vi.mocked(authFetch).mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          tasks: [],
+          settings: { slotLimit: 1, queuePaused: false },
+          counts: { open: 0, todo: 0, inProgress: 0, running: 0, queued: 0, done: 0 },
+        }),
+      } as unknown as Response)
+
+      render(
+        <TaskEditor
+          projectId="proj-1"
+          initialTask={task({ schedule: { type: 'once', runAt: '2030-01-01T09:00:00' } })}
+          onClose={() => {}}
+          onSaved={() => {}}
+        />,
+      )
+      fireEvent.click(screen.getByRole('button', { name: /no schedule/i }))
+      typePrompt()
+      await save()
+      await waitFor(() => expect(putBody()).toBeTruthy())
+      expect(putBody().schedule).toBeNull()
+    })
+
+    it('prefills the schedule controls when editing a scheduled task', () => {
+      render(
+        <TaskEditor
+          projectId="proj-1"
+          initialTask={task({ schedule: { type: 'once', runAt: '2030-01-01T09:00:00' } })}
+          onClose={() => {}}
+          onSaved={() => {}}
+        />,
+      )
+      expect(screen.getByRole('button', { name: /run once/i }).getAttribute('aria-pressed')).toBe('true')
+      expect((screen.getByLabelText(/run at/i) as HTMLInputElement).value).toBe('2030-01-01T09:00')
+    })
+
+    it('does not resend the schedule when editing only the prompt of a recurring task', async () => {
+      vi.mocked(authFetch).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ task: task({ prompt: 'Edited prompt' }) }),
+      } as unknown as Response)
+      vi.mocked(authFetch).mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          tasks: [],
+          settings: { slotLimit: 1, queuePaused: false },
+          counts: { open: 0, todo: 0, inProgress: 0, running: 0, queued: 0, done: 0 },
+        }),
+      } as unknown as Response)
+
+      render(
+        <TaskEditor
+          projectId="proj-1"
+          initialTask={task({
+            prompt: 'Original',
+            schedule: {
+              type: 'recurring',
+              freq: 'day',
+              interval: 1,
+              startAt: '2026-01-01T09:00:00',
+              end: { kind: 'never' },
+              occurrencesDone: 5,
+              nextRunAt: '2099-01-01T09:00:00',
+            },
+          })}
+          onClose={() => {}}
+          onSaved={() => {}}
+        />,
+      )
+      fireEvent.change(screen.getByPlaceholderText(/Describe the task/i), { target: { value: 'Edited prompt' } })
+      fireEvent.keyDown(screen.getByPlaceholderText(/Describe the task/i), { key: 'Enter', ctrlKey: true })
+      await waitFor(() => expect(putBody()).toBeTruthy())
+      // Schedule untouched → omitted so the server keeps nextRunAt + count.
+      expect(putBody()).not.toHaveProperty('schedule')
     })
   })
 })

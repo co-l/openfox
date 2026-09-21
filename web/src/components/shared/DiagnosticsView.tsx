@@ -1,6 +1,7 @@
 import { OptionalScrollArea } from './OptionalScrollArea'
 import { memo } from 'react'
 import type { Diagnostic } from '@shared/types.js'
+import { useT } from '../../hooks/useT'
 
 interface DiagnosticsViewProps {
   diagnostics: Diagnostic[]
@@ -34,6 +35,7 @@ const severityConfig = {
 }
 
 export const DiagnosticsView = memo(function DiagnosticsView({ diagnostics }: DiagnosticsViewProps) {
+  const t = useT()
   if (diagnostics.length === 0) return null
 
   const errors = diagnostics.filter((d) => d.severity === 'error')
@@ -44,18 +46,36 @@ export const DiagnosticsView = memo(function DiagnosticsView({ diagnostics }: Di
     <div className="rounded border border-border overflow-hidden mt-2">
       {/* Header with counts */}
       <div className="flex items-center gap-3 px-2 py-1.5 bg-bg-tertiary border-b border-border">
-        <span className="text-xs font-medium text-text-secondary">LSP Diagnostics</span>
+        <span className="text-xs font-medium text-text-secondary">
+          {t({ en: 'LSP Diagnostics', fr: 'Diagnostics LSP' })}
+        </span>
         {errors.length > 0 && (
           <span className="text-xs text-accent-error font-medium">
-            {errors.length} error{errors.length !== 1 ? 's' : ''}
+            {t(
+              {
+                en: { one: '{{count}} error', other: '{{count}} errors' },
+                fr: { one: '{{count}} erreur', other: '{{count}} erreurs' },
+              },
+              { count: errors.length },
+            )}
           </span>
         )}
         {warnings.length > 0 && (
           <span className="text-xs text-accent-warning font-medium">
-            {warnings.length} warning{warnings.length !== 1 ? 's' : ''}
+            {t(
+              {
+                en: { one: '{{count}} warning', other: '{{count}} warnings' },
+                fr: { one: '{{count}} avertissement', other: '{{count}} avertissements' },
+              },
+              { count: warnings.length },
+            )}
           </span>
         )}
-        {infos.length > 0 && <span className="text-xs text-text-muted">{infos.length} info</span>}
+        {infos.length > 0 && (
+          <span className="text-xs text-text-muted">
+            {t({ en: '{{count}} info', fr: '{{count}} info' }, { count: infos.length })}
+          </span>
+        )}
       </div>
 
       {/* Diagnostic list */}
@@ -71,7 +91,10 @@ export const DiagnosticsView = memo(function DiagnosticsView({ diagnostics }: Di
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] text-text-muted font-mono">
-                    Ln {d.range.start.line + 1}:{d.range.start.character + 1}
+                    {t(
+                      { en: 'Ln {{line}}:{{col}}', fr: 'L {{line}}:{{col}}' },
+                      { line: d.range.start.line + 1, col: d.range.start.character + 1 },
+                    )}
                   </span>
                   {d.code && <span className="text-[10px] text-text-muted font-mono">[{d.code}]</span>}
                 </div>

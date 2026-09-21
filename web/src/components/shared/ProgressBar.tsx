@@ -1,4 +1,5 @@
 import { getProgressColor } from '../plan/token-utils.js'
+import { useT } from '../../hooks/useT'
 
 interface ProgressBarProps {
   percent: number
@@ -27,10 +28,11 @@ interface LowTokenWarningProps {
 }
 
 export function LowTokenWarning({ dangerZone, size = 'md' }: LowTokenWarningProps) {
+  const t = useT()
   if (!dangerZone) return null
   return (
     <span className={`text-accent-error animate-pulse ${size === 'sm' ? 'text-[10px]' : 'text-[10px]'} font-medium`}>
-      Low!
+      {t({ en: 'Low!', fr: 'Faible !' })}
     </span>
   )
 }

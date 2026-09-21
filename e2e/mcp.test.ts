@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createServer } from 'node:net'
 import { setTimeout as sleep } from 'node:timers/promises'
 import {
   createTestClient,
@@ -14,6 +15,23 @@ import {
 } from './utils/index.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+
+function getFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = createServer()
+    srv.once('error', reject)
+    srv.listen(0, '127.0.0.1', () => {
+      const addr = srv.address()
+      srv.close(() => {
+        if (!addr || typeof addr === 'string') {
+          reject(new Error('Failed to allocate a free port'))
+          return
+        }
+        resolve(addr.port)
+      })
+    })
+  })
+}
 
 describe('MCP Integration', () => {
   let server: TestServerHandle
@@ -47,8 +65,8 @@ describe('MCP Integration', () => {
     }
   })
 
-  async function fetchMcpServers() {
-    const res = await fetch(`${server.url}/api/mcp/servers`)
+  async function fetchMcpServers(url = server.url) {
+    const res = await fetch(`${url}/api/mcp/servers`)
     const data = (await res.json()) as {
       servers: Array<{
         name: string
@@ -304,4 +322,33 @@ describe('MCP Integration', () => {
     // Cleanup
     await removeMcpServer('zero-timeout')
   })
+
+  it('bootstraps OpenFox as its own MCP client on startup', async () => {
+    const port = await getFreePort()
+    const selfServer = await createTestServer({
+      port,
+      mcpServers: {
+        openfox: { transport: 'http', url: `http://127.0.0.1:${port}/mcp` },
+      },
+    })
+    try {
+      const deadline = Date.now() + 20000
+      let entry: { name: string; status: string; tools: Array<{ name: string; enabled: boolean }> } | undefined
+      while (Date.now() < deadline) {
+        const servers = await fetchMcpServers(selfServer.url)
+        entry = servers.find((s) => s.name === 'openfox')
+        if (entry?.status === 'connected') break
+        await sleep(150)
+      }
+
+      // The self-referencing server must have connected after startup, not
+      // raced the HTTP listen and landed in an error state.
+      expect(entry?.status).toBe('connected')
+      const toolNames = entry?.tools.map((t) => t.name) ?? []
+      expect(toolNames).toContain('openfox_projects')
+      expect(toolNames).toContain('openfox_sessions')
+    } finally {
+      await selfServer.close()
+    }
+  }, 60000)
 })

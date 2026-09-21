@@ -95,6 +95,7 @@ describe('agent loop LLM failure handling', () => {
     vi.clearAllMocks()
 
     mockSessionManager = {
+      enterPauseGate: vi.fn().mockResolvedValue('released'),
       requireSession: vi.fn().mockReturnValue({
         workdir: '/test',
         projectId: 'test-project',
@@ -278,7 +279,7 @@ describe('agent loop LLM failure handling', () => {
 
     const retryMsg = onMessage.mock.calls.map((c: any[]) => c[0]).find((m: any) => m?.type === 'chat.llm_retry')
     expect(retryMsg).toBeDefined()
-    expect(retryMsg.payload).toEqual({ attempt: 2, retryInMs: 0 })
+    expect(retryMsg.payload).toEqual({ attempt: 2, retryInMs: 0, error: 'boom' })
   })
 
   it('gives up after the retry window and relays chat.llm_retry_failed', async () => {

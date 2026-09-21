@@ -8,15 +8,14 @@ import {
   buildMessagesFromStoredEvents,
   buildSnapshot,
   buildSnapshotFromSessionState,
+  buildSessionStatsMessages,
   foldContextState,
   foldSessionState,
   foldTurnEventsToSnapshotMessages,
   foldWaitingWorkflow,
   reorderToolMessages,
 } from './folding.js'
-import { appendSnapshotMessageContext } from './fold-messages.js'
 import type { ContextMessage, MessageWithId } from './fold-types.js'
-
 const baseEvent = {
   seq: 1,
   sessionId: 'session-1',
@@ -68,6 +67,75 @@ describe('apply-events.ts new handlers', () => {
         content: 'Error output\n',
         timestamp: baseEvent.timestamp,
       })
+    })
+  })
+
+  describe('tool.call startedAt', () => {
+    it('attaches startedAt to pending tool calls from the tool.call event timestamp', () => {
+      const events: StoredEvent[] = [
+        { ...baseEvent, type: 'message.start', data: { messageId: 'm1', role: 'assistant' } },
+        {
+          ...baseEvent,
+          type: 'tool.call',
+          data: { messageId: 'm1', toolCall: { id: 'call-1', name: 'run_command', arguments: {} } },
+        },
+      ]
+
+      const { messages } = buildMessagesFromStoredEvents(events)
+      const tc = messages[0]!.toolCalls![0]!
+
+      expect(tc.startedAt).toBe(baseEvent.timestamp)
+    })
+
+    it('keeps an existing startedAt when the tool call already carries one', () => {
+      const events: StoredEvent[] = [
+        { ...baseEvent, type: 'message.start', data: { messageId: 'm1', role: 'assistant' } },
+        {
+          ...baseEvent,
+          type: 'tool.call',
+          data: {
+            messageId: 'm1',
+            toolCall: { id: 'call-1', name: 'run_command', arguments: {}, startedAt: 123456 },
+          },
+        },
+      ]
+
+      const { messages } = buildMessagesFromStoredEvents(events)
+      const tc = messages[0]!.toolCalls![0]!
+
+      expect(tc.startedAt).toBe(123456)
+    })
+
+    it('retains startedAt for a pending tool call across a snapshot round-trip', () => {
+      const events: StoredEvent[] = [
+        { ...baseEvent, type: 'session.initialized', data: { projectId: 'p', workdir: '/tmp', contextWindowId: 'w1' } },
+        { ...baseEvent, type: 'message.start', data: { messageId: 'm1', role: 'assistant' } },
+        {
+          ...baseEvent,
+          type: 'tool.call',
+          data: { messageId: 'm1', toolCall: { id: 'call-1', name: 'run_command', arguments: {} } },
+        },
+      ]
+
+      const snapshot = buildSnapshotFromSessionState({
+        session: {
+          mode: 'builder',
+          phase: 'build',
+          isRunning: true,
+          criteria: [],
+          executionState: { currentTokenCount: 0, compactionCount: 0 },
+        },
+        events,
+        latestSeq: 42,
+        snapshotAt: 999,
+        maxTokens: 200000,
+      })
+      const snapshotEvent: StoredEvent = { ...baseEvent, seq: 50, type: 'turn.snapshot', data: snapshot }
+
+      const { messages } = buildMessagesFromStoredEvents([snapshotEvent])
+      const tc = messages[0]!.toolCalls![0]!
+
+      expect(tc.startedAt).toBe(baseEvent.timestamp)
     })
   })
 
@@ -214,6 +282,7 @@ describe('event folding', () => {
             id: 'call-1',
             name: 'read_file',
             arguments: { path: 'src/index.ts' },
+            startedAt: baseEvent.timestamp,
             result: { success: true, output: 'ok', durationMs: 1, truncated: false },
           },
         ],
@@ -421,6 +490,64 @@ describe('event folding', () => {
         content: 'Redirect to the project view instead of hanging',
       },
     ])
+  })
+
+  it('keeps snapshot content authoritative when later events target a snapshot-covered message', () => {
+    const snapshotEvent: StoredEvent = {
+      ...baseEvent,
+      seq: 1,
+      type: 'turn.snapshot',
+      data: {
+        mode: 'builder',
+        phase: 'build',
+        isRunning: false,
+        messages: [
+          {
+            id: 'msg-1',
+            role: 'assistant',
+            content: 'complete snapshot content',
+            timestamp: baseEvent.timestamp,
+            contextWindowId: 'window-1',
+          },
+        ],
+        criteria: [],
+        metadataEntries: {},
+        contextState: {
+          currentTokens: 50,
+          maxTokens: 200000,
+          compactionCount: 0,
+          dangerZone: false,
+          canCompact: false,
+          dynamicContextChanged: false,
+        },
+        currentContextWindowId: 'window-1',
+        todos: [],
+        readFiles: [],
+        snapshotSeq: 1,
+        snapshotAt: baseEvent.timestamp,
+      },
+    }
+    const laterEvents: StoredEvent[] = [
+      {
+        ...baseEvent,
+        seq: 2,
+        type: 'message.delta',
+        data: { messageId: 'msg-1', content: ' MUST NOT BE APPENDED' },
+      },
+      {
+        ...baseEvent,
+        seq: 3,
+        type: 'message.start',
+        data: { messageId: 'msg-2', role: 'user', content: 'new turn', contextWindowId: 'window-1' },
+      },
+      { ...baseEvent, seq: 4, type: 'message.done', data: { messageId: 'msg-2' } },
+    ]
+
+    const context = buildContextMessagesFromEventHistory([snapshotEvent, ...laterEvents], 'window-1')
+
+    const assistant = context.find((c) => c.role === 'assistant')
+    expect(assistant!.content).toBe('complete snapshot content')
+    expect(context[context.length - 1]).toEqual({ role: 'user', content: 'new turn' })
   })
 
   it('reconstructs current-window llm context from snapshot history', () => {
@@ -1600,6 +1727,87 @@ describe('event folding', () => {
       const result = foldContextState(events, 'window-1')
 
       expect(result.latestContextState?.currentTokens).toBe(50000)
+    })
+  })
+
+  describe('context.compacted sub-agent filtering', () => {
+    it('does not rotate the parent window or bump compactionCount for a sub-agent compaction', () => {
+      const events: StoredEvent[] = [
+        {
+          ...baseEvent,
+          seq: 1,
+          type: 'session.initialized',
+          data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
+        },
+        {
+          ...baseEvent,
+          seq: 2,
+          type: 'message.start',
+          data: { messageId: 'm1', role: 'user', content: 'hi', contextWindowId: 'window-1' },
+        },
+        { ...baseEvent, seq: 3, type: 'message.done', data: { messageId: 'm1' } },
+        {
+          ...baseEvent,
+          seq: 4,
+          type: 'context.compacted',
+          data: {
+            closedWindowId: 'window-1',
+            newWindowId: 'window-2',
+            beforeTokens: 50000,
+            afterTokens: 0,
+            summary: 'sub-agent summary',
+            subAgentId: 'sub-1',
+            subAgentType: 'verifier',
+          },
+        },
+        {
+          ...baseEvent,
+          seq: 5,
+          type: 'message.start',
+          data: {
+            messageId: 'm-summary',
+            role: 'assistant',
+            content: 'sub-agent summary',
+            contextWindowId: 'window-1',
+            subAgentId: 'sub-1',
+            isCompactionSummary: true,
+          },
+        },
+        { ...baseEvent, seq: 6, type: 'message.done', data: { messageId: 'm-summary' } },
+      ]
+
+      const result = foldContextState(events, 'window-1')
+
+      expect(result.currentContextWindowId).toBe('window-1')
+      expect(result.compactionCount).toBe(0)
+    })
+
+    it('still rotates the window for top-level compaction (no subAgentId)', () => {
+      const events: StoredEvent[] = [
+        {
+          ...baseEvent,
+          seq: 1,
+          type: 'session.initialized',
+          data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
+        },
+        {
+          ...baseEvent,
+          seq: 2,
+          type: 'context.compacted',
+          data: {
+            closedWindowId: 'window-1',
+            newWindowId: 'window-2',
+            beforeTokens: 50000,
+            afterTokens: 0,
+            summary: 'top-level summary',
+          },
+        },
+      ]
+
+      const result = foldContextState(events, 'window-1')
+
+      expect(result.currentContextWindowId).toBe('window-2')
+      expect(result.compactionCount).toBe(1)
     })
   })
 
@@ -2817,13 +3025,14 @@ describe('buildSnapshot streamingOutput de-duplication', () => {
   })
 })
 
-describe('appendSnapshotMessageContext builds LLM context from result.output only', () => {
+describe('snapshot reconstruction builds LLM context from result.output only', () => {
   it('never leaks streamingOutput of finished tool calls into the context', () => {
     const message: SnapshotMessage = {
       id: 'm1',
       role: 'assistant',
       content: 'running the command',
       timestamp: 1000,
+      contextWindowId: 'window-1',
       toolCalls: [
         {
           id: 'call-1',
@@ -2837,8 +3046,35 @@ describe('appendSnapshotMessageContext builds LLM context from result.output onl
       ],
     }
 
-    const context: ContextMessage[] = []
-    appendSnapshotMessageContext(context, message)
+    const snapshotEvent: StoredEvent = {
+      seq: 1,
+      sessionId: 'session-1',
+      timestamp: 1000,
+      type: 'turn.snapshot',
+      data: {
+        mode: 'builder',
+        phase: 'build',
+        isRunning: false,
+        messages: [message],
+        criteria: [],
+        metadataEntries: {},
+        todos: [],
+        contextState: {
+          currentTokens: 0,
+          maxTokens: 200000,
+          compactionCount: 0,
+          dangerZone: false,
+          canCompact: false,
+          dynamicContextChanged: false,
+        },
+        currentContextWindowId: 'window-1',
+        readFiles: [],
+        snapshotSeq: 1,
+        snapshotAt: 1000,
+      },
+    }
+
+    const context = buildContextMessagesFromEventHistory([snapshotEvent], 'window-1')
 
     const toolMessages = context.filter((c) => c.role === 'tool')
     expect(toolMessages).toHaveLength(1)
@@ -2931,5 +3167,204 @@ describe('foldSessionState — chat.ask_user pendingUserInput option normalizati
       type: 'text',
       options: undefined,
     })
+  })
+})
+
+describe('buildSessionStatsMessages', () => {
+  const stat: MessageStats = {
+    providerId: 'p1',
+    providerName: 'P',
+    backend: 'vllm',
+    model: 'm1',
+    mode: 'builder',
+    totalTime: 10,
+    toolTime: 2,
+    prefillTokens: 50000,
+    prefillSpeed: 10000,
+    generationTokens: 500,
+    generationSpeed: 150,
+  }
+
+  function snapshotData(messages: SnapshotMessage[]): import('./types.js').SessionSnapshot {
+    return {
+      mode: 'builder',
+      phase: 'build',
+      isRunning: false,
+      messages,
+      criteria: [],
+      metadataEntries: {},
+      contextState: {
+        currentTokens: 0,
+        maxTokens: 200000,
+        compactionCount: 0,
+        dangerZone: false,
+        canCompact: false,
+        dynamicContextChanged: false,
+      },
+      currentContextWindowId: 'window-1',
+      todos: [],
+      readFiles: [],
+      snapshotSeq: 1,
+      snapshotAt: baseEvent.timestamp,
+    }
+  }
+
+  it('extracts stats from snapshot messages across all windows', () => {
+    const events: StoredEvent[] = [
+      {
+        ...baseEvent,
+        seq: 1,
+        type: 'turn.snapshot',
+        data: snapshotData([
+          {
+            id: 'old-1',
+            role: 'assistant',
+            content: 'a',
+            timestamp: baseEvent.timestamp,
+            contextWindowId: 'window-1',
+            stats: stat,
+          },
+          {
+            id: 'old-2',
+            role: 'assistant',
+            content: 'b',
+            timestamp: baseEvent.timestamp + 1000,
+            contextWindowId: 'window-2',
+            stats: stat,
+          },
+          { id: 'no-stats', role: 'user', content: 'c', timestamp: baseEvent.timestamp },
+        ]),
+      },
+    ]
+
+    const result = buildSessionStatsMessages(events)
+
+    expect(result).toHaveLength(2)
+    expect(result.map((m) => m.id).sort()).toEqual(['old-1', 'old-2'])
+    expect(result[0]!.timestamp).toBe(new Date(baseEvent.timestamp).toISOString())
+    expect(result[0]!.stats).toEqual(stat)
+  })
+
+  it('picks up stats from message.done events after the snapshot', () => {
+    const events: StoredEvent[] = [
+      {
+        ...baseEvent,
+        seq: 1,
+        type: 'turn.snapshot',
+        data: snapshotData([]),
+      },
+      {
+        ...baseEvent,
+        seq: 2,
+        timestamp: baseEvent.timestamp + 2000,
+        type: 'message.start',
+        data: { messageId: 'new-1', role: 'assistant' as const, content: '' },
+      },
+      {
+        ...baseEvent,
+        seq: 3,
+        type: 'message.done',
+        data: { messageId: 'new-1', stats: stat },
+      },
+    ]
+
+    const result = buildSessionStatsMessages(events)
+
+    expect(result).toHaveLength(1)
+    expect(result[0]!.id).toBe('new-1')
+    // timestamp taken from the message.start event
+    expect(result[0]!.timestamp).toBe(new Date(baseEvent.timestamp + 2000).toISOString())
+  })
+
+  it('ignores message.done without stats and keeps snapshot coverage when raw events are purged', () => {
+    // Simulates an old compacted session: raw message.done events were cleaned
+    // up, only the snapshot retains stats.
+    const events: StoredEvent[] = [
+      {
+        ...baseEvent,
+        seq: 1,
+        type: 'turn.snapshot',
+        data: snapshotData([
+          {
+            id: 'survivor',
+            role: 'assistant',
+            content: 'a',
+            timestamp: baseEvent.timestamp,
+            contextWindowId: 'window-1',
+            stats: stat,
+          },
+        ]),
+      },
+      {
+        ...baseEvent,
+        seq: 2,
+        type: 'message.done',
+        data: { messageId: 'no-stats-msg' },
+      },
+    ]
+
+    const result = buildSessionStatsMessages(events)
+
+    expect(result).toHaveLength(1)
+    expect(result[0]!.id).toBe('survivor')
+  })
+
+  it('handles sessions with no snapshot by walking raw message.done events', () => {
+    const events: StoredEvent[] = [
+      {
+        ...baseEvent,
+        seq: 1,
+        type: 'message.start',
+        data: { messageId: 'raw-1', role: 'assistant' as const, content: '' },
+      },
+      {
+        ...baseEvent,
+        seq: 2,
+        type: 'message.done',
+        data: { messageId: 'raw-1', stats: stat },
+      },
+    ]
+
+    const result = buildSessionStatsMessages(events)
+
+    expect(result).toHaveLength(1)
+    expect(result[0]!.id).toBe('raw-1')
+  })
+
+  it('later message.done overwrites the snapshot entry for the same message id', () => {
+    const events: StoredEvent[] = [
+      {
+        ...baseEvent,
+        seq: 1,
+        type: 'turn.snapshot',
+        data: snapshotData([
+          {
+            id: 'dup',
+            role: 'assistant',
+            content: 'a',
+            timestamp: baseEvent.timestamp,
+            stats: stat,
+          },
+        ]),
+      },
+      {
+        ...baseEvent,
+        seq: 2,
+        timestamp: baseEvent.timestamp + 5000,
+        type: 'message.start',
+        data: { messageId: 'dup', role: 'assistant' as const, content: '' },
+      },
+      {
+        ...baseEvent,
+        seq: 3,
+        type: 'message.done',
+        data: { messageId: 'dup', stats: { ...stat, totalTime: 99 } },
+      },
+    ]
+
+    const result = buildSessionStatsMessages(events)
+
+    expect(result).toHaveLength(1)
+    expect(result[0]!.stats!.totalTime).toBe(99)
   })
 })

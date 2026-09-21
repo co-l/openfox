@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react'
 import type { ProjectTask } from '@shared/types.js'
-import type { AgentInfo } from '../../stores/agents'
+import type { AgentInfo } from '../../lib/agents-actions'
 import { TaskCard, type TaskDragHandlers, type TaskCallbacks } from './TaskCard'
+import { useT } from '../../hooks/useT'
 
 type TaskColumnCallbacks = TaskCallbacks & { onDropOnColumn: () => void }
 
@@ -40,6 +41,7 @@ export function TaskColumn({
   onDropOnCard,
   onOpenSession,
 }: TaskColumnProps) {
+  const t = useT()
   return (
     <section
       onDragOver={(e) => {
@@ -85,7 +87,7 @@ export function TaskColumn({
         ))}
         {tasks.length === 0 && (
           <div className="text-sm text-text-muted text-center py-6 border border-dashed border-border rounded-lg">
-            Empty
+            {t({ en: 'Empty', fr: 'Vide' })}
           </div>
         )}
       </div>

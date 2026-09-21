@@ -1,10 +1,12 @@
 import { ScrollArea } from '../shared/ScrollArea'
 import { useState } from 'react'
-import { useSessionStats } from '../../hooks/useSessionStats'
+import { useT } from '../../hooks/useT'
+import { mergeLiveStats } from '@shared/stats.js'
 import { useGitStatus } from '../../hooks/useGitStatus'
-import { useScopedContext } from '../../stores/session/session-scope'
-import { useConfigStore } from '../../stores/config'
-import { useSettingsStore, SETTINGS_KEYS } from '../../stores/settings'
+import { useScopedContext, useScopedPaneState } from '../../stores/session/session-scope'
+import { useConfig } from '../../hooks/useConfig'
+import { SETTINGS_KEYS } from '../../lib/resources'
+import { useSetting } from '../../hooks/useSetting'
 import { useUpdateStore } from '../../stores/update'
 import { authFetch } from '../../lib/api'
 import { pathBasename } from '../../lib/path'
@@ -18,28 +20,47 @@ import { DevServerFooter } from './DevServerFooter'
 import { BackgroundProcesses } from './BackgroundProcesses'
 import { ReloadIcon } from '../shared/icons'
 import { AutoUpdateModal } from '../AutoUpdateModal'
+import { PluginZone } from '../plugins/PluginZone'
 import { WorkspaceBranchSection } from './WorkspaceBranchSection'
 import { ContextPopover } from './ContextPopover'
-import type { Message } from '@shared/types.js'
+import type { SessionStatsSummary } from '@shared/types.js'
 
 interface SessionSidebarProps {
-  messages: Message[]
   workdir?: string
 }
 
-export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
+export function SessionSidebar({ workdir }: SessionSidebarProps) {
+  const t = useT()
   const [showStatsModal, setShowStatsModal] = useState(false)
   const [showUpdateModal, setShowUpdateModal] = useState(false)
   const [activeMetadataKey, setActiveMetadataKey] = useState<string | null>(null)
 
-  const stats = useSessionStats(messages)
   const { branch } = useGitStatus()
-  const version = useConfigStore((state) => state.version)
-  const { currentSession: session } = useScopedContext()
+  const version = useConfig().config?.version ?? null
+  const { currentSession: session, sessionId } = useScopedContext()
+  const sessionStats = useScopedPaneState(
+    sessionId,
+    (pane) => pane.sessionStats,
+    (state) => state.sessionStats,
+    null,
+  )
+  const liveTurnStats = useScopedPaneState(
+    sessionId,
+    (pane) => pane.liveTurnStats,
+    (state) => state.liveTurnStats,
+    null,
+  )
+  // The server computes the headline over the whole session (every context
+  // window) and ships it lean. While a turn runs it streams the current
+  // turn's cumulative stats after each LLM call — merge them on top so the
+  // sidebar grows live and lands on the final numbers when the turn ends (the
+  // live channel is cleared in the same frame the finished response lands in
+  // the next server summary).
+  const stats: SessionStatsSummary | null = liveTurnStats ? mergeLiveStats(sessionStats, liveTurnStats) : sessionStats
 
   const workspaceName = pathBasename(session?.workspace ?? '') || null
 
-  const showEditorLink = useSettingsStore((s) => s.settings[SETTINGS_KEYS.DISPLAY_SHOW_OPEN_IN_EDITOR]) === 'true'
+  const showEditorLink = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_OPEN_IN_EDITOR).value === 'true'
 
   const updateStatus = useUpdateStore((state) => state.status)
   const checkForUpdate = useUpdateStore((state) => state.check)
@@ -58,7 +79,10 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
           <button
             onClick={() => setShowStatsModal(true)}
             className="w-full flex items-center justify-center px-3 py-2 rounded bg-bg-tertiary hover:bg-bg-secondary transition-colors"
-            title="View detailed response and call-level stats"
+            title={t({
+              en: 'View detailed response and call-level stats',
+              fr: 'Voir les statistiques détaillées des réponses et des appels',
+            })}
           >
             <div className="flex items-center gap-2 text-sm text-text-muted">
               <span className="text-text-secondary">{formatTime(stats.aiTime)}</span>
@@ -71,7 +95,12 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
             </div>
           </button>
 
-          <StatsModal isOpen={showStatsModal} onClose={() => setShowStatsModal(false)} stats={stats} />
+          <StatsModal
+            isOpen={showStatsModal}
+            onClose={() => setShowStatsModal(false)}
+            summary={stats}
+            sessionId={session?.id ?? ''}
+          />
         </div>
       )}
 
@@ -82,7 +111,10 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
             onClick={() => setActiveMetadataKey('criteria')}
             className="w-full text-left cursor-pointer hover:[&_h3]:text-accent-primary transition-colors"
           >
-            <MetadataSectionHeader entries={session?.metadataEntries?.['criteria'] ?? []} title="Acceptance Criteria" />
+            <MetadataSectionHeader
+              entries={session?.metadataEntries?.['criteria'] ?? []}
+              title={t({ en: 'Acceptance Criteria', fr: 'Critères d’acceptation' })}
+            />
           </button>
           {session && <CriteriaEditor entries={session?.metadataEntries?.['criteria'] ?? []} sessionId={session.id} />}
           {session &&
@@ -140,40 +172,48 @@ export function SessionSidebar({ messages, workdir }: SessionSidebarProps) {
       <BackgroundProcesses sessionId={session?.id} />
 
       {/* Version footer */}
-      {version && (
-        <div className="mt-4 pt-4 border-t border-border text-center text-xs text-text-muted">
-          <div className="flex items-center justify-center gap-1">
-            <a
-              href="https://github.com/co-l/openfox"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-accent-primary transition-colors"
-            >
-              OpenFox
-            </a>
-            {' - '}
-            <span className="font-mono">v{version}</span>
-            <button
-              onClick={() => {
-                setManuallyChecked(true)
-                checkForUpdate(true)
-              }}
-              disabled={updateStatus === 'checking'}
-              className="p-0.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors disabled:opacity-50"
-              title="Check for updates"
-            >
-              <ReloadIcon className={`w-3 h-3 ${updateStatus === 'checking' ? 'animate-spin' : ''}`} />
-            </button>
+      <PluginZone id="session.footer" context={{ sessionId: session?.id, workdir }}>
+        {version && (
+          <div className="mt-4 pt-4 border-t border-border text-center text-xs text-text-muted">
+            <div className="flex items-center justify-center gap-1">
+              <a
+                href="https://github.com/co-l/openfox"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-accent-primary transition-colors"
+              >
+                OpenFox
+              </a>
+              {' - '}
+              <span className="font-mono">{`v${version}`}</span>
+              <button
+                onClick={() => {
+                  setManuallyChecked(true)
+                  checkForUpdate(true)
+                }}
+                disabled={updateStatus === 'checking'}
+                className="p-0.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors disabled:opacity-50"
+                title={t({ en: 'Check for updates', fr: 'Vérifier les mises à jour' })}
+              >
+                <ReloadIcon className={`w-3 h-3 ${updateStatus === 'checking' ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+            {updateStatus === 'available' && (
+              <button onClick={() => setShowUpdateModal(true)} className="text-accent-primary hover:underline mt-1">
+                {t({ en: 'Update OpenFox →', fr: 'Mettre à jour OpenFox →' })}
+              </button>
+            )}
+            {manuallyChecked && updateStatus === 'upToDate' && (
+              <div className="mt-1">{t({ en: 'Up to date', fr: 'À jour' })}</div>
+            )}
+            {updateStatus === 'error' && (
+              <div className="mt-1">
+                {t({ en: 'Update check failed', fr: 'Échec de la vérification des mises à jour' })}
+              </div>
+            )}
           </div>
-          {updateStatus === 'available' && (
-            <button onClick={() => setShowUpdateModal(true)} className="text-accent-primary hover:underline mt-1">
-              Update OpenFox →
-            </button>
-          )}
-          {manuallyChecked && updateStatus === 'upToDate' && <div className="mt-1">Up to date</div>}
-          {updateStatus === 'error' && <div className="mt-1">Update check failed</div>}
-        </div>
-      )}
+        )}
+      </PluginZone>
 
       <AutoUpdateModal isOpen={showUpdateModal} onClose={() => setShowUpdateModal(false)} versionInfo={null} />
 

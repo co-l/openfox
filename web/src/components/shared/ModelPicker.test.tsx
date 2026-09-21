@@ -5,6 +5,28 @@ import { act } from 'react'
 import { ModelPicker } from './ModelPicker'
 import type { Provider } from '../../stores/config'
 
+vi.mock('../../lib/api', () => ({
+  authFetch: vi.fn(),
+}))
+
+vi.mock('../shared/ProviderModal', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const React = require('react')
+  return {
+    ProviderModal: ({ editProvider, onSave }: any) =>
+      React.createElement(
+        'div',
+        { 'data-testid': 'provider-modal', 'data-provider-id': editProvider?.id ?? '' },
+        React.createElement(
+          'button',
+          { onClick: () => onSave?.({ id: editProvider?.id, name: 'Saved Provider' }) },
+          'save provider',
+        ),
+      ),
+    providerFormPayload: (data: any) => data,
+  }
+})
+
 const mockProviders: Provider[] = [
   {
     id: 'provider-1',
@@ -259,5 +281,60 @@ describe('ModelPicker', () => {
     })
     expect(container.innerHTML).toContain(':high')
     expect(container.innerHTML).not.toContain(':deep')
+  })
+
+  it('renders an edit provider button on each provider group header', () => {
+    render(undefined)
+    const btn = container.querySelector('button')!
+    act(() => {
+      btn.click()
+    })
+    const editButtons = Array.from(document.body.querySelectorAll('button')).filter((b) =>
+      b.getAttribute('aria-label')?.startsWith('Edit provider'),
+    )
+    expect(editButtons).toHaveLength(2)
+  })
+
+  it('opens the provider modal with the clicked provider when editing', () => {
+    render(undefined)
+    const btn = container.querySelector('button')!
+    act(() => {
+      btn.click()
+    })
+    const editButton = Array.from(document.body.querySelectorAll('button')).find((b) =>
+      b.getAttribute('aria-label')?.includes('Cloud'),
+    )
+    act(() => {
+      editButton?.click()
+    })
+    const modal = document.body.querySelector('[data-testid="provider-modal"]')
+    expect(modal).toBeTruthy()
+    expect(modal?.getAttribute('data-provider-id')).toBe('provider-2')
+  })
+
+  it('saves provider edits via PUT and refreshes the providers resource', async () => {
+    const { authFetch } = await import('../../lib/api')
+    const { providersResource } = await import('../../lib/resources')
+    const refreshSpy = vi.spyOn(providersResource, 'refresh')
+    ;(authFetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true })
+
+    render(undefined)
+    const btn = container.querySelector('button')!
+    act(() => {
+      btn.click()
+    })
+    const editButton = Array.from(document.body.querySelectorAll('button')).find((b) =>
+      b.getAttribute('aria-label')?.includes('Local'),
+    )
+    act(() => {
+      editButton?.click()
+    })
+    const saveBtn = Array.from(document.body.querySelectorAll('button')).find((b) => b.textContent === 'save provider')
+    await act(async () => {
+      saveBtn?.click()
+    })
+
+    expect(authFetch).toHaveBeenCalledWith('/api/providers/provider-1', expect.objectContaining({ method: 'PUT' }))
+    expect(refreshSpy).toHaveBeenCalled()
   })
 })

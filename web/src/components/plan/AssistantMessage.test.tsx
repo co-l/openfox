@@ -17,20 +17,39 @@ vi.mock('../shared/ThinkingBlock', () => ({
   ThinkingBlock: ({ content }: { content: string }) => <div>{content}</div>,
 }))
 
+vi.mock('../shared/ThinkingBlockToggle', () => ({
+  ThinkingBlockToggle: (props: unknown) => {
+    thinkingBlockToggleMock(props)
+    return <div>thinking-block-toggle</div>
+  },
+}))
+
 vi.mock('../shared/ToolCallDisplay', () => ({
   ToolCallDisplay: () => <div>tool call</div>,
 }))
 
 vi.mock('../shared/ToolCallPreparing', () => ({
-  ToolCallPreparing: () => <div>tool preparing</div>,
+  ToolCallPreparing: (props: unknown) => {
+    toolCallPreparingMock(props)
+    return <div>tool preparing</div>
+  },
 }))
 
 vi.mock('../shared/TodoListDisplay', () => ({
   TodoListDisplay: () => <div>todo</div>,
 }))
 
+const { criteriaGroupMock, toolCallPreparingMock, thinkingBlockToggleMock } = vi.hoisted(() => ({
+  criteriaGroupMock: vi.fn(),
+  toolCallPreparingMock: vi.fn(),
+  thinkingBlockToggleMock: vi.fn(),
+}))
+
 vi.mock('../shared/CriteriaGroupDisplay', () => ({
-  CriteriaGroupDisplay: () => <div>criteria</div>,
+  CriteriaGroupDisplay: (props: unknown) => {
+    criteriaGroupMock(props)
+    return <div>criteria</div>
+  },
   isCriterionTool: () => false,
 }))
 
@@ -76,6 +95,124 @@ describe('AssistantMessage', () => {
 
     expect(html).toContain('Aborted')
     expect(html).not.toContain('Interrupted')
+  })
+
+  it('renders a collapsed toggle when showThinking is off', () => {
+    thinkingBlockToggleMock.mockClear()
+    render(
+      <AssistantMessage
+        showThinking={false}
+        message={{
+          id: 'assistant-hide-thinking',
+          role: 'assistant',
+          content: 'Answer',
+          thinkingContent: 'secret reasoning',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          isStreaming: false,
+        }}
+      />,
+    )
+
+    expect(screen.queryByText('secret reasoning')).toBeNull()
+    expect(thinkingBlockToggleMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messageId: 'assistant-hide-thinking',
+        content: 'secret reasoning',
+        isStreaming: false,
+        thinkingFinished: true,
+        showThinking: false,
+      }),
+    )
+  })
+
+  it('renders the toggle for a message that only contains thinking', () => {
+    thinkingBlockToggleMock.mockClear()
+    render(
+      <AssistantMessage
+        showThinking={false}
+        message={{
+          id: 'assistant-only-thinking',
+          role: 'assistant',
+          content: '',
+          thinkingContent: 'only reasoning',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          isStreaming: true,
+        }}
+      />,
+    )
+
+    expect(screen.queryByText('only reasoning')).toBeNull()
+    expect(thinkingBlockToggleMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messageId: 'assistant-only-thinking',
+        isStreaming: true,
+        thinkingFinished: false,
+        showThinking: false,
+      }),
+    )
+  })
+
+  it('passes the persisted thinking duration to the toggle', () => {
+    thinkingBlockToggleMock.mockClear()
+    render(
+      <AssistantMessage
+        showThinking={false}
+        message={{
+          id: 'assistant-thinking-stats',
+          role: 'assistant',
+          content: 'Answer',
+          thinkingContent: 'reasoning',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          isStreaming: false,
+          stats: {
+            providerId: 'openai',
+            providerName: 'OpenAI',
+            backend: 'openai',
+            model: 'deepseek-v4-flash',
+            mode: 'planner',
+            totalTime: 160,
+            toolTime: 0,
+            prefillTokens: 10,
+            prefillSpeed: 10,
+            generationTokens: 10,
+            generationSpeed: 10,
+            thinkingDuration: 160,
+          },
+        }}
+      />,
+    )
+
+    expect(thinkingBlockToggleMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messageId: 'assistant-thinking-stats',
+        thinkingFinished: true,
+        thinkingDuration: 160,
+      }),
+    )
+  })
+
+  it('passes the full thinking content when showThinking is on', () => {
+    thinkingBlockToggleMock.mockClear()
+    render(
+      <AssistantMessage
+        message={{
+          id: 'assistant-show-thinking',
+          role: 'assistant',
+          content: 'Answer',
+          thinkingContent: 'visible reasoning',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          isStreaming: false,
+        }}
+      />,
+    )
+
+    expect(thinkingBlockToggleMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messageId: 'assistant-show-thinking',
+        content: 'visible reasoning',
+        showThinking: true,
+      }),
+    )
   })
 
   it('displays the full model name in stats (no hyphen truncation)', () => {
@@ -203,6 +340,112 @@ describe('AssistantMessage', () => {
     expect(html).not.toContain('0 @ 0.0')
   })
 
+  it('routes in-flight metadata adds into the criteria group instead of a preparing card', () => {
+    criteriaGroupMock.mockClear()
+    const message: Message = {
+      id: 'assistant-add',
+      role: 'assistant',
+      content: '',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      tokenCount: 0,
+      isStreaming: true,
+      preparingToolCalls: [
+        {
+          index: 0,
+          name: 'session_metadata',
+          arguments: JSON.stringify({ action: 'add', key: 'criteria', description: 'Do the thing' }),
+        },
+      ],
+    }
+    render(<AssistantMessage message={message} />)
+    expect(screen.queryByText('tool preparing')).toBeNull()
+    expect(criteriaGroupMock).toHaveBeenCalled()
+    const props = criteriaGroupMock.mock.calls[0]![0] as {
+      toolCalls: unknown[]
+      preparing: unknown[]
+    }
+    expect(props.toolCalls).toEqual([])
+    expect(props.preparing).toHaveLength(1)
+  })
+
+  it('keeps non-add preparing calls as regular preparing cards', () => {
+    criteriaGroupMock.mockClear()
+    const message: Message = {
+      id: 'assistant-read',
+      role: 'assistant',
+      content: '',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      tokenCount: 0,
+      isStreaming: true,
+      preparingToolCalls: [
+        { index: 0, name: 'session_metadata', arguments: JSON.stringify({ action: 'get', key: 'criteria' }) },
+      ],
+    }
+    render(<AssistantMessage message={message} />)
+    expect(screen.getByText('tool preparing')).toBeTruthy()
+    expect(criteriaGroupMock).not.toHaveBeenCalled()
+  })
+
+  it('passes forceCompact to preparing cards matching the expanded-output setting', () => {
+    toolCallPreparingMock.mockClear()
+    const message: Message = {
+      id: 'assistant-write',
+      role: 'assistant',
+      content: '',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      tokenCount: 0,
+      isStreaming: true,
+      preparingToolCalls: [
+        { index: 0, name: 'write_file', arguments: JSON.stringify({ path: 'src/a.ts', content: 'const x = 1' }) },
+      ],
+    }
+
+    render(<AssistantMessage message={message} showVerboseToolOutput />)
+    expect(toolCallPreparingMock).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'write_file', forceCompact: false }),
+    )
+
+    toolCallPreparingMock.mockClear()
+    render(<AssistantMessage message={message} showVerboseToolOutput={false} />)
+    expect(toolCallPreparingMock).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'write_file', forceCompact: true }),
+    )
+  })
+
+  it('passes the live edit context from preparing calls to the preparing card', () => {
+    toolCallPreparingMock.mockClear()
+    const editContext = [
+      {
+        startLine: 3,
+        endLine: 3,
+        beforeContext: [{ lineNumber: 2, content: 'line two' }],
+        afterContext: [{ lineNumber: 4, content: 'line four' }],
+        oldContent: 'a',
+        newContent: 'b',
+        edits: [{ startLine: 3, endLine: 3, oldContent: 'a', newContent: 'b' }],
+      },
+    ]
+    const message: Message = {
+      id: 'assistant-edit',
+      role: 'assistant',
+      content: '',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      tokenCount: 0,
+      isStreaming: true,
+      preparingToolCalls: [
+        {
+          index: 0,
+          name: 'edit_file',
+          arguments: JSON.stringify({ path: 'src/a.ts', old_string: 'a', new_string: 'b' }),
+          editContext,
+        },
+      ],
+    }
+
+    render(<AssistantMessage message={message} />)
+    expect(toolCallPreparingMock).toHaveBeenCalledWith(expect.objectContaining({ name: 'edit_file', editContext }))
+  })
+
   it('opens stats details for persisted messages with null usage stats', () => {
     const message = {
       id: 'assistant-null-stats',
@@ -235,6 +478,30 @@ describe('AssistantMessage', () => {
     expect(dialogText).toContain('Prefill—')
     expect(dialogText).toContain('Generated—')
     expect(dialogText).not.toContain('null')
+  })
+
+  it('does not break hook order when re-rendering from an empty message to a content message', () => {
+    const emptyMessage: Message = {
+      id: 'assistant-empty',
+      role: 'assistant',
+      content: '',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      tokenCount: 0,
+      isStreaming: false,
+    }
+    const contentMessage: Message = {
+      id: 'assistant-content',
+      role: 'assistant',
+      content: 'Hello there',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      tokenCount: 0,
+      isStreaming: false,
+    }
+
+    const { rerender } = render(<AssistantMessage message={emptyMessage} />)
+
+    expect(() => rerender(<AssistantMessage message={contentMessage} />)).not.toThrow()
+    expect(screen.getByText('Hello there')).toBeTruthy()
   })
 
   it('shows the message timestamp in the right-click menu', () => {

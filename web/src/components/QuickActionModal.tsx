@@ -2,19 +2,20 @@ import { SearchResultsList, SelectableListButton } from './shared/SearchResultsL
 import { Modal } from './shared/Modal'
 import { useEffect, useState, useRef } from 'react'
 import { useLocation } from 'wouter'
+import { useT } from '../hooks/useT'
 
 function getProjectIdFromPath(path: string): string | undefined {
   const match = path.match(/^\/p\/([^/]+)/)
   return match?.[1]
 }
-import { useCommandsStore } from '../stores/commands'
-import { useWorkflowsStore } from '../stores/workflows'
 import { useAgents } from '../hooks/useAgents'
+import { useResource } from '../hooks/useResource'
+import { commandsResource, workflowsResource } from '../lib/resources'
 import { useSessionStore } from '../stores/session'
 import { useSessionScope, useScopedPaneState } from '../stores/session/session-scope'
 import { dedupById, fuzzyMatch, handleModalNavigation } from '../lib/modal-utils'
 import type { WorkflowScope } from '@shared/types.js'
-import { shouldAutofocus } from '../lib/device'
+import { useResetSearchOnOpen } from '../hooks/useResetSearchOnOpen'
 
 interface QuickActionModalProps {
   isOpen: boolean
@@ -48,15 +49,8 @@ export function QuickActionModal({
   onToggleAutoScroll,
   isAutoScrollActive,
 }: QuickActionModalProps) {
+  const t = useT()
   const [, navigate] = useLocation()
-  const fetchCommands = useCommandsStore((state) => state.fetchCommands)
-  const fetchWorkflows = useWorkflowsStore((state) => state.fetchWorkflows)
-  const commandDefaults = useCommandsStore((state) => state.defaults)
-  const commandUserItems = useCommandsStore((state) => state.userItems)
-  const commandProjectItems = useCommandsStore((state) => state.projectItems)
-  const workflowDefaults = useWorkflowsStore((state) => state.defaults)
-  const workflowUserItems = useWorkflowsStore((state) => state.userItems)
-  const workflowProjectItems = useWorkflowsStore((state) => state.projectItems)
   const sessionId = useSessionScope()
   const currentMode = useScopedPaneState(
     sessionId,
@@ -85,6 +79,14 @@ export function QuickActionModal({
     undefined,
   )
   const { agents } = useAgents(currentWorkdir)
+  const { data: commandData } = useResource(commandsResource, currentWorkdir)
+  const commandDefaults = commandData?.defaults ?? []
+  const commandUserItems = commandData?.userItems ?? []
+  const commandProjectItems = commandData?.projectItems ?? []
+  const { data: workflowData } = useResource(workflowsResource, currentWorkdir)
+  const workflowDefaults = workflowData?.defaults ?? []
+  const workflowUserItems = workflowData?.userItems ?? []
+  const workflowProjectItems = workflowData?.projectItems ?? []
   const closeCompleteAction = useRef<(() => void) | undefined>(undefined)
 
   const [search, setSearch] = useState('')
@@ -92,22 +94,11 @@ export function QuickActionModal({
   const searchRef = useRef<HTMLInputElement>(null)
   const wasOpenRef = useRef(false)
 
+  useResetSearchOnOpen(isOpen, searchRef, setSearch, setSelectedIndex, [currentWorkdir])
+
   useEffect(() => {
     if (isOpen) wasOpenRef.current = true
   }, [isOpen])
-
-  useEffect(() => {
-    if (isOpen) {
-      fetchCommands(currentWorkdir)
-      fetchWorkflows(currentWorkdir)
-      setSearch('')
-      setSelectedIndex(0)
-      const timer = setTimeout(() => {
-        if (shouldAutofocus()) searchRef.current?.focus()
-      }, 50)
-      return () => clearTimeout(timer)
-    }
-  }, [isOpen, fetchCommands, fetchWorkflows, currentWorkdir])
 
   useEffect(() => {
     if (!isOpen && wasOpenRef.current) {
@@ -120,8 +111,8 @@ export function QuickActionModal({
   const items: ActionItem[] = [
     {
       id: 'create-session',
-      name: 'New Session',
-      prefix: 'Action > Create',
+      name: t({ en: 'New Session', fr: 'Nouvelle session' }),
+      prefix: t({ en: 'Action > Create', fr: 'Action > Créer' }),
       action: () => {
         const projectId = currentProjectId ?? getProjectIdFromPath(window.location.pathname)
         if (projectId) navigate(`/p/${projectId}/new`)
@@ -129,8 +120,8 @@ export function QuickActionModal({
     },
     {
       id: 'navigate-session',
-      name: 'Another Session',
-      prefix: 'Action > Navigate to',
+      name: t({ en: 'Another Session', fr: 'Une autre session' }),
+      prefix: t({ en: 'Action > Navigate to', fr: 'Action > Aller vers' }),
       action: () => {
         closeCompleteAction.current = onCloseCompleteAction
         onClose()
@@ -138,8 +129,8 @@ export function QuickActionModal({
     },
     {
       id: 'search-messages',
-      name: 'Messages',
-      prefix: 'Action > Search',
+      name: t({ en: 'Messages', fr: 'Messages' }),
+      prefix: t({ en: 'Action > Search', fr: 'Action > Rechercher' }),
       action: () => {
         onClose()
         onSearchMessages?.()
@@ -147,8 +138,10 @@ export function QuickActionModal({
     },
     {
       id: 'toggle-autoscroll',
-      name: isAutoScrollActive ? 'Auto-scroll Off' : 'Auto-scroll On',
-      prefix: 'Action > Toggle',
+      name: isAutoScrollActive
+        ? t({ en: 'Auto-scroll Off', fr: 'Défilement auto désactivé' })
+        : t({ en: 'Auto-scroll On', fr: 'Défilement auto activé' }),
+      prefix: t({ en: 'Action > Toggle', fr: 'Action > Activer/désactiver' }),
       action: () => {
         onClose()
         onToggleAutoScroll?.(!isAutoScrollActive)
@@ -159,27 +152,27 @@ export function QuickActionModal({
       .map((a) => ({
         id: a.id,
         name: a.name,
-        prefix: 'Agent > Switch to',
+        prefix: t({ en: 'Agent > Switch to', fr: 'Agent > Passer à' }),
         action: () => sessionId && switchMode(sessionId, a.id),
       })),
     ...dedupById(dedupById(commandDefaults, commandUserItems), commandProjectItems).map((c) => ({
       id: c.id,
       name: c.name,
-      prefix: 'Command > Launch',
+      prefix: t({ en: 'Command > Launch', fr: 'Commande > Lancer' }),
       action: () => onSelectCommand(c.id, textareaContent),
     })),
     ...dedupById(dedupById(workflowDefaults, workflowUserItems), workflowProjectItems).map((w) => ({
       id: w.id,
       name: w.name,
-      prefix: 'Workflow > Run',
+      prefix: t({ en: 'Workflow > Run', fr: 'Workflow > Exécuter' }),
       action: () => onSelectWorkflow(w.id, w.scope),
     })),
     ...(['normal', 'dangerous'] as const)
       .filter((m) => m !== currentDangerLevel)
       .map((m) => ({
         id: m,
-        name: m.charAt(0).toUpperCase() + m.slice(1),
-        prefix: 'Mode > Switch to',
+        name: m === 'dangerous' ? t({ en: 'Dangerous', fr: 'Dangereux' }) : t({ en: 'Normal', fr: 'Normal' }),
+        prefix: t({ en: 'Mode > Switch to', fr: 'Mode > Passer à' }),
         action: () => sessionId && switchDangerLevel(sessionId, m),
       })),
   ]
@@ -201,7 +194,13 @@ export function QuickActionModal({
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Quick Actions" size="md" scrollable={false}>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={t({ en: 'Quick Actions', fr: 'Actions rapides' })}
+      size="md"
+      scrollable={false}
+    >
       <SearchResultsList
         searchValue={search}
         onSearchChange={(value) => {
@@ -209,7 +208,7 @@ export function QuickActionModal({
           setSelectedIndex(0)
         }}
         onSearchKeyDown={handleKeyDown}
-        placeholder="Search..."
+        placeholder={t({ en: 'Search...', fr: 'Rechercher…' })}
         searchRef={searchRef}
         rows={filteredItems.map((item, index) => (
           <SelectableListButton
@@ -226,8 +225,8 @@ export function QuickActionModal({
         ))}
         emptyText={
           commandDefaults.length + commandUserItems.length + workflowDefaults.length + workflowUserItems.length > 0
-            ? 'No matches'
-            : 'No agents, commands, or workflows yet'
+            ? t({ en: 'No matches', fr: 'Aucun résultat' })
+            : t({ en: 'No agents, commands, or workflows yet', fr: 'Aucun agent, commande ou workflow pour le moment' })
         }
       />
     </Modal>

@@ -7,7 +7,9 @@ import type { ReactNode } from 'react'
 const mockLaunch = vi.fn()
 const mockPinEffort = vi.fn().mockResolvedValue({})
 const mockClearPin = vi.fn().mockResolvedValue({})
-const mockFetchWorkflow = vi.fn()
+const { mockFetchWorkflow } = vi.hoisted(() => ({
+  mockFetchWorkflow: vi.fn(),
+}))
 
 vi.mock('../stores/session', () => ({
   useSessionStore: Object.assign(
@@ -26,16 +28,8 @@ const mockOverrides: Record<string, string> = {}
 
 vi.mock('../lib/resources', () => ({
   readAgents: () => ({ defaults: [], userItems: [], projectItems: [], modelOverrides: mockOverrides }),
-}))
-
-vi.mock('../stores/workflows', () => ({
-  useWorkflowsStore: {
-    getState: () => ({
-      workdir: '/proj',
-      fetchWorkflow: mockFetchWorkflow,
-    }),
-  },
-  selectAllWorkflows: () => [{ id: 'w1', name: 'Deep Dive', description: '', version: '1', scope: 'builtin' }],
+  readAllWorkflows: () => [{ id: 'w1', name: 'Deep Dive', description: '', version: '1', scope: 'builtin' }],
+  workflowResource: { refresh: mockFetchWorkflow },
 }))
 
 vi.mock('../lib/workflow-scope', () => ({

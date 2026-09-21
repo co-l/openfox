@@ -5,7 +5,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { McpSelector } from './McpSelector'
-import { useMcpStore } from '../../stores/mcp'
+import { clearCache } from '../../lib/resourceCache'
+import { mcpServersResource } from '../../lib/resources'
 
 // State shared between mock and tests
 let mockServers: Array<{
@@ -87,7 +88,8 @@ describe('McpSelector server toggle isolation', () => {
       },
     ]
     sessionDisabledServers = []
-    useMcpStore.getState().setServers(mockServers)
+    clearCache()
+    mcpServersResource.write(mockServers)
   })
   afterEach(() => {
     cleanup()

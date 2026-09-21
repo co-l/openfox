@@ -1,11 +1,13 @@
 import { SearchResultsList, SelectableListButton } from '../shared/SearchResultsList'
 import { Modal } from '../shared/Modal'
+import { useT } from '../../hooks/useT'
+import { getLocale } from '@shared/i18n/index.js'
 import type { OverlayScrollbarsComponentRef } from 'overlayscrollbars-react'
 import type { ReactNode } from 'react'
 import { useEffect, useState, useRef, useMemo } from 'react'
 import { SearchIcon, UserIcon, ThinkingIcon, AgentIcon } from '../shared/icons'
 import { fuzzyMatch, handleModalNavigation } from '../../lib/modal-utils'
-import { shouldAutofocus } from '../../lib/device'
+import { useResetSearchOnOpen } from '../../hooks/useResetSearchOnOpen'
 import type { DisplayItem } from './groupMessages'
 
 const STORAGE_KEY = 'openfox-message-search-filters'
@@ -60,7 +62,7 @@ export function formatTimestamp(iso: string): string {
     date.getDate() === now.getDate() && date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear()
 
   if (isToday) {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+    return date.toLocaleTimeString(getLocale(), { hour: '2-digit', minute: '2-digit', hour12: false })
   }
   const yyyy = date.getFullYear()
   const mm = String(date.getMonth() + 1).padStart(2, '0')
@@ -136,6 +138,7 @@ export function getItemLabel(item: DisplayItem): string {
 }
 
 export function MessageSearchModal({ isOpen, onClose, displayItems, onNavigate }: MessageSearchModalProps) {
+  const t = useT()
   const [search, setSearch] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [activeFilters, setActiveFilters] = useState<Set<FilterKey>>(loadFilters)
@@ -187,16 +190,7 @@ export function MessageSearchModal({ isOpen, onClose, displayItems, onNavigate }
 
   const maxIndex = filteredItems.length - 1
 
-  useEffect(() => {
-    if (isOpen) {
-      setSearch('')
-      setSelectedIndex(0)
-      const timer = setTimeout(() => {
-        if (shouldAutofocus()) searchRef.current?.focus()
-      }, 50)
-      return () => clearTimeout(timer)
-    }
-  }, [isOpen])
+  useResetSearchOnOpen(isOpen, searchRef, setSearch, setSelectedIndex)
 
   useEffect(() => {
     if (isOpen && listRef.current) {
@@ -239,7 +233,13 @@ export function MessageSearchModal({ isOpen, onClose, displayItems, onNavigate }
   const getRealIndex = (item: DisplayItem): number => displayItems.indexOf(item)
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Search timeline" size="md" scrollable={false}>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={t({ en: 'Search timeline', fr: 'Rechercher dans la chronologie' })}
+      size="md"
+      scrollable={false}
+    >
       <SearchResultsList
         searchValue={search}
         onSearchChange={(value) => {
@@ -247,7 +247,7 @@ export function MessageSearchModal({ isOpen, onClose, displayItems, onNavigate }
           setSelectedIndex(0)
         }}
         onSearchKeyDown={handleKeyDown}
-        placeholder="Search timeline..."
+        placeholder={t({ en: 'Search timeline...', fr: 'Rechercher dans la chronologie…' })}
         searchRef={searchRef}
         icon={<SearchIcon />}
         listRef={listRef}

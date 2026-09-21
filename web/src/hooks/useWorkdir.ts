@@ -1,5 +1,5 @@
-import { useConfigStore } from '../stores/config'
+import { useConfig } from './useConfig'
 
 export function useWorkdir(): string | null {
-  return useConfigStore((s) => s.workdir)
+  return useConfig().config?.workdir ?? null
 }

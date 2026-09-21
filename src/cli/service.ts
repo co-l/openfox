@@ -3,6 +3,7 @@ import { mkdir, writeFile, rm, access, constants } from 'node:fs/promises'
 
 import { join } from 'node:path'
 import { homedir } from 'node:os'
+import { cliT } from './i18n.js'
 
 const RUN_SCRIPT_PATH = '~/.local/state/openfox/bin/run.sh'
 const SERVICE_PATH = '~/.config/systemd/user/openfox.service'
@@ -133,7 +134,7 @@ exec "$openfox_bin" "$@"
   await writeFile(scriptPath, scriptContent, { encoding: 'utf-8' })
 
   await exec('chmod', ['+x', scriptPath])
-  console.log(`Created: ${scriptPath}`)
+  console.log(cliT({ en: `Created: ${scriptPath}`, fr: `Créé : ${scriptPath}` }))
 }
 
 async function createSystemdService(headless: boolean): Promise<void> {
@@ -160,12 +161,17 @@ Environment=OPENFOX_SERVICE=true
 WantedBy=${target}
 `
   await writeFile(servicePath, serviceContent, 'utf-8')
-  console.log(`Created: ${servicePath}`)
+  console.log(cliT({ en: `Created: ${servicePath}`, fr: `Créé : ${servicePath}` }))
 }
 
 export async function runServiceCommand(_mode: Mode, subcommand?: string, ...args: string[]): Promise<void> {
   if (process.platform === 'win32') {
-    console.log('openfox service is not supported on Windows (it relies on systemd). Run `openfox` directly instead.')
+    console.log(
+      cliT({
+        en: 'openfox service is not supported on Windows (it relies on systemd). Run `openfox` directly instead.',
+        fr: 'openfox service n’est pas pris en charge sur Windows (il repose sur systemd). Lancez `openfox` directement à la place.',
+      }),
+    )
     process.exitCode = 1
     return
   }
@@ -181,7 +187,12 @@ export async function runServiceCommand(_mode: Mode, subcommand?: string, ...arg
     case 'install': {
       let headlessOverride: boolean | undefined
       if (headlessFlag && desktopFlag) {
-        console.error('Cannot use both --headless and --desktop')
+        console.error(
+          cliT({
+            en: 'Cannot use both --headless and --desktop',
+            fr: 'Impossible d’utiliser à la fois --headless et --desktop',
+          }),
+        )
         process.exit(1)
       } else if (headlessFlag) {
         headlessOverride = true
@@ -210,14 +221,16 @@ export async function runServiceCommand(_mode: Mode, subcommand?: string, ...arg
       await serviceUninstall()
       break
     default:
-      console.error(`Unknown subcommand: ${subcommand}`)
+      console.error(cliT({ en: `Unknown subcommand: ${subcommand}`, fr: `Sous-commande inconnue : ${subcommand}` }))
       printServiceHelp()
       process.exit(1)
   }
 }
 
 function printServiceHelp(): void {
-  console.log(`
+  console.log(
+    cliT({
+      en: `
 OpenFox Service Management
 
 Usage:
@@ -233,27 +246,68 @@ Commands:
   status     Show service status
   logs [-f]  Show recent service logs (use -f or --follow to tail)
   uninstall  Disable and remove the service files
-`)
+`,
+      fr: `
+Gestion du service OpenFox
+
+Utilisation :
+  openfox service <commande>
+
+Commandes :
+  install    Installer et activer le service systemd
+             Utiliser --headless pour les serveurs sans affichage / CLI uniquement
+             Utiliser --desktop pour forcer le mode bureau (défaut quand un affichage est détecté)
+  start      Démarrer le service (s’il est installé)
+  stop       Arrêter le service (s’il est installé)
+  restart    Redémarrer le service (s’il est installé)
+  status     Afficher l’état du service
+  logs [-f]  Afficher les journaux récents du service (utiliser -f ou --follow pour suivre)
+  uninstall  Désactiver et supprimer les fichiers du service
+`,
+    }),
+  )
 }
 
 async function serviceInstall(headlessOverride?: boolean): Promise<void> {
   const headless = headlessOverride ?? (await detectHeadless())
 
   if (headless) {
-    console.log('Installing OpenFox service (headless mode)...\n')
+    console.log(
+      cliT({
+        en: 'Installing OpenFox service (headless mode)...\n',
+        fr: 'Installation du service OpenFox (mode sans affichage)...\n',
+      }),
+    )
   } else {
-    console.log('Installing OpenFox service (desktop mode)...\n')
-    console.log('  Tip: Use --headless for headless/CLI-only servers')
+    console.log(
+      cliT({
+        en: 'Installing OpenFox service (desktop mode)...\n',
+        fr: 'Installation du service OpenFox (mode bureau)...\n',
+      }),
+    )
+    console.log(
+      cliT({
+        en: '  Tip: Use --headless for headless/CLI-only servers',
+        fr: '  Astuce : utilisez --headless pour les serveurs sans affichage / CLI uniquement',
+      }),
+    )
   }
 
   const installed = await pathExists(SERVICE_PATH)
   if (installed) {
     const { success } = systemctl(['is-active', SERVICE_NAME], true)
     if (success) {
-      console.log('Service is already installed and running.')
+      console.log(
+        cliT({
+          en: 'Service is already installed and running.',
+          fr: 'Le service est déjà installé et en cours d’exécution.',
+        }),
+      )
       return
     }
-    console.log('Service files exist. Reinstalling...')
+    console.log(
+      cliT({ en: 'Service files exist. Reinstalling...', fr: 'Les fichiers du service existent. Réinstallation...' }),
+    )
     await serviceUninstall()
   }
 
@@ -264,44 +318,49 @@ async function serviceInstall(headlessOverride?: boolean): Promise<void> {
   systemctl(['enable', SERVICE_NAME])
   systemctl(['start', SERVICE_NAME])
 
-  console.log('\n✓ Service installed and started')
+  console.log(cliT({ en: '\n✓ Service installed and started', fr: '\n✓ Service installé et démarré' }))
 }
 
 async function serviceStart(): Promise<void> {
   const installed = await pathExists(SERVICE_PATH)
   if (!installed) {
-    console.log('Service not installed. Run "openfox service install" first.')
+    console.log(
+      cliT({
+        en: 'Service not installed. Run "openfox service install" first.',
+        fr: 'Service non installé. Lancez d’abord « openfox service install ».',
+      }),
+    )
     return
   }
 
   const { success } = systemctl(['is-active', SERVICE_NAME], true)
   if (success) {
-    console.log('Service is already running.')
+    console.log(cliT({ en: 'Service is already running.', fr: 'Le service est déjà en cours d’exécution.' }))
     return
   }
 
   systemctl(['start', SERVICE_NAME])
-  console.log('✓ Service started')
+  console.log(cliT({ en: '✓ Service started', fr: '✓ Service démarré' }))
 }
 
 async function serviceStop(): Promise<void> {
   const installed = await pathExists(SERVICE_PATH)
   if (!installed) {
-    console.log('Service not installed.')
+    console.log(cliT({ en: 'Service not installed.', fr: 'Service non installé.' }))
     return
   }
 
   const { success } = systemctl(['is-active', SERVICE_NAME], true)
   if (!success) {
-    console.log('Service is not running.')
+    console.log(cliT({ en: 'Service is not running.', fr: 'Le service n’est pas en cours d’exécution.' }))
     return
   }
 
   const { success: stopped } = systemctl(['stop', SERVICE_NAME])
   if (stopped) {
-    console.log('✓ Service stopped')
+    console.log(cliT({ en: '✓ Service stopped', fr: '✓ Service arrêté' }))
   } else {
-    console.error('✗ Failed to stop service')
+    console.error(cliT({ en: '✗ Failed to stop service', fr: '✗ Échec de l’arrêt du service' }))
     process.exit(1)
   }
 }
@@ -309,22 +368,22 @@ async function serviceStop(): Promise<void> {
 async function serviceRestart(): Promise<void> {
   const installed = await pathExists(SERVICE_PATH)
   if (!installed) {
-    console.log('Service not installed.')
+    console.log(cliT({ en: 'Service not installed.', fr: 'Service non installé.' }))
     return
   }
 
   systemctl(['restart', SERVICE_NAME])
-  console.log('✓ Service restarted')
+  console.log(cliT({ en: '✓ Service restarted', fr: '✓ Service redémarré' }))
 }
 
 async function serviceStatus(): Promise<void> {
   const installed = await pathExists(SERVICE_PATH)
   if (!installed) {
-    console.log('Service: not installed')
+    console.log(cliT({ en: 'Service: not installed', fr: 'Service : non installé' }))
     return
   }
 
-  console.log('Service: installed')
+  console.log(cliT({ en: 'Service: installed', fr: 'Service : installé' }))
   systemctl(['is-active', SERVICE_NAME], false)
   systemctl(['is-enabled', SERVICE_NAME], false)
 }
@@ -332,7 +391,7 @@ async function serviceStatus(): Promise<void> {
 async function serviceLogs(args: string[]): Promise<void> {
   const installed = await pathExists(SERVICE_PATH)
   if (!installed) {
-    console.log('Service not installed.')
+    console.log(cliT({ en: 'Service not installed.', fr: 'Service non installé.' }))
     return
   }
 
@@ -345,16 +404,16 @@ async function serviceLogs(args: string[]): Promise<void> {
       encoding: 'utf-8',
       windowsHide: true,
     })
-    console.log(result.stdout || result.stderr || 'No logs')
+    console.log(result.stdout || result.stderr || cliT({ en: 'No logs', fr: 'Aucun journal' }))
   }
 }
 
 async function serviceUninstall(): Promise<void> {
-  console.log('Uninstalling OpenFox service...\n')
+  console.log(cliT({ en: 'Uninstalling OpenFox service...\n', fr: 'Désinstallation du service OpenFox...\n' }))
 
   const installed = await pathExists(SERVICE_PATH)
   if (!installed) {
-    console.log('Service not installed.')
+    console.log(cliT({ en: 'Service not installed.', fr: 'Service non installé.' }))
     return
   }
 
@@ -367,21 +426,23 @@ async function serviceUninstall(): Promise<void> {
 
   try {
     await rm(expandPath(SERVICE_PATH))
-    console.log(`Removed: ${expandPath(SERVICE_PATH)}`)
+    console.log(cliT({ en: `Removed: ${expandPath(SERVICE_PATH)}`, fr: `Supprimé : ${expandPath(SERVICE_PATH)}` }))
   } catch {
     // ignore
   }
 
   try {
     await rm(expandPath(RUN_SCRIPT_PATH))
-    console.log(`Removed: ${expandPath(RUN_SCRIPT_PATH)}`)
+    console.log(
+      cliT({ en: `Removed: ${expandPath(RUN_SCRIPT_PATH)}`, fr: `Supprimé : ${expandPath(RUN_SCRIPT_PATH)}` }),
+    )
   } catch {
     // ignore
   }
 
   systemctl(['daemon-reload'])
 
-  console.log('\n✓ Service uninstalled')
+  console.log(cliT({ en: '\n✓ Service uninstalled', fr: '\n✓ Service désinstallé' }))
 }
 
 type Mode = 'production' | 'development' | 'test'

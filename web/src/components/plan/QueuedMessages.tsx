@@ -1,5 +1,6 @@
 import type { QueuedMessage } from '@shared/protocol.js'
 import { CloseButton } from '../shared/CloseButton'
+import { useT } from '../../hooks/useT'
 
 interface QueuedMessagesProps {
   messages: QueuedMessage[]
@@ -7,6 +8,7 @@ interface QueuedMessagesProps {
 }
 
 export function QueuedMessages({ messages, onCancel }: QueuedMessagesProps) {
+  const t = useT()
   if (messages.length === 0) return null
 
   return (
@@ -20,7 +22,7 @@ export function QueuedMessages({ messages, onCancel }: QueuedMessagesProps) {
               : 'bg-blue-500/15 text-blue-300 border border-blue-500/30'
           }`}
         >
-          <span className="font-medium">{qm.mode === 'asap' ? 'ASAP' : 'Queue'}:</span>
+          <span className="font-medium">{qm.mode === 'asap' ? 'ASAP' : t({ en: 'Queue:', fr: 'File :' })}</span>
           <span className="truncate max-w-[200px]">{qm.content}</span>
           <CloseButton onClick={() => onCancel(qm.queueId)} size="sm" />
         </div>

@@ -19,7 +19,7 @@ const mockFetchSessions = vi.fn().mockResolvedValue(undefined)
 const mockSessions: unknown[] = []
 
 const useTerminalStoreMock = vi.fn()
-const useProjectStoreMock = vi.fn()
+const useCurrentProjectMock = vi.fn()
 const useSessionStoreMock = vi.fn()
 
 // ---------------------------------------------------------------------------
@@ -29,8 +29,8 @@ vi.mock('../../stores/terminal', () => ({
   useTerminalStore: (selector: (s: unknown) => unknown) => useTerminalStoreMock(selector),
 }))
 
-vi.mock('../../stores/project', () => ({
-  useProjectStore: (selector: (s: unknown) => unknown) => useProjectStoreMock(selector),
+vi.mock('../../hooks/useCurrentProject', () => ({
+  useCurrentProject: () => useCurrentProjectMock(),
 }))
 
 vi.mock('../../stores/session/store', () => ({
@@ -64,11 +64,7 @@ describe('TerminalDrawer workspace integration', () => {
       }),
     )
 
-    useProjectStoreMock.mockImplementation((selector: (s: Record<string, unknown>) => unknown) =>
-      selector({
-        currentProject: null,
-      }),
-    )
+    useCurrentProjectMock.mockReturnValue(null)
 
     useSessionStoreMock.mockImplementation((selector: (s: Record<string, unknown>) => unknown) =>
       selector({
@@ -88,11 +84,7 @@ describe('TerminalDrawer workspace integration', () => {
       }),
     )
 
-    useProjectStoreMock.mockImplementation((selector: (s: Record<string, unknown>) => unknown) =>
-      selector({
-        currentProject: { id: 'p1', workdir: '/project/workdir' },
-      }),
-    )
+    useCurrentProjectMock.mockReturnValue({ id: 'p1', workdir: '/project/workdir' })
 
     render(<TerminalDrawer isOpen={true} onClose={vi.fn()} />)
 
@@ -110,11 +102,7 @@ describe('TerminalDrawer workspace integration', () => {
       }),
     )
 
-    useProjectStoreMock.mockImplementation((selector: (s: Record<string, unknown>) => unknown) =>
-      selector({
-        currentProject: { id: 'p1', workdir: '/project/workdir' },
-      }),
-    )
+    useCurrentProjectMock.mockReturnValue({ id: 'p1', workdir: '/project/workdir' })
 
     render(<TerminalDrawer isOpen={true} onClose={vi.fn()} />)
 
@@ -143,11 +131,7 @@ describe('TerminalDrawer workspace integration', () => {
       }),
     )
 
-    useProjectStoreMock.mockImplementation((selector: (s: Record<string, unknown>) => unknown) =>
-      selector({
-        currentProject: { id: 'p1', workdir: '/project/workdir' },
-      }),
-    )
+    useCurrentProjectMock.mockReturnValue({ id: 'p1', workdir: '/project/workdir' })
 
     render(<TerminalDrawer isOpen={true} onClose={vi.fn()} />)
 

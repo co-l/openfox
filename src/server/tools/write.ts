@@ -5,6 +5,7 @@ import { createTool } from './tool-helpers.js'
 import { formatDiagnosticsForLLM, appendLspInstallHint } from './diagnostics.js'
 import { validateFileForWrite, computeFileHash } from './file-tracker.js'
 import { encodeContent } from '../utils/encoding.js'
+import { serverT } from '../i18n.js'
 
 interface WriteFileArgs {
   path: string
@@ -49,7 +50,9 @@ export const writeFileTool = createTool<WriteFileArgs>(
     const readFiles = context.sessionManager.getReadFiles(context.sessionId)
     const validation = await validateFileForWrite(fullPath, readFiles, context.workdir)
     if (!validation.valid) {
-      return helpers.error(validation.error?.message ?? 'File validation failed')
+      return helpers.error(
+        validation.error?.message ?? serverT({ en: 'File validation failed', fr: 'Échec de la validation du fichier' }),
+      )
     }
 
     // Ensure parent directory exists
@@ -64,7 +67,13 @@ export const writeFileTool = createTool<WriteFileArgs>(
     const lineCount = args.content.split('\n').length
     const byteCount = encoded.length
 
-    let output = `Successfully wrote ${lineCount} lines (${byteCount} bytes) to ${args.path}`
+    let output = serverT(
+      {
+        en: 'Successfully wrote {{lines}} lines ({{bytes}} bytes) to {{path}}',
+        fr: '{{lines}} lignes ({{bytes}} octets) écrites avec succès dans {{path}}',
+      },
+      { lines: lineCount, bytes: byteCount, path: args.path },
+    )
     let diagnostics: Diagnostic[] = []
 
     // Get LSP diagnostics if available

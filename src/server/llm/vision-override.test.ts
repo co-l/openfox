@@ -65,6 +65,7 @@ describe('user vision override', () => {
         supportsChatTemplateKwargs: false,
         supportsNumCtx: false,
         routesEffortViaChatTemplateKwargs: false,
+        usesMaxCompletionTokens: false,
       },
     })
 
@@ -99,6 +100,7 @@ describe('user vision override', () => {
         supportsChatTemplateKwargs: false,
         supportsNumCtx: false,
         routesEffortViaChatTemplateKwargs: false,
+        usesMaxCompletionTokens: false,
       },
     })
 
@@ -133,6 +135,7 @@ describe('user vision override', () => {
         supportsChatTemplateKwargs: false,
         supportsNumCtx: false,
         routesEffortViaChatTemplateKwargs: false,
+        usesMaxCompletionTokens: false,
       },
     })
 
@@ -167,6 +170,7 @@ describe('user vision override', () => {
         supportsChatTemplateKwargs: false,
         supportsNumCtx: false,
         routesEffortViaChatTemplateKwargs: false,
+        usesMaxCompletionTokens: false,
       },
     })
 

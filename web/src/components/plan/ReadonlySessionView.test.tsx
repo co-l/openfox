@@ -11,7 +11,7 @@ vi.mock('../../lib/api', () => ({
   authFetch: vi.fn(),
 }))
 
-vi.mock('../../stores/settings', () => ({
+vi.mock('../../hooks/useDisplaySettings', () => ({
   useDisplaySettings: () => ({
     showThinking: true,
     showVerboseToolOutput: true,
@@ -21,16 +21,6 @@ vi.mock('../../stores/settings', () => ({
     showSyntaxHighlighting: true,
     maxVisibleItems: 300,
   }),
-  useSettingsStore: Object.assign(
-    vi.fn(() => ({
-      settings: {},
-      loading: {},
-      getSettings: vi.fn(),
-    })),
-    { getState: () => ({ getSettings: vi.fn() }) },
-  ),
-  DISPLAY_SETTINGS_KEYS: ['display.showThinking'],
-  SETTINGS_KEYS: { DISPLAY_MAX_VISIBLE_ITEMS: 'display.maxVisibleItems' },
 }))
 
 vi.mock('./ChatFeedItems', () => ({

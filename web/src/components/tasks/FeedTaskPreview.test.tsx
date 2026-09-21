@@ -2,8 +2,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { FeedTaskPreview } from './FeedTaskPreview'
-import { useTasksStore } from '../../stores/tasks'
+import { clearCache } from '../../lib/resourceCache'
+import { boardResource } from '../../lib/resources'
 import { authFetch } from '../../lib/api'
+import type { ProjectTask } from '@shared/types.js'
 
 vi.mock('../../lib/api', () => ({
   authFetch: vi.fn(),
@@ -46,42 +48,44 @@ const task = (
 
 const okJson = async () => ({})
 
+function seedBoard(tasks: ProjectTask[]) {
+  boardResource.write(
+    {
+      tasks,
+      settings: { slotLimit: 1, queuePaused: false },
+      counts: { open: 0, todo: 0, inProgress: 0, running: 0, queued: 0, done: 0 },
+      gates: [],
+    },
+    'proj-1',
+  )
+}
+
 describe('FeedTaskPreview', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
     capturedModalProps.isOpen = false
     capturedModalProps.projectId = null
     navigateMock.mockClear()
-    useTasksStore.setState({
-      tasks: [],
-      gates: [],
-      settings: { slotLimit: 1, queuePaused: false },
-      counts: { open: 0, todo: 0, inProgress: 0, running: 0, queued: 0, done: 0 },
-      activeProjectId: 'proj-1',
-      lastError: null,
-      lastAutoLaunch: null,
-    })
+    clearCache()
+    seedBoard([])
     vi.mocked(authFetch).mockReset()
     vi.mocked(authFetch).mockImplementation(async () => ({ ok: true, json: okJson }) as unknown as Response)
   })
 
   it('shows nothing when no unclaimed To Do task exists', () => {
-    useTasksStore.setState({ tasks: [], activeProjectId: 'proj-1' })
+    seedBoard([])
     const { container } = render(<FeedTaskPreview projectId="proj-1" sessionId="sess-current" />)
     expect(container.textContent).not.toContain('Up next')
     expect(container.textContent).not.toContain('Manage tasks')
   })
 
   it('lists up to four unclaimed To Do tasks in position order, skipping claimed ones', () => {
-    useTasksStore.setState({
-      activeProjectId: 'proj-1',
-      tasks: [
-        task({ id: 'later', prompt: 'Later task', position: 2 }),
-        task({ id: 'top', prompt: 'Investigate the redirect bug', position: 0 }),
-        task({ id: 'mid', prompt: 'Middle task', position: 1 }),
-        task({ id: 'claimed', prompt: 'Bound elsewhere', position: 3, sessionIds: ['sess-x'] }),
-      ],
-    })
+    seedBoard([
+      task({ id: 'later', prompt: 'Later task', position: 2 }),
+      task({ id: 'top', prompt: 'Investigate the redirect bug', position: 0 }),
+      task({ id: 'mid', prompt: 'Middle task', position: 1 }),
+      task({ id: 'claimed', prompt: 'Bound elsewhere', position: 3, sessionIds: ['sess-x'] }),
+    ])
 
     render(<FeedTaskPreview projectId="proj-1" sessionId="sess-current" />)
     expect(screen.getByText('Investigate the redirect bug')).toBeTruthy()
@@ -91,23 +95,17 @@ describe('FeedTaskPreview', () => {
   })
 
   it('caps the list at four tasks', () => {
-    useTasksStore.setState({
-      activeProjectId: 'proj-1',
-      tasks: Array.from({ length: 7 }, (_, i) => task({ id: `t${i}`, prompt: `Task ${i}`, position: i })),
-    })
+    seedBoard(Array.from({ length: 7 }, (_, i) => task({ id: `t${i}`, prompt: `Task ${i}`, position: i })))
 
     render(<FeedTaskPreview projectId="proj-1" sessionId="sess-current" />)
     expect(screen.getAllByRole('button', { name: /^Start$/ }).length).toBe(4)
   })
 
   it('claims exactly the clicked task', async () => {
-    useTasksStore.setState({
-      activeProjectId: 'proj-1',
-      tasks: [
-        task({ id: 'later', prompt: 'Later task', position: 1 }),
-        task({ id: 'top', prompt: 'Investigate the redirect bug', position: 0 }),
-      ],
-    })
+    seedBoard([
+      task({ id: 'later', prompt: 'Later task', position: 1 }),
+      task({ id: 'top', prompt: 'Investigate the redirect bug', position: 0 }),
+    ])
 
     render(<FeedTaskPreview projectId="proj-1" sessionId="sess-current" />)
     fireEvent.click(screen.getByText('Later task').closest('li')!.querySelector('button')!)
@@ -128,10 +126,7 @@ describe('FeedTaskPreview', () => {
         sessionId: 'sess-current',
       }),
     } as unknown as Response)
-    useTasksStore.setState({
-      activeProjectId: 'proj-1',
-      tasks: [task({ id: 'top', prompt: 'Investigate the redirect bug', position: 0 })],
-    })
+    seedBoard([task({ id: 'top', prompt: 'Investigate the redirect bug', position: 0 })])
 
     render(<FeedTaskPreview projectId="proj-1" sessionId="sess-current" />)
     fireEvent.click(screen.getByText('Investigate the redirect bug').closest('li')!.querySelector('button')!)
@@ -149,16 +144,29 @@ describe('FeedTaskPreview', () => {
   })
 
   it('surfaces a dismissible queued notice without hiding the list', async () => {
-    useTasksStore.setState({
-      activeProjectId: 'proj-1',
-      tasks: [task({ id: 'top', prompt: 'Investigate the redirect bug', position: 0 })],
-    })
+    const top = task({ id: 'top', prompt: 'Investigate the redirect bug', position: 0 })
+    const board = {
+      tasks: [top],
+      settings: { slotLimit: 1, queuePaused: false },
+      counts: { open: 0, todo: 0, inProgress: 0, running: 0, queued: 0, done: 0 },
+      gates: [],
+    }
+    seedBoard(board.tasks)
 
     render(<FeedTaskPreview projectId="proj-1" sessionId="sess-current" />)
-    vi.mocked(authFetch).mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ task: task({ id: 'top', status: 'in_progress', runState: 'queued', queuePosition: 1 }) }),
-    } as unknown as Response)
+    // moveTask's defensive board refresh refetches /tasks — return the canonical
+    // board there so the preview list survives the queued move.
+    vi.mocked(authFetch).mockImplementation(async (url: string) => {
+      if (url.endsWith('/move')) {
+        return {
+          ok: true,
+          json: async () => ({
+            task: task({ id: 'top', status: 'in_progress', runState: 'queued', queuePosition: 1 }),
+          }),
+        } as unknown as Response
+      }
+      return { ok: true, json: async () => board } as unknown as Response
+    })
 
     fireEvent.click(screen.getByText('Investigate the redirect bug').closest('li')!.querySelector('button')!)
     await waitFor(() => {
@@ -172,10 +180,7 @@ describe('FeedTaskPreview', () => {
   })
 
   it('opens the tasks modal from the Manage tasks button', () => {
-    useTasksStore.setState({
-      activeProjectId: 'proj-1',
-      tasks: [task({ id: 'top', prompt: 'Investigate the redirect bug', position: 0 })],
-    })
+    seedBoard([task({ id: 'top', prompt: 'Investigate the redirect bug', position: 0 })])
 
     render(<FeedTaskPreview projectId="proj-1" sessionId="sess-current" />)
     expect(capturedModalProps.isOpen).toBe(false)
@@ -187,40 +192,34 @@ describe('FeedTaskPreview', () => {
   })
 
   it('shows a running indicator when at least one task is running', () => {
-    useTasksStore.setState({
-      activeProjectId: 'proj-1',
-      tasks: [
-        task({ id: 'top', prompt: 'Investigate the redirect bug', position: 0 }),
-        task({
-          id: 'live',
-          prompt: 'Already in flight',
-          status: 'in_progress',
-          runState: 'running',
-          sessionIds: ['sess-live'],
-          position: 5,
-        }),
-      ],
-    })
+    seedBoard([
+      task({ id: 'top', prompt: 'Investigate the redirect bug', position: 0 }),
+      task({
+        id: 'live',
+        prompt: 'Already in flight',
+        status: 'in_progress',
+        runState: 'running',
+        sessionIds: ['sess-live'],
+        position: 5,
+      }),
+    ])
 
     render(<FeedTaskPreview projectId="proj-1" sessionId="sess-current" />)
     expect(screen.getByText(/1 running/i)).toBeTruthy()
   })
 
   it('omits the running indicator when nothing is running', () => {
-    useTasksStore.setState({
-      activeProjectId: 'proj-1',
-      tasks: [
-        task({ id: 'top', prompt: 'Investigate the redirect bug', position: 0 }),
-        task({
-          id: 'waiting',
-          prompt: 'Queued behind others',
-          status: 'in_progress',
-          runState: 'queued',
-          sessionIds: ['sess-q'],
-          position: 5,
-        }),
-      ],
-    })
+    seedBoard([
+      task({ id: 'top', prompt: 'Investigate the redirect bug', position: 0 }),
+      task({
+        id: 'waiting',
+        prompt: 'Queued behind others',
+        status: 'in_progress',
+        runState: 'queued',
+        sessionIds: ['sess-q'],
+        position: 5,
+      }),
+    ])
 
     render(<FeedTaskPreview projectId="proj-1" sessionId="sess-current" />)
     expect(screen.queryByText(/running/i)).toBeNull()

@@ -13,6 +13,7 @@ export default defineConfig({
     'server/index': 'src/server/index.ts',
     'shared/index': 'src/shared/index.ts',
     'provider/index': 'src/provider/index.ts',
+    'plugin/index': 'src/plugin/index.ts',
   },
   format: ['esm'],
   dts: true,

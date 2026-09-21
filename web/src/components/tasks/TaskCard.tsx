@@ -1,9 +1,12 @@
 import { useState } from 'react'
 import { Link } from 'wouter'
+import { getLocale } from '@shared/i18n/index.js'
 import type { ProjectTask, TaskStatus } from '@shared/types.js'
-import type { AgentInfo } from '../../stores/agents'
-import { getAgentColor } from '../../stores/agents'
+import type { AgentInfo } from '../../lib/agents-actions'
+import { getAgentColor } from '../../lib/agents-actions'
+import { useT } from '../../hooks/useT'
 import { DropdownMenu, type DropdownMenuItem } from '../shared/DropdownMenu'
+import { TaskScheduleBadge } from './TaskScheduleBadge'
 import {
   EllipsisIcon,
   ChevronDownIcon,
@@ -57,6 +60,7 @@ export function TaskCard({
   onDropOnCard,
   onOpenSession,
 }: TaskCardProps) {
+  const t = useT()
   const [showAudit, setShowAudit] = useState(false)
 
   const agent = agents.find((a) => a.id === task.agentId)
@@ -65,26 +69,51 @@ export function TaskCard({
   const sessionToOpen = task.activeSessionId ?? task.sessionIds[task.sessionIds.length - 1]
 
   const menuItems: DropdownMenuItem[] = [
-    { label: 'Edit', icon: <EditSmallIcon className="w-3.5 h-3.5" />, onClick: () => onEdit(task) },
     {
-      label: 'History & evidence',
+      label: t({ en: 'Edit', fr: 'Modifier' }),
+      icon: <EditSmallIcon className="w-3.5 h-3.5" />,
+      onClick: () => onEdit(task),
+    },
+    {
+      label: t({ en: 'History & evidence', fr: 'Historique et preuves' }),
       icon: <InfoIcon className="w-3.5 h-3.5" />,
       onClick: () => setShowAudit((prev) => !prev),
     },
     {
-      label: <div className="px-3 py-2 text-text-muted text-xs font-medium cursor-default">Move to…</div>,
+      label: (
+        <div className="px-3 py-2 text-text-muted text-xs font-medium cursor-default">
+          {t({ en: 'Move to…', fr: 'Déplacer vers…' })}
+        </div>
+      ),
       onClick: () => {},
     },
-    { label: 'To Do', onClick: () => onMove(task, 'todo') },
-    { label: 'In Progress', onClick: () => onMove(task, 'in_progress') },
-    { label: 'Done', onClick: () => onMove(task, 'done') },
-    { label: 'Move up', icon: <ChevronUpIcon className="w-3.5 h-3.5" />, onClick: () => onMoveUp(task) },
-    { label: 'Move down', icon: <ChevronDownIcon className="w-3.5 h-3.5" />, onClick: () => onMoveDown(task) },
+    { label: t({ en: 'To Do', fr: 'À faire' }), onClick: () => onMove(task, 'todo') },
+    { label: t({ en: 'In Progress', fr: 'En cours' }), onClick: () => onMove(task, 'in_progress') },
+    { label: t({ en: 'Done', fr: 'Terminé' }), onClick: () => onMove(task, 'done') },
+    {
+      label: t({ en: 'Move up', fr: 'Monter' }),
+      icon: <ChevronUpIcon className="w-3.5 h-3.5" />,
+      onClick: () => onMoveUp(task),
+    },
+    {
+      label: t({ en: 'Move down', fr: 'Descendre' }),
+      icon: <ChevronDownIcon className="w-3.5 h-3.5" />,
+      onClick: () => onMoveDown(task),
+    },
   ]
 
   const menuFooterItems: DropdownMenuItem[] = [
-    { label: 'Duplicate', icon: <CopyIcon className="w-3.5 h-3.5" />, onClick: () => onDuplicate(task) },
-    { label: 'Delete', icon: <TrashIcon className="w-3.5 h-3.5" />, danger: true, onClick: () => onDelete(task) },
+    {
+      label: t({ en: 'Duplicate', fr: 'Dupliquer' }),
+      icon: <CopyIcon className="w-3.5 h-3.5" />,
+      onClick: () => onDuplicate(task),
+    },
+    {
+      label: t({ en: 'Delete', fr: 'Supprimer' }),
+      icon: <TrashIcon className="w-3.5 h-3.5" />,
+      danger: true,
+      onClick: () => onDelete(task),
+    },
   ]
 
   return (
@@ -115,8 +144,11 @@ export function TaskCard({
         >
           {task.runState === 'running' ? <PlayIcon className="w-2.5 h-2.5" /> : <PauseIcon className="w-2.5 h-2.5" />}
           {task.runState === 'running'
-            ? 'Running'
-            : `Queued${queuePosition !== undefined ? ` · ${queuePosition}` : ''}`}
+            ? t({ en: 'Running', fr: 'En cours' })
+            : t(
+                { en: 'Queued{{pos}}', fr: 'En file{{pos}}' },
+                { pos: queuePosition !== undefined ? ` · ${queuePosition}` : '' },
+              )}
         </span>
       )}
 
@@ -134,7 +166,7 @@ export function TaskCard({
             <button
               type="button"
               className="p-1 rounded hover:bg-bg-secondary text-text-muted hover:text-text-primary transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
-              title="Task actions"
+              title={t({ en: 'Task actions', fr: 'Actions de la tâche' })}
               aria-label={`Actions for ${task.prompt.slice(0, 40)}`}
             >
               <EllipsisIcon className="w-4 h-4" />
@@ -144,12 +176,19 @@ export function TaskCard({
       </div>
 
       <div className="mt-2 flex items-center gap-2 flex-wrap">
+        {task.status === 'todo' && task.schedule && <TaskScheduleBadge schedule={task.schedule} />}
         {task.attachments.length > 0 && (
           <span
             className="text-xs text-text-muted flex items-center gap-1"
-            title={`${task.attachments.length} attachment(s)`}
+            title={t(
+              {
+                en: { one: '{{count}} attachment', other: '{{count}} attachments' },
+                fr: { one: '{{count}} pièce jointe', other: '{{count}} pièces jointes' },
+              },
+              { count: task.attachments.length },
+            )}
           >
-            📎 {task.attachments.length}
+            {`📎 ${task.attachments.length}`}
           </span>
         )}
         {images.length > 0 && (
@@ -158,7 +197,7 @@ export function TaskCard({
               <img
                 key={img.id}
                 src={img.data}
-                alt=""
+                alt={''}
                 className="w-6 h-6 rounded object-cover ring-2 ring-bg-tertiary"
               />
             ))}
@@ -190,14 +229,16 @@ export function TaskCard({
             }}
             className="ml-auto text-xs px-1.5 py-1 rounded bg-accent-primary/10 text-accent-primary hover:bg-accent-primary/20 flex items-center gap-1"
           >
-            Open session <OpenExternalIcon className="w-2.5 h-2.5" />
+            {t({ en: 'Open session', fr: 'Ouvrir la session' })} <OpenExternalIcon className="w-2.5 h-2.5" />
           </Link>
         )}
       </div>
 
       {showAudit && task.auditTrail.length > 0 && (
         <div className="mt-2 pt-2 border-t border-border space-y-1">
-          <div className="text-xs font-semibold uppercase tracking-wide text-text-muted">History</div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-text-muted">
+            {t({ en: 'History', fr: 'Historique' })}
+          </div>
           {task.auditTrail.map((entry) => (
             <div key={entry.id} className="text-xs text-text-muted leading-relaxed">
               <span className="text-text-primary">{entry.action}</span>
@@ -206,7 +247,7 @@ export function TaskCard({
                 {' '}
                 · {entry.actor}
                 {entry.actorName && entry.actorName !== entry.actor ? ` (${entry.actorName})` : ''} ·{' '}
-                {new Date(entry.timestamp).toLocaleString()}
+                {new Date(entry.timestamp).toLocaleString(getLocale())}
               </span>
             </div>
           ))}

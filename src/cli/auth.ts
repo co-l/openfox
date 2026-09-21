@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir, access } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { createHash, publicEncrypt } from 'node:crypto'
+import { constants, createHash, publicEncrypt } from 'node:crypto'
 import type { Mode } from './main.js'
 import { getAuthConfigPath } from './paths.js'
 
@@ -36,7 +36,10 @@ export async function authConfigExists(mode: Mode): Promise<boolean> {
 }
 
 export function encryptPassword(password: string, publicKey: string): string {
-  const encrypted = publicEncrypt({ key: publicKey, padding: 1 }, Buffer.from(password))
+  const encrypted = publicEncrypt(
+    { key: publicKey, padding: constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
+    Buffer.from(password),
+  )
   return encrypted.toString('base64')
 }
 

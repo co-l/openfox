@@ -245,6 +245,63 @@ describe('Reasoning message compatibility', () => {
 
     expect(result.models[0]?.sendReasoningInMessages).toBeUndefined()
   })
+
+  it('detects the reasoning field name (reasoning_content) from probe responses', async () => {
+    const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { messages?: Array<Record<string, unknown>> }
+      if (body.messages?.some((message) => message['reasoning'] === 'probe')) {
+        return new Response(JSON.stringify({ choices: [{ message: { content: 'hi' } }] }), { status: 200 })
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { content: '', reasoning_content: 'probe' } }] }), {
+        status: 200,
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await autoConfig({
+      url: 'https://provider.example/v1',
+      backend: 'unknown',
+      models: [{ id: 'deepseek-v4-flash' }],
+    })
+
+    expect(result.models[0]?.thinkingField).toBe('reasoning_content')
+  })
+
+  it('detects the reasoning field name (reasoning) from probe responses', async () => {
+    const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { messages?: Array<Record<string, unknown>> }
+      if (body.messages?.some((message) => message['reasoning'] === 'probe')) {
+        return new Response(JSON.stringify({ choices: [{ message: { content: 'hi' } }] }), { status: 200 })
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { content: '', reasoning: 'probe' } }] }), {
+        status: 200,
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await autoConfig({
+      url: 'https://provider.example/v1',
+      backend: 'unknown',
+      models: [{ id: 'deepseek-v4-flash' }],
+    })
+
+    expect(result.models[0]?.thinkingField).toBe('reasoning')
+  })
+
+  it('leaves thinkingField undefined when probes carry no reasoning field', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: 'hi' } }] }), { status: 200 })),
+    )
+
+    const result = await autoConfig({
+      url: 'https://provider.example/v1',
+      backend: 'unknown',
+      models: [{ id: 'deepseek-v4-flash' }],
+    })
+
+    expect(result.models[0]?.thinkingField).toBeUndefined()
+  })
 })
 
 describe('Rejected-params probing', () => {

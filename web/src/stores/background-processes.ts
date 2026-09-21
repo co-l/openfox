@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { BackgroundProcess, LogLine } from '@shared/protocol.js'
+// Authorized exception: background-process state is WS-driven; REST is a one-shot stop action.
 import { authFetch } from '../lib/api'
 import { createLogBuffer } from './utils'
 

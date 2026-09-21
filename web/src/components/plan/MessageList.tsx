@@ -2,30 +2,52 @@ import { memo, useState, useRef, useCallback, useEffect, useLayoutEffect, type R
 import type { OverlayScrollbarsComponentRef } from 'overlayscrollbars-react'
 import { ScrollArea } from '../shared/ScrollArea'
 import type { ScrollbarGestureKind } from '../shared/ScrollArea'
+import { useT } from '../../hooks/useT'
 import { useViewport } from '../../hooks/useViewport'
 import { useSessionStore, useIsRunning } from '../../stores/session'
-import { useAllWorkflows } from '../../stores/workflows'
+import { useWorkflows } from '../../hooks/useWorkflows'
+import { useSessionWorkdir } from '../../hooks/useSessionWorkdir'
 import { SCOPE_LABELS } from '../../lib/workflow-scope'
-import { useDisplaySettings } from '../../stores/settings'
+import { useDisplaySettings } from '../../hooks/useDisplaySettings'
 import { ChatFeedItems } from './ChatFeedItems'
 import { CloseButton } from '../shared/CloseButton'
-import { ChevronUpIcon } from '../shared/icons'
+import { Modal } from '../shared/Modal'
+import { ChevronUpIcon, InfoIcon } from '../shared/icons'
 import { useClickOutside } from '../../hooks/useClickOutside'
 import { useSessionScope, useScopedPaneState } from '../../stores/session/session-scope'
 import type { DisplayItem } from './groupMessages.js'
 import type { MetadataEntry, WorkflowScope } from '@shared/types.js'
 import type { LLMRetryState } from '../../stores/session/types'
+import { prettyPrintError } from '../../lib/prettyPrintError'
 
 const EMPTY_CRITERIA: MetadataEntry[] = []
+
+function ErrorInfoButton({ onClick }: { onClick: () => void }) {
+  const t = useT()
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={t({ en: 'View error details', fr: 'Voir les détails de l’erreur' })}
+      title={t({ en: 'View error details', fr: 'Voir les détails de l’erreur' })}
+      className="shrink-0 p-1 rounded-full text-text-muted hover:text-text-primary hover:bg-bg-primary transition-colors"
+    >
+      <InfoIcon className="w-3.5 h-3.5" />
+    </button>
+  )
+}
 
 /** Live countdown pill shown while an LLM call is backing off before its next retry. */
 function LLMRetryIndicator({
   retry,
   onRetryNow,
+  onShowError,
 }: {
   retry: Extract<LLMRetryState, { status: 'retrying' }>
   onRetryNow: () => void
+  onShowError: () => void
 }) {
+  const t = useT()
   const [receivedAt] = useState(Date.now())
   const [now, setNow] = useState(Date.now())
 
@@ -35,19 +57,30 @@ function LLMRetryIndicator({
   }, [])
 
   const remainingSec = Math.max(0, Math.ceil((retry.retryInMs - (now - receivedAt)) / 1000))
-  const suffix = remainingSec > 0 ? ` — next try in ${remainingSec}s` : ''
+  const suffix =
+    remainingSec > 0
+      ? t({ en: ' — next try in {{count}}s', fr: ' — prochain essai dans {{count}}s' }, { count: remainingSec })
+      : ''
 
   return (
     <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-bg-tertiary/60 border border-border text-xs text-text-secondary">
       <span className="w-2 h-2 rounded-full bg-accent-primary animate-pulse" />
       <span>
-        LLM call failed — retrying (attempt {retry.attempt}){suffix}
+        {t(
+          {
+            en: 'LLM call failed — retrying (attempt {{count}})',
+            fr: 'Appel LLM échoué — nouvelle tentative (essai {{count}})',
+          },
+          { count: retry.attempt },
+        )}
+        {suffix}
       </span>
+      <ErrorInfoButton onClick={onShowError} />
       <button
         onClick={onRetryNow}
         className="ml-1 px-2 py-0.5 rounded-full bg-accent-primary/15 text-accent-primary border border-accent-primary/25 hover:bg-accent-primary/25 transition-colors"
       >
-        Retry now
+        {t({ en: 'Retry now', fr: 'Réessayer maintenant' })}
       </button>
     </div>
   )
@@ -81,6 +114,7 @@ export const MessageList = memo(function MessageList({
   onScrollbarGesture,
   emptyState,
 }: MessageListProps) {
+  const t = useT()
   const scopeId = useSessionScope()
   const criteria = useScopedPaneState(
     scopeId,
@@ -123,10 +157,16 @@ export const MessageList = memo(function MessageList({
   )
   const retryLLMNow = useSessionStore((state) => state.retryLLMNow)
   const retryLLM = useSessionStore((state) => state.retryLLM)
+  const [showRetryError, setShowRetryError] = useState(false)
+  // The modal lives above the per-attempt keyed pill so it survives retries.
+  // Close it once the retry state clears (call succeeded, bubble gone).
+  useEffect(() => {
+    if (!llmRetry) setShowRetryError(false)
+  }, [llmRetry])
   const { showThinking, showVerboseToolOutput, showStats, showAgentDefinitions, showWorkflowBars, maxVisibleItems } =
     useDisplaySettings()
 
-  const workflows = useAllWorkflows()
+  const { workflows } = useWorkflows(useSessionWorkdir())
 
   const hasNewCriteria = criteria.some((c) => c.status === 'pending')
   const isDone = sessionPhase === 'done'
@@ -135,7 +175,11 @@ export const MessageList = memo(function MessageList({
     activeWorkflowExecution?.status === 'running' || activeWorkflowExecution?.status === 'waiting'
   const showStartBuilding = hasNewCriteria && !isRunning && hasAssistantResponse && !isDone && !hasActiveWorkflow
   const showContinueWorkflow = activeWorkflowExecution?.status === 'waiting' && !isRunning
-  const blockedWorkflowStep = activeWorkflowExecution?.status === 'blocked' && !!activeWorkflowExecution.currentStepId
+  // The blocked-step affordance only makes sense when the session is idle: while
+  // a turn is running (e.g. a chat turn on a session with a stale blocked
+  // execution), it must not render a misleading "stopped before finishing".
+  const blockedWorkflowStep =
+    activeWorkflowExecution?.status === 'blocked' && !!activeWorkflowExecution.currentStepId && !isRunning
   const isWorkflowBlock = blockedWorkflowStep && llmRetry?.status !== 'failed'
 
   const projectId = useScopedPaneState(
@@ -163,9 +207,7 @@ export const MessageList = memo(function MessageList({
   useEffect(() => {
     const el = getViewport()
     if (!el) return
-    const onScroll = () => {
-      setScrolledPastTop(el.scrollTop > 4)
-    }
+    const onScroll = () => setScrolledPastTop(el.scrollTop > 4)
     onScroll()
     el.addEventListener('scroll', onScroll, { passive: true })
     return () => el.removeEventListener('scroll', onScroll)
@@ -266,32 +308,58 @@ export const MessageList = memo(function MessageList({
                   className="w-full text-sm text-text-muted hover:text-text-primary bg-bg-tertiary/50 hover:bg-bg-tertiary border border-border rounded px-3 py-2 transition-colors text-center disabled:opacity-60 disabled:cursor-wait"
                 >
                   {loadingOlder
-                    ? 'Loading older history…'
+                    ? t({ en: 'Loading older history…', fr: 'Chargement de l’historique précédent…' })
                     : canLoadOlder
-                      ? `Load older history (${hiddenCount} remaining)`
-                      : `${hiddenCount} older item${hiddenCount !== 1 ? 's' : ''} hidden · View full history`}
+                      ? t(
+                          {
+                            en: 'Load older history ({{count}} remaining)',
+                            fr: 'Charger l’historique précédent ({{count}} restants)',
+                          },
+                          { count: hiddenCount },
+                        )
+                      : t(
+                          {
+                            en: {
+                              one: '{{count}} older item hidden — View full history',
+                              other: '{{count}} older items hidden — View full history',
+                            },
+                            fr: {
+                              one: '{{count}} élément plus ancien masqué — Voir l’historique complet',
+                              other: '{{count}} éléments plus anciens masqués — Voir l’historique complet',
+                            },
+                          },
+                          { count: hiddenCount },
+                        )}
                 </button>
                 {canLoadOlder && (
                   <button
                     onClick={openFullHistory}
                     className="w-full text-xs text-text-muted hover:text-text-primary transition-colors text-center"
                   >
-                    Open full history in a new tab
+                    {t({
+                      en: 'Open full history in a new tab',
+                      fr: 'Ouvrir l’historique complet dans un nouvel onglet',
+                    })}
                   </button>
                 )}
                 {historyLoadError && (
-                  <p className="text-xs text-error text-center">Could not load older history. Try again.</p>
+                  <p className="text-xs text-error text-center">
+                    {t({
+                      en: 'Could not load older history. Try again.',
+                      fr: 'Impossible de charger l’historique précédent. Réessayez.',
+                    })}
+                  </p>
                 )}
                 {popupBlocked && (
                   <p className="text-xs text-text-muted text-center">
-                    Popup blocked.{' '}
+                    {t({ en: 'Popup blocked.', fr: 'Fenêtre pop-up bloquée.' })}{' '}
                     <a
                       href={projectId && sessionId ? `/p/${projectId}/s/${sessionId}/readonly` : '#'}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="underline hover:text-text-primary"
                     >
-                      Open manually
+                      {t({ en: 'Open manually', fr: 'Ouvrir manuellement' })}
                     </a>
                   </p>
                 )}
@@ -322,6 +390,7 @@ export const MessageList = memo(function MessageList({
                   key={llmRetry.attempt}
                   retry={llmRetry}
                   onRetryNow={() => sessionId && retryLLMNow(sessionId)}
+                  onShowError={() => setShowRetryError(true)}
                 />
               </div>
             )}
@@ -329,15 +398,27 @@ export const MessageList = memo(function MessageList({
             {(llmRetry?.status === 'failed' && !isRunning) || blockedWorkflowStep ? (
               <div className="flex flex-col items-center gap-2 feed-item flex-wrap">
                 {llmRetry?.status === 'failed' && (
-                  <div className="text-xs text-text-secondary max-w-md text-center">
-                    The LLM call failed: {llmRetry.error}
+                  <div className="flex items-center gap-1.5 text-xs text-text-secondary max-w-md">
+                    <span className="min-w-0 flex-1 truncate text-center">
+                      {t({ en: 'The LLM call failed:', fr: 'L’appel LLM a échoué :' })} {llmRetry.error}
+                    </span>
+                    <ErrorInfoButton onClick={() => setShowRetryError(true)} />
                   </div>
                 )}
                 {isWorkflowBlock && (
                   <div className="text-xs text-text-secondary max-w-md text-center">
                     {activeWorkflowExecution?.currentStepName
-                      ? `The "${activeWorkflowExecution.currentStepName}" step stopped before finishing — retry to continue.`
-                      : 'This workflow step stopped before finishing — retry to continue.'}
+                      ? t(
+                          {
+                            en: 'The "{{step}}" step stopped before finishing — retry to continue.',
+                            fr: 'L’étape « {{step}} » s’est arrêtée avant la fin — réessayez pour continuer.',
+                          },
+                          { step: activeWorkflowExecution.currentStepName },
+                        )
+                      : t({
+                          en: 'This workflow step stopped before finishing — retry to continue.',
+                          fr: 'Cette étape du workflow s’est arrêtée avant la fin — réessayez pour continuer.',
+                        })}
                   </div>
                 )}
                 <button
@@ -345,10 +426,27 @@ export const MessageList = memo(function MessageList({
                   disabled={isRunning}
                   className="px-4 py-1.5 text-sm font-medium rounded bg-accent-primary/15 text-accent-primary border border-accent-primary/25 hover:bg-accent-primary/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isRunning ? 'Resuming…' : isWorkflowBlock ? '↻ Retry step' : '↻ Retry'}
+                  {isRunning
+                    ? t({ en: 'Resuming…', fr: 'Reprise…' })
+                    : isWorkflowBlock
+                      ? t({ en: '↻ Retry step', fr: '↻ Réessayer l’étape' })
+                      : t({ en: '↻ Retry', fr: '↻ Réessayer' })}
                 </button>
               </div>
             ) : null}
+
+            {llmRetry && (
+              <Modal
+                isOpen={showRetryError}
+                onClose={() => setShowRetryError(false)}
+                title={t({ en: 'LLM call failed', fr: 'Échec de l’appel LLM' })}
+                size="lg"
+              >
+                <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-text-primary bg-bg-primary border border-border rounded p-3">
+                  {prettyPrintError(llmRetry.error)}
+                </pre>
+              </Modal>
+            )}
 
             {error && (
               <div className="feed-item bg-text-tool-error/10 border border-text-tool-error/50 rounded p-2">
@@ -373,7 +471,7 @@ export const MessageList = memo(function MessageList({
                   : [
                       {
                         id: undefined as string | undefined,
-                        label: `▶ Continue ${activeWorkflowExecution.workflowName} (${
+                        label: `▶ ${t({ en: 'Continue', fr: 'Continuer' })} ${activeWorkflowExecution.workflowName} (${
                           activeWorkflowExecution.currentStepName ?? '...'
                         })`,
                         goto: '',
@@ -388,9 +486,9 @@ export const MessageList = memo(function MessageList({
                     className="px-4 py-1.5 text-sm font-medium rounded bg-accent-primary/15 text-accent-primary border border-accent-primary/25 hover:bg-accent-primary/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {continuing
-                      ? '⏳ Continuing...'
+                      ? t({ en: '⏳ Continuing...', fr: '⏳ En cours…' })
                       : choice.id === 'continue'
-                        ? `▶ Continue ${activeWorkflowExecution.workflowName} (${choice.nextStepName ?? activeWorkflowExecution.currentStepName ?? '...'})`
+                        ? `▶ ${t({ en: 'Continue', fr: 'Continuer' })} ${activeWorkflowExecution.workflowName} (${choice.nextStepName ?? activeWorkflowExecution.currentStepName ?? '...'})`
                         : choice.label}
                   </button>
                 ))}
@@ -435,7 +533,7 @@ export const MessageList = memo(function MessageList({
             className="pointer-events-auto text-sm text-text-muted hover:text-text-primary flex items-center gap-1.5 px-2 py-0.5 rounded hover:bg-bg-tertiary transition-colors backdrop-blur-sm bg-bg-secondary/60"
           >
             <ChevronUpIcon className="w-3 h-3" />
-            scroll to top
+            {t({ en: 'scroll to top', fr: 'remonter en haut' })}
           </button>
         </div>
       )}
@@ -462,6 +560,7 @@ function WorkflowButton({
   subGroups?: string[]
   onLaunch: (subGroup?: string) => void
 }) {
+  const t = useT()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -515,7 +614,7 @@ function WorkflowButton({
                 }}
                 className="w-full text-left px-3 py-2 text-sm text-text-primary hover:bg-bg-tertiary transition-colors"
               >
-                Full workflow
+                {t({ en: 'Full workflow', fr: 'Workflow complet' })}
               </button>
               <div className="border-t border-border/50" />
               {subGroups.map((sg) => (

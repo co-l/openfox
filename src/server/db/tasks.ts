@@ -21,6 +21,7 @@ import type {
   TaskActor,
   ProjectTaskSettings,
   Attachment,
+  TaskSchedule,
 } from '../../shared/types.js'
 import { getDatabase } from './index.js'
 
@@ -40,6 +41,8 @@ interface TaskRow {
   agent_id: string | null
   provider_id: string | null
   model: string | null
+  schedule: string | null
+  next_run_at: string | null
   created_at: string
   updated_at: string
 }
@@ -93,6 +96,12 @@ export interface CreateTaskInput {
   agentId?: string
   providerId?: string
   model?: string
+  schedule?: TaskSchedule
+}
+
+/** The canonical trigger time for a schedule (once ⇒ runAt, recurring ⇒ nextRunAt). */
+export function scheduleNextRun(schedule: TaskSchedule): string {
+  return schedule.type === 'once' ? schedule.runAt : schedule.nextRunAt
 }
 
 export function createTask(projectId: string, input: CreateTaskInput): ProjectTask {
@@ -105,8 +114,8 @@ export function createTask(projectId: string, input: CreateTaskInput): ProjectTa
     .get(projectId) as { pos: number }
 
   db.prepare(
-    `INSERT INTO tasks (id, project_id, prompt, attachments, status, run_state, position, version, agent_id, provider_id, model, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 'todo', NULL, ?, 1, ?, ?, ?, ?, ?)`,
+    `INSERT INTO tasks (id, project_id, prompt, attachments, status, run_state, position, version, agent_id, provider_id, model, schedule, next_run_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 'todo', NULL, ?, 1, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     projectId,
@@ -116,6 +125,8 @@ export function createTask(projectId: string, input: CreateTaskInput): ProjectTa
     input.agentId ?? null,
     input.providerId ?? null,
     input.model ?? null,
+    input.schedule ? JSON.stringify(input.schedule) : null,
+    input.schedule ? scheduleNextRun(input.schedule) : null,
     now,
     now,
   )
@@ -144,6 +155,8 @@ export function updateTask(
     agentId?: string | null
     providerId?: string | null
     model?: string | null
+    /** `undefined` = leave unchanged, `null` = clear, otherwise replace. */
+    schedule?: TaskSchedule | null
   },
 ): ProjectTask | null {
   const db = getDatabase()
@@ -171,6 +184,12 @@ export function updateTask(
   if (patch.model !== undefined) {
     sets.push('model = ?')
     values.push(patch.model)
+  }
+  if (patch.schedule !== undefined) {
+    sets.push('schedule = ?')
+    values.push(patch.schedule ? JSON.stringify(patch.schedule) : null)
+    sets.push('next_run_at = ?')
+    values.push(patch.schedule ? scheduleNextRun(patch.schedule) : null)
   }
 
   values.push(id)
@@ -203,6 +222,39 @@ export function deleteTask(id: string): void {
   db.prepare(`DELETE FROM tasks WHERE id = ?`).run(id)
 }
 
+// ============================================================================
+// Scheduling
+// ============================================================================
+
+/** All scheduled tasks whose trigger time is due or passed (status must still be todo). */
+export function listDueScheduledTasks(nowIso: string): ProjectTask[] {
+  const db = getDatabase()
+  const rows = db
+    .prepare(
+      `SELECT * FROM tasks WHERE status = 'todo' AND next_run_at IS NOT NULL AND next_run_at <= ? ORDER BY next_run_at ASC`,
+    )
+    .all(nowIso) as TaskRow[]
+  return rows.map(hydrateTask)
+}
+
+/** Write a fresh schedule + trigger time (used to advance a recurring template). */
+export function setTaskSchedule(id: string, schedule: TaskSchedule, nextRunAt: string): void {
+  const db = getDatabase()
+  db.prepare(`UPDATE tasks SET schedule = ?, next_run_at = ?, version = version + 1, updated_at = ? WHERE id = ?`).run(
+    JSON.stringify(schedule),
+    nextRunAt,
+    new Date().toISOString(),
+    id,
+  )
+}
+
+export function clearTaskSchedule(id: string): void {
+  const db = getDatabase()
+  db.prepare(
+    `UPDATE tasks SET schedule = NULL, next_run_at = NULL, version = version + 1, updated_at = ? WHERE id = ?`,
+  ).run(new Date().toISOString(), id)
+}
+
 /**
  * Append a task to the bottom of a column. Used when a task enters the
  * In Progress queue so the FIFO order (oldest first, by position) matches
@@ -222,7 +274,7 @@ export function appendToBottom(id: string, status: TaskStatus): void {
   )
 }
 
-export function cloneTask(sourceId: string): ProjectTask | null {
+export function cloneTask(sourceId: string, copySchedule = true): ProjectTask | null {
   const source = getTask(sourceId)
   if (!source) return null
   return createTask(source.projectId, {
@@ -231,6 +283,7 @@ export function cloneTask(sourceId: string): ProjectTask | null {
     ...(source.agentId ? { agentId: source.agentId } : {}),
     ...(source.providerId ? { providerId: source.providerId } : {}),
     ...(source.model ? { model: source.model } : {}),
+    ...(copySchedule && source.schedule ? { schedule: source.schedule } : {}),
   })
 }
 
@@ -439,6 +492,7 @@ function hydrateTask(row: TaskRow): ProjectTask {
   const sessionIds = links.map((l) => l.session_id)
   const activeLink = links.find((l) => Boolean(l.active))
   const runState = row.status === 'in_progress' ? (row.run_state as TaskRunState) : undefined
+  const schedule = row.schedule ? safeParseSchedule(row.schedule) : undefined
   const task: ProjectTask = {
     id: row.id,
     projectId: row.project_id,
@@ -451,6 +505,7 @@ function hydrateTask(row: TaskRow): ProjectTask {
     ...(row.agent_id ? { agentId: row.agent_id } : {}),
     ...(row.provider_id ? { providerId: row.provider_id } : {}),
     ...(row.model ? { model: row.model } : {}),
+    ...(schedule ? { schedule } : {}),
     sessionIds,
     ...(activeLink ? { activeSessionId: activeLink.session_id } : {}),
     gateValues: getGateValues(row.id),
@@ -490,5 +545,27 @@ function safeParseAttachments(raw: string): Attachment[] {
     return Array.isArray(parsed) ? (parsed as Attachment[]) : []
   } catch {
     return []
+  }
+}
+
+function safeParseSchedule(raw: string): TaskSchedule | undefined {
+  try {
+    const parsed = JSON.parse(raw) as TaskSchedule
+    if (!parsed || typeof parsed !== 'object') return undefined
+    if (parsed.type === 'once' && typeof parsed.runAt === 'string') return parsed
+    if (
+      parsed.type === 'recurring' &&
+      typeof parsed.interval === 'number' &&
+      typeof parsed.startAt === 'string' &&
+      typeof parsed.nextRunAt === 'string' &&
+      parsed.end &&
+      typeof parsed.end.kind === 'string' &&
+      typeof parsed.occurrencesDone === 'number'
+    ) {
+      return parsed
+    }
+    return undefined
+  } catch {
+    return undefined
   }
 }

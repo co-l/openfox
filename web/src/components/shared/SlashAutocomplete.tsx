@@ -7,6 +7,7 @@ import { SCOPE_LABELS } from '../../lib/workflow-scope'
 import type { WorkflowInfo } from '../../lib/parse-slash-command'
 import type { CommandInfo } from '../../lib/parse-slash-command'
 import type { WorkflowScope } from '@shared/types.js'
+import { useT } from '../../hooks/useT'
 
 export type SlashSuggestion =
   | { type: 'workflow'; id: string; name: string; scope: WorkflowScope; paramCount: number }
@@ -34,6 +35,7 @@ const SlashAutocomplete = forwardRef<SlashAutocompleteHandle, SlashAutocompleteP
   { text, cursorPos, workflows, commands, onSelect, anchorRef },
   ref,
 ) {
+  const t = useT()
   const slash = getSlashAtCursor(text, cursorPos)
   const [selectedIndex, setSelectedIndex] = useState(0)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -154,7 +156,11 @@ const SlashAutocomplete = forwardRef<SlashAutocompleteHandle, SlashAutocompleteP
           )}
           {item.paramCount > 0 && (
             <span className="text-[10px] text-text-muted bg-bg-tertiary px-1.5 py-0.5 rounded">
-              {item.paramCount} param{item.paramCount > 1 ? 's' : ''}
+              {item.paramCount}{' '}
+              {t(
+                { en: { one: 'param', other: 'params' }, fr: { one: 'paramètre', other: 'paramètres' } },
+                { count: item.paramCount },
+              )}
             </span>
           )}
         </button>

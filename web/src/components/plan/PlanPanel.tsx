@@ -1,17 +1,17 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useSessionStore, useIsRunning } from '../../stores/session'
-import { useDisplaySettings } from '../../stores/settings'
+import { useDisplaySettings } from '../../hooks/useDisplaySettings'
 import { type TurnStats } from '../../lib/types'
 import type { Message } from '@shared/types.js'
 
 import { SessionLayout } from '../layout/SessionLayout'
-import { SessionHeader } from './SessionHeader'
+import { useQueuedRebaseTrigger } from './useQueuedRebaseTrigger'
 import { TurnStatsModal } from './TurnStatsModal'
 import { MessageList } from './MessageList'
 import { ConnectionStatusBar } from '../shared/ConnectionStatusBar'
 import { useAgents } from '../../hooks/useAgents'
-import { useCommandsStore } from '../../stores/commands'
-import { useWorkflowsStore, selectAllWorkflows } from '../../stores/workflows'
+import { useWorkflows } from '../../hooks/useWorkflows'
+import { commandResource, readAllWorkflows } from '../../lib/resources'
 import { focusChatTextarea } from '../../lib/focusChatTextarea'
 import { CommandsModal } from '../settings/CommandsModal'
 import { WorkflowsModal } from '../settings/WorkflowsModal'
@@ -58,6 +58,8 @@ export function PlanPanel({
 }: PlanPanelProps = {}) {
   const criteriaSidebarOpen = externalCriteriaSidebarOpen ?? true
   const [input, setInput] = useState('')
+
+  useQueuedRebaseTrigger()
 
   const [attachments, setAttachments] = useState<import('@shared/types.js').Attachment[]>([])
   const [dragOver, setDragOver] = useState(false)
@@ -107,6 +109,7 @@ export function PlanPanel({
 
   const { agents } = useAgents(session?.workdir)
   const topLevelAgents = agents.filter((a) => !a.subagent)
+  const { workflows } = useWorkflows(session?.workdir)
 
   const { history, selectedIndex, showHistory, openHistory, closeHistory, navigateUp, navigateDown, selectCurrent } =
     usePromptHistory(messages, sessions, session?.id)
@@ -123,17 +126,8 @@ export function PlanPanel({
 
   // Scope project workflows to the active session's project so project-scoped
   // items are listed, edited, and launched from the correct project.
+  // Workflows load via the resource cache (implicit loadership).
   const sessionWorkdir = session?.workdir
-  useEffect(() => {
-    useWorkflowsStore.getState().setWorkdir(sessionWorkdir)
-    if (sessionWorkdir) {
-      useWorkflowsStore.getState().fetchWorkflows()
-    }
-  }, [sessionWorkdir])
-
-  useEffect(() => {
-    useWorkflowsStore.getState().fetchWorkflows()
-  }, [])
 
   useEffect(() => {
     if (!isFocusedPane) return
@@ -205,7 +199,7 @@ export function PlanPanel({
       extraParams?: Record<string, string>,
       scope: WorkflowLaunchScope = 'auto',
     ) => {
-      const workflows = selectAllWorkflows(useWorkflowsStore.getState())
+      const workflows = readAllWorkflows(sessionWorkdir)
       const wf = resolveWorkflowForLaunch(workflows, workflowId, scope)
       const params = (wf?.parameters ?? []).filter((p) => p.position !== undefined || p.required)
       if (params.length > 0) {
@@ -341,12 +335,9 @@ export function PlanPanel({
         criteriaSidebarOpen={criteriaSidebarOpen}
         criteriaSidebarOverlay={externalCriteriaSidebarOverlay}
         onCriteriaSidebarToggle={onCriteriaSidebarToggle}
-        messages={messages}
         sessionId={targetSessionId}
       >
         <SidebarSummaryHeader visible={!criteriaSidebarOpen} />
-
-        <SessionHeader />
 
         {turnStatsModal && <TurnStatsModal stats={turnStatsModal} onClose={() => setTurnStatsModal(null)} />}
         <ConnectionStatusBar />
@@ -420,7 +411,7 @@ export function PlanPanel({
           onCloseComplete={focusChatTextarea}
           onCloseCompleteAction={() => window.dispatchEvent(new CustomEvent('open-session-dropdown'))}
           onSelectCommand={async (commandId, textareaContent) => {
-            const full = await useCommandsStore.getState().fetchCommand(commandId, session?.workdir)
+            const full = await commandResource.refresh(commandId, session?.workdir)
             if (full) {
               handleSendCommand(full.prompt, full.metadata.agentMode, textareaContent)
             }
@@ -435,9 +426,9 @@ export function PlanPanel({
           <WorkflowParamModal
             workflowName={pendingParamWorkflow.name}
             parameters={(() => {
-              const all = selectAllWorkflows(useWorkflowsStore.getState())
               return (
-                resolveWorkflowForLaunch(all, pendingParamWorkflow.id, pendingParamWorkflow.scope)?.parameters ?? []
+                resolveWorkflowForLaunch(workflows, pendingParamWorkflow.id, pendingParamWorkflow.scope)?.parameters ??
+                []
               )
             })()}
             onConfirm={(params) => {

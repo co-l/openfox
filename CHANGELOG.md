@@ -1,5 +1,395 @@
 # Changelog
 
+## 2.0.154 - 2026-09-21
+
+### Features
+
+- **Write/edit on unread files now fails fast** — the call aborts mid-stream once the path arrives, saving tokens on doomed payloads.
+
+### Enhancements
+
+- **Live tool call previews are now opt-in** — off by default; re-enable in Display settings.
+
+## 2.0.153 - 2026-09-20
+
+### Features
+
+- **write_file and edit_file previews stream live** — the file content, edit context, and diff update with auto-scroll as the tool call runs.
+- **New "Show live tool call previews" display setting** — opt out of streaming previews if you prefer.
+
+### Enhancements
+
+- **Forking a compacted session preserves prompt-cache hits** — only the latest context window is copied.
+- **Fork errors from the server now surface** — instead of a generic failure message.
+
+### Bug Fixes
+
+- **Drift reminders land in the running sub-agent's window** — no longer cluttering the main session.
+- **Sub-agent compactions now work** — post-compaction reasoning streams into the thinking block instead of visible content, and the parent context window is no longer rotated or inflated.
+
+## 2.0.152 - 2026-09-20
+
+### Features
+
+- **Plugin buttons gain a ghost variant** — matches native header button styling and shows the text label when no icon is set.
+- **Plugin icons accept SVG paths or raw markup** — icons also resolve dynamically by name from the built-in icon set, no whitelist needed.
+
+### Enhancements
+
+- **Sub-agent calls run sequentially by default** — several sub-agent calls in one batch no longer compete for context on local models; a new Advanced setting restores parallelism.
+
+## 2.0.151 - 2026-09-19
+
+### Features
+
+- **Plugins render UI in app zones** — header, sidebar, session, composer, and settings now accept plugin content.
+- **Zones can be hidden or replaced** — plugins override native content via hide/replace with replacement nodes.
+- **Plugin settings tabs** — plugins can register their own tabs in the settings modal.
+- **Per-agent session stats** — the stats modal now breaks down usage by agent and sub-agent.
+- **Project search** — find projects by name in the project picker and open-project modal.
+- **Branch search** — filter git branches as you type in the branch switcher.
+- **Provider modal banners** — new banners point to OpenFox plugins and proxy settings.
+
+### Enhancements
+
+- **Plugin UI DSL extended** — new stack, card, callout, icon, input, select, and iframe nodes.
+- **MCP toggles apply instantly** — server and tool enable/disable updates apply immediately in settings.
+- **Stats split by reasoning effort** — model groups now separate reasoning-effort variants.
+- **Longer sessions use less memory** — the live feed caps visible messages and tool streaming output.
+
+### Bug Fixes
+
+- **Pending confirmations auto-expand** — tool calls awaiting user confirmation now expand automatically.
+- **Collapsed tool output survives reloads** — large collapsed outputs stay collapsed after reloading.
+- **Search engine API keys persist** — keys no longer vanish on page reload.
+
+## 2.0.150 - 2026-09-18
+
+### Features
+
+- **Plugin system** — install plugins from a curated registry, GitHub, npm, or a local folder.
+- **Plugins extend OpenFox** — providers, tools, commands, skills, and custom workflow transitions.
+- **Declarative plugin UI** — actions, badges, and panels in the header, composer, and sessions.
+- **Plugin notifications** — a new header bell with dropdown center and toasts.
+- **Plugin management tab** — enable, disable, reinstall, and uninstall plugins.
+
+### Enhancements
+
+- **Notifications moved to a header dropdown** — no more modal; clicking a notification marks it read.
+- **Plugin actions consolidated into one header menu** — with a direct shortcut to plugin management.
+- **Mobile menu gains nested submenus** — notifications and plugins now reachable from the hamburger menu.
+- **Workflow setup step guards existing workspaces** — already-used workspaces can no longer be selected.
+
+### Bug Fixes
+
+- **Pre-upgrade passwords work again** — passwords stored before the encryption upgrade now verify correctly.
+- **Tool-call timers survive reloads** — pending tool calls keep their elapsed-time display after reloading.
+- **Notification bell styling fixed** — icon color matches the header and the unread badge no longer clips.
+
+## 2.0.149 - 2026-09-15
+
+### Features
+
+- **Task attachments now readable by agents** — a new project_tasks get_attachment action returns image, text, and PDF attachments, with attachment metadata listed on task output.
+
+### Enhancements
+
+- **Retry pattern editor validates inline** — invalid regexes are flagged live as you type, and empty or invalid patterns are no longer saved.
+
+### Bug Fixes
+
+- **Empty retry patterns no longer loop every turn** — blank or invalid patterns are skipped server-side, so a stray empty pattern can't trigger infinite auto-retries.
+- **MCP tools honor their per-tool timeout** — calls no longer cap at the 60s default, and timed-out requests are aborted in flight.
+
+## 2.0.148 - 2026-09-14
+
+### Bug Fixes
+
+- **Sub-agent responses no longer truncate in long sessions** — sub-agent output is now budgeted against its own context instead of the parent session's, so plans and reviews run to completion even when the orchestrator session is huge.
+
+## 2.0.147 - 2026-09-14
+
+### Features
+
+- **Parallel workflow steps** — run sub-agent and shell steps concurrently inside one workflow step, capped by max concurrency, with per-child output keys to branch on.
+- **Parallel step editor** — build parallel steps in the workflow UI with a child list, per-child sub-agent/shell configuration, and slug-safe child ids.
+- **Project dropdown on session rows** — switch projects, start sessions, or open tasks directly from the home session list.
+
+### Enhancements
+
+- **Agent steps honor per-agent model overrides** — workflow steps pinned to a specific model (e.g. builder on Qwen) now actually run on it, matching the existing sub-agent behavior.
+
+### Bug Fixes
+
+- **Background process logs stream live** — the log viewer shows new output as it arrives without reopening the panel.
+
+## 2.0.146 - 2026-09-12
+
+### Bug Fixes
+
+- **Sidebar stats now cover the entire session** — AI time, speeds, and totals count every response across all context windows, including after compaction; stats load instantly from a server-computed headline, with the full response log available on demand.
+
+## 2.0.145 - 2026-09-11
+
+### Bug Fixes
+
+- **run_command no longer hangs when a detached child outlives the shell** — `setsid`, `ssh -f`, and `&`-spawned children that keep the output pipes open no longer stall the tool call forever; the tool settles after a bounded 2s grace with the shell's real exit code (noting output may be incomplete), and timeouts or interrupts on an already-exited shell settle immediately.
+
+## 2.0.144 - 2026-09-11
+
+### Features
+
+- **New criteria stream live in the feed** — criteria additions appear in the feed's criteria group as they are generated, no refresh needed.
+- **Opt-in boot auto-continuation** — sessions interrupted by a restart resume automatically on the next launch.
+
+### Bug Fixes
+
+- **Installed version detected on localized CLIs** — the version is now parsed correctly even when the CLI outputs French or another language.
+
+## 2.0.143 - 2026-09-10
+
+### Features
+
+- **Unsloth Studio added as a supported provider** — pick it from the engine list in the provider modal; its local URL and name are pre-filled and models are fetched like any other OpenAI-compatible backend.
+
+### Enhancements
+
+- **Provider engine cards no longer truncate** — cards now wrap onto multiple rows on narrow windows instead of clipping their labels, and the provider modal is wider to fit.
+
+### Bug Fixes
+
+- **Engine quick-pick buttons overwrite stale values** — clicking a second local port card now replaces the previously pre-filled URL and name instead of keeping the first card's values.
+- **Workflow sub-agent steps now honor per-provider model overrides** — the configured override model was silently ignored during workflow sub-agent execution, falling back to the parent's LLM client.
+- **Ordered lists after a paragraph render as lists again** — a numbered list following a paragraph is no longer flattened into inline text, and the numbering is preserved.
+
+## 2.0.142 - 2026-09-09
+
+### Features
+
+- **Schedule tasks, one-off or recurring** — pick a date and time, or repeat daily, weekly, monthly, or yearly; due tasks fire automatically and float to the top of To Do with a countdown badge
+
+### Enhancements
+
+- **Homepage and counts stay fresh** — recent sessions, sidebar, and search reorder live as messages arrive, and message counts now include assistant messages
+
+### Bug Fixes
+
+- **Fullscreen mobile composer is now opt-in** — a Display setting (off by default) keeps the conversation visible while typing
+- **Mobile send works on the first tap** — send, pause, stop, and the more menu no longer need a double press while the keyboard is up
+- **Session message counts no longer double-count on reconnect** — re-delivered chat events are deduplicated
+
+## 2.0.141 - 2026-09-09
+
+### Enhancements
+
+- **Homepage lists your 20 most recent sessions** — flat across all projects, sorted by last activity, with live status dots and links that open in a new tab; running sessions stay pinned so active work never drops off.
+- **Projects section decluttered** — cards now sort starred-first and hold no sessions; tasks and new-session actions stay one click away.
+- **Send and pause stay reachable on mobile** — the send, pause, and stop buttons now show while the agent is running instead of hiding.
+
+### Bug Fixes
+
+- **Git --no-verify confirmation can no longer be skipped** — a semicolon, pipe, or `&&` inside a quoted commit message used to orphan the flag and silently bypass the confirmation; detection is now quote-aware.
+- **Live task-board sync reaches every window** — task updates are now broadcast to all windows, so boards without an active session no longer go stale.
+- **MCP servers connect once the HTTP server is listening** — OpenFox's self-referencing MCP entry no longer races startup and lands in a permanent error state.
+
+## 2.0.140 - 2026-09-08
+
+### Features
+
+- **Authenticated Ollama proxies** — Ollama behind OpenWebUI or any Bearer-auth proxy now works when an API key is configured
+
+### Enhancements
+
+- **Refined mobile interface** — composer expands full-height with the keyboard, send/stop become icon pills, and the footer rebalances (agent + danger on top, MCP + model below)
+- **Model names truncate on narrow screens** — no more overflowing the composer
+
+### Bug Fixes
+
+- **MCP dropdown stays in view** — opens as a centered modal on touch and left-aligns on narrow windows instead of overflowing
+- **iOS no longer auto-zooms into the composer** — input fields keep a comfortable size on focus
+- **opencode.ai providers work reliably** — chain-of-thought is no longer echoed into assistant history (fixing HTTP 400 on multi-turn thinking requests), and stable x-opencode-session headers restore prompt caching
+
+## 2.0.139 - 2026-09-06
+
+### Features
+
+- **Caveman thinking mode** — opt-in setting that compresses the agent's reasoning into terse fragments to cut thinking tokens
+
+### Enhancements
+
+- **Pause-in-progress is now obvious** — pulsing pause button while waiting, cancel cross on hover, height matched to Send
+
+## 2.0.138 - 2026-09-06
+
+### Features
+
+- **Pause button** — pause the next LLM request without aborting the in-flight turn
+- **Resume a paused run from the chat input** — session status shows Pausing…/Paused
+
+### Bug Fixes
+
+- **Dangerous mode applies immediately** — switching auto-approves every pending path confirmation
+- **Allow Everything clears the whole batch** — sibling tool calls continue without re-prompting
+
+## 2.0.137 - 2026-09-03
+
+### Bug Fixes
+
+- **Image descriptions survive reloads** — vision details no longer drop from tool results after a page reload
+
+## 2.0.136 - 2026-09-02
+
+### Features
+
+- **Model favorites** — heart-toggle any model and pin a Favorites section at the top of the model selector
+- **Model selector display settings** — full-height sizing, and start with providers or favorites collapsed
+- **Describe-image tool for non-vision models** — delegates image questions to a vision-capable fallback
+- **Sync button in the provider editor** — refetch the model catalog without losing current selections
+
+### Enhancements
+
+- **Hover tooltips for truncated tool-call labels** — reveal the full path or command
+- **Compact provider auth badge** — the Connected/Connect button is smaller and better aligned
+
+### Bug Fixes
+
+- **Localized modal footer buttons** — Cancel/Save now translate to French
+- **Tool schemas work with strict providers** — Vertex AI, Antigravity, and Gemini no longer reject tool calls
+- **New sessions inherit project MCP overrides** — forked sessions keep the parent's MCP state too
+- **No more duplicate models after a sync** — merged model families and selections survive a catalog refresh
+- **Deleting a provider cleans up its sessions** — no dead provider pins, wrong context windows, or auto-compaction
+- **Ollama vision images work again** — content arrays are converted to Ollama's native format
+- **grep patterns no longer trigger path confirmations** — only real file operands are checked
+- **Quoted paths can't sneak past path security** — nested quotes are now detected
+- **DeepSeek reasoning preserved** — chain-of-thought is echoed under reasoning_content instead of being dropped
+- **Per-model reasoning efforts accepted** — validation now honors each model's modes and effort lists
+
+## 2.0.135 - 2026-09-01
+
+### Features
+
+- **Export and import sessions** — save a session to a JSON file and restore it elsewhere, preserving its cached layout
+
+### Enhancements
+
+- **Fuller mobile header navigation** — the project and session dropdowns from desktop now appear on mobile, with a Home shortcut back to the project list
+- **Shorter French UI labels** — history, stop, and related controls use more concise wording
+
+### Bug Fixes
+
+- **Live turn stats stay visible** — they no longer disappear while the assistant waits for your input
+- **Header dropdown closes on middle-click** — navigating via a link's middle-click now dismisses the menu
+- **Dev server status loads at startup** — the header no longer shows “Aucune config” until the popover is opened
+- **Missing French labels translated** — “No matches” and “Task Completed” now render in French
+
+## 2.0.134 - 2026-08-31
+
+### Features
+
+- **Interface language setting** — pick Automatic, English, or French to localize the web UI, server messages, and CLI
+- **Agent language setting** — the agent replies in your chosen language via injected instructions
+- **Create projects without git** — git init is skipped when git is missing, so git-less codebases work out of the box
+
+### Enhancements
+
+- **Full error on LLM failures** — an (i) button on failed bubbles and retry pills opens a modal with the details
+
+## 2.0.133 - 2026-08-30
+
+### Features
+
+- **Edit providers straight from model selectors** — a pencil button on each provider group header opens the editor without digging through settings
+- **Sub-agents can load skills** — explorer, verifier, and code reviewer now use the load_skill tool
+
+### Enhancements
+
+- **Smoother workflow completion nudge** — when a step's transition condition is already satisfied, the agent gets a short "call step_done" reminder instead of the verbose prompt
+- **Faster settings and config loading** — shared caching dedupes and single-flights resource requests
+
+### Bug Fixes
+
+- **Stale blocked-workflow message cleared** — starting a plain chat turn no longer leaves a "retry to continue" step message behind
+- **Workflow template-variable suggestions load again** — the editor no longer hits a 404
+- **Duplicate and Customize creates a real copy** — no longer overwrites the original command
+- **No more 401s on the login page** — settings requests no longer fire before sign-in
+
+## 2.0.132 - 2026-08-28
+
+### Enhancements
+
+- **Deterministic workspace commit-and-push flow** — landing workspace changes is now an unconditional recipe: push a temp branch, merge back into the original repo, then delete the workspace and push to the remote
+
+### Bug Fixes
+
+- **OpenCode Go models work on unset backends** — gpt-5.6-luna, grok-4.6 and muse-spark route to the Responses API even when the provider backend is unknown, instead of being rejected with HTTP 400
+- **Agent now calls newly added tools** — drift reminders explicitly tell the agent that fresh MCP tools are callable like any other tool
+
+## 2.0.131 - 2026-08-28
+
+### Enhancements
+
+- **Tool-change reminders embed full schemas** — added and changed tools carry their exact JSON definition, so no rebase is needed to act on them
+- **Rebase system prompt shows a pending badge** — a "changes" indicator lights up the rebase action whenever drift awaits your approval
+
+### Bug Fixes
+
+- **Tool changes no longer wipe the prefix cache** — deep context caching survives releases and restarts, so 400k-token sessions skip the full re-prefill
+- **No spurious prompt-diff checks after restart** — only a tool change no longer trips the prompt drift detector
+
+## 2.0.130 - 2026-08-28
+
+### Features
+
+- **Drive OpenFox sessions from any MCP client** — a built-in MCP server exposes `openfox_*` tools to run agents, manage sessions and workflows, plus an `openfox mcp` command that prints a paste-ready client config
+- **Merge multi-mode model variants into a single model** — OmniRoute-style families (`*-low/-medium/-high`) collapse into one model with mode chips, mapped to the right provider ID per effort
+- **Agent sees tool and prompt changes instantly** — system-reminder diffs are injected at the point of contention mid-session
+- **Header icons collapse into a mobile menu** — cleaner navigation on small screens
+- **New plugin registry entries** — openfox-openrouter-free and openfox-opencode-free
+
+### Enhancements
+
+- **Full reasoning-effort control on OpenAI gpt-5** — tools and effort work together via the Responses API, no more forced "none"
+- **Vision-capable models get an eye indicator** — auto-detected from the backend and shown across the model lists
+- **MCP tool changes previewed in the system prompt** — the preview lists exactly which tools were added/removed
+- **OAuth authorize completes instantly in the UI** — the callback tab notifies the app via BroadcastChannel, no paste-back needed
+
+### Bug Fixes
+
+- **OpenAI provider no longer fails LLM calls** — gpt-5.x uses max_completion_tokens, thinking no longer sends chat_template_kwargs, and api.openai.com/anthropic.com providers auto-detect their backend without a re-save
+- **OpenCode Go Responses-API models now work** — gpt-5.6-luna, grok-4.6 and muse-spark route to /v1/responses instead of the rejecting chat endpoint
+- **Responses routing is backend-aware** — vLLM, Ollama and friends never hit /v1/responses
+- **Session list no longer shrinks after delete/rename/favorite** — reloads are scoped to the active project
+- **Session history defaults to a 300-message limit** — fresh installs no longer send unlimited history; explicit 0 stays opt-in unlimited
+- **Logout actually logs out** — clears the token, closes the WebSocket and stops auto-reconnect
+- **MCP OAuth reconnects no longer clobber pending authorizations** — background probes use in-memory state; stale client registrations are auto-detected and cleared
+- **MCP server list refreshes reliably in the UI** — the tools tab updates immediately after server changes
+- **Sub-agent window no longer shows the main session's compaction badge** — and no longer overlaps on narrow panes
+- **No more false path confirmations from heredoc bodies** — path extraction ignores heredocs
+- **Removed fake provider-defaults fields** — dead thinking/non-thinking params are gone, pointing to the real per-model settings
+- **Merged mode-chip models survive catalog refresh** — no re-expanding after a re-fetch
+
+## 2.0.129 - 2026-08-25
+
+### Features
+
+- **Live AI stats in the right sidebar** — time, prefill and generation speed update live while a turn runs
+
+### Bug Fixes
+
+- **Strict providers no longer reject requests** — `top_p` is omitted from the request when unset instead of sent as undefined
+- **project_tasks tool works on strict providers** — the attachments schema now includes the required items field
+
+## 2.0.128 - 2026-08-24
+
+### Enhancements
+
+- **Qwen3.8 defaults match its model card** — temperature 1.0, top_p 0.95, top_k 20, and vision support
+- **Qwen3.8's default output budget is now 50k** — up from 16k, clamped to the context window
+
+### Bug Fixes
+
+- **"Time since last prompt" hidden in terminal states** — no counter on completed or blocked sessions
+
 ## 2.0.127 - 2026-08-22
 
 ### Features

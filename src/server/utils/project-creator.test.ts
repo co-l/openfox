@@ -3,7 +3,7 @@ import { execSync } from 'node:child_process'
 import { mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { validateProjectName, createDirectoryWithGit } from './project-creator.js'
+import { validateProjectName, createProjectDirectory } from './project-creator.js'
 
 const mockRealExecSync = vi.hoisted(() => ({
   current: undefined as unknown as typeof execSync,
@@ -47,7 +47,7 @@ describe('project-creator', () => {
     })
   })
 
-  describe('createDirectoryWithGit', () => {
+  describe('createProjectDirectory', () => {
     beforeEach(async () => {
       const { initDatabase } = await import('../db/index.js')
       const { loadConfig } = await import('../config.js')
@@ -57,7 +57,7 @@ describe('project-creator', () => {
     it('creates directory and git repo (frontend flow)', async () => {
       // Frontend passes full path as workdir
       const fullPath = join(testDir, 'my-project')
-      const project = await createDirectoryWithGit('my-project', fullPath)
+      const project = await createProjectDirectory('my-project', fullPath)
 
       expect(project.name).toBe('my-project')
       expect(project.workdir).toBe(fullPath)
@@ -71,7 +71,7 @@ describe('project-creator', () => {
       const existingDir = join(testDir, 'existing')
       await mkdir(existingDir)
 
-      const project = await createDirectoryWithGit('existing', existingDir)
+      const project = await createProjectDirectory('existing', existingDir)
 
       expect(project.name).toBe('existing')
       expect(project.workdir).toBe(existingDir)
@@ -82,10 +82,62 @@ describe('project-creator', () => {
 
     it('handles special chars in name', async () => {
       const fullPath = join(testDir, 'test.project-123')
-      const project = await createDirectoryWithGit('test.project-123', fullPath)
+      const project = await createProjectDirectory('test.project-123', fullPath)
 
       expect(project.name).toBe('test.project-123')
       expect(project.workdir).toBe(fullPath)
+    })
+
+    it('creates the project without git when git is not installed', async () => {
+      const fullPath = join(testDir, 'no-git-project')
+      const missing = new Error('Command failed: git init\n/bin/sh: 1: git: not found') as Error & {
+        status?: number
+      }
+      missing.status = 127
+      vi.mocked(execSync).mockImplementation(() => {
+        throw missing
+      })
+
+      const project = await createProjectDirectory('no-git-project', fullPath)
+
+      expect(project.name).toBe('no-git-project')
+      expect(project.workdir).toBe(fullPath)
+      expect(await checkExists(fullPath)).toBe(true)
+      expect(await checkExists(join(fullPath, '.git'))).toBe(false)
+    })
+
+    it('fails and cleans up when git init fails for a non-missing reason', async () => {
+      const fullPath = join(testDir, 'git-fail-project')
+      vi.mocked(execSync).mockImplementation(() => {
+        throw new Error('fatal: unable to write new index file')
+      })
+
+      let caught: unknown
+      try {
+        await createProjectDirectory('git-fail-project', fullPath)
+      } catch (err) {
+        caught = err
+      }
+
+      expect(String((caught as Error).message)).toContain('Failed to initialize git')
+      expect(await checkExists(fullPath)).toBe(false)
+    })
+
+    it('fails and cleans up when a genuine git error mentions "not found"', async () => {
+      const fullPath = join(testDir, 'git-fail-notfound')
+      vi.mocked(execSync).mockImplementation(() => {
+        throw new Error('fatal: unable to resolve reference not found')
+      })
+
+      let caught: unknown
+      try {
+        await createProjectDirectory('git-fail-notfound', fullPath)
+      } catch (err) {
+        caught = err
+      }
+
+      expect(String((caught as Error).message)).toContain('Failed to initialize git')
+      expect(await checkExists(fullPath)).toBe(false)
     })
 
     it('skips the sudo retry and reports EACCES when git init fails on Windows', async () => {
@@ -102,7 +154,7 @@ describe('project-creator', () => {
       try {
         let caught: unknown
         try {
-          await createDirectoryWithGit('win-project', fullPath)
+          await createProjectDirectory('win-project', fullPath)
         } catch (err) {
           caught = err
         }

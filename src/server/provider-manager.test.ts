@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { createProviderManager } from './provider-manager.js'
+import { createProviderManager, fetchModelsWithContext } from './provider-manager.js'
 import { createLLMClient } from './llm/index.js'
 import type { Config, Provider } from '../shared/types.js'
 
@@ -200,6 +200,161 @@ describe('ProviderManager - Model Selection', () => {
       }
 
       expect(() => createProviderManager(configNoKey)).not.toThrow()
+    })
+  })
+
+  describe('thinkingField resolution', () => {
+    it('derives thinkingField from the provider URL when config lacks it (DeepSeek rescue)', async () => {
+      const deepseekProvider: Provider = {
+        id: 'provider-deepseek',
+        name: 'DeepSeek API',
+        url: 'https://api.deepseek.com',
+        backend: 'unknown',
+        apiKey: 'sk-x',
+        models: [{ id: 'deepseek-v4-flash', contextWindow: 1000000, source: 'default' }],
+        isActive: true,
+        createdAt: new Date().toISOString(),
+      }
+
+      const dsConfig: Config = {
+        ...config,
+        providers: [deepseekProvider],
+        defaultModelSelection: 'provider-deepseek/deepseek-v4-flash',
+      }
+
+      const manager = createProviderManager(dsConfig)
+      manager.createClient('provider-deepseek', 'deepseek-v4-flash')
+
+      const calls = (createLLMClient as ReturnType<typeof vi.fn>).mock.calls
+      const lastCallConfig = calls[calls.length - 1]![0] as { llm: { thinkingField?: string } }
+      expect(lastCallConfig.llm.thinkingField).toBe('reasoning_content')
+    })
+
+    it('lets an explicit provider thinkingField override the URL default', async () => {
+      const deepseekProvider: Provider = {
+        id: 'provider-deepseek',
+        name: 'DeepSeek API',
+        url: 'https://api.deepseek.com',
+        backend: 'unknown',
+        apiKey: 'sk-x',
+        thinkingField: 'custom_field',
+        models: [{ id: 'deepseek-v4-flash', contextWindow: 1000000, source: 'default' }],
+        isActive: true,
+        createdAt: new Date().toISOString(),
+      }
+
+      const dsConfig: Config = {
+        ...config,
+        providers: [deepseekProvider],
+        defaultModelSelection: 'provider-deepseek/deepseek-v4-flash',
+      }
+
+      const manager = createProviderManager(dsConfig)
+      manager.createClient('provider-deepseek', 'deepseek-v4-flash')
+
+      const calls = (createLLMClient as ReturnType<typeof vi.fn>).mock.calls
+      const lastCallConfig = calls[calls.length - 1]![0] as { llm: { thinkingField?: string } }
+      expect(lastCallConfig.llm.thinkingField).toBe('custom_field')
+    })
+
+    it('leaves thinkingField undefined for providers without a URL default', async () => {
+      const localProvider: Provider = {
+        id: 'provider-local',
+        name: 'Local',
+        url: 'http://192.168.1.223:8000',
+        backend: 'vllm',
+        models: [{ id: 'deepseek-v4-flash', contextWindow: 1000000, source: 'default' }],
+        isActive: true,
+        createdAt: new Date().toISOString(),
+      }
+
+      const localConfig: Config = {
+        ...config,
+        providers: [localProvider],
+        defaultModelSelection: 'provider-local/deepseek-v4-flash',
+      }
+
+      const manager = createProviderManager(localConfig)
+      manager.createClient('provider-local', 'deepseek-v4-flash')
+
+      const calls = (createLLMClient as ReturnType<typeof vi.fn>).mock.calls
+      const lastCallConfig = calls[calls.length - 1]![0] as { llm: { thinkingField?: string } }
+      expect(lastCallConfig.llm.thinkingField).toBeUndefined()
+    })
+  })
+
+  describe('sendReasoningInMessages resolution', () => {
+    it('disables reasoning echo for opencode.ai providers even when the config persists true', async () => {
+      const opencodeProvider: Provider = {
+        id: 'provider-opencode',
+        name: 'OpenCode Go',
+        url: 'https://opencode.ai/zen/go/v1',
+        backend: 'opencode-go',
+        apiKey: 'sk-x',
+        sendReasoningInMessages: true,
+        models: [{ id: 'glm-5.3', contextWindow: 200000, source: 'default' }],
+        isActive: true,
+        createdAt: new Date().toISOString(),
+      }
+
+      const manager = createProviderManager({
+        ...config,
+        providers: [opencodeProvider],
+        defaultModelSelection: 'provider-opencode/glm-5.3',
+      })
+      manager.createClient('provider-opencode', 'glm-5.3')
+
+      const calls = (createLLMClient as ReturnType<typeof vi.fn>).mock.calls
+      const lastCallConfig = calls[calls.length - 1]![0] as { llm: { sendReasoningInMessages?: boolean } }
+      expect(lastCallConfig.llm.sendReasoningInMessages).toBe(false)
+    })
+
+    it('disables reasoning echo for opencode.ai providers without an explicit value', async () => {
+      const opencodeProvider: Provider = {
+        id: 'provider-opencode',
+        name: 'OpenCode Go',
+        url: 'https://opencode.ai/zen/go/v1',
+        backend: 'opencode-go',
+        apiKey: 'sk-x',
+        models: [{ id: 'glm-5.3', contextWindow: 200000, source: 'default' }],
+        isActive: true,
+        createdAt: new Date().toISOString(),
+      }
+
+      const manager = createProviderManager({
+        ...config,
+        providers: [opencodeProvider],
+        defaultModelSelection: 'provider-opencode/glm-5.3',
+      })
+      manager.createClient('provider-opencode', 'glm-5.3')
+
+      const calls = (createLLMClient as ReturnType<typeof vi.fn>).mock.calls
+      const lastCallConfig = calls[calls.length - 1]![0] as { llm: { sendReasoningInMessages?: boolean } }
+      expect(lastCallConfig.llm.sendReasoningInMessages).toBe(false)
+    })
+
+    it('keeps the explicit provider value for hosts without a URL default', async () => {
+      const localProvider: Provider = {
+        id: 'provider-local',
+        name: 'Local',
+        url: 'http://192.168.1.223:8000',
+        backend: 'vllm',
+        sendReasoningInMessages: true,
+        models: [{ id: 'glm-5.3', contextWindow: 200000, source: 'default' }],
+        isActive: true,
+        createdAt: new Date().toISOString(),
+      }
+
+      const manager = createProviderManager({
+        ...config,
+        providers: [localProvider],
+        defaultModelSelection: 'provider-local/glm-5.3',
+      })
+      manager.createClient('provider-local', 'glm-5.3')
+
+      const calls = (createLLMClient as ReturnType<typeof vi.fn>).mock.calls
+      const lastCallConfig = calls[calls.length - 1]![0] as { llm: { sendReasoningInMessages?: boolean } }
+      expect(lastCallConfig.llm.sendReasoningInMessages).toBe(true)
     })
   })
 
@@ -440,6 +595,59 @@ describe('ProviderManager - Model Selection', () => {
       expect(modelA?.source).toBe('user')
     })
 
+    it('hides catalog variants claimed by a merged mode-chip user model', async () => {
+      // Simulate a user who merged three suffixed catalog variants into a
+      // single mode-chip model. On refresh, the raw catalog (still exposing the
+      // suffixed variants) must not reintroduce them alongside the merged one.
+      const mergedConfig: Config = {
+        ...config,
+        providers: [
+          {
+            id: 'omni',
+            name: 'OmniRoute',
+            url: 'http://localhost:9100',
+            backend: 'openai',
+            models: [
+              {
+                id: 'antigravity/gemini-3.6-flash',
+                contextWindow: 1048576,
+                source: 'user',
+                modes: [
+                  { level: 'low', apiModelId: 'antigravity/gemini-3.6-flash-low' },
+                  { level: 'medium', apiModelId: 'antigravity/gemini-3.6-flash-medium' },
+                  { level: 'high', apiModelId: 'antigravity/gemini-3.6-flash-high' },
+                ],
+              },
+            ],
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      }
+      const manager = createProviderManager(mergedConfig)
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: [
+            { id: 'antigravity/gemini-3.6-flash-low', max_model_len: 1048576 },
+            { id: 'antigravity/gemini-3.6-flash-medium', max_model_len: 1048576 },
+            { id: 'antigravity/gemini-3.6-flash-high', max_model_len: 1048576 },
+            { id: 'antigravity/other-model', max_model_len: 200000 },
+          ],
+        }),
+      })
+
+      const result = await manager.refreshProviderModels('omni')
+
+      expect(result).toEqual({ success: true })
+      const models = manager.getProviders().find((p) => p.id === 'omni')?.models ?? []
+      const ids = models.map((m) => m.id).sort()
+      expect(ids).toEqual(['antigravity/gemini-3.6-flash', 'antigravity/other-model'])
+      const merged = models.find((m) => m.id === 'antigravity/gemini-3.6-flash')
+      expect(merged?.modes?.length).toBe(3)
+    })
+
     it('returns error when backend returns no models', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -564,6 +772,48 @@ describe('ProviderManager - Model Selection', () => {
       expect(settings?.chatTemplateKwargs).toEqual({ enable_thinking: true })
     })
 
+    it('does not inject chat_template_kwargs for an openai backend provider', async () => {
+      const openaiManager = createProviderManager({
+        providers: [
+          {
+            id: 'openai-p',
+            name: 'OpenAI',
+            url: 'https://api.openai.com/v1',
+            backend: 'openai',
+            apiKey: undefined,
+            models: [
+              {
+                id: 'gpt-4.1-mini',
+                contextWindow: 200000,
+                source: 'user' as const,
+                thinkingEnabled: true,
+                thinkingLevel: 'high',
+              },
+            ],
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+        defaultModelSelection: 'openai-p/gpt-4.1-mini',
+        server: { port: 10369, host: '127.0.0.1', openBrowser: true },
+        logging: { level: 'info' as const },
+        database: { path: '' },
+        llm: {
+          baseUrl: 'https://api.openai.com/v1',
+          model: 'gpt-4.1-mini',
+          timeout: 120000,
+          idleTimeout: 30000,
+          backend: 'openai',
+        },
+        context: { maxTokens: 4096, compactionThreshold: 10000, compactionTarget: 8000 },
+        agent: { maxIterations: 100, maxConsecutiveFailures: 5, toolTimeout: 30000 },
+        workdir: process.cwd(),
+      })
+
+      const settings = openaiManager.getModelSettings('openai-p', 'gpt-4.1-mini', 'thinking')
+      expect(settings?.chatTemplateKwargs).toBeUndefined()
+    })
+
     it('uses non-thinking kwargs in non-thinking mode when nonThinkingEnabled', async () => {
       await providerManager.updateModelSettings('provider-1', 'model-a', {
         thinkingEnabled: true,
@@ -676,6 +926,52 @@ describe('ProviderManager - Model Selection', () => {
       })
 
       expect(providerManager.resolveModelEffort('provider-1', 'model-a', 'none')).toBe('none')
+    })
+
+    it('preserves selected status, requestBody, and modes when updating model settings', async () => {
+      const pm = createProviderManager({
+        ...config,
+        providers: [
+          {
+            id: 'p-custom',
+            name: 'Custom Provider',
+            url: 'https://example.com/v1',
+            backend: 'openai',
+            models: [
+              {
+                id: 'custom-model',
+                contextWindow: 128000,
+                source: 'user',
+                selected: true,
+                requestBody: { custom_param: 123 },
+                modes: [
+                  { level: 'low', apiModelId: 'custom-model-low' },
+                  { level: 'high', apiModelId: 'custom-model-high' },
+                ],
+              },
+            ],
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      })
+
+      const res = await pm.updateModelSettings('p-custom', 'custom-model', {
+        thinkingEnabled: true,
+        thinkingLevel: 'low',
+      })
+
+      expect(res.success).toBe(true)
+      expect(res.model?.selected).toBe(true)
+      expect(res.model?.requestBody).toEqual({ custom_param: 123 })
+      expect(res.model?.modes?.length).toBe(2)
+
+      const provider = pm.getProviders().find((p) => p.id === 'p-custom')
+      const updated = provider?.models.find((m) => m.id === 'custom-model')
+      expect(updated?.selected).toBe(true)
+      expect(updated?.requestBody).toEqual({ custom_param: 123 })
+      expect(updated?.modes?.length).toBe(2)
+      expect(updated?.thinkingLevel).toBe('low')
     })
 
     it('an explicit in-list effort wins over the model default', async () => {
@@ -1116,5 +1412,108 @@ describe('ProviderManager - Model Selection', () => {
       expect(model.reasoningEfforts).toEqual(['low'])
       expect(model.reasoningEffortOverride).toBe('deep')
     })
+  })
+})
+
+describe('fetchModelsWithContext - Ollama vision detection', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('detects vision via vision_start_token_id', async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ models: [{ name: 'llava' }] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ model_info: { vision_start_token_id: 32000 } }),
+      })
+    const models = await fetchModelsWithContext('http://localhost:11434', undefined, 'ollama')
+    expect(models[0]?.supportsVision).toBe(true)
+  })
+
+  it('detects vision via clip.vision_projection metadata key', async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ models: [{ name: 'llava2' }] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ model_info: { 'clip.vision_projection': { type: 'tensor' } } }),
+      })
+    const models = await fetchModelsWithContext('http://localhost:11434', undefined, 'ollama')
+    expect(models[0]?.supportsVision).toBe(true)
+  })
+
+  it('does not flag a text-only model as vision', async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ models: [{ name: 'qwen3' }] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ model_info: { 'general.architecture': 'qwen3' } }),
+      })
+    const models = await fetchModelsWithContext('http://localhost:11434', undefined, 'ollama')
+    expect(models[0]?.supportsVision).toBeUndefined()
+  })
+})
+
+describe('ProviderManager - unknown backend URL detection', () => {
+  function buildManager(providers: Provider[]) {
+    return createProviderManager({
+      providers,
+      defaultModelSelection: 'p/model-a',
+      server: { port: 10369, host: '127.0.0.1', openBrowser: true },
+      logging: { level: 'info' as const },
+      database: { path: '' },
+      llm: {
+        baseUrl: 'http://localhost:8000/v1',
+        model: 'model-a',
+        timeout: 120000,
+        idleTimeout: 30000,
+        backend: 'vllm',
+      },
+      context: { maxTokens: 4096, compactionThreshold: 10000, compactionTarget: 8000 },
+      agent: { maxIterations: 100, maxConsecutiveFailures: 5, toolTimeout: 30000 },
+      workdir: process.cwd(),
+    })
+  }
+
+  function openAIProvider(backend: Provider['backend'], url = 'https://api.openai.com/v1'): Provider {
+    return {
+      id: 'p',
+      name: 'OpenAI',
+      url,
+      backend,
+      models: [{ id: 'gpt-4.1-mini', contextWindow: 200000, source: 'default' as const }],
+      isActive: true,
+      createdAt: new Date().toISOString(),
+    }
+  }
+
+  it('resolves an unknown backend to openai for api.openai.com URLs', () => {
+    const manager = buildManager([openAIProvider('unknown')])
+    manager.createClient('p', 'gpt-4.1-mini')
+    const config = createLLMClientMock.mock.calls.at(-1)![0]!
+    expect(config.llm.backend).toBe('openai')
+  })
+
+  it('leaves an explicit backend untouched even for api.openai.com', () => {
+    const manager = buildManager([openAIProvider('vllm')])
+    manager.createClient('p', 'gpt-4.1-mini')
+    const config = createLLMClientMock.mock.calls.at(-1)![0]!
+    expect(config.llm.backend).toBe('vllm')
+  })
+
+  it('keeps unknown when the URL host is not recognized', () => {
+    const manager = buildManager([openAIProvider('unknown', 'https://my-vllm.example.com/v1')])
+    manager.createClient('p', 'gpt-4.1-mini')
+    const config = createLLMClientMock.mock.calls.at(-1)![0]!
+    expect(config.llm.backend).toBe('unknown')
   })
 })

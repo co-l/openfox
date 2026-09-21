@@ -2,7 +2,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { TasksModal } from './TasksModal'
-import { useTasksStore } from '../../stores/tasks'
+import { clearCache } from '../../lib/resourceCache'
+import { boardResource } from '../../lib/resources'
 import type { ProjectTask, ProjectTaskSettings, ProjectTaskCounts } from '@shared/types.js'
 import { authFetch } from '../../lib/api'
 
@@ -59,15 +60,16 @@ const board: { tasks: ProjectTask[]; settings: ProjectTaskSettings; counts: Proj
 describe('TasksModal', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
-    useTasksStore.setState({
-      tasks: board.tasks,
-      settings: board.settings,
-      counts: board.counts,
-      gates: [],
-      activeProjectId: 'proj-1',
-      lastError: null,
-      lastAutoLaunch: null,
-    })
+    clearCache()
+    boardResource.write(
+      {
+        tasks: board.tasks,
+        settings: board.settings,
+        counts: board.counts,
+        gates: [],
+      },
+      'proj-1',
+    )
     const authFetchMock = vi.mocked(authFetch)
     authFetchMock.mockImplementation(async (url: string) => {
       if (url.endsWith('/tasks/gates')) {
@@ -172,11 +174,15 @@ describe('TasksModal', () => {
         counts: { open: 1, todo: 1, inProgress: 0, running: 0, queued: 0, done: 1 },
       }),
     } as unknown as Response)
-    useTasksStore.setState({
-      tasks: customTasks,
-      settings: { slotLimit: 1, queuePaused: false },
-      counts: { open: 1, todo: 1, inProgress: 0, running: 0, queued: 0, done: 1 },
-    })
+    boardResource.write(
+      {
+        tasks: customTasks,
+        settings: { slotLimit: 1, queuePaused: false },
+        counts: { open: 1, todo: 1, inProgress: 0, running: 0, queued: 0, done: 1 },
+        gates: [],
+      },
+      'proj-1',
+    )
     render(<TasksModal isOpen onClose={() => {}} projectId="proj-1" />)
 
     // A todo card with no bound session shows no link; the done card links to
@@ -294,5 +300,45 @@ describe('TasksModal', () => {
     const slot = await screen.findByTitle('Parallel-slot limit')
     // Two immediate clicks from 1 must land on 3 (1 -> 2 -> 3), not stall on 1.
     expect(slot.textContent).toContain('3')
+  })
+
+  it('floats planned tasks to the top of To Do, soonest trigger first', () => {
+    boardResource.write(
+      {
+        tasks: [
+          task({ id: 'normal', prompt: 'Normal task', position: 0 }),
+          task({
+            id: 'later',
+            prompt: 'Planned later',
+            position: 2,
+            schedule: { type: 'once', runAt: '2030-06-01T09:00:00' },
+          }),
+          task({
+            id: 'soon',
+            prompt: 'Planned soon',
+            position: 1,
+            schedule: {
+              type: 'recurring',
+              freq: 'day',
+              interval: 1,
+              startAt: '2030-01-01T09:00:00',
+              end: { kind: 'never' },
+              occurrencesDone: 0,
+              nextRunAt: '2030-01-15T09:00:00',
+            },
+          }),
+        ],
+        settings: { slotLimit: 1, queuePaused: false },
+        counts: { open: 3, todo: 3, inProgress: 0, running: 0, queued: 0, done: 0 },
+        gates: [],
+      },
+      'proj-1',
+    )
+
+    render(<TasksModal isOpen onClose={() => {}} projectId="proj-1" />)
+
+    const todoSection = screen.getByText('To Do').closest('section')!
+    const prompts = Array.from(todoSection.querySelectorAll('p')).map((p) => p.textContent)
+    expect(prompts).toEqual(['Planned soon', 'Planned later', 'Normal task'])
   })
 })

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent } from 'react'
+import { getLocale } from '@shared/i18n/index.js'
 import { useShallow } from 'zustand/react/shallow'
 import { useSessionStore } from '../../stores/session'
 import { buildAggregateGenerationSeries } from '../../lib/split-stats'
+import { useT } from '../../hooks/useT'
 import type { Message } from '@shared/types.js'
 
 const CHART_WIDTH = 280
@@ -35,7 +37,7 @@ function buildSmoothPath(series: Array<{ y: number }>, maxY: number): string {
 }
 
 function formatClock(ms: number): string {
-  return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+  return new Date(ms).toLocaleTimeString(getLocale(), { hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
 /** Clamp the tooltip's centered left position (%) so it stays inside the chart. */
@@ -51,6 +53,7 @@ export function clampTooltipLeft(pointPercent: number, tooltipWidth: number, con
  * 3-minute bucket — each pane's average in the bucket, summed across panes).
  */
 export function AggregateStats() {
+  const t = useT()
   const openSessionIds = useSessionStore((state) => state.openSessionIds)
   const messagesByPane = useSessionStore(
     useShallow((state) => Object.fromEntries(openSessionIds.map((id) => [id, state.panes[id]?.messages]))),
@@ -97,12 +100,26 @@ export function AggregateStats() {
   }
 
   return (
-    <div data-testid="aggregate-stats" title="Combined generation speed across open panes, last 30 min (3-min buckets)">
+    <div
+      data-testid="aggregate-stats"
+      title={t({
+        en: 'Combined generation speed across open panes, last 30 min (3-min buckets)',
+        fr: 'Vitesse de génération combinée des panneaux ouverts, 30 dernières minutes (tranches de 3 min)',
+      })}
+    >
       <div className="flex items-baseline justify-between mb-1">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">Generation</span>
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+          {t({ en: 'Generation', fr: 'Génération' })}
+        </span>
         {maxY > 0 && (
-          <span className="text-[10px] text-text-muted" title="Peak combined generation speed in the window">
-            {Math.round(maxY)} tok/s
+          <span
+            className="text-[10px] text-text-muted"
+            title={t({
+              en: 'Peak combined generation speed in the window',
+              fr: 'Pic de vitesse de génération combinée sur la fenêtre',
+            })}
+          >
+            {t({ en: '{{n}} tok/s', fr: '{{n}} tok/s' }, { n: Math.round(maxY) })}
           </span>
         )}
       </div>
@@ -118,7 +135,10 @@ export function AggregateStats() {
             viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
             className="w-full h-9"
             preserveAspectRatio="none"
-            aria-label="Generation speed over the last 30 minutes"
+            aria-label={t({
+              en: 'Generation speed over the last 30 minutes',
+              fr: 'Vitesse de génération sur les 30 dernières minutes',
+            })}
             role="img"
           >
             <path
@@ -149,13 +169,15 @@ export function AggregateStats() {
                 className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded bg-bg-tertiary px-1.5 py-0.5 text-[10px] text-text-secondary shadow"
                 style={{ left: `${tooltipLeft}%`, top: `${topPercent(series[hovered]!.y)}%` }}
               >
-                {formatClock(series[hovered]!.x)} · {Math.round(series[hovered]!.y)} tok/s
+                {`${formatClock(series[hovered]!.x)} · ${Math.round(series[hovered]!.y)} tok/s`}
               </div>
             </>
           )}
         </div>
       ) : (
-        <p className="text-xs text-text-muted">No generation in the last 30 min</p>
+        <p className="text-xs text-text-muted">
+          {t({ en: 'No generation in the last 30 min', fr: 'Aucune génération au cours des 30 dernières minutes' })}
+        </p>
       )}
     </div>
   )

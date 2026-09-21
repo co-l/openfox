@@ -6,6 +6,7 @@ subagent: false
 color: '#3b82f6'
 allowedTools:
   - read_file
+  - describe_image
   - web_fetch
   - web_search
   - write_file
