@@ -369,16 +369,18 @@ Events: `session.created`, `turn.completed`, `workflow.step.completed`
 (emitted when a turn ends with `step_done`), `workflow.execution.changed` (any
 execution state change, including `status` and `currentStepId`),
 `task.completed` (a workflow run finished), `message.created`, `tool.completed`,
-`llm.completed`, `criterion.updated`, `devserver.started`, `devserver.stopped`.
+`llm.completed`, `criterion.updated`, `devserver.started`, `devserver.stopped`, `devserver.state.changed`.
 
-Dev-server lifecycle hooks are workdir-scoped rather than session-scoped. Their
-`data` contains the resolved `workdir` and `url`; `devserver.started` also includes
-the resolved `command` and `port`, while `devserver.stopped` includes a `reason`
-(`stop`, `exit`, or `error`) plus exit/error details when available. When OpenFox
-can resolve the owning project, the normal top-level `projectId` is included so
-plugins can read project-scoped settings. The current hook payload contract keeps
-`sessionId` as a required field, so these lifecycle events emit it as an empty
-string.
+Dev-server hooks are workdir-scoped rather than session-scoped. Their `data`
+contains the resolved `workdir` and `url`; `devserver.started` also includes
+the resolved `command` and `port`, while `devserver.stopped` includes a
+`reason` (`stop`, `exit`, or `error`) plus exit/error details when available.
+`devserver.state.changed` follows the existing state-change path and reports
+`state` (`off`, `running`, `warning`, or `error`), `inspectProxyPort`,
+and `errorMessage` when present. When OpenFox can resolve the owning project,
+the normal top-level `projectId` is included so plugins can read project-scoped
+settings. The current hook payload contract keeps `sessionId` as a required
+field, so these workdir-scoped events emit it as an empty string.
 
 Hooks are **observational**: they cannot block or alter the agent loop. Each
 handler runs with a 5 s timeout; a throwing or slow handler is logged and
