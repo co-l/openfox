@@ -285,7 +285,42 @@ describe('plugin dev-server lifecycle hooks', () => {
       }),
     )
 
+    expect(emitPluginHook).toHaveBeenCalledWith(
+      'devserver.state.changed',
+      expect.objectContaining({
+        sessionId: '',
+        data: expect.objectContaining({
+          workdir: expect.stringContaining('plugin-hook-start'),
+          state: 'running',
+          url: status.url,
+        }),
+      }),
+    )
+
     await devServerManager.stop('/tmp/plugin-hook-start')
+  })
+
+  it('emits devserver.state.changed for warning state transitions', async () => {
+    vi.mocked(readFile).mockResolvedValue(
+      JSON.stringify({ command: 'npm run dev', url: 'http://localhost:3399' }),
+    )
+    vi.mocked(spawn).mockReturnValue(makeMockProc('', 'SyntaxError: boom', undefined) as any)
+
+    await devServerManager.start('/tmp/plugin-hook-warning')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(emitPluginHook).toHaveBeenCalledWith(
+      'devserver.state.changed',
+      expect.objectContaining({
+        data: expect.objectContaining({
+          workdir: expect.stringContaining('plugin-hook-warning'),
+          state: 'warning',
+          errorMessage: 'SyntaxError: boom',
+        }),
+      }),
+    )
+
+    await devServerManager.stop('/tmp/plugin-hook-warning')
   })
 
   it('includes projectId when the workdir belongs to a known project', async () => {
