@@ -211,6 +211,35 @@ describe('plugin UI slots', () => {
     expect(badge.className).toContain('text-accent-success')
   })
 
+  it('does not flash an unresolved RPC badge before its first result', async () => {
+    clearBadgeCache()
+    let resolveRpc
+    invokePluginRpc.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRpc = resolve
+        }),
+    )
+    contributionsRef.current = {
+      ...contributionsRef.current,
+      badges: [
+        {
+          id: 'status',
+          pluginId: 'demo',
+          slot: 'session.row.badges',
+          label: { en: 'Dev server', fr: 'Serveur dev' },
+          source: { kind: 'rpc', method: 'status' },
+        },
+      ],
+    }
+
+    const view = render(<PluginBadges slot="session.row.badges" context={{ sessionId: 's1', workdir: '/tmp/a' }} />)
+    expect(view.container.innerHTML).toBe('')
+
+    resolveRpc?.({ visible: true, tone: 'success' })
+    await waitFor(() => expect(view.container.textContent).toContain('Dev server'))
+  })
+
   it('hides a dynamic badge when its RPC result sets visible false', async () => {
     clearBadgeCache()
     invokePluginRpc.mockResolvedValue({ visible: false })
