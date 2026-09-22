@@ -210,9 +210,10 @@ and maps them to hook events via `EVENT_HOOK_MAP` (host.ts):
 | `task.completed`             | `task.completed`                              |                                 |
 
 `llm.completed` is emitted directly from the agent loop (`agent-loop.ts`, after
-each completion attempt). `devserver.started` and `devserver.stopped` are emitted
-directly by `DevServerManager` because they are process-lifecycle events rather
-than EventStore events. All three use the same `setPluginHookEmitter` bridge.
+each completion attempt). `devserver.started`, `devserver.stopped`, and
+`devserver.state.changed` are emitted directly by `DevServerManager` because
+they are process/state events rather than EventStore events. All of them use the
+same `setPluginHookEmitter` bridge.
 
 Hooks are strictly observational — the agent loop never awaits hook results to
 decide anything.
