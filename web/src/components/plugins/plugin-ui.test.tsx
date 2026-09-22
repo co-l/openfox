@@ -182,6 +182,82 @@ describe('plugin UI slots', () => {
     expect(invokePluginRpc).toHaveBeenCalledTimes(1)
   })
 
+  it('applies dynamic badge visibility, tone, tooltip and icon overrides', async () => {
+    clearBadgeCache()
+    invokePluginRpc.mockResolvedValue({
+      visible: true,
+      tone: 'success',
+      tooltip: { en: 'Dev server running', fr: 'Serveur dev actif' },
+      icon: 'M3 4h18v6H3z M3 14h18v6H3z',
+    })
+    contributionsRef.current = {
+      ...contributionsRef.current,
+      badges: [
+        {
+          id: 'status',
+          pluginId: 'demo',
+          slot: 'session.row.badges',
+          label: { en: 'Dev server', fr: 'Serveur dev' },
+          appearance: 'icon',
+          source: { kind: 'rpc', method: 'status' },
+        },
+      ],
+    }
+
+    render(<PluginBadges slot="session.row.badges" context={{ sessionId: 's1', workdir: '/tmp/a' }} />)
+
+    await waitFor(() => expect(screen.getByTitle('Dev server running')).toBeDefined())
+    const badge = screen.getByTestId('plugin-badge')
+    expect(badge.className).toContain('text-accent-success')
+  })
+
+  it('hides a dynamic badge when its RPC result sets visible false', async () => {
+    clearBadgeCache()
+    invokePluginRpc.mockResolvedValue({ visible: false })
+    contributionsRef.current = {
+      ...contributionsRef.current,
+      badges: [
+        {
+          id: 'status',
+          pluginId: 'demo',
+          slot: 'session.row.badges',
+          label: { en: 'Dev server', fr: 'Serveur dev' },
+          source: { kind: 'rpc', method: 'status' },
+        },
+      ],
+    }
+
+    const view = render(<PluginBadges slot="session.row.badges" context={{ sessionId: 's1', workdir: '/tmp/a' }} />)
+    await waitFor(() => expect(view.container.innerHTML).toBe(''))
+  })
+
+  it('dedupes RPC badges by workdir when cacheScope is workdir', async () => {
+    clearBadgeCache()
+    invokePluginRpc.mockResolvedValue(7)
+    contributionsRef.current = {
+      ...contributionsRef.current,
+      badges: [
+        {
+          id: 'dynamic',
+          pluginId: 'demo',
+          slot: 'session.row.badges',
+          label: { en: 'Quota', fr: 'Quota' },
+          source: { kind: 'rpc', method: 'quota', cacheScope: 'workdir' },
+        },
+      ],
+    }
+
+    render(
+      <>
+        <PluginBadges slot="session.row.badges" context={{ sessionId: 's1', workdir: '/tmp/shared' }} />
+        <PluginBadges slot="session.row.badges" context={{ sessionId: 's2', workdir: '/tmp/shared' }} />
+      </>,
+    )
+
+    await waitFor(() => expect(screen.getAllByText('Quota 7')).toHaveLength(2))
+    expect(invokePluginRpc).toHaveBeenCalledTimes(1)
+  })
+
   it('renders an action for every documented action slot', () => {
     const slots = ['header.actions', 'session.header.actions', 'message.actions', 'composer.actions'] as const
     for (const slot of slots) {
