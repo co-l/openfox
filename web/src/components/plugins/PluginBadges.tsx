@@ -125,7 +125,8 @@ function PluginBadgeView({ badge, context }: { badge: PluginUiBadge; context: Pl
     context.projectId,
   ])
 
-  const current = resolved.key === undefined || resolved.key === cacheKey ? resolved : { loaded: false }
+  const current: ResolvedBadgeValue =
+    resolved.key === undefined || resolved.key === cacheKey ? resolved : { loaded: false }
   const dynamic = current.dynamic
   if (dynamic?.visible === false) return null
 
