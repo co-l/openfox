@@ -213,10 +213,10 @@ describe('plugin UI slots', () => {
 
   it('does not flash an unresolved RPC badge before its first result', async () => {
     clearBadgeCache()
-    let resolveRpc
+    let resolveRpc: ((value: unknown) => void) | undefined
     invokePluginRpc.mockImplementation(
       () =>
-        new Promise((resolve) => {
+        new Promise<unknown>((resolve) => {
           resolveRpc = resolve
         }),
     )
