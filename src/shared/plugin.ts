@@ -82,6 +82,27 @@ export interface PluginUiAction {
   onActivate: PluginActivation
 }
 
+export type PluginUiBadgeAppearance = 'badge' | 'icon'
+export type PluginUiBadgeCacheScope = 'context' | 'session' | 'workdir' | 'project'
+
+export interface PluginUiBadgeDynamicState {
+  visible?: boolean
+  value?: string | number
+  label?: LocalizedString
+  tone?: PluginBadgeTone
+  tooltip?: LocalizedString
+  icon?: string
+}
+
+export interface PluginUiBadgeRpcSource {
+  kind: 'rpc'
+  method: string
+  /** Optional live refresh interval. Omit for the default cache-only behavior. */
+  refreshMs?: number
+  /** Controls RPC de-duplication when the same badge is rendered in many rows. */
+  cacheScope?: PluginUiBadgeCacheScope
+}
+
 export interface PluginUiBadge {
   id: string
   pluginId?: string
@@ -89,9 +110,12 @@ export interface PluginUiBadge {
   label: LocalizedString
   tone?: PluginBadgeTone
   tooltip?: LocalizedString
+  icon?: string
+  /** Compact icon-only rendering for passive status indicators. */
+  appearance?: PluginUiBadgeAppearance
   value?: string
   visibleWhen?: PluginVisibilityCondition
-  source?: { kind: 'rpc'; method: string }
+  source?: PluginUiBadgeRpcSource
 }
 
 export type DeclarativeNode =
