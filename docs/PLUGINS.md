@@ -290,16 +290,41 @@ rendering.
 
 **Badges**
 
+Badges may be static or RPC-backed. RPC badges remain backwards-compatible with
+primitive `string`/`number` results, and may also return presentation state
+(`visible`, `value`, `label`, `tone`, `tooltip`, `icon`) so status
+indicators can change without core feature-specific UI code.
+
 ```ts
 registry.registerUiBadge({
-  id: 'quota',
+  id: 'dev-status',
   slot: 'session.row.badges',
-  label: { en: 'Quota', fr: 'Quota' },
-  tone: 'warning', // neutral | info | success | warning | danger
-  visibleWhen: { hasSession: true }, // optional declarative visibility
-  source: { kind: 'rpc', method: 'quota' }, // optional; value may also be a static string
+  label: { en: 'Dev server', fr: 'Serveur dev' },
+  icon: 'M3 4h18v6H3z M3 14h18v6H3z', // named icon or raw SVG path
+  appearance: 'icon', // badge | icon
+  visibleWhen: { hasSession: true },
+  source: {
+    kind: 'rpc',
+    method: 'status',
+    refreshMs: 2000, // optional; minimum effective interval is 250 ms
+    cacheScope: 'workdir', // context | session | workdir | project
+  },
+})
+
+registry.registerRpc('status', async (_params, context) => {
+  if (!context.workdir) return { visible: false }
+  return {
+    visible: true,
+    tone: 'success',
+    tooltip: { en: 'Dev server running', fr: 'Serveur dev actif' },
+  }
 })
 ```
+
+`cacheScope` controls single-flight de-duplication when the same contribution
+is rendered repeatedly. Existing plugins keep the original session-first cache
+behavior when it is omitted. Session-row badge RPC context includes
+`sessionId`, `projectId`, and the effective `workdir`.
 
 **Panels**
 
