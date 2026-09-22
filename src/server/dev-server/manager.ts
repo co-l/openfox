@@ -139,6 +139,19 @@ class DevServerManager {
     for (const listener of this.stateListeners) {
       listener(resolved, state, errorMessage, url, inspectProxyPort)
     }
+
+    const projectId = this.resolveProjectId(workdir)
+    emitPluginHook('devserver.state.changed', {
+      sessionId: '',
+      ...(projectId ? { projectId } : {}),
+      data: {
+        workdir: resolved,
+        state,
+        url,
+        inspectProxyPort,
+        ...(errorMessage ? { errorMessage } : {}),
+      },
+    })
   }
 
   private resolveProjectId(workdir: string): string | undefined {
