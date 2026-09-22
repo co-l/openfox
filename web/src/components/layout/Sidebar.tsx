@@ -658,7 +658,10 @@ function renderSessionList(
             <span className="text-text-muted text-xs flex-shrink-0">
               {t({ en: '{{count}} messages', fr: '{{count}} messages' }, { count: session.messageCount })}
             </span>
-            <PluginBadges slot="session.row.badges" context={{ sessionId: session.id, projectId }} />
+            <PluginBadges
+              slot="session.row.badges"
+              context={{ sessionId: session.id, projectId, workdir: session.workspace ?? session.workdir }}
+            />
           </div>
         </Link>
       </div>
