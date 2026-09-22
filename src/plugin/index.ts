@@ -177,6 +177,7 @@ export type PluginHookEvent =
   | 'criterion.updated'
   | 'devserver.started'
   | 'devserver.stopped'
+  | 'devserver.state.changed'
 
 export interface PluginHookPayload {
   event: PluginHookEvent
