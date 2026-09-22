@@ -128,6 +128,7 @@ function PluginBadgeView({ badge, context }: { badge: PluginUiBadge; context: Pl
   const current: ResolvedBadgeValue =
     resolved.key === undefined || resolved.key === cacheKey ? resolved : { loaded: false }
   const dynamic = current.dynamic
+  if (badge.source && !current.loaded && badge.value === undefined) return null
   if (dynamic?.visible === false) return null
 
   const tone = dynamic?.tone ?? badge.tone
