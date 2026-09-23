@@ -442,6 +442,58 @@ describe('computeSessionStats', () => {
     ])
   })
 
+  it('preserves provider cache and context fields in full stats progression', () => {
+    const messages = [
+      createMessageWithStats('1', {
+        mode: 'builder',
+        cachedPromptTokens: 78000,
+        cacheWriteTokens: 2000,
+        cacheSource: 'provider',
+        retryCount: 1,
+        compactionCount: 2,
+        llmCalls: [
+          {
+            providerId: 'provider-1',
+            providerName: 'MiniMax',
+            backend: 'openai',
+            model: 'MiniMax-M3',
+            callIndex: 1,
+            promptTokens: 80000,
+            completionTokens: 500,
+            ttft: 0.5,
+            completionTime: 2,
+            prefillSpeed: 4000,
+            generationSpeed: 250,
+            totalTime: 2.5,
+            cachedPromptTokens: 78000,
+            cacheWriteTokens: 2000,
+            cacheSource: 'provider',
+            contextSize: 80000,
+            retries: 1,
+          },
+        ],
+      }),
+    ]
+
+    const result = computeSessionStats(messages)!
+
+    expect(result.dataPoints[0]).toMatchObject({
+      cachedPromptTokens: 78000,
+      cacheWriteTokens: 2000,
+      cacheSource: 'provider',
+      retryCount: 1,
+      compactionCount: 2,
+    })
+    expect(result.callDataPoints[0]).toMatchObject({
+      promptTokens: 80000,
+      cachedPromptTokens: 78000,
+      cacheWriteTokens: 2000,
+      cacheSource: 'provider',
+      contextSize: 80000,
+      retries: 1,
+    })
+  })
+
   it('skips messages with error-only stats (e.g., aborted/terminated)', () => {
     const messages: Message[] = [
       createMessageWithStats('1', { mode: 'builder' }),

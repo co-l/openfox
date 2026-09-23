@@ -65,7 +65,17 @@ describe('GET /api/sessions/:id/stats — real handler', () => {
       getEventStore: () => ({
         getEventsSinceSnapshot: vi.fn(() => ({ snapshot: undefined, events: [] })),
       }),
-      combineEventsWithSnapshot: vi.fn((_id: string, _snapshot: unknown, events: unknown[]) => events),
+      combineEventsWithSnapshot: vi.fn((_id: string, _snapshot: unknown, events: unknown[]) => [
+        ...(events as unknown[]),
+        {
+          seq: 1,
+          timestamp: 1,
+          sessionId: 'session-1',
+          type: 'pattern.retry',
+          data: { messageId: 'msg-1', pattern: '<tool_call', field: 'content', attempt: 1, maxAttempts: 10 },
+        },
+      ]),
+      getLegacyCompactionBaseline: vi.fn(() => null),
     }))
 
     vi.doMock('../events/folding.js', () => ({
@@ -96,7 +106,13 @@ describe('GET /api/sessions/:id/stats — real handler', () => {
   it('returns the full session stats with per-response and per-call progression data', async () => {
     const res = await fetch(`${baseUrl}/api/sessions/session-1/stats`)
     expect(res.status).toBe(200)
-    const data = (await res.json()) as { stats: { responseCount: number; llmCallCount: number } }
+    const data = (await res.json()) as {
+      stats: {
+        responseCount: number
+        llmCallCount: number
+        events: { retries: Array<{ responseIndex: number }> }
+      }
+    }
 
     expect(buildStatsMock).toHaveBeenCalled()
     expect(data.stats).not.toBeNull()
@@ -104,6 +120,9 @@ describe('GET /api/sessions/:id/stats — real handler', () => {
     expect(data.stats.llmCallCount).toBe(1)
     expect(data.stats).toHaveProperty('dataPoints')
     expect(data.stats).toHaveProperty('callDataPoints')
+    expect(data.stats).toHaveProperty('events')
+    expect(data.stats.events.retries).toHaveLength(1)
+    expect(data.stats.events.retries[0]!.responseIndex).toBe(1)
   })
 
   it('returns 404 for an unknown session', async () => {

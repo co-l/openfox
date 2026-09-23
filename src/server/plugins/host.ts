@@ -527,6 +527,11 @@ const EVENT_HOOK_MAP: Partial<Record<string, PluginHookEvent>> = {
   'tool.result': 'tool.completed',
   'criterion.updated': 'criterion.updated',
   'workflow.execution_changed': 'workflow.execution.changed',
+  // OpenFox-internal events (Plugin API v2). Mapped 1:1 from the
+  // TurnEvent names so plugins can correlate hook payloads with the
+  // session's EventStore stream.
+  'context.compacted': 'context.compacted',
+  'pattern.retry': 'retry.triggered',
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {

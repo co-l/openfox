@@ -29,6 +29,81 @@ describe('stats computation', () => {
     })
   })
 
+  describe('provider cache propagation', () => {
+    it('preserves provider cache fields on a single-call message', () => {
+      const result = computeMessageStats({
+        identity: identity,
+        mode: 'builder',
+        timing: { ttft: 1, completionTime: 1, tps: 0, prefillTps: 0 },
+        usage: {
+          promptTokens: 1000,
+          completionTokens: 100,
+          totalTokens: 1100,
+          cachedPromptTokens: 900,
+          cacheWriteTokens: 50,
+          cacheSource: 'provider',
+        },
+      })
+
+      expect(result).toMatchObject({
+        cachedPromptTokens: 900,
+        cacheWriteTokens: 50,
+        cacheSource: 'provider',
+      })
+      expect(result.llmCalls?.[0]).toMatchObject({
+        cachedPromptTokens: 900,
+        cacheWriteTokens: 50,
+        cacheSource: 'provider',
+      })
+    })
+
+    it('only emits aggregate cache totals when every call has provider attribution', () => {
+      const common = {
+        ...identity,
+        promptTokens: 100,
+        completionTokens: 10,
+        ttft: 1,
+        completionTime: 1,
+        prefillSpeed: 100,
+        generationSpeed: 10,
+        totalTime: 2,
+      }
+      const complete = computeAggregatedStats({
+        identity: identity,
+        mode: 'builder',
+        totalPrefillTokens: 200,
+        totalGenTokens: 20,
+        totalPrefillTime: 2,
+        totalGenTime: 2,
+        totalToolTime: 0,
+        totalTime: 4,
+        llmCalls: [
+          { ...common, callIndex: 1, cachedPromptTokens: 90, cacheSource: 'provider' },
+          { ...common, callIndex: 2, cachedPromptTokens: 80, cacheSource: 'provider' },
+        ],
+      })
+      expect(complete.cachedPromptTokens).toBe(170)
+      expect(complete.cacheSource).toBe('provider')
+
+      const partial = computeAggregatedStats({
+        identity: identity,
+        mode: 'builder',
+        totalPrefillTokens: 200,
+        totalGenTokens: 20,
+        totalPrefillTime: 2,
+        totalGenTime: 2,
+        totalToolTime: 0,
+        totalTime: 4,
+        llmCalls: [
+          { ...common, callIndex: 1, cachedPromptTokens: 90, cacheSource: 'provider' },
+          { ...common, callIndex: 2, cacheSource: 'unavailable' },
+        ],
+      })
+      expect(partial.cachedPromptTokens).toBeUndefined()
+      expect(partial.cacheSource).toBeUndefined()
+    })
+  })
+
   describe('computeAggregatedStats', () => {
     it('calculates speeds correctly for multiple LLM calls', () => {
       // Simulate 5 LLM calls, each with ~70k prompt tokens and ~500 gen tokens

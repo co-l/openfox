@@ -126,7 +126,7 @@ describe('llm client', () => {
       thinkingContent: 'Reasoning here',
       toolCalls: [{ id: 'call-1', name: 'glob', arguments: { pattern: '*.ts' } }],
       finishReason: 'tool_calls',
-      usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+      usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15, cacheSource: 'unavailable' as const },
     })
   })
 
@@ -159,7 +159,7 @@ describe('llm client', () => {
       content: 'Final answer',
       thinkingContent: 'My reasoning process',
       finishReason: 'stop',
-      usage: { promptTokens: 4, completionTokens: 2, totalTokens: 6 },
+      usage: { promptTokens: 4, completionTokens: 2, totalTokens: 6, cacheSource: 'unavailable' as const },
     })
   })
 
@@ -248,7 +248,7 @@ describe('llm client', () => {
       content: 'Final content',
       thinkingContent: 'reasoning process',
       finishReason: 'stop',
-      usage: { promptTokens: 6, completionTokens: 2, totalTokens: 8 },
+      usage: { promptTokens: 6, completionTokens: 2, totalTokens: 8, cacheSource: 'unavailable' as const },
     })
   })
 
@@ -275,7 +275,7 @@ describe('llm client', () => {
               finish_reason: 'tool_calls',
             },
           ],
-          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, cacheSource: 'unavailable' as const },
         })
       })(),
     )
@@ -314,7 +314,7 @@ describe('llm client', () => {
           },
         },
       ],
-      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, cacheSource: 'unavailable' as const },
     })
 
     const client = createLLMClient(createConfig(), 'vllm')
@@ -402,7 +402,7 @@ describe('llm client', () => {
           thinkingContent: 'think',
           toolCalls: [{ id: 'call-1', name: 'glob', arguments: { pattern: '*.ts' } }],
           finishReason: 'tool_calls',
-          usage: { promptTokens: 11, completionTokens: 6, totalTokens: 17 },
+          usage: { promptTokens: 11, completionTokens: 6, totalTokens: 17, cacheSource: 'unavailable' as const },
         },
       },
     ])
@@ -432,7 +432,7 @@ describe('llm client', () => {
     expect(events.at(-1)).toMatchObject({
       type: 'done',
       response: {
-        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, cacheSource: 'unavailable' as const },
       },
     })
   })
@@ -468,7 +468,7 @@ describe('llm client', () => {
     expect(events.at(-1)).toMatchObject({
       type: 'done',
       response: {
-        usage: { promptTokens: 11, completionTokens: 6, totalTokens: 17 },
+        usage: { promptTokens: 11, completionTokens: 6, totalTokens: 17, cacheSource: 'unavailable' as const },
       },
     })
   })
@@ -517,7 +517,7 @@ describe('llm client', () => {
           content: 'final answer',
           thinkingContent: 'step by step',
           finishReason: 'stop',
-          usage: { promptTokens: 3, completionTokens: 2, totalTokens: 5 },
+          usage: { promptTokens: 3, completionTokens: 2, totalTokens: 5, cacheSource: 'unavailable' as const },
         },
       },
     ])
@@ -567,7 +567,7 @@ describe('llm client', () => {
           content: '',
           thinkingContent: 'reasoning process',
           finishReason: 'tool_calls',
-          usage: { promptTokens: 9, completionTokens: 3, totalTokens: 12 },
+          usage: { promptTokens: 9, completionTokens: 3, totalTokens: 12, cacheSource: 'unavailable' as const },
           toolCalls: [
             {
               id: 'call-1',
@@ -812,7 +812,7 @@ describe('llm client', () => {
         })
         yield createChunk({
           choices: [{ delta: { content: 'final answer' }, finish_reason: 'stop' }],
-          usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 },
+          usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8, cacheSource: 'unavailable' as const },
         })
       })(),
     )
@@ -843,7 +843,7 @@ describe('llm client', () => {
           content: 'final answer',
           thinkingContent: 'step by step',
           finishReason: 'stop',
-          usage: { promptTokens: 5, completionTokens: 3, totalTokens: 8 },
+          usage: { promptTokens: 5, completionTokens: 3, totalTokens: 8, cacheSource: 'unavailable' as const },
         },
       },
     ])
@@ -861,7 +861,7 @@ describe('llm client', () => {
           await delay(50)
         }
         yield createChunk({
-          usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 },
+          usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20, cacheSource: 'unavailable' as const },
         })
       })(),
     )
@@ -904,7 +904,7 @@ describe('llm client', () => {
         })
         yield createChunk({
           choices: [{ delta: { content: [{ type: 'text', text: ' How are you?' }] }, finish_reason: 'stop' }],
-          usage: { prompt_tokens: 10, completion_tokens: 8, total_tokens: 18 },
+          usage: { prompt_tokens: 10, completion_tokens: 8, total_tokens: 18, cacheSource: 'unavailable' as const },
         })
       })(),
     )
@@ -928,7 +928,7 @@ describe('llm client', () => {
           content: 'Hello there! How are you?',
           thinkingContent: 'Let me think...',
           finishReason: 'stop',
-          usage: { promptTokens: 10, completionTokens: 8, totalTokens: 18 },
+          usage: { promptTokens: 10, completionTokens: 8, totalTokens: 18, cacheSource: 'unavailable' as const },
         },
       },
     ])
@@ -948,7 +948,7 @@ describe('llm client', () => {
           },
         },
       ],
-      usage: { prompt_tokens: 10, completion_tokens: 8, total_tokens: 18 },
+      usage: { prompt_tokens: 10, completion_tokens: 8, total_tokens: 18, cacheSource: 'unavailable' as const },
     })
 
     const client = createLLMClient(createConfig(), 'vllm')
@@ -983,7 +983,7 @@ describe('llm client', () => {
           id: 'resp-1',
           content: 'Just text',
           finishReason: 'stop',
-          usage: { promptTokens: 5, completionTokens: 2, totalTokens: 7 },
+          usage: { promptTokens: 5, completionTokens: 2, totalTokens: 7, cacheSource: 'unavailable' as const },
         },
       },
     ])

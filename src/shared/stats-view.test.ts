@@ -179,6 +179,16 @@ const baseStats: SessionStats = {
       totalTime: 13.1,
     },
   ],
+  events: {
+    compactions: [],
+    retries: [],
+    toolCalls: 0,
+    toolErrors: 0,
+    toolBreakdown: [],
+    subAgentCalls: 0,
+    compactionCount: 0,
+    retryCount: 0,
+  },
   modelGroups: [
     {
       key: 'provider-1::qwen-1',
@@ -243,6 +253,16 @@ describe('stats view helpers', () => {
       ...baseStats,
       llmCallCount: 0,
       callDataPoints: [],
+      events: {
+        compactions: [],
+        retries: [],
+        toolCalls: 0,
+        toolErrors: 0,
+        toolBreakdown: [],
+        subAgentCalls: 0,
+        compactionCount: 0,
+        retryCount: 0,
+      },
     }
 
     const chart = buildPerformanceChartData(responseOnlyStats)

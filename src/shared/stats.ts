@@ -3,6 +3,8 @@
  * across multiple assistant messages into SessionStats for benchmarking and trends.
  */
 
+import { emptyEventRollup } from './stats-rollup.js'
+
 import type {
   AgentSessionStats,
   CallStatsDataPoint,
@@ -171,7 +173,9 @@ function filterWithStats(messages: StatsSource[]): MessageWithStats[] {
     .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
 }
 
-function buildSessionStats(messagesWithStats: MessageWithStats[]): Omit<SessionStats, 'modelGroups' | 'agentGroups'> {
+function buildSessionStats(
+  messagesWithStats: MessageWithStats[],
+): Omit<SessionStats, 'modelGroups' | 'agentGroups' | 'events'> {
   const agg = aggregateMessages(messagesWithStats)
   const dataPoints: StatsDataPoint[] = []
   const callDataPoints: CallStatsDataPoint[] = []
@@ -194,6 +198,11 @@ function buildSessionStats(messagesWithStats: MessageWithStats[]): Omit<SessionS
       totalTime: stats.totalTime,
       aiTime: stats.totalTime - stats.toolTime,
       toolTime: stats.toolTime,
+      ...(stats.cachedPromptTokens !== undefined ? { cachedPromptTokens: stats.cachedPromptTokens } : {}),
+      ...(stats.cacheWriteTokens !== undefined ? { cacheWriteTokens: stats.cacheWriteTokens } : {}),
+      ...(stats.cacheSource !== undefined ? { cacheSource: stats.cacheSource } : {}),
+      ...(stats.retryCount !== undefined ? { retryCount: stats.retryCount } : {}),
+      ...(stats.compactionCount !== undefined ? { compactionCount: stats.compactionCount } : {}),
     })
 
     const llmCalls = stats.llmCalls ?? []
@@ -221,6 +230,11 @@ function buildSessionStats(messagesWithStats: MessageWithStats[]): Omit<SessionS
         ...(call.topP !== undefined ? { topP: call.topP } : {}),
         ...(call.topK !== undefined ? { topK: call.topK } : {}),
         ...(call.maxTokens !== undefined ? { maxTokens: call.maxTokens } : {}),
+        ...(call.cachedPromptTokens !== undefined ? { cachedPromptTokens: call.cachedPromptTokens } : {}),
+        ...(call.cacheWriteTokens !== undefined ? { cacheWriteTokens: call.cacheWriteTokens } : {}),
+        ...(call.cacheSource !== undefined ? { cacheSource: call.cacheSource } : {}),
+        ...(call.contextSize !== undefined ? { contextSize: call.contextSize } : {}),
+        ...(call.retries !== undefined ? { retries: call.retries } : {}),
       })
     }
   }
@@ -276,6 +290,9 @@ export function computeSessionStats(messages: StatsSource[]): SessionStats | nul
 
   return {
     ...buildSessionStats(messagesWithStats),
+    // Session-wide event rollup; the route replaces this with the real
+    // EventStore-derived rollup when serving `/api/sessions/:id/stats`.
+    events: emptyEventRollup(),
     modelGroups,
     agentGroups,
   }

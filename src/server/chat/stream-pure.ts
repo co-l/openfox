@@ -17,6 +17,7 @@ import type {
   StatsIdentity,
   ToolResult,
   Attachment,
+  TokenUsage,
 } from '../../shared/types.js'
 import type { RequestContextMessage } from '../chat/request-context.js'
 import type { LLMClientWithModel } from '../llm/client.js'
@@ -79,7 +80,16 @@ export interface PureStreamResult {
   thinkingDurationMs?: number
   toolCalls: ToolCall[]
   segments: MessageSegment[]
-  usage: { promptTokens: number; completionTokens: number }
+  /** Provider cache attribution is sourced from the provider response,
+   *  never inferred from OpenFox's prefTokenIncrement. */
+  usage: {
+    promptTokens: number
+    completionTokens: number
+    totalTokens?: number
+    cachedPromptTokens?: number
+    cacheWriteTokens?: number
+    cacheSource?: 'provider' | 'estimated' | 'unavailable'
+  }
   timing: StreamTiming
   aborted: boolean
   modelParams?: ModelParams
@@ -593,6 +603,16 @@ export async function* streamLLMPure(options: PureStreamOptions): AsyncGenerator
     usage: {
       promptTokens: result.response.usage.promptTokens,
       completionTokens: result.response.usage.completionTokens,
+      totalTokens: result.response.usage.totalTokens,
+      ...(result.response.usage.cachedPromptTokens !== undefined && {
+        cachedPromptTokens: result.response.usage.cachedPromptTokens,
+      }),
+      ...(result.response.usage.cacheWriteTokens !== undefined && {
+        cacheWriteTokens: result.response.usage.cacheWriteTokens,
+      }),
+      ...(result.response.usage.cacheSource !== undefined && {
+        cacheSource: result.response.usage.cacheSource,
+      }),
     },
     timing: result.timing,
     aborted,
@@ -778,6 +798,7 @@ export class TurnMetrics {
     completionTokens: number,
     previousContextTokens?: number,
     modelParams?: ModelParams,
+    providerUsage?: Partial<TokenUsage>,
   ): void {
     const callIndex = this.llmCalls.length + 1
     this.totalPrefillTokens += promptTokens
@@ -808,6 +829,15 @@ export class TurnMetrics {
         promptTokens,
         completionTokens,
         ...(prefTokenIncrement !== undefined && { prefTokenIncrement }),
+        ...(providerUsage?.cachedPromptTokens !== undefined && {
+          cachedPromptTokens: providerUsage.cachedPromptTokens,
+        }),
+        ...(providerUsage?.cacheWriteTokens !== undefined && {
+          cacheWriteTokens: providerUsage.cacheWriteTokens,
+        }),
+        ...(providerUsage?.cacheSource !== undefined && {
+          cacheSource: providerUsage.cacheSource,
+        }),
         ttft: timing.ttft,
         completionTime: timing.completionTime,
         prefillSpeed: timing.ttft > 0 ? Math.round((prefillSource / timing.ttft) * 10) / 10 : 0,

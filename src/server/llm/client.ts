@@ -8,6 +8,7 @@ import type {
 } from './types.js'
 import type { ToolCall } from '../../shared/types.js'
 import type { ContentBlock, ChatCompletionChunk } from './openai-types.js'
+import { extractTokenUsage, extractTokenUsageForChunk } from './usage.js'
 import { logger } from '../utils/logger.js'
 import { LLMError } from '../utils/errors.js'
 import { getModelProfile, type ModelProfile } from './profiles.js'
@@ -240,10 +241,11 @@ export function createLLMClient(
           ...(thinkingContent ? { thinkingContent } : {}),
           ...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}),
           finishReason: mapFinishReason(choice.finish_reason),
-          usage: {
-            promptTokens: httpResponse.usage?.prompt_tokens ?? 0,
-            completionTokens: httpResponse.usage?.completion_tokens ?? 0,
-            totalTokens: httpResponse.usage?.total_tokens ?? 0,
+          usage: extractTokenUsage(httpResponse.usage) ?? {
+            promptTokens: 0,
+            completionTokens: 0,
+            totalTokens: 0,
+            cacheSource: 'unavailable' as const,
           },
           ...(httpResponse.raw ? { raw: httpResponse.raw } : {}),
         }
@@ -312,7 +314,12 @@ export function createLLMClient(
         let fullThinking = ''
         const toolCalls: Map<number, { id: string; name: string; arguments: string }> = new Map()
         let finishReason: LLMCompletionResponse['finishReason'] = 'stop'
-        let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
+        let usage: import('../../shared/types.js').TokenUsage = {
+          promptTokens: 0,
+          completionTokens: 0,
+          totalTokens: 0,
+          cacheSource: 'unavailable' as const,
+        }
         let responseId = ''
 
         // Clear timer immediately if external abort fires (e.g. pattern match)
@@ -347,11 +354,8 @@ export function createLLMClient(
             responseId = chunk.id
 
             if (chunk.usage) {
-              usage = {
-                promptTokens: chunk.usage.prompt_tokens ?? usage.promptTokens,
-                completionTokens: chunk.usage.completion_tokens ?? usage.completionTokens,
-                totalTokens: chunk.usage.total_tokens ?? usage.totalTokens,
-              }
+              const next = extractTokenUsageForChunk(chunk.usage)
+              if (next) usage = next
             }
 
             const choice = chunk.choices[0]

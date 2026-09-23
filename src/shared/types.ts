@@ -184,6 +184,36 @@ export type MessageRole = 'user' | 'assistant' | 'system' | 'tool'
 export type MessageSegment =
   { type: 'text'; content: string } | { type: 'thinking'; content: string } | { type: 'tool_call'; toolCallId: string }
 
+// ============================================================================
+// Token Usage (provider cache attribution — generic OpenFox contract)
+// ============================================================================
+
+/** Provenance of cache numbers reported by a provider.
+ *  - `provider`:  value is reported by the provider's API response
+ *                  (e.g. `prompt_tokens_details.cached_tokens`).
+ *  - `estimated`: value is computed by OpenFox from context tracking
+ *                  (heuristic, lower bound).
+ *  - `unavailable`: no cache info available; absence is not zero cache. */
+export type CacheSource = 'provider' | 'estimated' | 'unavailable'
+
+/** Provider-side token usage with optional cache attribution.
+ *  `cacheSource = 'unavailable'` is the default when the provider does
+ *  not report cache fields; `cachedPromptTokens` and `cacheWriteTokens`
+ *  MUST then be left undefined rather than set to 0. */
+export interface TokenUsage {
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+  /** Provider-reported tokens served from cache (OpenAI: `prompt_tokens_details.cached_tokens`,
+   *  Anthropic: `cache_read_input_tokens`, MiniMax: `cached_tokens`, etc.). */
+  cachedPromptTokens?: number
+  /** Provider-reported tokens written to cache (Anthropic: `cache_creation_input_tokens`,
+   *  OpenAI prompt-cache write, etc.). */
+  cacheWriteTokens?: number
+  /** Source attribution for the cache numbers; see `CacheSource`. */
+  cacheSource?: CacheSource
+}
+
 export interface MessageStats {
   providerId: string
   providerName: string
@@ -202,6 +232,12 @@ export interface MessageStats {
   generationTokens: number // total completion tokens
   generationSpeed: number // aggregate tokens/second
   llmCalls?: LLMCallStats[] // optional per-call breakdown for this response
+  // Provider cache attribution (response-level rollup).
+  cachedPromptTokens?: number
+  cacheWriteTokens?: number
+  cacheSource?: CacheSource
+  retryCount?: number
+  compactionCount?: number
 }
 
 export interface LLMCallStats {
@@ -226,6 +262,13 @@ export interface LLMCallStats {
   topP?: number
   topK?: number
   maxTokens?: number
+  // Provider cache attribution (per call). Forwarded verbatim from the
+  // LLM response — never derived from prefTokenIncrement.
+  cachedPromptTokens?: number
+  cacheWriteTokens?: number
+  cacheSource?: CacheSource
+  contextSize?: number
+  retries?: number
 }
 
 // Single data point for session stats progression charts
@@ -245,6 +288,12 @@ export interface StatsDataPoint {
   totalTime: number // seconds
   aiTime: number // totalTime - toolTime (LLM inference only)
   toolTime: number // seconds spent in tools during this response
+  // Provider cache attribution (response-level rollup).
+  cachedPromptTokens?: number
+  cacheWriteTokens?: number
+  cacheSource?: CacheSource
+  retryCount?: number
+  compactionCount?: number
 }
 
 export interface CallStatsDataPoint {
@@ -270,6 +319,12 @@ export interface CallStatsDataPoint {
   topP?: number
   topK?: number
   maxTokens?: number
+  // Provider cache attribution (per call).
+  cachedPromptTokens?: number
+  cacheWriteTokens?: number
+  cacheSource?: CacheSource
+  contextSize?: number
+  retries?: number
 }
 
 export interface AgentSessionStats {
@@ -305,6 +360,13 @@ export interface SessionStats {
   callDataPoints: CallStatsDataPoint[]
   modelGroups: ModelSessionStats[]
   agentGroups: AgentSessionStats[]
+  // Event-derived rollup sourced from the EventStore stream.
+  // Plugins (e.g. observability dashboards) read this for compactions,
+  // retries, tool calls, tool errors, sub-agent activity and a per-tool
+  // breakdown. When the session is loaded after execution, the rollup is
+  // still correct because the underlying events are persisted in the
+  // EventStore.
+  events: SessionStatsEventRollup
 }
 
 export interface StatsIdentity {
@@ -365,6 +427,16 @@ export interface SessionStatsSummary {
   totalPrefillSource: number
   totalPrefillTime: number
   totalGenTime: number
+  // Lean provider-cache attribution: only the session-wide totals. The
+  // full per-event rollup is fetched lazily via `GET /api/sessions/:id/stats`.
+  cachedPromptTokens?: number
+  cacheWriteTokens?: number
+  cacheSource?: CacheSource
+  toolCalls?: number
+  toolErrors?: number
+  subAgentCalls?: number
+  compactionCount?: number
+  retryCount?: number
 }
 
 export interface ModelStatsSummary extends StatsIdentity {
@@ -934,4 +1006,77 @@ export interface ElementData {
   outerHTML: string
   rect: { x: number; y: number; width: number; height: number }
   attributes: Record<string, string>
+}
+
+// ============================================================================
+// Event-derived session rollup
+// ============================================================================
+//
+// Generic OpenFox data derived from the EventStore stream. Plugins consume
+// this via `SessionStats.events` (server-computed by
+// `buildSessionStatsEventRollup`) or via the live plugin hooks
+// `context.compacted` / `retry.triggered`. The rollup is computed lazily
+// when stats are first fetched, so legacy sessions that pre-date this
+// field simply see an empty `events` block.
+// ============================================================================
+
+/**
+ * Per-compaction record. `afterTokens` is the size of the new context
+ * window's *initial state*: when the agent loop appends the `context.compacted`
+ * event it currently hard-codes `afterTokens: 0` as a sentinel meaning
+ * "fresh empty window just created", NOT a measured post-compaction size.
+ * Consumers should treat `afterTokens === 0 && beforeTokens > 0` as a fresh
+ * window start, not a zero-token measurement. The `reduction` and
+ * `reductionPercent` fields are always meaningful (previous window
+ * discarded).
+ */
+export interface CompactionEventRecord {
+  timestamp: number
+  closedWindowId: string
+  newWindowId: string
+  beforeTokens: number
+  /** Fresh-window sentinel when equal to 0; NOT a measured size. */
+  afterTokens: number
+  reduction: number
+  reductionPercent: number
+  subAgentId?: string
+  subAgentType?: string
+}
+
+export interface RetryEventRecord {
+  timestamp: number
+  type: 'pattern' | 'truncation' | 'continuation'
+  reason?: string
+  pattern?: string
+  messageId?: string
+  responseIndex?: number
+  attempt?: number
+  maxAttempts?: number
+}
+
+export interface ToolEventEntry {
+  toolName: string
+  category: string
+  count: number
+  errors: number
+}
+
+export interface SessionStatsEventRollup {
+  compactions: CompactionEventRecord[]
+  retries: RetryEventRecord[]
+  toolCalls: number
+  toolErrors: number
+  toolBreakdown: ToolEventEntry[]
+  subAgentCalls: number
+  compactionCount: number
+  retryCount: number
+  /**
+   * True when `compactions` carries the full per-compaction details (one
+   * entry per historical compaction). False when the rollup knows a count
+   * (via `compactionCount`) but the per-compaction records have been
+   * pruned from the legacy snapshot — i.e. `contextWindows` was missing
+   * or empty on the snapshot. Consumers must not render `compactions` as
+   * authoritative when this is false; the count is still authoritative.
+   */
+  compactionsDetailsAvailable?: boolean
 }

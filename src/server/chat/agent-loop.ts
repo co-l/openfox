@@ -449,13 +449,22 @@ export async function runTopLevelAgentLoop(
 
       if (!attemptResult.error) {
         result = attemptResult
+        const usage = attemptResult.usage
         emitPluginHook('llm.completed', {
           sessionId,
           data: {
             model: attemptClient.getModel(),
             finishReason: attemptResult.finishReason,
-            promptTokens: attemptResult.usage.promptTokens,
-            completionTokens: attemptResult.usage.completionTokens,
+            promptTokens: usage.promptTokens,
+            completionTokens: usage.completionTokens,
+            totalTokens: usage.totalTokens,
+            ...(usage.cachedPromptTokens !== undefined && {
+              cachedPromptTokens: usage.cachedPromptTokens,
+            }),
+            ...(usage.cacheWriteTokens !== undefined && {
+              cacheWriteTokens: usage.cacheWriteTokens,
+            }),
+            ...(usage.cacheSource !== undefined && { cacheSource: usage.cacheSource }),
             toolCalls: attemptResult.toolCalls.length,
           },
         })
@@ -591,6 +600,7 @@ export async function runTopLevelAgentLoop(
       result.usage.completionTokens,
       previousContextTokens,
       result.modelParams,
+      result.usage,
     )
     // Accumulate wall-clock thinking time across LLM attempts in this turn.
     if (result.thinkingDurationMs !== undefined) {

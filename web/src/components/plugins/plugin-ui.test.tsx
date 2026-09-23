@@ -129,6 +129,37 @@ describe('plugin UI slots', () => {
     expect(usePluginUiStore.getState().activePanel).toEqual({ pluginId: 'demo', panelId: 'quota' })
   })
 
+  it('preserves session context when opening a panel', async () => {
+    contributionsRef.current = {
+      ...contributionsRef.current,
+      actions: [
+        {
+          id: 'open-session-panel',
+          pluginId: 'demo',
+          slot: 'session.header.actions',
+          label: { en: 'Open session panel', fr: 'Ouvrir le panneau de session' },
+          onActivate: { kind: 'openPanel', panelId: 'session-panel' },
+        },
+      ],
+    }
+    render(
+      <PluginSlot
+        slot="session.header.actions"
+        context={{ sessionId: 's1', projectId: 'p1', workdir: '/workspace/project' }}
+      />,
+    )
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Open session panel' }))
+    expect(usePluginUiStore.getState().activePanel).toEqual({
+      pluginId: 'demo',
+      panelId: 'session-panel',
+      context: {
+        sessionId: 's1',
+        projectId: 'p1',
+        workdir: '/workspace/project',
+      },
+    })
+  })
+
   it('renders static and RPC-sourced badges', async () => {
     invokePluginRpc.mockResolvedValue(42)
     contributionsRef.current = {
@@ -443,10 +474,22 @@ describe('plugin UI slots', () => {
         },
       ],
     }
-    usePluginUiStore.setState({ activePanel: { pluginId: 'demo', panelId: 'board' }, values: {} })
+    usePluginUiStore.setState({
+      activePanel: {
+        pluginId: 'demo',
+        panelId: 'board',
+        context: { sessionId: 's1', projectId: 'p1', workdir: '/workspace/project' },
+      },
+      values: {},
+    })
     render(<PluginPanelHost />)
     const iframe = screen.getByTitle('Board')
-    expect(iframe.getAttribute('src')).toBe('/api/plugins/demo/assets/board.html')
+    const src = iframe.getAttribute('src') ?? ''
+    const url = new URL(src, 'http://localhost')
+    expect(url.pathname).toBe('/api/plugins/demo/assets/board.html')
+    expect(url.searchParams.get('sessionId')).toBe('s1')
+    expect(url.searchParams.get('projectId')).toBe('p1')
+    expect(url.searchParams.get('workdir')).toBe('/workspace/project')
     expect(iframe.getAttribute('sandbox')).toBe('allow-scripts allow-forms')
   })
 })

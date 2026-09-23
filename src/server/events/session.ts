@@ -49,6 +49,7 @@ export function combineEventsWithSnapshot(
   events: import('./types.js').StoredEvent[],
 ): import('./types.js').StoredEvent[] {
   if (!snapshot) return events
+
   const snapshotEvent: import('./types.js').StoredEvent = {
     seq: 0,
     timestamp: snapshot.snapshotAt,
@@ -56,7 +57,127 @@ export function combineEventsWithSnapshot(
     type: 'turn.snapshot',
     data: snapshot,
   }
-  return [snapshotEvent, ...events]
+
+  // Reconstruct historical events that were absorbed into the snapshot.
+  // The snapshot only carries `context.compacted` / `pattern.retry` payloads
+  // (in `contextWindows` and `formatRetries`); the underlying events are
+  // gone from the raw store after a snapshot prune. Without this, downstream
+  // consumers (observability rollup, `EVENT_HOOK_MAP`) would see compactions=0
+  // and retries=0 for a session that has 50 of each pre-snapshot.
+  //
+  // Negative seq numbers prevent collision with real events (the store
+  // reserves positive seq). No double-counting: the raw event stream
+  // post-snapshot contains only events emitted AFTER the snapshot, so it
+  // never overlaps with the reconstructed pre-snapshot events.
+  //
+  // Tool activity: also reconstruct `tool.call`/`tool.result` events from
+  // `snapshot.messages[].toolCalls`. The raw tool events are pruned like
+  // every other event at snapshot time, but the tool calls (with their
+  // `result`) are embedded inside snapshot messages. The tool result's
+  // `success` flag drives error classification. We dedupe by `toolCall.id`
+  // against the post-snapshot event stream so a tool call that happens to
+  // be replayed post-snapshot is not double-counted.
+  const reconstructed: import('./types.js').StoredEvent[] = []
+  let syntheticSeq = -1
+
+  for (const compaction of snapshot.contextWindows ?? []) {
+    reconstructed.push({
+      seq: syntheticSeq--,
+      timestamp: compaction.timestamp,
+      sessionId,
+      type: 'context.compacted',
+      data: {
+        closedWindowId: compaction.closedWindowId,
+        newWindowId: compaction.newWindowId,
+        beforeTokens: compaction.beforeTokens,
+        afterTokens: compaction.afterTokens,
+        summary: '',
+      },
+    })
+  }
+  for (const retry of snapshot.formatRetries ?? []) {
+    reconstructed.push({
+      seq: syntheticSeq--,
+      timestamp: retry.timestamp,
+      sessionId,
+      type: 'pattern.retry',
+      data: {
+        attempt: retry.attempt,
+        maxAttempts: retry.maxAttempts,
+        messageId: '',
+        pattern: '',
+        field: '',
+        matchedContent: '',
+      },
+    })
+  }
+
+  // Historical tool activity from snapshot messages.
+  const postToolCallIds = new Set<string>()
+  for (const e of events) {
+    if (e.type === 'tool.call') {
+      const data = e.data as { toolCall?: { id?: string } } | undefined
+      const id = data?.toolCall?.id
+      if (id) postToolCallIds.add(id)
+    }
+  }
+  for (const message of snapshot.messages ?? []) {
+    const messageId = message.id
+    const messageTimestamp = message.timestamp
+    for (const tc of message.toolCalls ?? []) {
+      if (!tc || !tc.id) continue
+      if (postToolCallIds.has(tc.id)) continue // post-snapshot already covers this
+      reconstructed.push({
+        seq: syntheticSeq--,
+        timestamp: messageTimestamp,
+        sessionId,
+        type: 'tool.call',
+        data: { messageId, toolCall: { id: tc.id, name: tc.name, arguments: tc.arguments } },
+      })
+      if (tc.result !== undefined) {
+        reconstructed.push({
+          seq: syntheticSeq--,
+          timestamp: messageTimestamp,
+          sessionId,
+          type: 'tool.result',
+          data: { messageId, toolCallId: tc.id, result: tc.result },
+        })
+      }
+    }
+  }
+
+  // Sort by timestamp so they interleave correctly with any raw events that
+  // happen to share a timestamp; stable order keeps seq deterministic
+  // within ties.
+  reconstructed.sort((a, b) => a.timestamp - b.timestamp || a.seq - b.seq)
+
+  return [snapshotEvent, ...reconstructed, ...events]
+}
+
+/**
+ * Inspect a snapshot and return the legacy compaction baseline.
+ *
+ * A snapshot is "legacy count-only" when its `contextWindows` array is
+ * missing or empty AND `contextState.compactionCount > 0`. In that case
+ * the per-compaction records have been pruned; we surface the count so
+ * the rollup reports the correct `compactionCount` while flagging that
+ * `compactions[]` is intentionally empty (no fake records are made up).
+ *
+ * Returns `null` when the snapshot carries modern `contextWindows[]`
+ * records (the rollup should derive `compactionCount` from those) or when
+ * the count is zero / unknown.
+ */
+export function getLegacyCompactionBaseline(
+  snapshot: import('./types.js').SessionSnapshot | undefined,
+): { legacyCompactionCount: number; compactionsDetailsAvailable: boolean } | null {
+  if (!snapshot) return null
+  const cw = snapshot.contextWindows
+  const hasDetails = Array.isArray(cw) && cw.length > 0
+  if (hasDetails) return null
+  const ctx = snapshot.contextState
+  const count = ctx && typeof ctx.compactionCount === 'number' && ctx.compactionCount > 0 ? ctx.compactionCount : 0
+  if (count === 0) return null
+  return { legacyCompactionCount: count, compactionsDetailsAvailable: false }
 }
 
 function toSnapshotMessage(message: import('../../shared/types.js').Message): SnapshotMessage {

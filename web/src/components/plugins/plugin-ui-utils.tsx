@@ -195,7 +195,7 @@ export async function activatePluginAction(
     }
 
     if (activation.kind === 'openPanel') {
-      usePluginUiStore.getState().openPanel(pluginId, activation.panelId)
+      usePluginUiStore.getState().openPanel(pluginId, activation.panelId, pluginRpcContext(context))
       return
     }
 

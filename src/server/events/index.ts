@@ -102,4 +102,5 @@ export {
   truncateSessionMessages,
   getRecentUserPromptsForSession,
   combineEventsWithSnapshot,
+  getLegacyCompactionBaseline,
 } from './session.js'

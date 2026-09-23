@@ -263,11 +263,11 @@ export function foldSessionState(
   let sessionInit: FoldedSessionState['sessionInit']
   let sessionTitle: string | undefined
   const visionFallbacks: VisionFallback[] = []
-  const formatRetries: FormatRetry[] = []
+  let formatRetries: FormatRetry[] = []
   let pendingUserInput: PendingUserInput | undefined
   let taskStats: TaskStats | undefined
   const messageStats: MessageStatsEntry[] = []
-  const contextWindows: CompactionRecord[] = []
+  let contextWindows: CompactionRecord[] = []
 
   for (const event of events) {
     switch (event.type) {
@@ -302,6 +302,21 @@ export function foldSessionState(
           (v) => v.messageId === data.messageId && v.attachmentId === data.attachmentId,
         )
         if (existing) existing.description = data.description
+        break
+      }
+      case 'turn.snapshot': {
+        // Re-seed the per-compaction and per-retry history from the
+        // snapshot so that pre-snapshot events (which were pruned from
+        // the raw store) still count when the snapshot is the only
+        // surviving artifact. The post-snapshot events following this
+        // snapshot continue to accumulate on top.
+        const snapData = event.data as SessionSnapshot
+        if (Array.isArray(snapData.contextWindows) && snapData.contextWindows.length > 0) {
+          contextWindows = [...snapData.contextWindows, ...contextWindows]
+        }
+        if (Array.isArray(snapData.formatRetries) && snapData.formatRetries.length > 0) {
+          formatRetries = [...snapData.formatRetries, ...formatRetries]
+        }
         break
       }
       case 'pattern.retry': {
@@ -384,7 +399,10 @@ export function foldSessionState(
     ...(taskStats !== undefined && { taskStats }),
     ...computeWaitingWorkflow(events),
     ...(messageStats.length > 0 && { messageStats }),
-    ...(contextWindows.length > 0 && { contextWindows }),
+    // Always surface the collections (even when empty) so downstream
+    // snapshots can rely on them for cumulative persistence.
+    contextWindows,
+    formatRetries,
   }
 }
 
@@ -499,12 +517,15 @@ export function buildSnapshot(
     ...(foldedState.sessionInit !== undefined && { sessionInit: foldedState.sessionInit }),
     ...(foldedState.sessionTitle !== undefined && { sessionTitle: foldedState.sessionTitle }),
     ...(foldedState.visionFallbacks !== undefined && { visionFallbacks: foldedState.visionFallbacks }),
-    ...(foldedState.formatRetries !== undefined && { formatRetries: foldedState.formatRetries }),
+    // Always serialize `formatRetries` and `contextWindows` (even when
+    // empty) so consumers can rely on a stable shape and the next snapshot
+    // can carry them forward without losing the per-record history.
+    formatRetries: foldedState.formatRetries ?? [],
     ...(foldedState.pendingUserInput !== undefined && { pendingUserInput: foldedState.pendingUserInput }),
     ...(foldedState.taskStats !== undefined && { taskStats: foldedState.taskStats }),
     ...(foldedState.messageStats !== undefined && { messageStats: foldedState.messageStats }),
     ...(foldedState.pendingConfirmations !== undefined && { pendingConfirmations: foldedState.pendingConfirmations }),
-    ...(foldedState.contextWindows !== undefined && { contextWindows: foldedState.contextWindows }),
+    contextWindows: foldedState.contextWindows ?? [],
     ...(foldedState.waitingWorkflow !== undefined && { waitingWorkflow: foldedState.waitingWorkflow }),
   }
 }
@@ -567,6 +588,11 @@ export function buildSnapshotFromSessionState(input: {
     currentContextWindowId: foldedState.currentContextWindowId,
     todos: foldedState.todos,
     readFiles: foldedState.readFiles,
+    // Always serialize `formatRetries` and `contextWindows` (even when
+    // empty) so consumers can rely on a stable shape and the next snapshot
+    // can carry them forward without losing per-record history.
+    formatRetries: foldedState.formatRetries ?? [],
+    contextWindows: foldedState.contextWindows ?? [],
     snapshotSeq: latestSeq,
     snapshotAt,
     ...(foldedState.sessionInit !== undefined && { sessionInit: foldedState.sessionInit }),

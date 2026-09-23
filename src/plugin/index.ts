@@ -186,6 +186,17 @@ export type PluginHookEvent =
   | 'devserver.started'
   | 'devserver.stopped'
   | 'devserver.state.changed'
+  // OpenFox-internal events emitted by the runtime; plugins can observe
+  // them via `registerHook`. They mirror the underlying TurnEvent names
+  // (see src/server/events/types.ts) so plugins can correlate hook
+  // payloads with the session's EventStore stream.
+  //
+  // Sub-agent activity is derived server-side from `message.start` and
+  // `message.done` events carrying `subAgentId`/`subAgentType` — exposed
+  // via `SessionStatsEventRollup.subAgentCalls` rather than as a separate
+  // plugin hook. This keeps the hook surface small.
+  | 'context.compacted'
+  | 'retry.triggered'
 
 export interface PluginHookPayload {
   event: PluginHookEvent

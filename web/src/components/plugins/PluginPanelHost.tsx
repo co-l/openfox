@@ -39,19 +39,26 @@ export function PluginPanelHost() {
   if (!activePanel || !panel) return null
 
   const targetPluginId = panel.pluginId && panel.pluginId !== 'unknown' ? panel.pluginId : activePanel.pluginId
-  const context: PluginActionContext & { pluginId: string } = { pluginId: targetPluginId }
+  const panelContext = activePanel.context ?? {}
+  const context: PluginActionContext & { pluginId: string } = { pluginId: targetPluginId, ...panelContext }
   const values: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(publishedValues)) {
     const prefix = `${targetPluginId}:${activePanel.panelId}:`
     if (key.startsWith(prefix)) values[key.slice(prefix.length)] = value
   }
 
-  const iframeUrl =
-    panel.kind === 'iframe' && panel.url
-      ? `/api/plugins/${encodeURIComponent(targetPluginId)}/assets/${panel.url.replace(/^\//, '')}${
-          token ? `?token=${encodeURIComponent(token)}` : ''
-        }`
-      : undefined
+  const iframeUrl = (() => {
+    if (panel.kind !== 'iframe' || !panel.url) return undefined
+    const params = new URLSearchParams()
+    if (token) params.set('token', token)
+    if (panelContext.sessionId) params.set('sessionId', panelContext.sessionId)
+    if (panelContext.projectId) params.set('projectId', panelContext.projectId)
+    if (panelContext.workdir) params.set('workdir', panelContext.workdir)
+    const query = params.toString()
+    return `/api/plugins/${encodeURIComponent(targetPluginId)}/assets/${panel.url.replace(/^\//, '')}${
+      query ? `?${query}` : ''
+    }`
+  })()
 
   const contentNodes = Array.isArray(values['content'])
     ? (values['content'] as DeclarativeNode[])

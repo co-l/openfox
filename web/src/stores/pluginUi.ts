@@ -4,9 +4,16 @@ function stateKey(pluginId: string, panelId: string | undefined, key: string): s
   return `${pluginId}:${panelId ?? ''}:${key}`
 }
 
+export interface PluginPanelContext {
+  sessionId?: string
+  workdir?: string
+  projectId?: string
+}
+
 export interface ActivePluginPanel {
   pluginId: string
   panelId: string
+  context?: PluginPanelContext
 }
 
 interface PluginUiStore {
@@ -15,7 +22,7 @@ interface PluginUiStore {
   setState: (pluginId: string, panelId: string | undefined, key: string, value: unknown) => void
   read: (pluginId: string, panelId: string | undefined, key: string) => unknown
   clearPanel: (pluginId: string, panelId: string) => void
-  openPanel: (pluginId: string, panelId: string) => void
+  openPanel: (pluginId: string, panelId: string, context?: PluginPanelContext) => void
   closePanel: () => void
 }
 
@@ -32,6 +39,13 @@ export const usePluginUiStore = create<PluginUiStore>((set, get) => ({
         values: Object.fromEntries(Object.entries(state.values).filter(([key]) => !key.startsWith(prefix))),
       }
     }),
-  openPanel: (pluginId, panelId) => set({ activePanel: { pluginId, panelId } }),
+  openPanel: (pluginId, panelId, context) =>
+    set({
+      activePanel: {
+        pluginId,
+        panelId,
+        ...(context && Object.keys(context).length > 0 ? { context } : {}),
+      },
+    }),
   closePanel: () => set({ activePanel: null }),
 }))
