@@ -422,6 +422,12 @@ export function CommandsModal({ isOpen, onClose, initialEditId, projectDir }: Co
               })}
               className="h-80 w-full px-3 py-2 bg-bg-tertiary border border-border rounded text-sm font-mono resize-y focus:outline-none focus:ring-1 focus:ring-accent-primary"
             />
+            <p className="text-xs text-text-muted mt-1">
+              {t({
+                en: 'Arguments: {{name}} takes one value in order (/cmd first second), {{ARGUMENTS}} takes everything typed after the command. Quote a value to keep it whole: /cmd "two words". Anything left unfilled is asked for before sending.',
+                fr: 'Arguments : {{nom}} prend une valeur dans l’ordre (/cmd premier second), {{ARGUMENTS}} prend tout ce qui suit la commande. Mettez une valeur entre guillemets pour la garder entière : /cmd « deux mots ». Ce qui reste vide vous sera demandé avant l’envoi.',
+              })}
+            </p>
           </div>
         </div>
       </Modal>
