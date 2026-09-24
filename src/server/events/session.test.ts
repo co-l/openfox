@@ -642,6 +642,67 @@ describe('getSessionState — snapshot-optimized (getEventsSinceSnapshot)', () =
     const state = getSessionState(sessionId)
     expect(state).toBeDefined()
   })
+
+  it('does not double-count compactions or zero currentTokens when reloading from a snapshot with contextWindows', () => {
+    const sessionId = 'snapshot-compaction-a'
+    initSession(sessionId, 'win-1')
+
+    emitContextState(sessionId, 50000, 200000, 0, false, false)
+    emitContextCompacted(sessionId, 'win-1', 'win-2', 50000, 0, 'Compacted summary')
+    emitContextState(sessionId, 8000, 200000, 1, false, false)
+
+    // Simulate the production snapshot: it captures the folded contextState
+    // (cc=1) and the contextWindows history (one record).
+    const stateBeforeSnapshot = getSessionState(sessionId)
+    const eventStore = getEventStore()
+    const snapshot = buildSnapshot(stateBeforeSnapshot!, 5)
+    expect(snapshot.contextState.compactionCount).toBe(1)
+    expect(snapshot.contextWindows).toHaveLength(1)
+    eventStore.append(sessionId, { type: 'turn.snapshot', data: snapshot })
+
+    // Reload path (combineEventsWithSnapshot): reconstructed context.compacted
+    // events must not be counted on top of the snapshot's absolute count, and
+    // the snapshot's currentTokens must survive.
+    const state = getSessionState(sessionId)
+    expect(state!.contextState.compactionCount).toBe(1)
+    expect(state!.contextState.currentTokens).toBe(8000)
+  })
+
+  it('keeps compactionCount at the main-agent value when contextWindows contains sub-agent compactions', () => {
+    const sessionId = 'snapshot-compaction-b'
+    initSession(sessionId, 'win-1')
+
+    emitContextState(sessionId, 50000, 200000, 0, false, false)
+    // Main compaction rotates the window.
+    emitContextCompacted(sessionId, 'win-1', 'win-2', 50000, 0, 'Main summary')
+    // Sub-agent compaction: scoped, reuses the same window pair, tagged.
+    getEventStore().append(sessionId, {
+      type: 'context.compacted',
+      data: {
+        closedWindowId: 'win-2',
+        newWindowId: 'win-2',
+        beforeTokens: 30000,
+        afterTokens: 0,
+        summary: 'Sub-agent summary',
+        subAgentId: 'sub-1',
+        subAgentType: 'verifier',
+      },
+    })
+    emitContextState(sessionId, 6000, 200000, 1, false, false)
+
+    const stateBeforeSnapshot = getSessionState(sessionId)
+    const eventStore = getEventStore()
+    const snapshot = buildSnapshot(stateBeforeSnapshot!, 5)
+    // contextState counts only main-agent compactions.
+    expect(snapshot.contextState.compactionCount).toBe(1)
+    // contextWindows carries both records (chatfeed boundaries).
+    expect(snapshot.contextWindows).toHaveLength(2)
+    eventStore.append(sessionId, { type: 'turn.snapshot', data: snapshot })
+
+    const state = getSessionState(sessionId)
+    expect(state!.contextState.compactionCount).toBe(1)
+    expect(state!.contextState.currentTokens).toBe(6000)
+  })
 })
 
 describe('getContextMessages — snapshot-optimized (getEventsSinceSnapshot)', () => {

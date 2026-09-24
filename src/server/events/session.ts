@@ -151,7 +151,14 @@ export function combineEventsWithSnapshot(
   // within ties.
   reconstructed.sort((a, b) => a.timestamp - b.timestamp || a.seq - b.seq)
 
-  return [snapshotEvent, ...reconstructed, ...events]
+  // Chronological order: the reconstructed events happened BEFORE the snapshot
+  // was taken, so they must precede the snapshot event in the replayed stream.
+  // foldContextState treats `turn.snapshot` as the authoritative absolute state
+  // (compactionCount, currentTokens, current window); if the reconstructed
+  // `context.compacted` events come AFTER it, they get counted on top of the
+  // snapshot's already-inclusive count (inflating compactionCount) and null out
+  // the snapshot's contextState (zeroing currentTokens).
+  return [...reconstructed, snapshotEvent, ...events]
 }
 
 /**
