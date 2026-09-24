@@ -61,6 +61,7 @@ export function SessionSidebar({ workdir }: SessionSidebarProps) {
   const workspaceName = pathBasename(session?.workspace ?? '') || null
 
   const showEditorLink = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_OPEN_IN_EDITOR).value === 'true'
+  const hideSidebarVersion = useSetting(SETTINGS_KEYS.DISPLAY_HIDE_SIDEBAR_VERSION, 'false').value === 'true'
 
   const updateStatus = useUpdateStore((state) => state.status)
   const checkForUpdate = useUpdateStore((state) => state.check)
@@ -173,7 +174,7 @@ export function SessionSidebar({ workdir }: SessionSidebarProps) {
 
       {/* Version footer */}
       <PluginZone id="session.footer" context={{ sessionId: session?.id, workdir }}>
-        {version && (
+        {version && !hideSidebarVersion && (
           <div className="mt-4 pt-4 border-t border-border text-center text-xs text-text-muted">
             <div className="flex items-center justify-center gap-1">
               <a
