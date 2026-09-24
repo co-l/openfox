@@ -25,7 +25,7 @@ import {
 } from '../skills/registry.js'
 import { installSkillPackage, SkillInstallError } from '../skills/installer.js'
 import { deleteSetting, getSetting, setSetting } from '../db/settings.js'
-import type { SkillDefinition } from '../skills/types.js'
+import { EXTERNAL_SKILL_SOURCES, type SkillDefinition } from '../skills/types.js'
 import { createCrudRoutes, validateNameIdPrompt, resolveProjectDir, type CrudRouteConfig } from './crud-helpers.js'
 import { serverT } from '../i18n.js'
 
@@ -79,9 +79,7 @@ function mapToResponse(skill: SkillDefinition) {
     source,
     path: skill.entrypoint ?? null,
     legacy: skill.legacy ?? true,
-    readOnly:
-      source === 'bundled' ||
-      ((source === 'global-shared' || source === 'selected' || source === 'project-shared') && (skill.legacy ?? true)),
+    readOnly: source === 'bundled' || (EXTERNAL_SKILL_SOURCES.includes(source) && (skill.legacy ?? true)),
     warnings: skill.warnings ?? [],
   }
 }
