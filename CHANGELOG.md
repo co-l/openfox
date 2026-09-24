@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.159 - 2026-09-24
+
+### Bug Fixes
+
+- **Context stats accurate after reload** — compacted sessions no longer show inflated compaction counts or zeroed token counts.
+
 ## 2.0.158 - 2026-09-24
 
 ### Bug Fixes
