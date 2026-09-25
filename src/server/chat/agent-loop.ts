@@ -51,8 +51,8 @@ import { loadAllAgentsDefault, getSubAgents } from '../agents/registry.js'
 import { createRetryLimiter, type RetryLimiter } from './retry-limiter.js'
 import { drainQueue } from './drain-queue.js'
 import { COMPACTION_PROMPT, CONTINUE_PROMPT, CONTINUE_AFTER_STREAM_ERROR_PROMPT } from './prompts.js'
-import { mergeSummaryInto, findWindowSummary } from './cumulative-summary.js'
-import { foldTurnEventsToSnapshotMessages } from '../events/fold-messages.js'
+import { mergeSummaryInto, findLatestCompactionSummary } from './cumulative-summary.js'
+import { foldEventsToSnapshotMessages } from '../events/fold-messages.js'
 import { logger } from '../utils/logger.js'
 import { emitPluginHook } from '../plugins/hook-emitter.js'
 import type { LLMRetryPolicy } from '../runner/types.js'
@@ -866,7 +866,7 @@ ${COMPACTION_PROMPT}`,
       // stored content is exactly what the LLM receives — no runtime projection.
       let storedSummary = summary
       if (!config.subAgentMetadata && getRuntimeConfig().context.allCompactionSummaries && config.getEvents) {
-        const prev = findWindowSummary(foldTurnEventsToSnapshotMessages(config.getEvents()), closedWindowId)
+        const prev = findLatestCompactionSummary(foldEventsToSnapshotMessages(config.getEvents()))
         storedSummary = mergeSummaryInto(summary, prev)
       }
 

@@ -2309,6 +2309,85 @@ describe('runTopLevelAgentLoop cumulative summaries', () => {
     ev(2, 1100, 'message.start', { messageId: 'm1', role: 'user', content: 'hello', contextWindowId: 'w1' }),
   ]
 
+  function snapPayload(messages: unknown[], seq: number, ts: number): Record<string, unknown> {
+    return {
+      mode: 'planner',
+      phase: 'plan',
+      isRunning: false,
+      messages,
+      criteria: [],
+      metadataEntries: {},
+      contextState: {
+        currentTokens: 0,
+        maxTokens: 200000,
+        compactionCount: 1,
+        dangerZone: false,
+        canCompact: false,
+        dynamicContextChanged: false,
+      },
+      currentContextWindowId: 'w2',
+      todos: [],
+      snapshotSeq: seq,
+      snapshotAt: ts,
+    }
+  }
+
+  // w2's seed raw event was GC'd after the end-of-turn snapshot — it only
+  // exists inside the snapshot's messages (the real-world regression case).
+  const snapshotOnlySeedEvents: import('../events/types.js').StoredEvent[] = [
+    ev(1, 1000, 'session.initialized', { projectId: 'p', workdir: '/w', contextWindowId: 'w1' }),
+    ev(2, 1100, 'message.start', { messageId: 'm1', role: 'user', content: 'hello', contextWindowId: 'w1' }),
+    ev(
+      3,
+      2500,
+      'turn.snapshot',
+      snapPayload(
+        [
+          { id: 'm1', role: 'user', content: 'hello', timestamp: 1100, contextWindowId: 'w1' },
+          {
+            id: 's1',
+            role: 'assistant',
+            content: '## Compacted 2024-01-16T10:00:00.000Z\nS1',
+            timestamp: 2100,
+            contextWindowId: 'w2',
+            isCompactionSummary: true,
+          },
+        ],
+        3,
+        2500,
+      ),
+    ),
+    ev(4, 2200, 'message.start', { messageId: 'm2', role: 'user', content: 'again', contextWindowId: 'w2' }),
+  ]
+
+  // Two compactions within one turn: w2's seed is a raw event written after
+  // the latest snapshot, so it must be found in the post-snapshot events.
+  const seedAfterSnapshotEvents: import('../events/types.js').StoredEvent[] = [
+    ev(1, 1000, 'session.initialized', { projectId: 'p', workdir: '/w', contextWindowId: 'w1' }),
+    ev(2, 1100, 'message.start', { messageId: 'm1', role: 'user', content: 'hello', contextWindowId: 'w1' }),
+    ev(
+      3,
+      1200,
+      'turn.snapshot',
+      snapPayload([{ id: 'm1', role: 'user', content: 'hello', timestamp: 1100, contextWindowId: 'w1' }], 3, 1200),
+    ),
+    ev(4, 2000, 'context.compacted', {
+      closedWindowId: 'w1',
+      newWindowId: 'w2',
+      beforeTokens: 100,
+      afterTokens: 0,
+      summary: 's1',
+    }),
+    ev(5, 2100, 'message.start', {
+      messageId: 's1',
+      role: 'assistant',
+      content: '## Compacted 2024-01-16T10:00:00.000Z\nS1',
+      contextWindowId: 'w2',
+      isCompactionSummary: true,
+    }),
+    ev(6, 2200, 'message.start', { messageId: 'm2', role: 'user', content: 'again', contextWindowId: 'w2' }),
+  ]
+
   function setRuntimeConfig(allCompactionSummaries?: boolean) {
     ;(getRuntimeConfig as any).mockReturnValue({
       mode: 'test',
@@ -2427,7 +2506,7 @@ describe('runTopLevelAgentLoop cumulative summaries', () => {
     setRuntimeConfig(true)
     const events = await runCompaction(firstWindowEvents)
     const seed = events.find((e) => e?.type === 'message.start' && e.data?.isCompactionSummary === true)
-    expect(seed!.data.content).toMatch(/^## Compacted \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\ncompaction summary$/)
+    expect(seed!.data.content).toMatch(/^## Compacted \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\ncompaction summary$/)
     const compacted = events.find((e) => e?.type === 'context.compacted')
     expect(compacted!.data.summary).toBe(seed!.data.content)
   })
@@ -2437,10 +2516,30 @@ describe('runTopLevelAgentLoop cumulative summaries', () => {
     const events = await runCompaction(twoWindowEvents)
     const seed = events.find((e) => e?.type === 'message.start' && e.data?.isCompactionSummary === true)
     expect(seed!.data.content).toMatch(
-      /^## Compacted 2024-01-16T10:00:00\.000Z\nS1\n\n## Compacted \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\ncompaction summary$/,
+      /^## Compacted 2024-01-16T10:00:00\.000Z\nS1\n\n## Compacted \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\ncompaction summary$/,
     )
     const compacted = events.find((e) => e?.type === 'context.compacted')
     expect(compacted!.data.summary).toBe(seed!.data.content)
+  })
+
+  it('finds the closed window seed stored only in the latest snapshot (raw events GCed)', async () => {
+    setRuntimeConfig(true)
+    const events = await runCompaction(snapshotOnlySeedEvents)
+    const seed = events.find((e) => e?.type === 'message.start' && e.data?.isCompactionSummary === true)
+    expect(seed!.data.content).toMatch(
+      /^## Compacted 2024-01-16T10:00:00\.000Z\nS1\n\n## Compacted \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\ncompaction summary$/,
+    )
+    const compacted = events.find((e) => e?.type === 'context.compacted')
+    expect(compacted!.data.summary).toBe(seed!.data.content)
+  })
+
+  it('finds the closed window seed in raw events after the latest snapshot', async () => {
+    setRuntimeConfig(true)
+    const events = await runCompaction(seedAfterSnapshotEvents)
+    const seed = events.find((e) => e?.type === 'message.start' && e.data?.isCompactionSummary === true)
+    expect(seed!.data.content).toMatch(
+      /^## Compacted 2024-01-16T10:00:00\.000Z\nS1\n\n## Compacted \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\ncompaction summary$/,
+    )
   })
 
   it('does not merge for sub-agent compactions even when on', async () => {

@@ -9,31 +9,44 @@
 
 import type { SnapshotMessage } from '../events/types.js'
 
+/** Local timestamp like `2026-09-25 13:22:49` (machine-local time, no zone). */
+function localTimestamp(date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
+    `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  )
+}
+
 /**
  * Build the stored seed summary for a new context window.
  *
  * @param llmSummary the fresh summary produced by this compaction
  * @param previousMerged the closed window's stored seed summary (null/empty on
  * the first compaction)
- * @param timestamp ISO date of this compaction (defaults to now)
+ * @param timestamp date of this compaction (defaults to the local time, e.g.
+ * `2026-09-25 13:22:49`)
  */
 export function mergeSummaryInto(llmSummary: string, previousMerged?: string | null, timestamp?: string): string {
-  const ts = timestamp ?? new Date().toISOString()
+  const ts = timestamp ?? localTimestamp()
   const marker = `## Compacted ${ts}`
   if (!previousMerged) return `${marker}\n${llmSummary}`
   return `${previousMerged}\n\n${marker}\n${llmSummary}`
 }
 
 /**
- * Find the stored compaction summary of a context window in a folded message
- * list (snapshot-aware, so it survives event GC).
+ * Find the most recent top-level compaction summary in a chronological message
+ * list by scanning backwards. Because summaries are cumulative (each one
+ * already contains all prior rounds), the latest one is by construction the
+ * closed window's stored seed — no window-id matching needed.
  *
- * @returns the summary content, or null when the window has none (first window)
+ * @returns the summary content, or null when none exists (first compaction)
  */
-export function findWindowSummary(messages: SnapshotMessage[], windowId: string): string | null {
-  for (const m of messages) {
-    if (m.isCompactionSummary && !m.subAgentId && m.contextWindowId === windowId) {
-      return m.content ?? null
+export function findLatestCompactionSummary(messages: SnapshotMessage[]): string | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i]
+    if (message?.isCompactionSummary && !message.subAgentId) {
+      return message.content ?? null
     }
   }
   return null

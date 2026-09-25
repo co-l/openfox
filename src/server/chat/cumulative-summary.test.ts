@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { mergeSummaryInto, findWindowSummary } from './cumulative-summary.js'
+import { mergeSummaryInto, findLatestCompactionSummary } from './cumulative-summary.js'
 import type { SnapshotMessage } from '../events/types.js'
 
 function msg(id: string, content: string, ts: number, windowId?: string, isCompactionSummary = false): SnapshotMessage {
@@ -36,14 +36,9 @@ describe('mergeSummaryInto', () => {
     expect(mergeSummaryInto('S1', '', 't1')).toBe('## Compacted t1\nS1')
   })
 
-  it('uses the current time when no timestamp is given', () => {
-    const before = Date.now()
+  it('uses the current local time when no timestamp is given', () => {
     const merged = mergeSummaryInto('S1', null)
-    expect(merged.startsWith('## Compacted ')).toBe(true)
-    expect(merged.endsWith('\nS1')).toBe(true)
-    const ts = new Date(merged.slice('## Compacted '.length, merged.lastIndexOf('\n'))).getTime()
-    expect(ts).toBeGreaterThanOrEqual(before - 1000)
-    expect(ts).toBeLessThanOrEqual(Date.now() + 1000)
+    expect(merged).toMatch(/^## Compacted \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\nS1$/)
   })
 
   it('does not require the previous value to end with a newline', () => {
@@ -51,19 +46,20 @@ describe('mergeSummaryInto', () => {
   })
 })
 
-describe('findWindowSummary', () => {
-  it('returns the compaction summary content of the given window', () => {
+describe('findLatestCompactionSummary', () => {
+  it('returns the most recent top-level compaction summary', () => {
     const messages = [
-      msg('m1', 'hello', 1000, 'w1'),
       msg('s1', 'MERGED-ONE', 2000, 'w2', true),
       msg('m2', 'again', 2100, 'w2'),
+      msg('s2', 'MERGED-TWO', 3000, 'w3', true),
+      msg('m3', 'later', 3100, 'w3'),
     ]
-    expect(findWindowSummary(messages, 'w2')).toBe('MERGED-ONE')
+    expect(findLatestCompactionSummary(messages)).toBe('MERGED-TWO')
   })
 
-  it('returns null when the window has no compaction summary (first window)', () => {
+  it('returns null when there is no compaction summary (first window)', () => {
     const messages = [msg('m1', 'hello', 1000, 'w1')]
-    expect(findWindowSummary(messages, 'w1')).toBeNull()
+    expect(findLatestCompactionSummary(messages)).toBeNull()
   })
 
   it('ignores sub-agent summaries', () => {
@@ -72,18 +68,17 @@ describe('findWindowSummary', () => {
         id: 'sub',
         role: 'assistant',
         content: 'SUB',
-        timestamp: 1500,
-        contextWindowId: 'w2',
+        timestamp: 3000,
+        contextWindowId: 'w3',
         isCompactionSummary: true,
         subAgentId: 'explorer-1',
       },
       msg('s1', 'TOP-LEVEL', 2000, 'w2', true),
     ]
-    expect(findWindowSummary(messages, 'w2')).toBe('TOP-LEVEL')
+    expect(findLatestCompactionSummary(messages)).toBe('TOP-LEVEL')
   })
 
-  it('returns null for an unknown window', () => {
-    const messages = [msg('s1', 'X', 2000, 'w2', true)]
-    expect(findWindowSummary(messages, 'w9')).toBeNull()
+  it('returns null for an empty list', () => {
+    expect(findLatestCompactionSummary([])).toBeNull()
   })
 })

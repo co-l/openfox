@@ -53,6 +53,7 @@ export {
   buildContextMessagesFromStoredEvents,
   buildContextMessagesFromEventHistory,
   foldTurnEventsToSnapshotMessages,
+  foldEventsToSnapshotMessages,
   foldSessionState,
   foldCriteria,
   foldTodos,
