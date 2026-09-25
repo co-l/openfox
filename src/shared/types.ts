@@ -942,6 +942,9 @@ export interface Config {
     maxTokens: number
     compactionThreshold: number
     compactionTarget: number
+    /** When true, each compaction stores the new window's seed summary with all
+     * prior compaction summaries appended (oldest first). Off by default. */
+    allCompactionSummaries?: boolean
   }
   agent: {
     maxIterations: number

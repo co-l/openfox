@@ -51,6 +51,8 @@ import { loadAllAgentsDefault, getSubAgents } from '../agents/registry.js'
 import { createRetryLimiter, type RetryLimiter } from './retry-limiter.js'
 import { drainQueue } from './drain-queue.js'
 import { COMPACTION_PROMPT, CONTINUE_PROMPT, CONTINUE_AFTER_STREAM_ERROR_PROMPT } from './prompts.js'
+import { mergeSummaryInto, findWindowSummary } from './cumulative-summary.js'
+import { foldTurnEventsToSnapshotMessages } from '../events/fold-messages.js'
 import { logger } from '../utils/logger.js'
 import { emitPluginHook } from '../plugins/hook-emitter.js'
 import type { LLMRetryPolicy } from '../runner/types.js'
@@ -188,6 +190,10 @@ export interface TopLevelLoopConfig {
   /** Build conversation messages for the LLM, with image processing applied.
    *  Called each iteration to get fresh context. */
   getConversationMessages: () => Promise<RequestContextMessage[]>
+  /** Read the session's stored events. Used by the compaction tail to locate
+   *  the closed window's stored seed summary (cumulative summaries). Wired by
+   *  the orchestrator so the loop itself never touches the EventStore. */
+  getEvents?: (() => import('../events/types.js').StoredEvent[]) | undefined
   /** When true, the loop starts in compacting mode (used for manual compaction).
    *  After compaction completes, the loop breaks instead of continuing. */
   initialCompacting?: boolean
@@ -855,6 +861,15 @@ ${COMPACTION_PROMPT}`,
       const newWindowId = config.subAgentMetadata ? closedWindowId : crypto.randomUUID()
       const tokenCountAtClose = result.usage.promptTokens
 
+      // Cumulative summaries (top-level only): store the new window's seed as
+      // the closed window's stored seed + a dated marker + this summary. The
+      // stored content is exactly what the LLM receives — no runtime projection.
+      let storedSummary = summary
+      if (!config.subAgentMetadata && getRuntimeConfig().context.allCompactionSummaries && config.getEvents) {
+        const prev = findWindowSummary(foldTurnEventsToSnapshotMessages(config.getEvents()), closedWindowId)
+        storedSummary = mergeSummaryInto(summary, prev)
+      }
+
       append({
         type: 'context.compacted',
         data: {
@@ -862,7 +877,7 @@ ${COMPACTION_PROMPT}`,
           newWindowId,
           beforeTokens: tokenCountAtClose,
           afterTokens: 0,
-          summary,
+          summary: storedSummary,
           ...subAgentTags(),
         },
       })
@@ -872,7 +887,7 @@ ${COMPACTION_PROMPT}`,
         data: {
           messageId: assistantMsgId,
           role: 'assistant',
-          content: summary,
+          content: storedSummary,
           contextWindowId: newWindowId,
           isCompactionSummary: true,
           ...subAgentTags(),
