@@ -175,3 +175,34 @@ export function stopSessionExecution(sessionId: string, sessionManager: SessionM
   sessionManager.clearPauseState(sessionId)
   sessionManager.setRunning(sessionId, false)
 }
+
+/**
+ * Cancel all pending user-interaction gates for a session (ask_user
+ * questions, path confirmations), record the terminal running state in the
+ * event log, and force a final session.state re-broadcast.
+ *
+ * The session.state broadcast triggered by setRunning(false) fires BEFORE the
+ * gates are cancelled, and cancelled path confirmations only leave the
+ * event-sourced fold once a path.confirmation_responded event closes them
+ * out. Without the explicit re-broadcast here, clients would converge on the
+ * stale "waiting for input" state — the Allow/Deny buttons and tooltip would
+ * stick after Stop.
+ *
+ * @returns the callIds of the cancelled path confirmations, so the caller can
+ * broadcast a session.confirmation_resolved for each (cross-delivered to
+ * other clients of the same project, clearing their home-page waiting dots).
+ */
+export async function cancelSessionInteractions(
+  sessionId: string,
+  sessionManager: SessionManager,
+  reason: string,
+): Promise<string[]> {
+  const { cancelQuestionsForSession, cancelPathConfirmationsForSession, getPendingPathConfirmationCallIds } =
+    await import('../tools/index.js')
+  const cancelledCallIds = getPendingPathConfirmationCallIds(sessionId)
+  cancelQuestionsForSession(sessionId, reason)
+  cancelPathConfirmationsForSession(sessionId, reason)
+  getEventStore().append(sessionId, { type: 'running.changed', data: { isRunning: false } })
+  sessionManager.emitBranchChange(sessionId)
+  return cancelledCallIds
+}

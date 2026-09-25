@@ -92,6 +92,30 @@ describe('projectClientSessionStatus pause states', () => {
     expect(statusLabel('paused')).toBe('Paused')
   })
 
+  it('a pending path confirmation while running derives the waiting state (precondition of the stop bug)', () => {
+    const view = projectClientSessionStatus({
+      phase: 'plan',
+      isRunning: true,
+      pendingQuestionsCount: 0,
+      pendingConfirmationsCount: 1,
+      activeWorkflow: null,
+    })
+    expect(view.state).toBe('waiting')
+    expect(view.waitingForUser).toBe(true)
+  })
+
+  it('a stopped session with no pending input never derives the waiting state', () => {
+    const view = projectClientSessionStatus({
+      phase: 'plan',
+      isRunning: false,
+      pendingQuestionsCount: 0,
+      pendingConfirmationsCount: 0,
+      activeWorkflow: null,
+    })
+    expect(view.state).toBeNull()
+    expect(view.waitingForUser).toBe(false)
+  })
+
   function makeSession(overrides: Partial<Session> = {}): Session {
     return {
       id: 's1',
