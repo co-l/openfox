@@ -57,6 +57,7 @@ a stored decision.
 | `src/server/chat/cumulative-summary.ts` | pure `mergeSummaryInto(llmSummary, previousMerged?, timestamp?)` and `findWindowSummary(messages, windowId)`                                                                                                         |
 | `src/server/chat/agent-loop.ts`         | compaction tail: when on (and top-level), `storedSummary = mergeSummaryInto(summary, findWindowSummary(fold(events), closedWindowId))`; stored in both `context.compacted.data.summary` and the seed `message.start` |
 | `src/server/chat/orchestrator.ts`       | wires `getEvents` into the loop config (the loop never imports the EventStore)                                                                                                                                       |
+| `src/server/chat/prompts.ts`            | `COMPACTION_PROMPT` gains an anti-imitation guard: the cumulative seed's `## Compacted` sections are history — the LLM must summarize only this round and not reproduce the layout or re-list earlier summaries      |
 
 Both compaction paths (auto via threshold, manual via `initialCompacting`) run
 the same tail, so both are covered.
