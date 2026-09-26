@@ -63,9 +63,11 @@ describe('ThinkingSummary', () => {
     expect(feedItem?.className).toContain('p-1.5')
   })
 
-  it('renders nothing when no timing data is available', () => {
+  it('falls back to a duration-less chip when no timing data is available', () => {
     const { container } = render(<ThinkingSummary messageId="m-unknown" isStreaming={false} thinkingFinished />)
 
-    expect(container.textContent).toBe('')
+    expect(container.textContent).toContain('Thought')
+    const feedItem = container.querySelector('.feed-item')
+    expect(feedItem?.className).toContain('bg-secondary')
   })
 })

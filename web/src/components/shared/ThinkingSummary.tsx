@@ -74,21 +74,24 @@ export const ThinkingSummary = memo(function ThinkingSummary({
     setClientDuration(latchThinkingEnd(messageId))
   }, [messageId, isStreaming, thinkingFinished, thinkingDuration, fastTicking])
 
-  const durationSec = thinkingDuration ?? clientDuration
-  if (durationSec !== undefined) {
+  // A collapsed thinking block must always render something: an empty chip
+  // would make the block vanish from the feed, with no click target left to
+  // expand it again.
+  if (isStreaming && !thinkingFinished) {
+    const elapsedSec = (now - (startedAt ?? now)) / 1000
     return (
       <div className="text-text-muted text-sm italic bg-secondary rounded p-1.5 feed-item">
-        {t({ en: 'Thought for {{time}}', fr: 'A réfléchi pendant {{time}}' }, { time: formatTime(durationSec) })}
+        {t({ en: 'Thinking… ({{time}})', fr: 'Réflexion… ({{time}})' }, { time: formatTime(elapsedSec) })}
       </div>
     )
   }
 
-  if (!isStreaming || thinkingFinished) return null
-
-  const elapsedSec = (now - (startedAt ?? now)) / 1000
+  const durationSec = thinkingDuration ?? clientDuration
   return (
     <div className="text-text-muted text-sm italic bg-secondary rounded p-1.5 feed-item">
-      {t({ en: 'Thinking… ({{time}})', fr: 'Réflexion… ({{time}})' }, { time: formatTime(elapsedSec) })}
+      {durationSec !== undefined
+        ? t({ en: 'Thought for {{time}}', fr: 'A réfléchi pendant {{time}}' }, { time: formatTime(durationSec) })
+        : t({ en: 'Thought', fr: 'A réfléchi' })}
     </div>
   )
 })

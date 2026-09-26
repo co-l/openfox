@@ -7,20 +7,23 @@ vi.mock('./ThinkingBlock', () => ({
   ThinkingBlock: ({ content }: { content: string }) => <div>block:{content}</div>,
 }))
 
-vi.mock('./ThinkingSummary', () => ({
-  ThinkingSummary: () => <div>summary</div>,
-}))
-
 afterEach(cleanup)
 
 describe('ThinkingBlockToggle', () => {
   it('expands by default when showThinking is on', () => {
     const { container } = render(
-      <ThinkingBlockToggle messageId="t-on" content="thoughts" isStreaming={false} thinkingFinished showThinking />,
+      <ThinkingBlockToggle
+        messageId="t-on"
+        content="thoughts"
+        isStreaming={false}
+        thinkingFinished
+        thinkingDuration={5}
+        showThinking
+      />,
     )
 
     expect(container.textContent).toContain('block:thoughts')
-    expect(container.textContent).not.toContain('summary')
+    expect(container.textContent).not.toContain('Thought for')
   })
 
   it('collapses by default when showThinking is off', () => {
@@ -30,22 +33,52 @@ describe('ThinkingBlockToggle', () => {
         content="thoughts"
         isStreaming={false}
         thinkingFinished
+        thinkingDuration={5}
         showThinking={false}
       />,
     )
 
-    expect(container.textContent).toContain('summary')
+    expect(container.textContent).toContain('Thought for')
     expect(container.textContent).not.toContain('thoughts')
   })
 
   it('toggles between collapsed and expanded on click', () => {
     const { container } = render(
-      <ThinkingBlockToggle messageId="t-toggle" content="thoughts" isStreaming={false} thinkingFinished showThinking />,
+      <ThinkingBlockToggle
+        messageId="t-toggle"
+        content="thoughts"
+        isStreaming={false}
+        thinkingFinished
+        thinkingDuration={5}
+        showThinking
+      />,
     )
     const root = container.firstElementChild!
 
     fireEvent.click(root)
-    expect(container.textContent).toContain('summary')
+    expect(container.textContent).toContain('Thought for')
+
+    fireEvent.click(root)
+    expect(container.textContent).toContain('block:thoughts')
+  })
+
+  it('keeps a click target when collapsing a block with no known duration', () => {
+    const { container } = render(
+      <ThinkingBlockToggle
+        messageId="t-noduration"
+        content="thoughts"
+        isStreaming={false}
+        thinkingFinished
+        showThinking
+      />,
+    )
+    const root = container.firstElementChild!
+
+    fireEvent.click(root)
+
+    // The collapsed state must never render nothing, or the block disappears
+    // from the feed with no way to click it back open.
+    expect(container.textContent!.trim()).not.toBe('')
 
     fireEvent.click(root)
     expect(container.textContent).toContain('block:thoughts')
@@ -71,7 +104,7 @@ describe('ThinkingBlockToggle', () => {
 
     // Selecting text is not a collapse gesture: the block stays expanded.
     expect(container.textContent).toContain('block:thoughts')
-    expect(container.textContent).not.toContain('summary')
+    expect(container.textContent).not.toContain('Thought')
   })
 
   it('still collapses when the selection was made outside the block', () => {
@@ -81,6 +114,7 @@ describe('ThinkingBlockToggle', () => {
         content="thoughts"
         isStreaming={false}
         thinkingFinished
+        thinkingDuration={5}
         showThinking
       />,
     )
@@ -98,20 +132,34 @@ describe('ThinkingBlockToggle', () => {
     fireEvent.click(root)
 
     // A stale selection elsewhere must not block the collapse gesture.
-    expect(container.textContent).toContain('summary')
+    expect(container.textContent).toContain('Thought for')
     expect(container.textContent).not.toContain('block:thoughts')
   })
 
   it('keeps a manual toggle across remounts', () => {
     const { container } = render(
-      <ThinkingBlockToggle messageId="t-keep" content="thoughts" isStreaming={false} thinkingFinished showThinking />,
+      <ThinkingBlockToggle
+        messageId="t-keep"
+        content="thoughts"
+        isStreaming={false}
+        thinkingFinished
+        thinkingDuration={5}
+        showThinking
+      />,
     )
     fireEvent.click(container.firstElementChild!)
 
     const remounted = render(
-      <ThinkingBlockToggle messageId="t-keep" content="thoughts" isStreaming={false} thinkingFinished showThinking />,
+      <ThinkingBlockToggle
+        messageId="t-keep"
+        content="thoughts"
+        isStreaming={false}
+        thinkingFinished
+        thinkingDuration={5}
+        showThinking
+      />,
     )
 
-    expect(remounted.container.textContent).toContain('summary')
+    expect(remounted.container.textContent).toContain('Thought for')
   })
 })

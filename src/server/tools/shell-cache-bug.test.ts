@@ -49,8 +49,9 @@ describe('shell tool cache preservation bug', () => {
     console.log('Result 2 output:', result2.output)
     console.log('Result 2 error:', result2.error)
 
-    // Both should have the same output
-    expect(result1.output).toEqual(result2.output)
+    // Both should have the same output (ignoring the timing-dependent Duration line)
+    const withoutDuration = (output?: string) => (output ?? '').replace(/\n\[Duration: [^\]]*\]/, '')
+    expect(withoutDuration(result1.output)).toEqual(withoutDuration(result2.output))
 
     // Both should contain the error output
     expect(result1.output).toContain('error output')

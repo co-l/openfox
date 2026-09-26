@@ -1,6 +1,5 @@
 import type { MetadataEntry, ToolResult } from '../../shared/types.js'
 import { createTool, validateActionWithPermission, requireSession } from './tool-helpers.js'
-import { serverT } from '../i18n.js'
 
 const SCHEMAS: Record<string, { fields: Record<string, string>; description: string }> = {
   criteria: {
@@ -49,14 +48,10 @@ function requireKeyAndId(
   helpers: { error: (msg: string) => ToolResult },
   entries: Record<string, MetadataEntry[]>,
 ): MetadataEntry[] | ToolResult {
-  if (!args.key) return helpers.error(serverT({ en: 'Missing required field: key', fr: 'Champ requis manquant : key' }))
-  if (normalizeId(args.id) === undefined)
-    return helpers.error(serverT({ en: 'Missing required field: id', fr: 'Champ requis manquant : id' }))
+  if (!args.key) return helpers.error('Missing required field: key')
+  if (normalizeId(args.id) === undefined) return helpers.error('Missing required field: id')
   const current = entries[args.key]
-  if (!current)
-    return helpers.error(
-      serverT({ en: 'Key "{{key}}" not found.', fr: 'Clé « {{key}} » introuvable.' }, { key: args.key ?? '' }),
-    )
+  if (!current) return helpers.error(`Key "${args.key ?? ''}" not found.`)
   return current
 }
 
@@ -113,26 +108,18 @@ export const sessionMetadataTool = createTool<SessionMetadataArgs>(
 
     if (args.action === 'list') {
       const keys = Object.keys(entries)
-      if (keys.length === 0)
-        return helpers.success(serverT({ en: 'No metadata keys defined.', fr: 'Aucune clé de métadonnées définie.' }))
+      if (keys.length === 0) return helpers.success('No metadata keys defined.')
       return helpers.success(
         `Metadata keys:\n${keys.map((k) => `- ${k} (${entries[k]?.length ?? 0} items)`).join('\n')}`,
       )
     }
 
     if (args.action === 'schema') {
-      if (!args.key)
-        return helpers.error(serverT({ en: 'Missing required field: key', fr: 'Champ requis manquant : key' }))
+      if (!args.key) return helpers.error('Missing required field: key')
       const schema = SCHEMAS[args.key]
       if (!schema)
         return helpers.success(
-          serverT(
-            {
-              en: 'No schema defined for key "{{key}}". Items have id, description, and status fields.',
-              fr: 'Aucun schéma défini pour la clé « {{key}} ». Les éléments ont des champs id, description et status.',
-            },
-            { key: args.key ?? '' },
-          ),
+          `No schema defined for key "${args.key ?? ''}". Items have id, description, and status fields.`,
         )
       return helpers.success(
         `Key: ${args.key}\nDescription: ${schema.description}\nFields:\n${Object.entries(schema.fields)
@@ -142,26 +129,15 @@ export const sessionMetadataTool = createTool<SessionMetadataArgs>(
     }
 
     if (args.action === 'get') {
-      if (!args.key)
-        return helpers.error(serverT({ en: 'Missing required field: key', fr: 'Champ requis manquant : key' }))
+      if (!args.key) return helpers.error('Missing required field: key')
       const keyEntries = entries[args.key]
-      if (!keyEntries || keyEntries.length === 0)
-        return helpers.success(
-          serverT(
-            { en: 'No entries for key "{{key}}".', fr: 'Aucune entrée pour la clé « {{key}} ».' },
-            { key: args.key ?? '' },
-          ),
-        )
+      if (!keyEntries || keyEntries.length === 0) return helpers.success(`No entries for key "${args.key ?? ''}".`)
       return helpers.success(JSON.stringify(keyEntries, null, 2))
     }
 
     if (args.action === 'add') {
-      if (!args.key)
-        return helpers.error(serverT({ en: 'Missing required field: key', fr: 'Champ requis manquant : key' }))
-      if (!args.description)
-        return helpers.error(
-          serverT({ en: 'Missing required field: description', fr: 'Champ requis manquant : description' }),
-        )
+      if (!args.key) return helpers.error('Missing required field: key')
+      if (!args.description) return helpers.error('Missing required field: description')
 
       const current = entries[args.key] ?? []
       const newEntry: MetadataEntry = {
@@ -171,15 +147,7 @@ export const sessionMetadataTool = createTool<SessionMetadataArgs>(
       }
       const updated = [...current, newEntry]
       context.sessionManager.setMetadataEntries(context.sessionId, args.key, updated)
-      return helpers.success(
-        serverT(
-          {
-            en: 'Added item "{{id}}" to "{{key}}". Total: {{count}} items.',
-            fr: 'Élément « {{id}} » ajouté à « {{key}} ». Total : {{count}} éléments.',
-          },
-          { id: newEntry.id, key: args.key ?? '', count: updated.length },
-        ),
-      )
+      return helpers.success(`Added item "${newEntry.id}" to "${args.key ?? ''}". Total: ${updated.length} items.`)
     }
 
     if (args.action === 'update') {
@@ -187,13 +155,7 @@ export const sessionMetadataTool = createTool<SessionMetadataArgs>(
       if (!Array.isArray(current)) return current
       const id = normalizeId(args.id)!
       const idx = current.findIndex((e) => e.id === id)
-      if (idx === -1)
-        return helpers.error(
-          serverT(
-            { en: 'Item "{{id}}" not found in "{{key}}".', fr: 'Élément « {{id}} » introuvable dans « {{key}} ».' },
-            { id, key: args.key ?? '' },
-          ),
-        )
+      if (idx === -1) return helpers.error(`Item "${id}" not found in "${args.key ?? ''}".`)
 
       const updated = current.map((e, i) =>
         i === idx
@@ -205,12 +167,7 @@ export const sessionMetadataTool = createTool<SessionMetadataArgs>(
           : e,
       )
       context.sessionManager.setMetadataEntries(context.sessionId, args.key!, updated)
-      return helpers.success(
-        serverT(
-          { en: 'Updated item "{{id}}" in "{{key}}".', fr: 'Élément « {{id}} » mis à jour dans « {{key}} ».' },
-          { id, key: args.key ?? '' },
-        ),
-      )
+      return helpers.success(`Updated item "${id}" in "${args.key ?? ''}".`)
     }
 
     if (args.action === 'remove') {
@@ -219,26 +176,12 @@ export const sessionMetadataTool = createTool<SessionMetadataArgs>(
       const id = normalizeId(args.id)!
 
       const updated = current.filter((e) => e.id !== id)
-      if (updated.length === current.length)
-        return helpers.error(
-          serverT(
-            { en: 'Item "{{id}}" not found in "{{key}}".', fr: 'Élément « {{id}} » introuvable dans « {{key}} ».' },
-            { id, key: args.key ?? '' },
-          ),
-        )
+      if (updated.length === current.length) return helpers.error(`Item "${id}" not found in "${args.key ?? ''}".`)
 
       context.sessionManager.setMetadataEntries(context.sessionId, args.key!, updated)
-      return helpers.success(
-        serverT(
-          {
-            en: 'Removed item "{{id}}" from "{{key}}". {{count}} items remaining.',
-            fr: 'Élément « {{id}} » supprimé de « {{key}} ». {{count}} éléments restants.',
-          },
-          { id, key: args.key ?? '', count: updated.length },
-        ),
-      )
+      return helpers.success(`Removed item "${id}" from "${args.key ?? ''}". ${updated.length} items remaining.`)
     }
 
-    return helpers.error(serverT({ en: 'Unexpected error', fr: 'Erreur inattendue' }))
+    return helpers.error('Unexpected error')
   },
 )

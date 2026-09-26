@@ -1,11 +1,30 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { resolve } from 'node:path'
-import { createTool, requestUserConfirmation } from './tool-helpers.js'
+import {
+  createTool,
+  requestUserConfirmation,
+  validateAction,
+  checkActionPermission,
+  unexpectedError,
+} from './tool-helpers.js'
 import type { ToolContext } from './types.js'
 import { PathAccessDeniedError } from './path-security.js'
 
 // Track callIds passed to registerPathConfirmation across tests
 const capturedCallIds: string[] = []
+
+const toolDefinitionFixture = {
+  type: 'function' as const,
+  function: {
+    name: 'test_tool',
+    description: 'A test tool',
+    parameters: {
+      type: 'object' as const,
+      properties: { input: { type: 'string' as const, description: 'Test input' } },
+      required: ['input'] as string[],
+    },
+  },
+}
 
 vi.mock('./path-security.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./path-security.js')>()
@@ -21,10 +40,12 @@ vi.mock('./path-security.js', async (importOriginal) => {
 vi.mock('../db/settings.js', () => ({
   getSetting: (key: string) => {
     if (key === 'tools.confirmOnWorkspaceActions') return 'true'
+    if (key === 'display.locale') return 'fr'
     return null
   },
   SETTINGS_KEYS: {
     CONFIRM_ON_WORKSPACE_ACTIONS: 'tools.confirmOnWorkspaceActions',
+    DISPLAY_LOCALE: 'display.locale',
   },
 }))
 
@@ -42,23 +63,8 @@ describe('createTool', () => {
     sessionId: 'test-session',
   }
 
-  const testDefinition = {
-    type: 'function' as const,
-    function: {
-      name: 'test_tool',
-      description: 'A test tool',
-      parameters: {
-        type: 'object' as const,
-        properties: {
-          input: { type: 'string' as const, description: 'Test input' },
-        },
-        required: ['input'] as string[],
-      },
-    },
-  }
-
   it('wraps handler with timing', async () => {
-    const tool = createTool<{ input: string }>('test_tool', testDefinition, async (_args, _context, helpers) => {
+    const tool = createTool<{ input: string }>('test_tool', toolDefinitionFixture, async (_args, _context, helpers) => {
       return helpers.success('output')
     })
 
@@ -71,7 +77,7 @@ describe('createTool', () => {
   it('provides resolvePath helper', async () => {
     let resolvedPath = ''
 
-    const tool = createTool<{ path: string }>('test_tool', testDefinition, async (args, _context, helpers) => {
+    const tool = createTool<{ path: string }>('test_tool', toolDefinitionFixture, async (args, _context, helpers) => {
       resolvedPath = helpers.resolvePath(args.path)
       return helpers.success(resolvedPath)
     })
@@ -87,7 +93,7 @@ describe('createTool', () => {
   })
 
   it('provides success helper', async () => {
-    const tool = createTool<{ input: string }>('test_tool', testDefinition, async (_args, _context, helpers) => {
+    const tool = createTool<{ input: string }>('test_tool', toolDefinitionFixture, async (_args, _context, helpers) => {
       return helpers.success('output', true, { diagnostics: [] })
     })
 
@@ -100,7 +106,7 @@ describe('createTool', () => {
   })
 
   it('provides error helper', async () => {
-    const tool = createTool<{ input: string }>('test_tool', testDefinition, async (_args, _context, helpers) => {
+    const tool = createTool<{ input: string }>('test_tool', toolDefinitionFixture, async (_args, _context, helpers) => {
       return helpers.error('something went wrong')
     })
 
@@ -112,7 +118,7 @@ describe('createTool', () => {
   })
 
   it('catches errors and returns error result', async () => {
-    const tool = createTool<{ input: string }>('test_tool', testDefinition, async () => {
+    const tool = createTool<{ input: string }>('test_tool', toolDefinitionFixture, async () => {
       throw new Error('unexpected error')
     })
 
@@ -124,7 +130,7 @@ describe('createTool', () => {
   })
 
   it('re-throws PathAccessDeniedError for orchestrator handling', async () => {
-    const tool = createTool<{ input: string }>('test_tool', testDefinition, async () => {
+    const tool = createTool<{ input: string }>('test_tool', toolDefinitionFixture, async () => {
       throw new PathAccessDeniedError(['/secret/file'], 'test_tool', 'sensitive_file')
     })
 
@@ -140,7 +146,7 @@ describe('createTool', () => {
 
     let checkPathCalled = false
 
-    const tool = createTool<{ path: string }>('test_tool', testDefinition, async (args, _context, helpers) => {
+    const tool = createTool<{ path: string }>('test_tool', toolDefinitionFixture, async (args, _context, helpers) => {
       const fullPath = helpers.resolvePath(args.path)
       // checkPathAccess should be a no-op when path is in workdir
       await helpers.checkPathAccess([fullPath])
@@ -158,16 +164,16 @@ describe('createTool', () => {
   })
 
   it('creates tool with correct name and definition', () => {
-    const tool = createTool<{ input: string }>('my_tool', testDefinition, async (_args, _context, helpers) =>
+    const tool = createTool<{ input: string }>('my_tool', toolDefinitionFixture, async (_args, _context, helpers) =>
       helpers.success('output'),
     )
 
     expect(tool.name).toBe('my_tool')
-    expect(tool.definition).toBe(testDefinition)
+    expect(tool.definition).toBe(toolDefinitionFixture)
   })
 
   it('handles non-Error throws gracefully', async () => {
-    const tool = createTool<{ input: string }>('test_tool', testDefinition, async () => {
+    const tool = createTool<{ input: string }>('test_tool', toolDefinitionFixture, async () => {
       throw 'string error' // Non-Error throw
     })
 
@@ -208,5 +214,39 @@ describe('requestUserConfirmation', () => {
     // BUG: currently both use context.toolCallId ('same-tool-call-id'), so they're identical.
     // Fix: each call should generate its own unique callId.
     expect(capturedCallIds[0]).not.toBe(capturedCallIds[1])
+  })
+})
+
+// display.locale is forced to 'fr' by the settings mock at the top of this
+// file: every LLM-facing result string (persisted + folded into LLM content)
+// must stay English no matter the UI locale.
+describe('LLM-facing result strings under fr locale', () => {
+  it('validateAction returns the English error', () => {
+    const result = validateAction('nope', ['start', 'stop'], 0)
+    expect(result).toBeDefined()
+    expect(result!.error).toBe('Invalid action: nope. Must be one of: start, stop')
+  })
+
+  it('checkActionPermission returns the English error', () => {
+    const result = checkActionPermission('start', ['stop'], 0)
+    expect(result).toBeDefined()
+    expect(result!.error).toBe("Action 'start' not allowed. Available: stop")
+  })
+
+  it('unexpectedError returns the English error', () => {
+    expect(unexpectedError(0).error).toBe('Unexpected error')
+  })
+
+  it('createTool non-Error throws surface the English message', async () => {
+    const tool = createTool<{ input: string }>('test_tool', toolDefinitionFixture, async () => {
+      throw 'string error'
+    })
+    const context: ToolContext = {
+      sessionManager: {} as any,
+      workdir: '/test',
+      sessionId: 's',
+    }
+    const result = await tool.execute({ input: 'x' }, context)
+    expect(result.error).toBe('Unknown error in tool execution')
   })
 })

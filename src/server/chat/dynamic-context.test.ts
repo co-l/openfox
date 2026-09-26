@@ -461,6 +461,22 @@ describe('renderToolChangeReminder', () => {
     expect(reminder).toContain('"id"')
   })
 
+  it('keeps the full schema even for a large tool definition', () => {
+    const properties: Record<string, unknown> = {}
+    for (let i = 0; i < 150; i++) properties[`prop_${i}`] = { type: 'string' }
+    const toolDef = tool('mcp_notes_search', {
+      description: 'Search notes',
+      parameters: { type: 'object', properties },
+    })
+    const reminder = renderToolChangeReminder({
+      added: [{ name: 'mcp_notes_search', tool: toolDef }],
+      removed: [],
+      changed: [],
+    })
+    expect(reminder).toContain('prop_149')
+    expect(reminder).not.toContain('omitted')
+  })
+
   it('omits sections that have no entries', () => {
     const reminder = renderToolChangeReminder({ added: [], removed: ['mcp_notes_delete'], changed: [] })
     expect(reminder).not.toContain('Added:')
@@ -481,20 +497,21 @@ describe('renderSystemPromptDiff', () => {
     expect(reminder).not.toContain('line one')
   })
 
-  it('caps the number of diff lines and truncates long lines', () => {
+  it('does not truncate changed lines', () => {
     const manyOld = Array.from({ length: 60 }, (_, i) => `old line ${i}`).join('\n')
     const manyNew = Array.from({ length: 60 }, (_, i) => `new line ${i}`).join('\n')
     const reminder = renderSystemPromptDiff(manyOld, manyNew)!
 
     const minusCount = (reminder.match(/- old line/g) ?? []).length
     const plusCount = (reminder.match(/\+ new line/g) ?? []).length
-    // 120 changed lines (60 removed + 60 added) capped to 40 visible;
-    // the remaining 80 are folded into the "omitted" note.
-    expect(minusCount + plusCount).toBe(40)
-    expect(reminder).toContain('80 more lines omitted')
+    // 120 changed lines (60 removed + 60 added) — all present, no cap.
+    expect(minusCount + plusCount).toBe(120)
+    expect(reminder).not.toContain('omitted')
 
     const longLine = 'x'.repeat(500)
     const longReminder = renderSystemPromptDiff(longLine, 'y'.repeat(500))!
-    expect(longReminder).toContain('…')
+    expect(longReminder).toContain(`- ${longLine}`)
+    expect(longReminder).toContain(`+ ${'y'.repeat(500)}`)
+    expect(longReminder).not.toContain('…')
   })
 })

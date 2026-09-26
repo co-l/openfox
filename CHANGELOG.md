@@ -1,5 +1,32 @@
 # Changelog
 
+## 2.0.160 - 2026-09-26
+
+### Features
+
+- **run_command duration reporting** — tool results now include elapsed time, so you can see how long each command took.
+
+### Enhancements
+
+- **Stable tool results for prompt caching** — tool results are now byte-identical and locale-free across turns, so provider KV caches get reused.
+
+### Bug Fixes
+
+- **Interrupted commands no longer reported as failures** — interrupted shell commands now show as interrupted, derived from structured metadata instead of a text heuristic.
+- **Collapsed thinking blocks without a duration stay visible** — they now render a clickable "Thought" chip instead of vanishing from the feed.
+
+## 2.0.159 - 2026-09-24
+
+### Bug Fixes
+
+- **Context stats accurate after reload** — compacted sessions no longer show inflated compaction counts or zeroed token counts.
+
+## 2.0.158 - 2026-09-24
+
+### Bug Fixes
+
+- **Context-drift reminders never truncate again** — full system-prompt diffs and tool schemas are now shown to the agent.
+
 ## 2.0.157 - 2026-09-23
 
 ### Features

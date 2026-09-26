@@ -177,8 +177,11 @@ echo "line 3"
     expect(result.output).not.toContain('never reached')
     // Exit code 130 = SIGINT, so success is false
     expect(result.success).toBe(false)
-    // No error field - this is a controlled interruption, not an error
-    expect(result.error).toBeUndefined()
+    // A real error message (not undefined) plus the metadata flag keep the
+    // LLM-facing content byte-identical (English, locale-free) between the
+    // live turn and every subsequent fold.
+    expect(result.error).toMatch(/interrupted/i)
+    expect(result.metadata?.['interrupted']).toBe(true)
   }, 10000)
 
   it('aborts promptly even when the process ignores SIGINT', async () => {
@@ -288,10 +291,11 @@ for i in a b c d e f g h i j; do echo "$i"; done
       expect(stdoutCalls).toContain('a')
       expect(stdoutCalls).toContain('j')
 
-      expect(result.output).toContain('h')
-      expect(result.output).toContain('j')
-      expect(result.output).not.toContain('a')
-      expect(result.output).not.toContain('g')
+      const tailed = (result.output ?? '').replace(/\n\[Duration: [^\]]*\]/, '')
+      expect(tailed).toContain('h')
+      expect(tailed).toContain('j')
+      expect(tailed).not.toContain('a')
+      expect(tailed).not.toContain('g')
     })
 
     it('returns exit code from the original command, not tail', async () => {

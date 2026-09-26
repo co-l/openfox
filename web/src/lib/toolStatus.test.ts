@@ -36,6 +36,31 @@ describe('deriveToolCallStatus', () => {
     expect(deriveToolCallStatus(result({ success: false, output }))).toBe('interrupted')
   })
 
+  it('is interrupted from the server-provided metadata flag (single source of truth)', () => {
+    const output = 'partial output'
+    expect(deriveToolCallStatus(result({ success: false, output, metadata: { interrupted: true } }))).toBe(
+      'interrupted',
+    )
+  })
+
+  it('ignores the metadata flag on a successful run', () => {
+    expect(deriveToolCallStatus(result({ success: true, output: 'ok', metadata: { interrupted: true } }))).toBe(
+      'success',
+    )
+  })
+
+  it('is interrupted for the real run_command shape: marker followed by the exit-code line', () => {
+    // Real interrupted runs always end with "[Exit code: 130]" (appended after
+    // the marker) — this used to be misclassified as a plain error.
+    const output = 'partial stdout\n\n[interrupted by user]\n\n[Exit code: 130]'
+    expect(deriveToolCallStatus(result({ success: false, output }))).toBe('interrupted')
+  })
+
+  it('is interrupted for the real shape with a trailing duration line', () => {
+    const output = 'partial stdout\n\n[interrupted by user]\n\n[Exit code: 130]\n[Duration: 4.3s]'
+    expect(deriveToolCallStatus(result({ success: false, output }))).toBe('interrupted')
+  })
+
   it('is error when a failed run mentions the marker mid-output but ends differently', () => {
     const output = "grep found: '[interrupted by user]'\n[Exit code: 1]"
     expect(deriveToolCallStatus(result({ success: false, output }))).toBe('error')

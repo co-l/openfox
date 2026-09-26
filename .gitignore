@@ -32,6 +32,9 @@ web/vite.config.local.ts
 *.swp
 *.swo
 
+# Editor local history (VS Code .history/)
+.history/
+
 # OS
 .DS_Store
 Thumbs.db

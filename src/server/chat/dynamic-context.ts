@@ -162,8 +162,6 @@ export function computePreviewToolDiff(
 // Incremental change detection + system-reminder injection
 // ============================================================================
 
-const MAX_TOOL_SCHEMA_LINES = 120
-
 export interface ToolChangeInfo {
   name: string
   /** Full live tool definition — the exact schema the rebased prefix would carry. */
@@ -237,16 +235,15 @@ function hasToolChanges(changes: ToolChanges): boolean {
 
 /**
  * Serialize a tool definition as a self-sufficient JSON block — the exact
- * schema the rebased tool prefix would carry. Capped to keep a large toolset
- * from bloating the context.
+ * schema the rebased tool prefix would carry, in full. The reminder claims
+ * these are the exact schemas, so truncating them would leave the agent with
+ * a broken picture of the toolset. No cap: same deliberate tradeoff as
+ * renderSystemPromptDiff — full fidelity over token savings, bounded by the
+ * once-per-change injection.
  */
 function formatToolDefinition(entry: ToolChangeInfo): string {
   const json = JSON.stringify(entry.tool, null, 2)
-  const lines = json.split('\n')
-  if (lines.length <= MAX_TOOL_SCHEMA_LINES) return `### ${entry.name}\n${json}`
-  const visible = lines.slice(0, MAX_TOOL_SCHEMA_LINES)
-  const omitted = lines.length - visible.length
-  return `### ${entry.name}\n${visible.join('\n')}\n… ${omitted} more lines omitted`
+  return `### ${entry.name}\n${json}`
 }
 
 /**
@@ -276,31 +273,23 @@ export function renderToolChangeReminder(changes: ToolChanges): string | null {
   return `<system-reminder>\n${intro}\n${sections.join('\n')}\n</system-reminder>`
 }
 
-const MAX_PROMPT_DIFF_LINES = 40
-const MAX_PROMPT_DIFF_LINE_LENGTH = 200
-
 /**
  * Render a <system-reminder> containing the unified diff between the cached
  * system prompt and the freshly built one. Returns null when identical.
- * The diff is capped so a large prompt rewrite cannot bloat the context.
+ * Every changed line is included in full, with no line or length cap — the
+ * reminder is the agent's only window into the drift, so truncating it would
+ * silently drop instructions. Deliberate tradeoff: a pathological rewrite can
+ * inject a large diff once, but injections fire once per change (announced
+ * prompt hash), so it never repeats on every turn.
  */
 export function renderSystemPromptDiff(oldPrompt: string, newPrompt: string): string | null {
   const diff = computeUnifiedDiff(oldPrompt, newPrompt)
   const changedLines = diff.filter((line) => line.type !== 'unchanged')
   if (changedLines.length === 0) return null
-  const visible = changedLines.slice(0, MAX_PROMPT_DIFF_LINES)
-  const lines = visible.map((line) => {
+  const lines = changedLines.map((line) => {
     const marker = line.type === 'added' ? '+' : '-'
-    const content =
-      line.content.length > MAX_PROMPT_DIFF_LINE_LENGTH
-        ? line.content.slice(0, MAX_PROMPT_DIFF_LINE_LENGTH) + '…'
-        : line.content
-    return `${marker} ${content}`
+    return `${marker} ${line.content}`
   })
-  const omitted = changedLines.length - visible.length
-  if (omitted > 0) {
-    lines.push(`… ${omitted} more line${omitted === 1 ? '' : 's'} omitted`)
-  }
   return `<system-reminder>\nYour system prompt has changed:\n${lines.join('\n')}\n</system-reminder>`
 }
 
