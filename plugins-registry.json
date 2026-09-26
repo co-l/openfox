@@ -34,5 +34,11 @@
     "displayName": "OpenCode (Free Models)",
     "description": "OpenCode provider filtered to free models only (-free suffix), with automatic hourly model updates (1x/hour) and API key auth.",
     "githubUrl": "https://github.com/JamesDAdams/openfox-opencode-free"
+  },
+  {
+    "name": "openfox-automate",
+    "displayName": "OpenFox Automate",
+    "description": "Autonomous GitHub issue processing: scan, order, spawn OpenFox sessions, run a configurable chain of workflows end-to-end.",
+    "githubUrl": "https://github.com/theshwal/openfox-automate"
   }
 ]
