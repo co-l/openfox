@@ -327,14 +327,21 @@ Rich custom UI is supported through sandboxed iframe panels.
 
 **Slots**
 
-| Slot                     | Rendered in                    |
-| ------------------------ | ------------------------------ |
-| `header.actions`         | Top header                     |
-| `session.header.actions` | Session header                 |
-| `message.actions`        | Message context menu           |
-| `composer.actions`       | Chat composer, above the input |
-| `session.row.badges`     | Session rows in the sidebar    |
-| `session.header.badges`  | Session header                 |
+| Slot                     | Rendered in                              |
+| ------------------------ | ---------------------------------------- |
+| `header.actions`         | Top header                               |
+| `session.header.actions` | Session header                           |
+| `message.actions`        | Message context menu                     |
+| `composer.actions`       | Chat composer, above the input           |
+| `session.row.badges`     | Session rows in the sidebar              |
+| `session.header.badges`  | Session header                           |
+| `plugin.menu`            | The plugin's own row in the plugins menu |
+
+`plugin.menu` is the one slot that does not add a row: it takes over the row
+showing your plugin in the header's plugins menu. `label` becomes the row label
+(replacing `displayName`) and activating the row runs `onActivate`, so a plugin
+can send its name anywhere it likes. Without it the row stays an inert group
+header. Only the first visible `plugin.menu` action of a plugin is used.
 
 Settings are not a slot: `registerSettings()` drives the schema-rendered form
 that appears in the Plugins tab.
@@ -367,6 +374,10 @@ registry.registerUiAction({
   lists are refetched in place, so items written to disk by an RPC (an installed
   pack, a generated agent, …) show up without a page reload or a server restart.
 - `{ kind: 'openPanel', panelId }` — opens one of your panels.
+- `{ kind: 'openSettings', tab? }` — opens the global settings modal, optionally
+  on a given tab: a core tab id (`plugins`, `tools`, `skills`, …) or a full
+  plugin tab reference `plugin:<yourPluginId>:<tabId>` for one of the settings
+  tabs you registered. Omit `tab` for the default tab.
 - `{ kind: 'openUrl', url }` — opens a URL in a new tab.
 
 `visibleWhen` gates a contribution on the slot context: `hasSession`,

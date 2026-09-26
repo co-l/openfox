@@ -4,6 +4,7 @@ import { useLocalizedString } from '../../hooks/useLocalizedString'
 import { useT } from '../../hooks/useT'
 import { activatePluginAction, isContributionVisible, pluginIcon, type PluginActionContext } from './plugin-ui-utils'
 import { GearIcon, PuzzleIcon } from '../shared/icons'
+import { PluginLogo } from '../shared/PluginLogo'
 
 interface PluginMenuProps {
   context: PluginActionContext
@@ -37,18 +38,35 @@ export function usePluginMenuItems(
   ]
 
   for (const plugin of enabledPlugins) {
-    items.push({
-      label: (
-        <span className="cursor-default text-xs font-semibold text-text-muted uppercase tracking-wide">
-          {plugin.displayName}
-        </span>
-      ),
-    })
+    const menuAction = contributions.actions.find(
+      (action) =>
+        action.slot === 'plugin.menu' &&
+        action.pluginId === plugin.id &&
+        isContributionVisible(action.visibleWhen, context),
+    )
+    const glyph = menuAction?.icon ?? plugin.icon ?? plugin.logo
+    const icon = glyph ? <PluginLogo icon={glyph} className="w-4 h-4" /> : <PuzzleIcon className="w-4 h-4" />
+    items.push(
+      menuAction
+        ? {
+            label: localize(menuAction.label),
+            icon,
+            onClick: () => void activatePluginAction(menuAction.pluginId, menuAction.onActivate, context),
+          }
+        : {
+            label: (
+              <span className="cursor-default text-xs font-semibold text-text-muted uppercase tracking-wide">
+                {plugin.displayName}
+              </span>
+            ),
+            icon,
+          },
+    )
     for (const action of headerActions.filter((a) => a.pluginId === plugin.id)) {
-      const Icon = pluginIcon(action.icon)
+      const ActionIcon = pluginIcon(action.icon)
       items.push({
         label: localize(action.label),
-        icon: <Icon className="w-4 h-4" />,
+        icon: <ActionIcon className="w-4 h-4" />,
         onClick: () => void activatePluginAction(action.pluginId, action.onActivate, context),
       })
     }

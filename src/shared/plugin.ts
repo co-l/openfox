@@ -22,6 +22,7 @@ export type PluginSlotName =
   | 'composer.actions'
   | 'session.row.badges'
   | 'session.header.badges'
+  | 'plugin.menu'
   | (string & {})
 
 export type PluginZoneId =
@@ -61,6 +62,14 @@ export type PluginActivation =
   | { kind: 'rpc'; method: string; params?: Record<string, unknown> }
   | { kind: 'openPanel'; panelId: string }
   | { kind: 'openUrl'; url: string }
+  | { kind: 'openSettings'; tab?: PluginSettingsTabRef }
+
+/**
+ * Settings tab opened by an `openSettings` activation: a core tab id
+ * (`plugins`, `tools`, …) or a full plugin tab reference
+ * (`plugin:<pluginId>:<tabId>`).
+ */
+export type PluginSettingsTabRef = string
 
 /**
  * Declarative visibility for a contribution. Every field is ANDed; omitted
@@ -76,6 +85,11 @@ export interface PluginVisibilityCondition {
 export interface PluginUiAction {
   id: string
   pluginId?: string
+  /**
+   * `plugin.menu` turns the plugin's own row in the plugins menu into the
+   * action: `label` replaces the plugin display name and activating the row
+   * runs `onActivate`.
+   */
   slot: PluginSlotName
   label: LocalizedString
   icon?: string

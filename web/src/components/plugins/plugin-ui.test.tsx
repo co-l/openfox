@@ -10,6 +10,7 @@ import { PluginBadges } from './PluginBadges'
 import { PluginPanelHost } from './PluginPanelHost'
 import { PluginZone } from './PluginZone'
 import { DeclarativeRenderer } from './DeclarativeRenderer'
+import { activatePluginAction } from './plugin-ui-utils'
 import { usePluginUiStore } from '../../stores/pluginUi'
 import { useLocaleStore } from '../../stores/locale'
 import { clearBadgeCache } from '../../lib/plugin-badge-cache'
@@ -41,6 +42,11 @@ vi.mock('../../lib/resources', () => ({
   refreshItemResources: (kinds: string[]) => refreshItemResources(kinds),
 }))
 
+const openSettings = vi.fn()
+vi.mock('../settings/GlobalSettingsModal', () => ({
+  openSettings: (...args: unknown[]) => openSettings(...args),
+}))
+
 describe('plugin UI slots', () => {
   beforeEach(() => {
     contributionsRef.current = {
@@ -54,6 +60,7 @@ describe('plugin UI slots', () => {
     }
     invokePluginRpc.mockReset()
     refreshItemResources.mockReset()
+    openSettings.mockReset()
     usePluginUiStore.setState({ values: {}, activePanel: null })
     useLocaleStore.setState({ locale: 'en' })
   })
@@ -982,6 +989,12 @@ describe('PluginZone and DeclarativeRenderer', () => {
     expect(container.textContent).toBe('Before TextNative HeaderAfter Text')
   })
 
+  it('renders nothing for an empty stack so a hidden header component leaves no full-width gap', () => {
+    const { container } = render(<DeclarativeRenderer node={{ type: 'stack', direction: 'row', children: [] }} />)
+
+    expect(container.innerHTML).toBe('')
+  })
+
   it('renders all rich declarative primitives (stack, card, callout, icon, input, select, button)', async () => {
     render(
       <DeclarativeRenderer
@@ -1325,6 +1338,18 @@ describe('PluginZone and DeclarativeRenderer', () => {
       { fieldId: 'install-scope', value: 'project' },
       {},
     )
+  })
+})
+
+describe('activatePluginAction', () => {
+  it('opens the settings modal on the tab requested by the plugin', async () => {
+    await activatePluginAction('hello', { kind: 'openSettings', tab: 'plugin:hello:hello-tab' })
+    await waitFor(() => expect(openSettings).toHaveBeenCalledWith('plugin:hello:hello-tab'))
+  })
+
+  it('opens the settings modal on its default tab when no tab is requested', async () => {
+    await activatePluginAction('hello', { kind: 'openSettings' })
+    await waitFor(() => expect(openSettings).toHaveBeenCalledWith(undefined))
   })
 })
 

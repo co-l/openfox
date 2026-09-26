@@ -281,6 +281,14 @@ export async function activatePluginAction(
       return
     }
 
+    if (activation.kind === 'openSettings') {
+      const tab = activation.tab
+      void import('../settings/GlobalSettingsModal')
+        .then((settings) => settings.openSettings(tab as Parameters<typeof settings.openSettings>[0]))
+        .catch(() => {})
+      return
+    }
+
     window.open(activation.url, '_blank', 'noopener,noreferrer')
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)

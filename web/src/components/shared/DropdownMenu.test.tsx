@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createRoot } from 'react-dom/client'
 import { act, useState } from 'react'
-import { render as rtlRender, fireEvent as rtlFireEvent } from '@testing-library/react'
+import { render as rtlRender, fireEvent as rtlFireEvent, screen } from '@testing-library/react'
 import { DropdownMenu, type DropdownMenuItem } from './DropdownMenu'
 
 vi.mock('wouter', () => ({
@@ -40,6 +40,37 @@ function clickTrigger(container: HTMLElement) {
     trigger.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   })
 }
+
+describe('keyboard highlight', () => {
+  const accent = 'bg-accent-primary/20'
+
+  function openMenu() {
+    rtlRender(<DropdownMenu items={ITEMS} trigger={<button>Open</button>} />)
+    rtlFireEvent.click(screen.getByText('Open'))
+  }
+
+  it('does not highlight any item before the user presses an arrow key', () => {
+    openMenu()
+
+    expect(screen.getByText('Item 1').closest('button')?.className).not.toContain(accent)
+    expect(screen.getByText('Item 2').closest('button')?.className).not.toContain(accent)
+  })
+
+  it('highlights the item reached with the keyboard', () => {
+    openMenu()
+    rtlFireEvent.keyDown(window, { key: 'ArrowDown' })
+
+    expect(screen.getByText('Item 2').closest('button')?.className).toContain(accent)
+  })
+
+  it('drops the keyboard highlight as soon as the pointer takes over', () => {
+    openMenu()
+    rtlFireEvent.keyDown(window, { key: 'ArrowDown' })
+    rtlFireEvent.mouseMove(screen.getByTestId('session-dropdown-menu'))
+
+    expect(screen.getByText('Item 2').closest('button')?.className).not.toContain(accent)
+  })
+})
 
 describe('DropdownMenu', () => {
   beforeEach(() => {

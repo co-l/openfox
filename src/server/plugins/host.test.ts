@@ -647,6 +647,39 @@ describe('PluginHost', () => {
     expect(listPluginMessageTransforms()).toHaveLength(1)
   })
 
+  it('keeps the original plugin owner when a UI component is re-registered at runtime', async () => {
+    await writePlugin(
+      configDirectory,
+      'runtime-plugin',
+      2,
+      `
+      globalThis.__runtimeRegistry = registry;
+      registry.registerUiComponent({ id: 'runtime-comp', zone: 'header.actions', component: { type: 'stack', direction: 'row', children: [] } });
+      `,
+    )
+
+    const host = makeHost(configDirectory)
+    await host.start()
+
+    const globals = globalThis as unknown as Record<string, unknown>
+    const runtimeRegistry = globals['__runtimeRegistry'] as { registerUiComponent: (component: unknown) => void }
+    delete globals['__runtimeRegistry']
+
+    runtimeRegistry.registerUiComponent({
+      id: 'runtime-comp',
+      zone: 'header.actions',
+      component: {
+        type: 'button',
+        label: { en: 'Open', fr: 'Ouvrir' },
+        onActivate: { kind: 'openPanel', panelId: 'runtime-panel' },
+      },
+    })
+
+    const component = host.getUiContributions().components.find((c) => c.id === 'runtime-comp')
+    expect(component?.pluginId).toBe('runtime-plugin')
+    expect(component?.component).toMatchObject({ type: 'button' })
+  })
+
   it('rejects duplicate message transform IDs across plugins', async () => {
     await writePlugin(
       configDirectory,

@@ -394,11 +394,11 @@ export class PluginRegistry implements ProviderPluginRegistry, PluginRegistryCon
 
   private register<T>(kind: Kind, id: string, value: T): boolean {
     if (!id.trim()) throw new Error(`Plugin ${kind} id cannot be empty`)
-    const pluginId = this.currentPluginId ?? UNKNOWN_PLUGIN
     const map = this.entries.get(kind) ?? new Map<string, Owned<unknown>>()
     this.entries.set(kind, map)
 
     const existing = map.get(id)
+    const pluginId = this.currentPluginId ?? existing?.pluginId ?? UNKNOWN_PLUGIN
     if (existing && this.currentPluginId !== undefined && existing.pluginId !== pluginId) {
       this.conflicts.push(`Plugin ${kind} '${id}' is already registered by '${existing.pluginId}'`)
       return false

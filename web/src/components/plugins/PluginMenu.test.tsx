@@ -39,6 +39,11 @@ vi.mock('../../lib/plugin-actions', () => ({
   invokePluginRpc: (...args: unknown[]) => invokePluginRpc(...args),
 }))
 
+const openSettings = vi.fn()
+vi.mock('../settings/GlobalSettingsModal', () => ({
+  openSettings: (...args: unknown[]) => openSettings(...args),
+}))
+
 const DEMO_PLUGIN: PluginInfo = {
   id: 'hello',
   displayName: 'Hello plugin',
@@ -70,6 +75,7 @@ describe('PluginMenu', () => {
       },
     }
     invokePluginRpc.mockReset()
+    openSettings.mockReset()
     useLocaleStore.setState({ locale: 'en' })
   })
 
@@ -175,6 +181,96 @@ describe('PluginMenu', () => {
 
     await userEvent.setup().click(screen.getByRole('button', { name: 'Plugins' }))
     expect(screen.getByText('Hello plugin')).toBeDefined()
+  })
+
+  it('shows each plugin icon to the left of its name', async () => {
+    dataRef.current = {
+      plugins: [{ ...DEMO_PLUGIN, icon: '<svg viewBox="0 0 24 24" data-testid="hello-icon"></svg>' }],
+      contributions: {
+        actions: [],
+        badges: [],
+        panels: [],
+        sections: [],
+        components: [],
+        overrides: [],
+        settingsTabs: [],
+      },
+    }
+    render(<PluginMenu context={{}} onManage={vi.fn()} />)
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Plugins' }))
+    const row = screen.getByText('Hello plugin').closest('button')
+    expect(row?.firstElementChild?.querySelector('[data-testid="hello-icon"]')).not.toBeNull()
+  })
+
+  it('falls back to a default icon when a plugin declares none', async () => {
+    dataRef.current = {
+      plugins: [DEMO_PLUGIN],
+      contributions: {
+        actions: [],
+        badges: [],
+        panels: [],
+        sections: [],
+        components: [],
+        overrides: [],
+        settingsTabs: [],
+      },
+    }
+    render(<PluginMenu context={{}} onManage={vi.fn()} />)
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Plugins' }))
+    const row = screen.getByText('Hello plugin').closest('button')
+    expect(row?.firstElementChild?.querySelector('svg')).not.toBeNull()
+  })
+
+  it('turns the plugin name row into the action declared for the plugin.menu slot', async () => {
+    dataRef.current = {
+      plugins: [DEMO_PLUGIN],
+      contributions: {
+        badges: [],
+        panels: [],
+        sections: [],
+        components: [],
+        overrides: [],
+        settingsTabs: [],
+        actions: [
+          {
+            id: 'hello-menu',
+            pluginId: 'hello',
+            slot: 'plugin.menu',
+            label: { en: 'Hello Hub', fr: 'Hub Hello' },
+            icon: 'globe',
+            onActivate: { kind: 'openSettings', tab: 'plugin:hello:hello-tab' },
+          },
+        ],
+      },
+    }
+    render(<PluginMenu context={{}} onManage={vi.fn()} />)
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Plugins' }))
+    expect(screen.queryByText('Hello plugin')).toBeNull()
+    expect(screen.getByText('Hello Hub').className).not.toContain('cursor-default')
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Hello Hub' }))
+    await waitFor(() => expect(openSettings).toHaveBeenCalledWith('plugin:hello:hello-tab'))
+  })
+
+  it('keeps the plugin name row inert when the plugin declares no plugin.menu action', async () => {
+    dataRef.current = {
+      plugins: [DEMO_PLUGIN],
+      contributions: {
+        actions: [],
+        badges: [],
+        panels: [],
+        sections: [],
+        components: [],
+        overrides: [],
+        settingsTabs: [],
+      },
+    }
+    render(<PluginMenu context={{}} onManage={vi.fn()} />)
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Plugins' }))
+    expect(screen.getByText('Hello plugin').className).toContain('cursor-default')
   })
 
   it('shows an empty state when no plugins are enabled', async () => {

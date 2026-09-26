@@ -423,6 +423,7 @@ export function DeclarativeRenderer({ node, values = {}, context = {} }: Declara
       return <hr className="border-border my-2" />
 
     case 'stack': {
+      if (node.children.length === 0) return null
       const directionClass = node.direction === 'row' ? 'flex flex-row w-full' : 'flex flex-col'
       const gapClass = GAP_CLASSES[node.gap ?? 'sm']
       const alignClass = ALIGN_CLASSES[node.align ?? 'start']
