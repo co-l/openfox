@@ -506,7 +506,7 @@ export async function injectContextDriftRemindersForSessions(
   }
 }
 
-async function loadSessionContext(
+export async function loadSessionContext(
   sessionManager: SessionManager,
   sessionId: string,
 ): Promise<{ instructionContent: string; skills: SkillMetadata[] }> {
@@ -514,7 +514,8 @@ async function loadSessionContext(
   const { content: instructionContent } = await getAllInstructions(session.workdir, session.projectId)
   const runtimeConfig = getRuntimeConfig()
   const configDir = getGlobalConfigDir(runtimeConfig.mode ?? 'production')
-  const skills = await getEnabledSkillMetadata(configDir, sessionManager.getProjectWorkdir(sessionId))
+  const workdir = sessionManager.getProjectWorkdir(sessionId)
+  const skills = await getEnabledSkillMetadata(configDir, workdir)
   return { instructionContent: instructionContent ?? '', skills }
 }
 

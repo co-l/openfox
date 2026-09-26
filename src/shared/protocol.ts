@@ -37,8 +37,6 @@ export type ClientMessageType =
   // Chat
   | 'chat.retry' // Re-run the last turn after an LLM failure (no user message re-added)
   | 'chat.llm_retry_now' // Interrupt the current LLM-retry backoff wait and retry immediately
-  // Path confirmation
-  | 'path.confirm' // User response to path confirmation request
   // Ask user
   | 'ask.answer' // User response to ask_user question
 
@@ -227,7 +225,8 @@ export interface PendingPathConfirmationPayload {
   tool: string
   paths: string[]
   workdir: string
-  reason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify'
+  reason:
+    'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify' | 'rule_denied' | 'rule_ask'
 }
 
 export interface SessionListPayload {
@@ -377,7 +376,7 @@ export interface ChatLLMRetryNowPayload {
 
 // Path confirmation payloads
 export type PathConfirmationReason =
-  'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify'
+  'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify' | 'rule_denied' | 'rule_ask'
 
 export interface ChatPathConfirmationPayload {
   callId: string
@@ -385,13 +384,6 @@ export interface ChatPathConfirmationPayload {
   paths: string[] // The paths requiring confirmation
   workdir: string // For context in UI
   reason: PathConfirmationReason // Why confirmation is needed
-}
-
-// Client payload for path confirmation response
-export interface PathConfirmPayload {
-  callId: string
-  approved: boolean
-  alwaysAllow?: boolean // If true, add paths to session allowlist permanently
 }
 
 // Ask user payloads

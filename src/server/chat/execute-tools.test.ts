@@ -650,4 +650,118 @@ describe('executeTools', () => {
     expect(result.returnValueContent).toBe('my result')
     expect(result.returnValueResult).toBe('completed')
   })
+
+  it('shows rule_denied message for PathAccessDeniedError with rule_denied reason', async () => {
+    const append = vi.fn()
+    mockToolRegistry.execute = vi
+      .fn()
+      .mockRejectedValue(
+        new PathAccessDeniedError(
+          ['/home/tony/perso/littlehands'],
+          'read_file',
+          'rule_denied',
+          'Permission rule DENY blocked: "/home/tony/perso/littlehands"',
+        ),
+      )
+
+    const toolCalls: ToolCall[] = [
+      { id: 'call-1', name: 'read_file', arguments: { path: '/home/tony/perso/littlehands' } },
+    ]
+
+    const result = await executeTools('msg-1', toolCalls, makeCtx(), append)
+
+    expect(result.toolMessages).toHaveLength(1)
+    expect(result.toolMessages[0]?.content).toContain('Blocked')
+    expect(result.toolMessages[0]?.content).toContain('blocked by a permission rule')
+    expect(result.toolMessages[0]?.content).not.toContain('User denied access')
+  })
+
+  it('shows outside_workdir message for PathAccessDeniedError with outside_workdir reason', async () => {
+    const append = vi.fn()
+    mockToolRegistry.execute = vi
+      .fn()
+      .mockRejectedValue(new PathAccessDeniedError(['/etc/passwd'], 'read_file', 'outside_workdir'))
+
+    const toolCalls: ToolCall[] = [{ id: 'call-1', name: 'read_file', arguments: { path: '/etc/passwd' } }]
+
+    const result = await executeTools('msg-1', toolCalls, makeCtx(), append)
+
+    expect(result.toolMessages).toHaveLength(1)
+    expect(result.toolMessages[0]?.content).toContain('User denied access to /etc/passwd')
+    expect(result.toolMessages[0]?.content).toContain('outside the project directory')
+  })
+
+  it('DENY rule on non-enforcing tool (web_fetch) blocks execution without calling the tool', async () => {
+    const append = vi.fn()
+    mockToolRegistry.execute = vi.fn().mockResolvedValue({
+      success: true,
+      output: 'should not reach',
+      durationMs: 0,
+      truncated: false,
+    })
+
+    const rules = [{ effect: 'DENY' as const, tool: 'web_fetch' }]
+    const toolCalls: ToolCall[] = [{ id: 'call-1', name: 'web_fetch', arguments: { url: 'https://example.com' } }]
+
+    const result = await executeTools('msg-1', toolCalls, makeCtx({ permissionRules: rules }), append)
+
+    expect(mockToolRegistry.execute).not.toHaveBeenCalled()
+    expect(result.toolMessages).toHaveLength(1)
+    expect(result.toolMessages[0]?.content).toContain('blocked by a permission rule')
+  })
+
+  it('DENY rule on call_sub_agent blocks execution', async () => {
+    const append = vi.fn()
+    mockToolRegistry.execute = vi.fn().mockResolvedValue({
+      success: true,
+      output: 'should not reach',
+      durationMs: 0,
+      truncated: false,
+    })
+
+    const rules = [{ effect: 'DENY' as const, tool: 'call_sub_agent' }]
+    const toolCalls: ToolCall[] = [
+      { id: 'call-1', name: 'call_sub_agent', arguments: { subAgentType: 'explorer', prompt: 'test' } },
+    ]
+
+    const result = await executeTools('msg-1', toolCalls, makeCtx({ permissionRules: rules }), append)
+
+    expect(mockToolRegistry.execute).not.toHaveBeenCalled()
+    expect(result.toolMessages[0]?.content).toContain('blocked by a permission rule')
+  })
+
+  it('no rule on web_fetch → tool executes normally', async () => {
+    const append = vi.fn()
+    mockToolRegistry.execute = vi.fn().mockResolvedValue({
+      success: true,
+      output: 'fetched',
+      durationMs: 10,
+      truncated: false,
+    })
+
+    const toolCalls: ToolCall[] = [{ id: 'call-1', name: 'web_fetch', arguments: { url: 'https://example.com' } }]
+
+    const result = await executeTools('msg-1', toolCalls, makeCtx(), append)
+
+    expect(mockToolRegistry.execute).toHaveBeenCalledTimes(1)
+    expect(result.toolMessages[0]?.content).toContain('fetched')
+  })
+
+  it('ALLOW rule on non-enforcing tool does not block (no gate for ALLOW)', async () => {
+    const append = vi.fn()
+    mockToolRegistry.execute = vi.fn().mockResolvedValue({
+      success: true,
+      output: 'ok',
+      durationMs: 10,
+      truncated: false,
+    })
+
+    const rules = [{ effect: 'ALLOW' as const, tool: 'web_fetch' }]
+    const toolCalls: ToolCall[] = [{ id: 'call-1', name: 'web_fetch', arguments: { url: 'https://example.com' } }]
+
+    const result = await executeTools('msg-1', toolCalls, makeCtx({ permissionRules: rules }), append)
+
+    expect(mockToolRegistry.execute).toHaveBeenCalledTimes(1)
+    expect(result.toolMessages[0]?.content).toContain('ok')
+  })
 })

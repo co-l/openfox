@@ -13,6 +13,8 @@ import {
   saveWorkspaceConfig,
   type WorkspaceConfigResponse,
 } from '../../lib/resources'
+import { usePermissionsStore } from '../../stores/permissions'
+import { PermissionsList } from './permissions-shared'
 import { mcpStatusColor, mcpStatusDot } from '../../lib/mcp-utils'
 import { wsClient } from '../../lib/ws'
 import { authFetch } from '../../lib/api'
@@ -34,6 +36,15 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
   const defaultAgents = data?.defaults ?? []
   const userAgents = data?.userItems ?? []
   const projectAgents = data?.projectItems ?? []
+  const {
+    projectConfig,
+    saving: permsSaving,
+    fetchConfig: fetchPermsConfig,
+    addRule,
+    updateRule,
+    deleteRule,
+  } = usePermissionsStore()
+  const projectRules = (projectConfig?.rules ?? []).map((r) => ({ ...r, scope: 'project' as const }))
   const topLevelByScope = {
     builtin: defaultAgents.filter((a) => !a.subagent),
     user: userAgents.filter((a) => !a.subagent),
@@ -103,8 +114,9 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
       setRootDirDirty(false)
       setMcpDirty(false)
       setExpandedServers(new Set())
+      fetchPermsConfig('project', project.workdir).catch(() => {})
     }
-  }, [isOpen, project])
+  }, [isOpen, project, fetchPermsConfig])
 
   useEffect(() => {
     if (wsConfig?.setup && wsConfig.setup.length > 0) {
@@ -648,6 +660,33 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
             </div>
           </div>
         )}
+
+        <div>
+          <label className="block text-sm font-medium text-text-primary mb-1 flex-shrink-0">
+            {t({ en: 'Permission Rules', fr: 'Règles de permission' })}
+          </label>
+          <p className="text-sm text-text-muted mb-3">
+            {t({
+              en: 'Deterministic rules (not LLM-managed) that allow, deny, or force-ask for tool actions in this project. DENY always wins. ALLOW skips sandbox and sensitive-file checks. ASK always prompts. Stored in your local OpenFox database, not in the repository.',
+              fr: 'Règles déterministes (non gérées par le LLM) qui autorisent, refusent ou forcent une confirmation pour les actions des outils dans ce projet. DENY l’emporte toujours. ALLOW contourne les contrôles de bac à sable et de fichiers sensibles. ASK demande toujours confirmation. Stockées dans votre base OpenFox locale, pas dans le dépôt.',
+            })}
+          </p>
+          <PermissionsList
+            rules={projectRules}
+            saving={permsSaving}
+            hideScope
+            allowProject
+            onAdd={async (rule) => {
+              await addRule('project', rule, project.workdir)
+            }}
+            onUpdate={async (id, rule) => {
+              await updateRule('project', id, rule, project.workdir)
+            }}
+            onDelete={async (id) => {
+              await deleteRule('project', id, project.workdir)
+            }}
+          />
+        </div>
 
         {saveError && (
           <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded px-3 py-2">

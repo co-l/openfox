@@ -324,6 +324,14 @@ describe('computeDynamicContextHash', () => {
     const b = computeDynamicContextHash('do foo', skills, 'tool-fp', undefined)
     expect(a).toBe(b)
   })
+
+  it('permissionRules no longer affect the hash (cache-safe)', () => {
+    const without = computeDynamicContextHash('do foo', skills, 'tool-fp')
+    const withEmpty = computeDynamicContextHash('do foo', skills, 'tool-fp', undefined)
+    const withUndefined = computeDynamicContextHash('do foo', skills, 'tool-fp')
+    expect(withEmpty).toBe(without)
+    expect(withUndefined).toBe(without)
+  })
 })
 
 describe('detectToolChanges', () => {

@@ -1,4 +1,5 @@
 import { ScrollArea } from '../shared/ScrollArea'
+import { HorizontalScroller } from '../shared/HorizontalScroller'
 import { useEffect, useState } from 'react'
 import { Modal } from '../shared/SelfContainedModal'
 import { useT } from '../../hooks/useT'
@@ -10,6 +11,7 @@ import { AdvancedTab } from './tabs/AdvancedTab'
 import { KeybindingsTab } from './tabs/KeybindingsTab'
 import { ToolsTab } from './tabs/ToolsTab'
 import { PluginsTab } from './tabs/PluginsTab'
+import { PermissionsTab } from './tabs/PermissionsTab'
 import { useUpdateStore } from '../../stores/update'
 import { wsClient } from '../../lib/ws'
 import { PluginZone } from '../plugins/PluginZone'
@@ -18,7 +20,15 @@ import { usePlugins } from '../../hooks/usePlugins'
 import { useLocalizedString } from '../../hooks/useLocalizedString'
 
 export type CoreTab =
-  'instructions' | 'skills' | 'plugins' | 'notifications' | 'display' | 'keybindings' | 'advanced' | 'tools'
+  | 'instructions'
+  | 'skills'
+  | 'plugins'
+  | 'notifications'
+  | 'display'
+  | 'keybindings'
+  | 'advanced'
+  | 'tools'
+  | 'permissions'
 
 export type Tab = CoreTab | `plugin:${string}:${string}`
 
@@ -54,6 +64,7 @@ export function GlobalSettingsModal({ isOpen, onClose, initialTab }: GlobalSetti
   const tabs: { id: Tab; label: string; showDot?: boolean }[] = [
     { id: 'instructions', label: t({ en: 'Instructions', fr: 'Instructions' }) },
     { id: 'tools', label: t({ en: 'Tools', fr: 'Outils' }) },
+    { id: 'permissions', label: t({ en: 'Rules', fr: 'Règles' }) },
     { id: 'skills', label: t({ en: 'Skills', fr: 'Compétences' }) },
     { id: 'plugins', label: t({ en: 'Plugins', fr: 'Plugins' }) },
     { id: 'notifications', label: t({ en: 'Notifications', fr: 'Notifications' }) },
@@ -84,22 +95,20 @@ export function GlobalSettingsModal({ isOpen, onClose, initialTab }: GlobalSetti
       scrollable={false}
     >
       <div data-global-settings className="flex flex-col h-full min-h-0 -m-4">
-        {/* Tab bar - always visible, horizontally scrollable on mobile */}
-        <ScrollArea
-          horizontal
-          options={{ scrollbars: { visibility: 'hidden' } }}
-          className="flex border-b border-border mb-4 flex-shrink-0 px-4 pt-4"
-        >
-          {tabs.map((tab) => (
-            <TabButton
-              key={tab.id}
-              label={tab.label}
-              active={activeTab === tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              showDot={tab.showDot}
-            />
-          ))}
-        </ScrollArea>
+        {/* Tab bar - one row; arrows, wheel and drag reveal overflowing tabs */}
+        <div className="border-b border-border mb-4 flex-shrink-0 px-4 pt-4">
+          <HorizontalScroller>
+            {tabs.map((tab) => (
+              <TabButton
+                key={tab.id}
+                label={tab.label}
+                active={activeTab === tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                showDot={tab.showDot}
+              />
+            ))}
+          </HorizontalScroller>
+        </div>
 
         {/* Tab content - scrolls independently, scrollbar at modal edge */}
         <ScrollArea className="flex-1 min-h-0 px-4 pb-4">
@@ -111,6 +120,7 @@ export function GlobalSettingsModal({ isOpen, onClose, initialTab }: GlobalSetti
             {activeTab === 'display' && <DisplayTab />}
             {activeTab === 'keybindings' && <KeybindingsTab />}
             {activeTab === 'tools' && <ToolsTab />}
+            {activeTab === 'permissions' && <PermissionsTab />}
             {activeTab === 'advanced' && <AdvancedTab onClose={onClose} />}
             {activePluginTab && <PluginSettingsTabContent tab={activePluginTab} />}
           </PluginZone>
