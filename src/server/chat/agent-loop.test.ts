@@ -63,6 +63,7 @@ vi.mock('./stream-pure.js', async (importOriginal) => {
 import { runTopLevelAgentLoop } from './agent-loop.js'
 import { executeTools } from './execute-tools.js'
 import { getEventStore } from '../events/store.js'
+import { getRuntimeConfig } from '../runtime-config.js'
 import { getAllInstructions } from '../context/instructions.js'
 import { getEnabledSkillMetadata } from '../skills/registry.js'
 
@@ -2268,5 +2269,285 @@ describe('runTopLevelAgentLoop queue draining', () => {
       (e: any) => e?.type === 'message.start' && e.data?.content === 'Hello from the queue',
     )
     expect(queuedInHistory).toHaveLength(0)
+  })
+})
+
+describe('runTopLevelAgentLoop cumulative summaries', () => {
+  let mockEventStore: EventStore
+  let mockSessionManager: SessionManager
+  let mockLLMClient: any
+  let mockTurnMetrics: TurnMetrics
+  let assembleRequestMock: ReturnType<typeof vi.fn>
+
+  function ev(seq: number, ts: number, type: string, data: unknown): import('../events/types.js').StoredEvent {
+    return { seq, timestamp: ts, sessionId: 'test-session', type: type as any, data: data as any }
+  }
+
+  // Window w1 (initial) → w2 (post first compaction, seed s1) → compacting w2 now
+  const twoWindowEvents: import('../events/types.js').StoredEvent[] = [
+    ev(1, 1000, 'session.initialized', { projectId: 'p', workdir: '/w', contextWindowId: 'w1' }),
+    ev(2, 1100, 'message.start', { messageId: 'm1', role: 'user', content: 'hello', contextWindowId: 'w1' }),
+    ev(3, 2000, 'context.compacted', {
+      closedWindowId: 'w1',
+      newWindowId: 'w2',
+      beforeTokens: 100,
+      afterTokens: 0,
+      summary: 's1',
+    }),
+    ev(4, 2100, 'message.start', {
+      messageId: 's1',
+      role: 'assistant',
+      content: '## Compacted 2024-01-16T10:00:00.000Z\nS1',
+      contextWindowId: 'w2',
+      isCompactionSummary: true,
+    }),
+    ev(5, 2200, 'message.start', { messageId: 'm2', role: 'user', content: 'again', contextWindowId: 'w2' }),
+  ]
+
+  const firstWindowEvents: import('../events/types.js').StoredEvent[] = [
+    ev(1, 1000, 'session.initialized', { projectId: 'p', workdir: '/w', contextWindowId: 'w1' }),
+    ev(2, 1100, 'message.start', { messageId: 'm1', role: 'user', content: 'hello', contextWindowId: 'w1' }),
+  ]
+
+  function snapPayload(messages: unknown[], seq: number, ts: number): Record<string, unknown> {
+    return {
+      mode: 'planner',
+      phase: 'plan',
+      isRunning: false,
+      messages,
+      criteria: [],
+      metadataEntries: {},
+      contextState: {
+        currentTokens: 0,
+        maxTokens: 200000,
+        compactionCount: 1,
+        dangerZone: false,
+        canCompact: false,
+        dynamicContextChanged: false,
+      },
+      currentContextWindowId: 'w2',
+      todos: [],
+      snapshotSeq: seq,
+      snapshotAt: ts,
+    }
+  }
+
+  // w2's seed raw event was GC'd after the end-of-turn snapshot — it only
+  // exists inside the snapshot's messages (the real-world regression case).
+  const snapshotOnlySeedEvents: import('../events/types.js').StoredEvent[] = [
+    ev(1, 1000, 'session.initialized', { projectId: 'p', workdir: '/w', contextWindowId: 'w1' }),
+    ev(2, 1100, 'message.start', { messageId: 'm1', role: 'user', content: 'hello', contextWindowId: 'w1' }),
+    ev(
+      3,
+      2500,
+      'turn.snapshot',
+      snapPayload(
+        [
+          { id: 'm1', role: 'user', content: 'hello', timestamp: 1100, contextWindowId: 'w1' },
+          {
+            id: 's1',
+            role: 'assistant',
+            content: '## Compacted 2024-01-16T10:00:00.000Z\nS1',
+            timestamp: 2100,
+            contextWindowId: 'w2',
+            isCompactionSummary: true,
+          },
+        ],
+        3,
+        2500,
+      ),
+    ),
+    ev(4, 2200, 'message.start', { messageId: 'm2', role: 'user', content: 'again', contextWindowId: 'w2' }),
+  ]
+
+  // Two compactions within one turn: w2's seed is a raw event written after
+  // the latest snapshot, so it must be found in the post-snapshot events.
+  const seedAfterSnapshotEvents: import('../events/types.js').StoredEvent[] = [
+    ev(1, 1000, 'session.initialized', { projectId: 'p', workdir: '/w', contextWindowId: 'w1' }),
+    ev(2, 1100, 'message.start', { messageId: 'm1', role: 'user', content: 'hello', contextWindowId: 'w1' }),
+    ev(
+      3,
+      1200,
+      'turn.snapshot',
+      snapPayload([{ id: 'm1', role: 'user', content: 'hello', timestamp: 1100, contextWindowId: 'w1' }], 3, 1200),
+    ),
+    ev(4, 2000, 'context.compacted', {
+      closedWindowId: 'w1',
+      newWindowId: 'w2',
+      beforeTokens: 100,
+      afterTokens: 0,
+      summary: 's1',
+    }),
+    ev(5, 2100, 'message.start', {
+      messageId: 's1',
+      role: 'assistant',
+      content: '## Compacted 2024-01-16T10:00:00.000Z\nS1',
+      contextWindowId: 'w2',
+      isCompactionSummary: true,
+    }),
+    ev(6, 2200, 'message.start', { messageId: 'm2', role: 'user', content: 'again', contextWindowId: 'w2' }),
+  ]
+
+  function setRuntimeConfig(allCompactionSummaries?: boolean) {
+    ;(getRuntimeConfig as any).mockReturnValue({
+      mode: 'test',
+      workdir: '/test',
+      agent: { toolTimeout: 60000 },
+      context: { compactionThreshold: 0.85, ...(allCompactionSummaries !== undefined && { allCompactionSummaries }) },
+      llm: {
+        baseUrl: 'http://localhost:11434',
+        model: 'test-model',
+        timeout: 30000,
+        idleTimeout: 30000,
+        backend: 'ollama',
+      },
+    })
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setRuntimeConfig()
+
+    mockEventStore = {
+      append: vi.fn(),
+      getEvents: vi.fn().mockReturnValue([]),
+      getLatestSeq: vi.fn().mockReturnValue(0),
+      cleanupOldEvents: vi.fn().mockReturnValue(0),
+    } as unknown as EventStore
+    ;(getEventStore as any).mockReturnValue(mockEventStore)
+
+    mockLLMClient = { getModel: vi.fn().mockReturnValue('test-model') }
+    mockTurnMetrics = {
+      addToolTime: vi.fn(),
+      addLLMCall: vi.fn(),
+      addThinkingTime: vi.fn(),
+      buildStats: vi.fn().mockReturnValue({}),
+    } as unknown as TurnMetrics
+
+    assembleRequestMock = vi.fn().mockReturnValue({ systemPrompt: 'test-system-prompt', messages: [] })
+    ;(getAllInstructions as any).mockResolvedValue({ content: 'test instructions', files: [] })
+    ;(getEnabledSkillMetadata as any).mockResolvedValue([])
+    ;(consumeStreamGenerator as any).mockResolvedValue({
+      content: 'compaction summary',
+      toolCalls: [],
+      segments: [{ type: 'text', content: 'compaction summary' }],
+      usage: { promptTokens: 10, completionTokens: 5 },
+      timing: { ttft: 0.1, completionTime: 0.5, tps: 10, prefillTps: 100 },
+      aborted: false,
+      finishReason: 'stop',
+      modelParams: {},
+    })
+
+    mockSessionManager = {
+      enterPauseGate: vi.fn().mockResolvedValue('released'),
+      requireSession: vi.fn().mockReturnValue({
+        workdir: '/test',
+        projectId: 'test-project',
+        executionState: null,
+        criteria: [],
+        isRunning: false,
+      }),
+      getEffectiveWorkdir: vi.fn().mockReturnValue('/test'),
+      getProjectWorkdir: vi.fn().mockReturnValue('/test'),
+      getContextState: vi.fn().mockReturnValue({
+        currentTokens: 0,
+        maxTokens: 200000,
+        compactionCount: 0,
+        dangerZone: false,
+        canCompact: false,
+        dynamicContextChanged: false,
+      }),
+      getCurrentModelContext: vi.fn().mockReturnValue(200000),
+      getCurrentModelSettings: vi.fn().mockReturnValue({}),
+      getModelCompactionThreshold: vi.fn().mockReturnValue(undefined),
+      setCurrentContextSize: vi.fn(),
+      getDynamicContextChanged: vi.fn().mockReturnValue(false),
+      setDynamicContextChanged: vi.fn(),
+      getCachedPrompt: vi.fn().mockReturnValue(undefined),
+      setCachedPrompt: vi.fn(),
+      getLspManager: vi.fn(),
+      drainAsapMessages: vi.fn().mockReturnValue([]),
+      getCurrentWindowMessages: vi.fn().mockReturnValue([]),
+      updateMessage: vi.fn(),
+    } as any
+  })
+
+  function runCompaction(events: import('../events/types.js').StoredEvent[], overrides?: Partial<TopLevelLoopConfig>) {
+    const appendMock = vi.fn()
+    mockEventStore.getEvents = vi.fn().mockReturnValue(events)
+    return runTopLevelAgentLoop(
+      {
+        mode: 'planner',
+        append: appendMock,
+        sessionManager: mockSessionManager,
+        sessionId: 'test-session',
+        llmClient: mockLLMClient,
+        statsIdentity: { providerId: 'test', providerName: 'Test', backend: 'unknown' as const, model: 'test-model' },
+        assembleRequest: assembleRequestMock as any,
+        getToolRegistry: () => ({ tools: [], definitions: [], execute: vi.fn() }) as any,
+        getConversationMessages: vi.fn().mockResolvedValue([]),
+        getEvents: () => events,
+        initialCompacting: true,
+        ...overrides,
+      },
+      mockTurnMetrics,
+    ).then(() => appendMock.mock.calls.map(([e]) => e) as any[])
+  }
+
+  it('stores a bare summary when the feature is off (default)', async () => {
+    const events = await runCompaction(firstWindowEvents)
+    const seed = events.find((e) => e?.type === 'message.start' && e.data?.isCompactionSummary === true)
+    expect(seed!.data.content).toBe('compaction summary')
+    const compacted = events.find((e) => e?.type === 'context.compacted')
+    expect(compacted!.data.summary).toBe('compaction summary')
+  })
+
+  it('wraps the summary in a dated marker on the first compaction when on', async () => {
+    setRuntimeConfig(true)
+    const events = await runCompaction(firstWindowEvents)
+    const seed = events.find((e) => e?.type === 'message.start' && e.data?.isCompactionSummary === true)
+    expect(seed!.data.content).toMatch(/^## Compacted \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\ncompaction summary$/)
+    const compacted = events.find((e) => e?.type === 'context.compacted')
+    expect(compacted!.data.summary).toBe(seed!.data.content)
+  })
+
+  it('appends the fresh summary after the closed window stored seed when on', async () => {
+    setRuntimeConfig(true)
+    const events = await runCompaction(twoWindowEvents)
+    const seed = events.find((e) => e?.type === 'message.start' && e.data?.isCompactionSummary === true)
+    expect(seed!.data.content).toMatch(
+      /^## Compacted 2024-01-16T10:00:00\.000Z\nS1\n\n## Compacted \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\ncompaction summary$/,
+    )
+    const compacted = events.find((e) => e?.type === 'context.compacted')
+    expect(compacted!.data.summary).toBe(seed!.data.content)
+  })
+
+  it('finds the closed window seed stored only in the latest snapshot (raw events GCed)', async () => {
+    setRuntimeConfig(true)
+    const events = await runCompaction(snapshotOnlySeedEvents)
+    const seed = events.find((e) => e?.type === 'message.start' && e.data?.isCompactionSummary === true)
+    expect(seed!.data.content).toMatch(
+      /^## Compacted 2024-01-16T10:00:00\.000Z\nS1\n\n## Compacted \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\ncompaction summary$/,
+    )
+    const compacted = events.find((e) => e?.type === 'context.compacted')
+    expect(compacted!.data.summary).toBe(seed!.data.content)
+  })
+
+  it('finds the closed window seed in raw events after the latest snapshot', async () => {
+    setRuntimeConfig(true)
+    const events = await runCompaction(seedAfterSnapshotEvents)
+    const seed = events.find((e) => e?.type === 'message.start' && e.data?.isCompactionSummary === true)
+    expect(seed!.data.content).toMatch(
+      /^## Compacted 2024-01-16T10:00:00\.000Z\nS1\n\n## Compacted \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\ncompaction summary$/,
+    )
+  })
+
+  it('does not merge for sub-agent compactions even when on', async () => {
+    setRuntimeConfig(true)
+    const events = await runCompaction(twoWindowEvents, {
+      subAgentMetadata: { subAgentId: 'explorer-1', subAgentType: 'explorer' },
+    })
+    const seed = events.find((e) => e?.type === 'message.start' && e.data?.isCompactionSummary === true)
+    expect(seed!.data.content).toBe('compaction summary')
   })
 })

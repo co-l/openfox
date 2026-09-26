@@ -338,7 +338,14 @@ Summarize the conversation history concisely, preserving:
 8. The user's current question, prompt, or active request
 
 Do not respond to any questions in the conversation, only output the summary.
-Be thorough but concise. Output as a structured summary.`
+Be thorough but concise. Output as a structured summary.
+
+The first message may be a cumulative compaction summary containing
+"## Compacted <timestamp>" sections from previous rounds. Those sections are
+history, not part of this round's conversation. Your output must be the plain
+structured summary of THIS conversation only: do not reproduce, continue, or
+imitate the "## Compacted" headers or section layout, and do not re-list
+previous rounds' summaries.`
 
 export const FORMAT_CORRECTION_PROMPT = `IMPORTANT: You MUST use the JSON function calling API. Do NOT output XML tags like <tool_call>, <function=>, or <parameter=>. Your previous attempt was stopped because you used the wrong format. Use the proper tool_calls format.`
 

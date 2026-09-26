@@ -32,6 +32,7 @@ export {
   buildSessionStatsMessages,
   foldTurnEventsToSnapshotMessages,
   foldTurnEventsToSnapshotMessagesFromInitial,
+  foldEventsToSnapshotMessages,
   buildContextMessagesFromMessages,
   snapshotMessagesToEvents,
 } from './fold-messages.js'

@@ -65,6 +65,12 @@ export async function runServe(options: ServeOptions): Promise<void> {
           ? { thinkingField: providerThinkingField }
           : {}),
     },
+    context: {
+      ...env.context,
+      ...(globalConfig.context?.allCompactionSummaries !== undefined
+        ? { allCompactionSummaries: globalConfig.context.allCompactionSummaries }
+        : {}),
+    },
     server: {
       ...env.server,
       port: port ?? env.server.port,
