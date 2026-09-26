@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 // @ts-expect-error - dynamic JS plugin import
-import { register } from '../../../tmp/openfox-plugins/openfox-whitelist-plugin/src/index.js'
+import { register } from '../../../tmp/openfox-plugins/openfox-whitelist/src/index.js'
 import type { PluginDangerLevel, PluginSettingsSchema } from '../../plugin/index.js'
 
-describe('openfox-whitelist-plugin', () => {
+describe('openfox-whitelist', () => {
   it('registers settings and two danger levels (whitelist & whitelist_only) with path access evaluation', () => {
     let registeredSettings: PluginSettingsSchema | undefined
     const registeredDls: PluginDangerLevel[] = []
@@ -159,15 +159,14 @@ describe('openfox-whitelist-plugin', () => {
       })
       await host.start()
 
-      const diagnostic = await host.installFromPath(
-        join(process.cwd(), 'tmp', 'openfox-plugins', 'openfox-whitelist-plugin'),
-      )
+      const diagnostic = await host.installFromPath(join(process.cwd(), 'tmp', 'openfox-plugins', 'openfox-whitelist'))
       expect(diagnostic.loaded).toBe(true)
       expect(diagnostic.error).toBeUndefined()
 
       const plugins = host.getPlugins()
-      const plugin = plugins.find((p) => p.id === 'openfox-whitelist-plugin')
+      const plugin = plugins.find((p) => p.id === 'openfox-whitelist')
       expect(plugin).toBeDefined()
+      expect(plugin?.author).toBe('JamesDAdams')
       expect(plugin?.contributions.dangerLevels).toBe(2)
       expect(plugin?.contributions.settingsFields).toBe(2)
 
