@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import express from 'express'
 import { mkdir, rm, writeFile, stat, readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, normalize } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createPermissionsRoutes } from './permissions.js'
 import { getProjectPermissionsKey } from '../permissions/registry.js'
@@ -247,7 +247,7 @@ describe('session grants', () => {
       sessionId: 'grants-a',
       paths: [
         {
-          path: '/home/u/.ssh/id_rsa',
+          path: normalize('/home/u/.ssh/id_rsa'),
           tool: 'read_file',
           reason: 'sensitive_file',
           grantedAt: expect.any(Number),
@@ -255,7 +255,7 @@ describe('session grants', () => {
       ],
       rules: [{ effect: 'ALLOW', tool: 'read_file', pattern: '**/.ssh/**', grantedAt: expect.any(Number) }],
     })
-    expect((await grantsFor('grants-b'))?.paths.map((grant) => grant.path)).toEqual(['/etc/shadow'])
+    expect((await grantsFor('grants-b'))?.paths.map((grant) => grant.path)).toEqual([normalize('/etc/shadow')])
   })
 
   it('keeps the first approval when the same path is approved again', async () => {
@@ -279,7 +279,7 @@ describe('session grants', () => {
       },
     )
     expect(res.status).toBe(200)
-    expect((await grantsFor('grants-a'))?.paths.map((grant) => grant.path)).toEqual(['/etc/sudoers'])
+    expect((await grantsFor('grants-a'))?.paths.map((grant) => grant.path)).toEqual([normalize('/etc/sudoers')])
   })
 
   it('revokes a promoted rule by tool and pattern', async () => {
@@ -302,7 +302,7 @@ describe('session grants', () => {
     addAllowedPath('grants-b', '/etc/sudoers')
     expect((await fetch(`${baseUrl}/api/permissions/grants/grants-a`, { method: 'DELETE' })).status).toBe(200)
     expect(await grantsFor('grants-a')).toBeUndefined()
-    expect((await grantsFor('grants-b'))?.paths.map((grant) => grant.path)).toEqual(['/etc/sudoers'])
+    expect((await grantsFor('grants-b'))?.paths.map((grant) => grant.path)).toEqual([normalize('/etc/sudoers')])
   })
 
   it('answers 404 for a grant that is gone and 400 for a missing parameter', async () => {
@@ -322,7 +322,7 @@ describe('session grants', () => {
     const data = (await res.json()) as { grants: { sessionId: string; paths: { path: string }[] }[] }
     expect(data.grants).toHaveLength(1)
     expect(data.grants[0]!.sessionId).toBe('grants-a')
-    expect(data.grants[0]!.paths.map((grant) => grant.path)).toEqual(['/etc/shadow'])
+    expect(data.grants[0]!.paths.map((grant) => grant.path)).toEqual([normalize('/etc/shadow')])
     const unknown = await fetch(`${baseUrl}/api/permissions/grants?sessionId=does-not-exist`)
     expect(unknown.status).toBe(404)
   })

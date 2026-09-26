@@ -1465,7 +1465,12 @@ describe('path-security', () => {
 
       const grants = listSessionGrants().find((g) => g.sessionId === 'session-origin')
       expect(grants?.paths).toEqual([
-        expect.objectContaining({ path, tool: 'read_file', reason: 'sensitive_file', grantedAt: expect.any(Number) }),
+        expect.objectContaining({
+          path: normalize(path),
+          tool: 'read_file',
+          reason: 'sensitive_file',
+          grantedAt: expect.any(Number),
+        }),
       ])
       clearAllowedPaths('session-origin')
     })
@@ -2090,7 +2095,10 @@ describe('path-security', () => {
       addSessionAllowedRule('grants-y', { effect: 'ALLOW', tool: 'read_file', pattern: '**/x/**' })
 
       const all = listSessionGrants()
-      expect(all.find((g) => g.sessionId === 'grants-x')?.paths.map((p) => p.path)).toEqual(['/tmp/g-a', '/tmp/g-b'])
+      expect(all.find((g) => g.sessionId === 'grants-x')?.paths.map((p) => p.path)).toEqual([
+        normalize('/tmp/g-a'),
+        normalize('/tmp/g-b'),
+      ])
       expect(all.find((g) => g.sessionId === 'grants-y')?.rules).toEqual([
         expect.objectContaining({ tool: 'read_file', pattern: '**/x/**', grantedAt: expect.any(Number) }),
       ])

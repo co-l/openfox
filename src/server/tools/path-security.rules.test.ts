@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { join } from 'node:path'
+import { join, normalize, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
   requestPathAccess,
@@ -350,7 +350,7 @@ describe('requestPathAccess with permission rules', () => {
     // The non-allowed path still goes through the sandbox check and prompts.
     await vi.waitFor(() => expect(hasPendingPathConfirmation('c20')).toBe(true))
     const confirmation = noOpEvent.mock.calls.at(-1)?.[0]
-    expect(confirmation.payload.paths).toEqual([OUTSIDE + '/other.txt'])
+    expect(confirmation.payload.paths).toEqual([normalize(resolve(OUTSIDE + '/other.txt'))])
     expect(confirmation.payload.reason).toBe('outside_workdir')
     providePathConfirmation('c20', false)
     await expect(promise).rejects.toBeInstanceOf(PathAccessDeniedError)
