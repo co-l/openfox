@@ -626,6 +626,9 @@ export const SETTINGS_KEYS = {
   DISPLAY_MODEL_FAVORITES: 'display.modelFavorites',
   DISPLAY_MOBILE_FULLSCREEN_COMPOSER: 'display.mobileFullscreenComposer',
   DISPLAY_FULLSCREEN_SLASH_COMMAND: 'display.fullscreenSlashCommand',
+  DISPLAY_DANGER_LEVEL_DISPLAY_MODE: 'display.dangerLevelDisplayMode',
+  DISPLAY_DANGER_LEVEL_AUTO_LIST: 'display.dangerLevelAutoList',
+  DISPLAY_DANGER_LEVEL_AUTO_LIST_THRESHOLD: 'display.dangerLevelAutoListThreshold',
   LLM_DYNAMIC_SYSTEM_PROMPT: 'llm.dynamicSystemPrompt',
   LLM_CAVEMAN_THINKING: 'llm.cavemanThinking',
   CACHE_WARMING: 'cache.warming',
@@ -665,6 +668,9 @@ export const DISPLAY_SETTINGS_KEYS = [
   SETTINGS_KEYS.DISPLAY_SHOW_TOOL_CALL_STREAMING,
   SETTINGS_KEYS.DISPLAY_FEED_VIRTUALIZATION,
   SETTINGS_KEYS.DISPLAY_FULLSCREEN_SLASH_COMMAND,
+  SETTINGS_KEYS.DISPLAY_DANGER_LEVEL_DISPLAY_MODE,
+  SETTINGS_KEYS.DISPLAY_DANGER_LEVEL_AUTO_LIST,
+  SETTINGS_KEYS.DISPLAY_DANGER_LEVEL_AUTO_LIST_THRESHOLD,
 ] as const
 
 export async function fetchChangelog(since?: string): Promise<string> {

@@ -7,7 +7,8 @@ import { pluginSettingsResource, providersResource } from '../../lib/resources'
 import { invokePluginRpc, savePluginSettings } from '../../lib/plugin-actions'
 import { Button } from '../shared/Button'
 import { Toggle } from '../shared/Toggle'
-import { PlusIcon, TrashIcon, OpenExternalIcon } from '../shared/icons'
+import { PlusIcon, TrashIcon, OpenExternalIcon, FolderIcon } from '../shared/icons'
+import { DirectoryBrowser } from '../shared/DirectoryBrowser'
 import type {
   LocalizedString,
   PluginBadgeTone,
@@ -330,10 +331,14 @@ export function PluginSettingsForm({
   pluginId,
   scope: initialScope = 'global',
   projectId,
+  dangerLevel,
+  hideScopeSelector = false,
 }: {
   pluginId: string
   scope?: PluginSettingScope
   projectId?: string
+  dangerLevel?: string
+  hideScopeSelector?: boolean
 }) {
   const t = useT()
   const localize = useLocalizedString()
@@ -341,6 +346,7 @@ export function PluginSettingsForm({
   const { data } = useResource(pluginSettingsResource, pluginId, scope, projectId)
   const [values, setValues] = useState<FormValues>({})
   const [statusStates, setStatusStates] = useState<Record<string, StatusFieldState>>({})
+  const [browsingField, setBrowsingField] = useState<PluginSettingsField | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
 
@@ -431,7 +437,7 @@ export function PluginSettingsForm({
 
   return (
     <div className="flex flex-col gap-4">
-      {projectScoped ? (
+      {!hideScopeSelector && projectScoped ? (
         <div>
           <label className="block text-xs text-text-secondary mb-1" htmlFor="plugin-setting-scope">
             {t({ en: 'Applies to', fr: 'S’applique à' })}
@@ -449,6 +455,9 @@ export function PluginSettingsForm({
       ) : null}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {data.schema.fields.map((field, index) => {
+          if (field.dangerLevels && dangerLevel && !field.dangerLevels.includes(dangerLevel)) {
+            return null
+          }
           const isAnyInstalled = Object.values(statusStates).some((s) => s.installed === true)
           if (field.hideWhenInstalled && isAnyInstalled) {
             return null
@@ -494,9 +503,26 @@ export function PluginSettingsForm({
               <div
                 className={`${isHalf ? 'col-span-1' : 'col-span-1 sm:col-span-2'} ${field.parentKey ? `ml-3 pl-4 border-l-2 border-border/60 ${startsGroup ? 'pt-1' : ''} ${endsGroup ? 'pb-1' : ''}` : ''} ${!parentEnabled ? 'opacity-45' : ''}`}
               >
-                <label className="block text-xs text-text-secondary mb-1" htmlFor={`plugin-setting-${field.key}`}>
-                  {label}
-                </label>
+                <div className="flex items-center justify-between mb-1 gap-2">
+                  <label className="block text-xs text-text-secondary" htmlFor={`plugin-setting-${field.key}`}>
+                    {label}
+                  </label>
+                  {field.browseDirectory || field.type === 'path' ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setBrowsingField(field)}
+                      disabled={field.readOnly === true || !parentEnabled}
+                      className="text-xs py-0.5 px-2 h-6 flex items-center shrink-0"
+                    >
+                      <FolderIcon className="w-3.5 h-3.5 mr-1 text-text-muted" />
+                      {field.browseButtonLabel
+                        ? localize(field.browseButtonLabel)
+                        : t({ en: 'Browse folder…', fr: 'Parcourir…' })}
+                    </Button>
+                  ) : null}
+                </div>
                 {field.type === 'boolean' ? (
                   <Toggle
                     enabled={value === true}
@@ -614,6 +640,32 @@ export function PluginSettingsForm({
           {saved ? t({ en: 'Saved', fr: 'Enregistré' }) : t({ en: 'Save', fr: 'Enregistrer' })}
         </Button>
       </div>
+      {browsingField ? (
+        <DirectoryBrowser
+          onSelect={(selectedPath) => {
+            if (browsingField.type === 'textarea') {
+              setValues((state) => {
+                const current = String(state[browsingField.key] ?? '').trim()
+                const lines = current ? current.split('\n').map((l) => l.trim()) : []
+                if (!lines.includes(selectedPath)) {
+                  lines.push(selectedPath)
+                }
+                return {
+                  ...state,
+                  [browsingField.key]: lines.join('\n'),
+                }
+              })
+            } else {
+              setValues((state) => ({
+                ...state,
+                [browsingField.key]: selectedPath,
+              }))
+            }
+            setBrowsingField(null)
+          }}
+          onClose={() => setBrowsingField(null)}
+        />
+      ) : null}
     </div>
   )
 }

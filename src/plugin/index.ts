@@ -29,8 +29,10 @@ export type {
   DeclarativeNode,
   LocalizedString,
   PluginActivation,
+  PluginBadgeTone,
   PluginCapability,
   PluginContributionSummary,
+  PluginDangerLevelView,
   PluginInfo,
   PluginNotification,
   PluginNotificationAction,
@@ -282,6 +284,26 @@ export interface PluginRegistry {
   registerRpc(method: string, handler: PluginRpcHandler): void
   registerAsset(relativePath: string): void
   registerMessageTransform(transform: PluginMessageTransform): void
+  registerDangerLevel(dangerLevel: PluginDangerLevel): void
+}
+
+export interface PluginPathAccessContext {
+  paths: string[]
+  workdir: string
+  sessionId: string
+  projectId?: string | undefined
+  tool: string
+  command?: string | undefined
+}
+
+export type PluginPathAccessDecision = { action: 'allow' } | { action: 'deny'; message?: string } | { action: 'ask' }
+
+export interface PluginDangerLevel {
+  id: string
+  label: LocalizedString
+  description?: LocalizedString
+  badgeTone?: PluginBadgeTone
+  evaluatePathAccess?(context: PluginPathAccessContext): Promise<PluginPathAccessDecision> | PluginPathAccessDecision
 }
 
 export interface PluginMessageTransformContext {

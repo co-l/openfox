@@ -92,7 +92,7 @@ export interface WorkflowExecution {
   updatedAt: number
 }
 
-export type DangerLevel = 'normal' | 'dangerous'
+export type DangerLevel = 'normal' | 'dangerous' | (string & {})
 
 export interface Session {
   id: string

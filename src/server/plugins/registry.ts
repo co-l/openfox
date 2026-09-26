@@ -9,6 +9,7 @@ import type {
 import type {
   PluginCommand,
   PluginContext,
+  PluginDangerLevel,
   PluginHookEvent,
   PluginHookHandler,
   PluginMessageTransform,
@@ -55,6 +56,7 @@ type Kind =
   | 'uiOverride'
   | 'asset'
   | 'messageTransform'
+  | 'dangerLevel'
 
 interface Owned<T> {
   pluginId: string
@@ -193,6 +195,10 @@ export class PluginRegistry implements ProviderPluginRegistry, PluginRegistryCon
     this.register('messageTransform', transform.id, transform)
   }
 
+  registerDangerLevel(dangerLevel: PluginDangerLevel): void {
+    this.register('dangerLevel', dangerLevel.id, dangerLevel)
+  }
+
   notify(request: PluginNotificationRequest): void {
     this.context.notify(request)
   }
@@ -245,6 +251,13 @@ export class PluginRegistry implements ProviderPluginRegistry, PluginRegistryCon
     }))
   }
 
+  getDangerLevels(): { pluginId: string; dangerLevel: PluginDangerLevel }[] {
+    return this.listOwned<PluginDangerLevel>('dangerLevel').map((entry) => ({
+      pluginId: entry.pluginId,
+      dangerLevel: entry.value,
+    }))
+  }
+
   getSettingsSchema(pluginId: string): PluginSettingsSchema | undefined {
     return this.get<PluginSettingsSchema>('settings', pluginId)
   }
@@ -269,6 +282,13 @@ export class PluginRegistry implements ProviderPluginRegistry, PluginRegistryCon
       overrides: this.listOwned<PluginUiOverride>('uiOverride').map((entry) => ({
         ...entry.value,
         pluginId: entry.pluginId,
+      })),
+      dangerLevels: this.listOwned<PluginDangerLevel>('dangerLevel').map((entry) => ({
+        id: entry.value.id,
+        pluginId: entry.pluginId,
+        label: entry.value.label,
+        ...(entry.value.description ? { description: entry.value.description } : {}),
+        ...(entry.value.badgeTone ? { badgeTone: entry.value.badgeTone } : {}),
       })),
     }
   }
@@ -328,6 +348,7 @@ export class PluginRegistry implements ProviderPluginRegistry, PluginRegistryCon
       uiComponents: count('uiComponent'),
       uiOverrides: count('uiOverride'),
       messageTransforms: count('messageTransform'),
+      dangerLevels: count('dangerLevel'),
     }
   }
 

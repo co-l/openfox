@@ -222,6 +222,11 @@ export function createTool<TArgs>(name: string, definition: LLMToolDefinition, h
 
         checkPathAccess: async (paths: string[], command?: string) => {
           if (context.onEvent) {
+            const projectId =
+              context.projectId ??
+              (typeof context.sessionManager?.getSession === 'function'
+                ? context.sessionManager.getSession(context.sessionId)?.projectId
+                : undefined)
             await requestPathAccess(
               paths,
               context.workdir,
@@ -232,6 +237,7 @@ export function createTool<TArgs>(name: string, definition: LLMToolDefinition, h
               context.dangerLevel,
               command,
               context.isSubAgent,
+              projectId,
             )
           }
         },

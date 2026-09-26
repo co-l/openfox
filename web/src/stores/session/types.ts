@@ -11,6 +11,7 @@ import type {
   WorkflowLaunchScope,
   WorkflowExecution,
   SessionStatsSummary,
+  DangerLevel,
 } from '@shared/types.js'
 import type { ServerMessage, QueuedMessage, ChoiceOption } from '@shared/protocol.js'
 import type { ConnectionStatus } from '../../lib/ws'
@@ -175,7 +176,7 @@ export interface SessionState {
   retryLLM: (sessionId: string) => void
   exitWorkflow: (sessionId: string) => void
   switchMode: (sessionId: string, mode: SessionMode) => void
-  switchDangerLevel: (sessionId: string, dangerLevel: 'normal' | 'dangerous') => Promise<boolean>
+  switchDangerLevel: (sessionId: string, dangerLevel: DangerLevel) => Promise<boolean>
   editCriteria: (sessionId: string, criteria: Criterion[]) => void
   compactContext: (sessionId: string) => void
   setSessionProvider: (

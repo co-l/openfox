@@ -3,7 +3,6 @@ import type { ReactNode } from 'react'
 import { useT } from '../../../hooks/useT'
 import { useLocalizedString } from '../../../hooks/useLocalizedString'
 import { usePlugins } from '../../../hooks/usePlugins'
-import { useCurrentProject } from '../../../hooks/useCurrentProject'
 import { useResource } from '../../../hooks/useResource'
 import { pluginRegistryResource, pluginDiagnosticsResource } from '../../../lib/resources'
 import { installPlugin, reinstallPlugin, setPluginEnabled, uninstallPlugin } from '../../../lib/plugin-actions'
@@ -48,6 +47,7 @@ const CAPABILITY_ORDER = [
   'rpc',
   'assets',
   'transforms',
+  'dangerLevels',
 ] as const
 
 function contributionSummaryParts(summary: PluginContributionSummary): { key: string; count: number }[] {
@@ -64,6 +64,7 @@ function contributionSummaryParts(summary: PluginContributionSummary): { key: st
     { key: 'presets', count: summary.presets },
     { key: 'transitions', count: summary.transitions },
     { key: 'transforms', count: summary.messageTransforms },
+    { key: 'dangerLevels', count: summary.dangerLevels },
   ].filter((entry) => entry.count > 0)
 }
 
@@ -134,7 +135,6 @@ function InstalledPluginCard({ plugin }: { plugin: PluginInfo }) {
   const [confirmRemove, setConfirmRemove] = useState(false)
 
   const section = contributions.sections.find((candidate) => candidate.pluginId === plugin.id)
-  const project = useCurrentProject()
   const registryEntry = (registry?.plugins ?? []).find((candidate) => candidate.name === plugin.id)
   const developer = getDeveloperName(plugin.author, registryEntry?.githubUrl)
   const statusLabel = plugin.error
@@ -259,7 +259,7 @@ function InstalledPluginCard({ plugin }: { plugin: PluginInfo }) {
       {showSettings && section ? (
         <div className="mt-4 pt-4 border-t border-border">
           <h4 className="text-xs font-medium text-text-secondary mb-3">{localize(section.title)}</h4>
-          <PluginSettingsForm pluginId={plugin.id} {...(project?.id ? { projectId: project.id } : {})} />
+          <PluginSettingsForm pluginId={plugin.id} hideScopeSelector />
         </div>
       ) : null}
       <ConfirmModal

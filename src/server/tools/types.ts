@@ -10,6 +10,7 @@ import type { ProviderManager } from '../provider-manager.js'
 export interface ToolContext {
   workdir: string
   sessionId: string
+  projectId?: string
   sessionManager: SessionManager // Injected dependency (replaces singleton import)
   dangerLevel?: DangerLevel // When 'dangerous', bypass path confirmations
   isSubAgent?: boolean // When true, sub-agent path restrictions apply (deny outside workdir unless dangerous)

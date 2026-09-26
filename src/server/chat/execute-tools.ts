@@ -130,7 +130,9 @@ export async function executeTools(
       return {
         // LLM-facing (rendered into the tool content) — English by design.
         success: false,
-        error: `User denied access to ${error.paths.join(', ')}. If you need this file, explain why and ask for permission.`,
+        error:
+          error.customMessage ??
+          `User denied access to ${error.paths.join(', ')}. If you need this file, explain why and ask for permission.`,
         durationMs: Date.now() - startTime,
         truncated: false,
       }

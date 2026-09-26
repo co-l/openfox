@@ -14,6 +14,7 @@ export type PluginCapability =
   | 'rpc'
   | 'assets'
   | 'transforms'
+  | 'dangerLevels'
 
 export type PluginSlotName =
   | 'header.actions'
@@ -256,6 +257,14 @@ export interface PluginSettingsTab {
   content: DeclarativeNode[]
 }
 
+export interface PluginDangerLevelView {
+  id: string
+  pluginId: string
+  label: LocalizedString
+  description?: LocalizedString
+  badgeTone?: PluginBadgeTone
+}
+
 export interface PluginUiContributions {
   actions: PluginUiAction[]
   badges: PluginUiBadge[]
@@ -264,6 +273,7 @@ export interface PluginUiContributions {
   components: PluginUiComponent[]
   overrides: PluginUiOverride[]
   settingsTabs: PluginSettingsTab[]
+  dangerLevels?: PluginDangerLevelView[]
 }
 
 export interface PluginUiSection {
@@ -309,6 +319,12 @@ export interface PluginSettingsField {
   hideWhenInstalled?: boolean
   /** Display-only field: rendered disabled, always shows `default`, never read from or written to storage. */
   readOnly?: boolean
+  /** Whether to render a directory browser button to pick files or folders from the filesystem. */
+  browseDirectory?: boolean
+  /** Custom label for the browse directory button. */
+  browseButtonLabel?: LocalizedString
+  /** Danger levels for which this setting field is applicable (e.g. ['whitelist_only']). */
+  dangerLevels?: string[]
   /**
    * Sub-fields of a `list` field, rendered inline on a single row per item.
    * Values are stored as a JSON array string, so a list value always travels
@@ -422,6 +438,7 @@ export interface PluginContributionSummary {
   uiComponents: number
   uiOverrides: number
   messageTransforms: number
+  dangerLevels: number
 }
 
 export interface PluginInfo {
@@ -489,4 +506,5 @@ export const EMPTY_PLUGIN_CONTRIBUTIONS: PluginContributionSummary = {
   uiComponents: 0,
   uiOverrides: 0,
   messageTransforms: 0,
+  dangerLevels: 0,
 }

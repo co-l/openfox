@@ -500,12 +500,12 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     const updates: {
       name?: string
       customInstructions?: string | null
-      dangerLevel?: 'normal' | 'dangerous' | null
+      dangerLevel?: string | null
       defaultAgent?: string | null
     } = {}
     if (name !== undefined) updates.name = name
     if (customInstructions !== undefined) updates.customInstructions = customInstructions
-    if (dangerLevel !== undefined) updates.dangerLevel = dangerLevel as 'normal' | 'dangerous' | null
+    if (dangerLevel !== undefined) updates.dangerLevel = dangerLevel as string | null
     if (defaultAgent !== undefined) updates.defaultAgent = defaultAgent as string | null
     const updated = updateProject(req.params.id, updates)
     if (!updated) {
@@ -1355,8 +1355,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
 
     const { dangerLevel } = req.body
-    if (!dangerLevel || !['normal', 'dangerous'].includes(dangerLevel)) {
-      return res.status(400).json({ error: 'dangerLevel is required and must be "normal" or "dangerous"' })
+    if (!dangerLevel || typeof dangerLevel !== 'string') {
+      return res.status(400).json({ error: 'dangerLevel is required and must be a string' })
     }
 
     sessionManager.setDangerLevel(sessionId, dangerLevel)

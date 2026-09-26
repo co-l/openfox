@@ -50,6 +50,7 @@ import {
 } from './settings.js'
 import { setPluginModelMetadataProviders } from './model-metadata.js'
 import { setPluginMessageTransforms } from './message-transforms.js'
+import { setPluginDangerLevels } from './danger-levels.js'
 import { setPluginHookEmitter } from './hook-emitter.js'
 import { PluginUpdateChecker, type PluginUpdateInfo } from './update-checker.js'
 
@@ -384,6 +385,7 @@ export class PluginHost {
     )
     setPluginModelMetadataProviders(this.registry.getModelMetadataProviders())
     setPluginMessageTransforms(this.registry.getMessageTransforms())
+    setPluginDangerLevels(this.registry.getDangerLevels())
     void this.refreshSkillSources()
   }
 
