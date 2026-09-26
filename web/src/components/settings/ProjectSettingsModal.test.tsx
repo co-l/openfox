@@ -26,6 +26,21 @@ const { mockDefaultAgents, mockUserAgents, mockProjectAgents, mockRefreshAgents 
   mockRefreshAgents: vi.fn(),
 }))
 
+const { mockPermsStore } = vi.hoisted(() => ({
+  mockPermsStore: {
+    projectConfig: null as any,
+    saving: false,
+    fetchConfig: vi.fn(async () => undefined),
+    addRule: vi.fn(async () => undefined),
+    updateRule: vi.fn(async () => undefined),
+    deleteRule: vi.fn(async () => undefined),
+  },
+}))
+
+vi.mock('../../stores/permissions', () => ({
+  usePermissionsStore: (selector?: any) => (selector ? selector(mockPermsStore) : mockPermsStore),
+}))
+
 vi.mock('../../hooks/useResource', async () => {
   const { workspaceConfigResource, mcpServersResource } = await import('../../lib/resources')
   return {
@@ -634,5 +649,27 @@ describe('ProjectSettingsModal — rootDir validation (Criterion 0 & 1)', () => 
       expect.anything(),
     )
     expect(lastSaveCall()).toBeTruthy()
+  })
+})
+
+describe('ProjectSettingsModal — permission rules', () => {
+  beforeEach(() => {
+    mockPermsStore.projectConfig = null
+    mockPermsStore.saving = false
+  })
+
+  it('renders Permission Rules section with Add Rule button', async () => {
+    render(<ProjectSettingsModal isOpen={true} onClose={vi.fn()} project={defaultProject} />)
+    expect(screen.getByText('Permission Rules')).toBeDefined()
+    expect(screen.getByText(/Add Rule/i)).toBeDefined()
+  })
+
+  it('renders existing project rules from permissions store', async () => {
+    mockPermsStore.projectConfig = {
+      version: 1,
+      rules: [{ id: 'r1', effect: 'DENY', tool: 'run_command', pattern: 'terragrunt destroy *' }],
+    }
+    render(<ProjectSettingsModal isOpen={true} onClose={vi.fn()} project={defaultProject} />)
+    expect(screen.getByText('terragrunt destroy *')).toBeDefined()
   })
 })

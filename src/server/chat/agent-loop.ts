@@ -756,6 +756,15 @@ ${COMPACTION_PROMPT}`,
         }
         batchContext.agentTimeout = getRuntimeConfig().agent.toolTimeout
         batchContext.allowParallelSubAgents = getSetting(SETTINGS_KEYS.AGENT_ALLOW_PARALLEL_SUB_AGENTS) === 'true'
+        const { loadMergedRules } = await import('../permissions/registry.js')
+        const { getSessionAllowedRules } = await import('../tools/path-security.js')
+        const rulesConfigDir = getGlobalConfigDir(getRuntimeConfig().mode ?? 'production')
+        const diskRules = await loadMergedRules(rulesConfigDir, sessionManager.getEffectiveWorkdir(sessionId))
+        const sessionRules = getSessionAllowedRules(sessionId)
+        const permissionRules = [...diskRules, ...sessionRules]
+        if (permissionRules.length > 0) {
+          batchContext.permissionRules = permissionRules
+        }
         const batchResult = await executeTools(assistantMsgId, result.toolCalls, batchContext, append)
         pendingToolResultTokens = estimateToolResultTokens(batchResult.toolMessages)
         if (batchResult.stepDoneCalled) {

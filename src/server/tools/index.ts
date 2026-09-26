@@ -446,6 +446,7 @@ export {
   autoApprovePendingConfirmationsForSession,
   providePathConfirmation,
   getConfirmationSessionId,
+  clearAllowedPaths,
 } from './path-security.js'
 export { stepDoneTool } from './step-done.js'
 export { setTasksService } from './project-tasks.js'

@@ -49,6 +49,11 @@ function getReasonMessage(
           fr: 'Contournement des hooks git / vérifications pre-commit',
         }),
       }
+    case 'rule_ask':
+      return {
+        title: 'Permission Rule Confirmation',
+        description: 'A permission rule requires confirmation for this action',
+      }
     case 'outside_workdir':
     default:
       return {
@@ -73,6 +78,8 @@ export function PathConfirmationButtons({ confirmation }: PathConfirmationButton
   const bgColor = isSensitive ? 'bg-red-500/10' : 'bg-amber-500/10'
 
   const isGitNoVerify = confirmation.reason === 'git_no_verify'
+  const isDangerousCommand = confirmation.reason === 'dangerous_command'
+  const canAllowForSession = !isGitNoVerify && !isDangerousCommand
 
   const handleEnableDangerousAndAllow = async () => {
     if (!sessionId) return
@@ -84,6 +91,11 @@ export function PathConfirmationButtons({ confirmation }: PathConfirmationButton
     if (!switched) {
       confirmPath(sessionId, confirmation.callId, true, false)
     }
+  }
+
+  const handleAllowForSession = () => {
+    if (!sessionId) return
+    confirmPath(sessionId, confirmation.callId, true, true)
   }
 
   return (
@@ -122,6 +134,16 @@ export function PathConfirmationButtons({ confirmation }: PathConfirmationButton
           className="flex-1 px-3 py-1.5 text-xs font-medium rounded bg-accent-primary hover:bg-accent-primary/80 text-text-primary transition-colors"
         >
           {t({ en: 'Allow', fr: 'Autoriser' })}
+        </button>
+        <button
+          onClick={handleAllowForSession}
+          className={`flex-1 px-3 py-1.5 text-xs font-medium rounded transition-colors ${canAllowForSession ? 'bg-green-600 hover:bg-green-700 text-white' : 'hidden'}`}
+          title={t({
+            en: "Allow for this session (won't ask again until session ends)",
+            fr: 'Autoriser pour cette session (ne sera plus demandé jusqu’à la fin de la session)',
+          })}
+        >
+          {t({ en: 'Allow for this session', fr: 'Autoriser pour cette session' })}
         </button>
         <button
           onClick={handleEnableDangerousAndAllow}

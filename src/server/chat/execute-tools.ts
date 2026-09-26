@@ -12,6 +12,28 @@ import type { DangerLevel } from '../../shared/types.js'
 import { createToolProgressHandler } from './tool-streaming.js'
 import { createToolCallEvent, createToolResultEvent, createChatDoneEvent } from './stream-pure.js'
 import { PathAccessDeniedError, AskUserInterrupt } from '../tools/index.js'
+import { evaluateRulesWithMatch } from '../permissions/rules.js'
+import { isPatternTool } from '../../shared/permissions.js'
+import { denialToolResultText } from '../tools/path-denial-text.js'
+import type { PermissionRule } from '../permissions/schema.js'
+
+/**
+ * DENY-only gate for tools that carry no path/command target — pattern tools
+ * are enforced later, per target, by `requestPathAccess`.
+ */
+function evaluateToolGate(rules: PermissionRule[], toolName: string): PathAccessDeniedError | null {
+  if (isPatternTool(toolName)) return null
+  const match = evaluateRulesWithMatch(rules, toolName, '')
+  if (match.effect === 'DENY') {
+    return new PathAccessDeniedError(
+      [toolName],
+      toolName,
+      'rule_denied',
+      `Permission rule DENY blocked tool: "${toolName}"`,
+    )
+  }
+  return null
+}
 import { loadAllAgentsDefault, findAgentById } from '../agents/registry.js'
 import { serverT } from '../i18n.js'
 import { renderToolResultContent } from './tool-result-content.js'
@@ -23,6 +45,7 @@ export interface ToolBatchContext {
   workdir: string
   dangerLevel?: DangerLevel
   isSubAgent?: boolean
+  permissionRules?: PermissionRule[]
   turnMetrics: TurnMetrics
   signal?: AbortSignal | undefined
   onMessage?: ((msg: ServerMessage) => void) | undefined
@@ -130,7 +153,7 @@ export async function executeTools(
       return {
         // LLM-facing (rendered into the tool content) — English by design.
         success: false,
-        error: `User denied access to ${error.paths.join(', ')}. If you need this file, explain why and ask for permission.`,
+        error: denialToolResultText(error.reason, error.paths),
         durationMs: Date.now() - startTime,
         truncated: false,
       }
@@ -229,6 +252,9 @@ export async function executeTools(
     if (ctx.providerManager) {
       toolContext.providerManager = ctx.providerManager
     }
+    if (ctx.permissionRules && ctx.permissionRules.length > 0) {
+      toolContext.permissionRules = ctx.permissionRules
+    }
 
     const startTime = Date.now()
     let toolResult: ToolResult
@@ -244,6 +270,12 @@ export async function executeTools(
       }
     } else {
       try {
+        if (ctx.permissionRules && ctx.permissionRules.length > 0) {
+          const gateResult = evaluateToolGate(ctx.permissionRules, toolCall.name)
+          if (gateResult) {
+            throw gateResult
+          }
+        }
         toolResult = await ctx.toolRegistry.execute(toolCall.name, toolCall.arguments, toolContext)
       } catch (error) {
         toolResult = await handleToolExecutionError(error, ctx.sessionId, startTime)

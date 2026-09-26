@@ -36,13 +36,11 @@ import {
   checkToolChangesAndInject,
   computeDynamicContextHash,
   getToolFingerprint,
+  loadSessionContext,
 } from './dynamic-context.js'
 import { runTopLevelAgentLoop } from './agent-loop.js'
 import { loadAllAgentsDefault, findAgentById, resolveDefaultAgentId, getSubAgents } from '../agents/registry.js'
-import { getAllInstructions } from '../context/instructions.js'
-import { getEnabledSkillMetadata } from '../skills/registry.js'
-import { getRuntimeConfig } from '../runtime-config.js'
-import { getGlobalConfigDir } from '../../cli/paths.js'
+import { denialChatErrorText, denialSubject } from '../tools/path-denial-text.js'
 import { logger } from '../utils/logger.js'
 import type { RetryPatternConfig } from './auto-patterns.js'
 import { sanitizeRetryPatterns } from './auto-patterns.js'
@@ -217,25 +215,10 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
   } catch (error) {
     if (error instanceof PathAccessDeniedError) {
       const errorMsgId = crypto.randomUUID()
-      const reasonText =
-        error.reason === 'sensitive_file'
-          ? serverT({
-              en: 'sensitive files that may contain secrets',
-              fr: 'des fichiers sensibles pouvant contenir des secrets',
-            })
-          : error.reason === 'both'
-            ? serverT({
-                en: 'files outside the project and sensitive files',
-                fr: 'des fichiers hors du projet et des fichiers sensibles',
-              })
-            : serverT({ en: 'files outside the project directory', fr: 'des fichiers hors du dossier du projet' })
       eventStore.append(sessionId, {
         type: 'chat.error',
         data: {
-          error: serverT(
-            { en: 'User denied access to {{reason}}.', fr: 'Accès refusé par l’utilisateur : {{reason}}.' },
-            { reason: reasonText },
-          ),
+          error: serverT(denialChatErrorText(error.reason), { reason: serverT(denialSubject(error.reason)) }),
           recoverable: false,
         },
       })
@@ -412,11 +395,7 @@ export async function runAgentTurn(
   }
 
   const session = options.sessionManager.requireSession(options.sessionId)
-
-  const { content: instructionContent } = await getAllInstructions(session.workdir, session.projectId)
-  const runtimeConfig = getRuntimeConfig()
-  const configDir = getGlobalConfigDir(runtimeConfig.mode ?? 'production')
-  const skills = await getEnabledSkillMetadata(configDir, options.sessionManager.getProjectWorkdir(options.sessionId))
+  const { instructionContent, skills } = await loadSessionContext(options.sessionManager, options.sessionId)
 
   if (!options.warmup) {
     const modelName = agentLlmClient.getModel()
@@ -459,7 +438,7 @@ export async function runAgentTurn(
         if (cached) {
           const toolFingerprint = getToolFingerprint(cached.tools)
           const currentHash = computeDynamicContextHash(
-            instructionContent ?? '',
+            instructionContent,
             skills,
             toolFingerprint,
             resolveAgentClient().getModel(),
