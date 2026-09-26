@@ -94,5 +94,21 @@
     "githubUrl": "https://github.com/JamesDAdams/openfox-model-pricing",
     "author": "James Adams",
     "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#10B981\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><line x1=\"12\" y1=\"1\" x2=\"12\" y2=\"23\"></line><path d=\"M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6\"></path></svg>"
+  },
+  {
+    "name": "openfox-rtk",
+    "displayName": "RTK Token Optimizer",
+    "description": "Reduce token consumption by filtering and rewriting shell command output through RTK (Rust Token Killer).",
+    "githubUrl": "https://github.com/JamesDAdams/openfox-rtk",
+    "author": "James Adams",
+    "icon": "https://avatars.githubusercontent.com/u/258253854?s=60&v=4"
+  },
+  {
+    "name": "openfox-community-hub",
+    "displayName": "Community Hub",
+    "description": "Share, export, import, and install OpenFox workflows, agents, sub-agents, MCP servers, skills, and commands via static Git/CDN registries.",
+    "githubUrl": "https://github.com/JamesDAdams/openfox-community-hub",
+    "author": "James Adams",
+    "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"9\"></circle><path d=\"M3.3 9h17.4\"></path><path d=\"M3.3 15h17.4\"></path><path d=\"M12 3c2.4 2.5 3.7 5.6 3.7 9S14.4 18.5 12 21c-2.4-2.5-3.7-5.6-3.7-9S9.6 5.5 12 3z\"></path></svg>"
   }
 ]
