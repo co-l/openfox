@@ -110,5 +110,13 @@
     "githubUrl": "https://github.com/JamesDAdams/openfox-community-hub",
     "author": "James Adams",
     "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"9\"></circle><path d=\"M3.3 9h17.4\"></path><path d=\"M3.3 15h17.4\"></path><path d=\"M12 3c2.4 2.5 3.7 5.6 3.7 9S14.4 18.5 12 21c-2.4-2.5-3.7-5.6-3.7-9S9.6 5.5 12 3z\"></path></svg>"
+  },
+  {
+    "name": "openfox-whitelist",
+    "displayName": "Whitelist File Access",
+    "description": "Adds Whitelist and Whitelist Only danger levels to allow configured external paths without confirmation, and optionally auto-reject unauthorized files.",
+    "githubUrl": "https://github.com/JamesDAdams/openfox-whitelist",
+    "author": "James Adams",
+    "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#10B981\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z\"/><polyline points=\"9 12 11 14 15 10\"/></svg>"
   }
 ]
