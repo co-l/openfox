@@ -1499,6 +1499,27 @@ const pendingConfirmations = new Map<
 >()
 
 /**
+ * Persist a path.confirmation_responded event closing out the pending
+ * confirmation. Pending confirmations are event-sourced (session.state and
+ * session loads re-derive them from the log), so every resolution path for a
+ * live session — approval, denial, cancellation, or the stale rejection at
+ * boot — must leave a responded event behind, or the confirmation resurrects
+ * on the next broadcast or reload. (Deleting a session is not a resolution
+ * path: it removes the event log wholesale, so there is nothing to resurrect.)
+ */
+function emitConfirmationResponded(sessionId: string, callId: string, approved: boolean, alwaysAllow: boolean): void {
+  try {
+    const eventStore = getEventStore()
+    eventStore.append(sessionId, {
+      type: 'path.confirmation_responded',
+      data: { callId, approved, alwaysAllow },
+    })
+  } catch {
+    // Event store might not be initialized in tests, continue without event
+  }
+}
+
+/**
  * Register a pending path confirmation.
  * Stores the paths and sessionId so they can be added to allowlist on approval.
  */
@@ -1541,15 +1562,7 @@ export function providePathConfirmation(
   }
 
   // Emit path.confirmation_responded event for persistence
-  try {
-    const eventStore = getEventStore()
-    eventStore.append(pending.sessionId, {
-      type: 'path.confirmation_responded',
-      data: { callId, approved, alwaysAllow: alwaysAllow ?? false },
-    })
-  } catch {
-    // Event store might not be initialized in tests, continue without event
-  }
+  emitConfirmationResponded(pending.sessionId, callId, approved, alwaysAllow ?? false)
 
   if (approved && alwaysAllow) {
     // Add real filesystem paths to the allowlist only when alwaysAllow is true.
@@ -1579,9 +1592,26 @@ export function cancelPathConfirmation(callId: string, reason: string): boolean 
     return false
   }
 
+  // Close the confirmation out in the event log before unwinding, so the
+  // event-sourced fold (session.state / session load) stops resurrecting it.
+  emitConfirmationResponded(pending.sessionId, callId, false, false)
+
   pending.reject(new Error(reason))
   pendingConfirmations.delete(callId)
   return true
+}
+
+/**
+ * CallIds of the path confirmations currently pending for a session.
+ */
+export function getPendingPathConfirmationCallIds(sessionId: string): string[] {
+  const callIds: string[] = []
+  for (const [callId, pending] of pendingConfirmations.entries()) {
+    if (pending.sessionId === sessionId) {
+      callIds.push(callId)
+    }
+  }
+  return callIds
 }
 
 export function cancelPathConfirmationsForSession(sessionId: string, reason: string): number {
@@ -1591,6 +1621,10 @@ export function cancelPathConfirmationsForSession(sessionId: string, reason: str
     if (pending.sessionId !== sessionId) {
       continue
     }
+
+    // Close each confirmation out in the event log before unwinding, so the
+    // event-sourced fold (session.state / session load) stops resurrecting it.
+    emitConfirmationResponded(pending.sessionId, callId, false, false)
 
     pending.reject(new Error(reason))
     pendingConfirmations.delete(callId)

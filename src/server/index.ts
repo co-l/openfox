@@ -1046,14 +1046,12 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
 
     // Cancel any active execution before deleting — mirrors /stop endpoint
-    const { stopSessionExecution } = await import('./session/chat-handler.js')
-    const { cancelQuestionsForSession, cancelPathConfirmationsForSession } = await import('./tools/index.js')
+    const { stopSessionExecution, cancelSessionInteractions } = await import('./session/chat-handler.js')
 
     sessionManager.clearMessageQueue(sessionId)
     stopSessionExecution(sessionId, sessionManager)
     abortSession(sessionId)
-    cancelQuestionsForSession(sessionId, 'Session deleted')
-    cancelPathConfirmationsForSession(sessionId, 'Session deleted')
+    await cancelSessionInteractions(sessionId, sessionManager, 'Session deleted')
 
     sessionManager.deleteSession(sessionId)
     wssExports.broadcastAll({
@@ -1648,8 +1646,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       return res.status(404).json({ error: 'Session not found' })
     }
 
-    const { stopSessionExecution } = await import('./session/chat-handler.js')
-    const { cancelQuestionsForSession, cancelPathConfirmationsForSession } = await import('./tools/index.js')
+    const { stopSessionExecution, cancelSessionInteractions } = await import('./session/chat-handler.js')
 
     // Drain queued messages BEFORE stopping execution, so the QueueProcessor
     // doesn't pick them up when running_changed fires from setRunning(false)
@@ -1660,11 +1657,18 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     stopSessionExecution(sessionId, sessionManager)
     abortSession(sessionId)
 
-    cancelQuestionsForSession(sessionId, 'Session stopped by user')
-    cancelPathConfirmationsForSession(sessionId, 'Session stopped by user')
+    const cancelledCallIds = await cancelSessionInteractions(sessionId, sessionManager, 'Session stopped by user')
 
-    const eventStore = (await import('./events/index.js')).getEventStore()
-    eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: false } })
+    // Mirror /confirm-path: tell every same-project client the confirmation
+    // is resolved so its home-page "waiting for input" dot clears (the
+    // session-scoped session.state above only reaches the session's own clients).
+    for (const callId of cancelledCallIds) {
+      wssExports.broadcastForSession(sessionId, {
+        type: 'session.confirmation_resolved',
+        sessionId,
+        payload: { sessionId, callId },
+      })
+    }
 
     res.json({ success: true, queuedMessages })
   })
@@ -3764,14 +3768,18 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     launchWorkflow: (sessionId, launch) => deferTasksLaunchWorkflow(sessionId, launch),
     stopSession: (sessionId) => {
       void (async () => {
-        const { stopSessionExecution } = await import('./session/chat-handler.js')
-        const { cancelQuestionsForSession, cancelPathConfirmationsForSession } = await import('./tools/index.js')
+        const { stopSessionExecution, cancelSessionInteractions } = await import('./session/chat-handler.js')
         sessionManager.clearMessageQueue(sessionId)
         stopSessionExecution(sessionId, sessionManager)
         abortSession(sessionId)
-        cancelQuestionsForSession(sessionId, 'Session stopped by user')
-        cancelPathConfirmationsForSession(sessionId, 'Session stopped by user')
-        getEventStore().append(sessionId, { type: 'running.changed', data: { isRunning: false } })
+        const cancelledCallIds = await cancelSessionInteractions(sessionId, sessionManager, 'Session stopped by user')
+        for (const callId of cancelledCallIds) {
+          wssExports.broadcastForSession(sessionId, {
+            type: 'session.confirmation_resolved',
+            sessionId,
+            payload: { sessionId, callId },
+          })
+        }
       })().catch((error) => {
         logger.error(`MCP stopSession failed for ${sessionId}`, {
           error: error instanceof Error ? error.message : String(error),
