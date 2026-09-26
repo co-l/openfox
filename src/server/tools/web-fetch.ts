@@ -2,7 +2,6 @@ import TurndownService from 'turndown'
 import { createTool, buildSignal } from './tool-helpers.js'
 import { OUTPUT_LIMITS } from './types.js'
 import { isPdfBuffer, extractPdfText, processPdfContent, formatPdfErrorMessage } from './pdf-utils.js'
-import { serverT } from '../i18n.js'
 
 const MAX_RESPONSE_SIZE = 5 * 1024 * 1024 // 5MB
 const DEFAULT_TIMEOUT_MS = 30_000
@@ -90,9 +89,7 @@ export const webFetchTool = createTool<WebFetchArgs>(
     const format = args.format ?? 'markdown'
 
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      return helpers.error(
-        serverT({ en: 'URL must start with http:// or https://', fr: 'L’URL doit commencer par http:// ou https://' }),
-      )
+      return helpers.error('URL must start with http:// or https://')
     }
 
     const timeoutMs = (args.timeout ?? DEFAULT_TIMEOUT_MS / 1000) * 1000
@@ -112,35 +109,17 @@ export const webFetchTool = createTool<WebFetchArgs>(
         : initial
 
     if (!response.ok) {
-      return helpers.error(
-        serverT(
-          {
-            en: 'Request failed with status code: {{status}}',
-            fr: 'Échec de la requête avec le code de statut : {{status}}',
-          },
-          { status: response.status },
-        ),
-      )
+      return helpers.error(`Request failed with status code: ${response.status}`)
     }
 
     const contentLength = response.headers.get('content-length')
     if (contentLength && parseInt(contentLength) > MAX_RESPONSE_SIZE) {
-      return helpers.error(
-        serverT({
-          en: 'Response too large (exceeds 5MB limit)',
-          fr: 'Réponse trop volumineuse (dépasse la limite de 5 Mo)',
-        }),
-      )
+      return helpers.error('Response too large (exceeds 5MB limit)')
     }
 
     const arrayBuffer = await response.arrayBuffer()
     if (arrayBuffer.byteLength > MAX_RESPONSE_SIZE) {
-      return helpers.error(
-        serverT({
-          en: 'Response too large (exceeds 5MB limit)',
-          fr: 'Réponse trop volumineuse (dépasse la limite de 5 Mo)',
-        }),
-      )
+      return helpers.error('Response too large (exceeds 5MB limit)')
     }
 
     const contentType = response.headers.get('content-type') || ''
@@ -150,7 +129,7 @@ export const webFetchTool = createTool<WebFetchArgs>(
 
     if (isImage) {
       const base64Data = Buffer.from(arrayBuffer).toString('base64')
-      return helpers.success(serverT({ en: 'Image fetched successfully', fr: 'Image récupérée avec succès' }), false, {
+      return helpers.success('Image fetched successfully', false, {
         metadata: {
           mimeType: mime,
           base64Data,

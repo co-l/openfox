@@ -61,6 +61,18 @@ async function checkRtkAvailability(): Promise<boolean> {
   return rtkAvailable
 }
 
+export function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`
+  let m = Math.floor(ms / 60_000)
+  let s = Math.round((ms % 60_000) / 1000)
+  if (s === 60) {
+    m += 1
+    s = 0
+  }
+  return `${m}m ${s}s`
+}
+
 export function hasBackgroundAmpersand(command: string): boolean {
   // Strip content inside quotes — & inside quotes is literal, not a background operator
   let processed = command.replace(/'[^']*'/g, ' ').replace(/"[^"]*"/g, ' ')
@@ -92,7 +104,7 @@ export const runCommandTool = createTool<RunCommandArgs>(
     function: {
       name: 'run_command',
       description:
-        'Execute a shell command. Returns stdout, stderr, and exit code. Does NOT support trailing "&" for backgrounding — use background_process tool instead.\nCommands run from your working directory automatically, so prefer relative paths.',
+        'Execute a shell command. Returns stdout, stderr, exit code, and elapsed duration. Does NOT support trailing "&" for backgrounding — use background_process tool instead.\nCommands run from your working directory automatically, so prefer relative paths.',
       parameters: {
         type: 'object',
         properties: {
@@ -118,10 +130,8 @@ export const runCommandTool = createTool<RunCommandArgs>(
 
     if (hasBackgroundAmpersand(args.command)) {
       return helpers.error(
-        serverT({
-          en: 'Use background_process tool (action: "start") for background/long-running commands instead of \'&\'. See the tool description for details.',
-          fr: 'Utilisez l’outil background_process (action : « start ») pour les commandes d’arrière-plan ou de longue durée au lieu de « & ». Consultez la description de l’outil pour plus de détails.',
-        }),
+        // LLM-facing (rendered into the tool content) — English by design.
+        'Use background_process tool (action: "start") for background/long-running commands instead of \'&\'. See the tool description for details.',
       )
     }
 
@@ -138,13 +148,8 @@ export const runCommandTool = createTool<RunCommandArgs>(
       const approved = await requestUserConfirmation(context, 'command', desc)
       if (!approved) {
         return helpers.error(
-          serverT(
-            {
-              en: 'User denied: "{{mutation}}" modifies Git state. Use the workspace tool to switch workspaces or branches.',
-              fr: 'Refusé par l’utilisateur : « {{mutation}} » modifie l’état Git. Utilisez l’outil workspace pour changer de workspace ou de branche.',
-            },
-            { mutation: mutationMatch },
-          ),
+          // LLM-facing (rendered into the tool content) — English by design.
+          `User denied: "${mutationMatch}" modifies Git state. Use the workspace tool to switch workspaces or branches.`,
         )
       }
     }
@@ -180,6 +185,7 @@ export const runCommandTool = createTool<RunCommandArgs>(
     const useRtk = getSetting(SETTINGS_KEYS.TOOLS_USE_RTK) === 'true'
     const finalCommand = useRtk ? await tryRtkRewrite(execCommand) : execCommand
 
+    const execStart = Date.now()
     const result = await executeCommand(finalCommand, workingDir, timeout, context.signal, context.onProgress)
 
     let output = ''
@@ -220,16 +226,17 @@ export const runCommandTool = createTool<RunCommandArgs>(
       truncated = true
     }
 
-    const wasInterrupted = output.includes('[interrupted by user]')
+    output += `\n[Duration: ${formatDuration(Date.now() - execStart)}]`
+
+    const wasInterrupted = result.interrupted === true
 
     return helpers.success(output, truncated, {
       success: result.exitCode === 0,
-      ...(result.exitCode !== 0 && !wasInterrupted
+      ...(wasInterrupted ? { metadata: { interrupted: true } } : {}),
+      ...(result.exitCode !== 0
         ? {
-            error: serverT(
-              { en: 'Command exited with code {{code}}', fr: 'La commande s’est terminée avec le code {{code}}' },
-              { code: result.exitCode },
-            ),
+            // LLM-facing (rendered into the tool content) — English by design.
+            error: wasInterrupted ? 'Command was interrupted by user' : `Command exited with code ${result.exitCode}`,
           }
         : {}),
     })
@@ -240,6 +247,7 @@ interface CommandResult {
   stdout: string
   stderr: string
   exitCode: number
+  interrupted?: boolean
 }
 
 async function tryRtkRewrite(command: string): Promise<string> {
@@ -300,7 +308,7 @@ function executeCommand(
     // then settle with the shell's real exit code.
     const ZOMBIE_PIPE_GRACE_MS = 2000
 
-    const settle = (code: number, appendix?: string) => {
+    const settle = (code: number, appendix?: string, interrupted = false) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
@@ -311,6 +319,7 @@ function executeCommand(
         stdout: appendix ? (out ? `${out}\n\n${appendix}` : appendix) : out,
         stderr: (stderr + stderrDecoder.end()).trim(),
         exitCode: code,
+        ...(interrupted ? { interrupted: true } : {}),
       })
     }
 
@@ -329,7 +338,7 @@ function executeCommand(
       if (!timedOut && !aborted) {
         aborted = true
         if (exited) {
-          settle(130, '[interrupted by user]')
+          settle(130, '[interrupted by user]', true)
           return
         }
         void terminateProcessTree(proc, { exited: () => exited, immediate: true })
@@ -359,7 +368,7 @@ function executeCommand(
       exitCode = code
       exited = true
       if (aborted) {
-        settle(130, '[interrupted by user]')
+        settle(130, '[interrupted by user]', true)
         return
       }
       if (timedOut) {
@@ -385,7 +394,7 @@ function executeCommand(
       }
 
       if (aborted) {
-        settle(130, '[interrupted by user]')
+        settle(130, '[interrupted by user]', true)
         return
       }
 
