@@ -138,4 +138,27 @@ describe('plugin routes', () => {
       expect(openFolder).not.toHaveBeenCalled()
     })
   })
+
+  describe('POST /check-updates', () => {
+    it('triggers update check and returns updates', async () => {
+      const res = await fetch(`${baseUrl}/api/plugins/check-updates`, {
+        method: 'POST',
+      })
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as { success: boolean; updates: unknown[] }
+      expect(body.success).toBe(true)
+      expect(Array.isArray(body.updates)).toBe(true)
+    })
+  })
+
+  describe('POST /:id/reinstall', () => {
+    it('fails when plugin is not found', async () => {
+      const res = await fetch(`${baseUrl}/api/plugins/non-existent/reinstall`, {
+        method: 'POST',
+      })
+      expect(res.status).toBe(400)
+      const body = (await res.json()) as { error: string }
+      expect(body.error).toContain('Plugin not found')
+    })
+  })
 })

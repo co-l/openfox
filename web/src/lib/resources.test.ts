@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { authFetch } from './api'
 import { clearCache } from './resourceCache'
-import { agentsResource, readAgents } from './resources'
+import { agentsResource, commandsResource, readAgents, refreshItemResources } from './resources'
 
 vi.mock('./api', () => ({
   authFetch: vi.fn(),
@@ -56,5 +56,35 @@ describe('agentsResource', () => {
       projectItems: [],
       modelOverrides: {},
     })
+  })
+})
+
+describe('refreshItemResources', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    clearCache()
+  })
+
+  it('refetches only the cached lists for the named kinds', async () => {
+    vi.mocked(authFetch).mockResolvedValue(jsonResponse({ defaults: [] }))
+    await agentsResource.refresh('/repo/a')
+    await commandsResource.refresh('/repo/a')
+    vi.mocked(authFetch).mockClear()
+
+    refreshItemResources(['agents'])
+
+    await vi.waitFor(() => expect(authFetch).toHaveBeenCalledTimes(1))
+    expect(authFetch).toHaveBeenCalledWith('/api/agents?workdir=%2Frepo%2Fa')
+  })
+
+  it('ignores unknown kinds', async () => {
+    vi.mocked(authFetch).mockResolvedValue(jsonResponse({ defaults: [] }))
+    await agentsResource.refresh('/repo/a')
+    vi.mocked(authFetch).mockClear()
+
+    refreshItemResources(['nope'])
+
+    await Promise.resolve()
+    expect(authFetch).not.toHaveBeenCalled()
   })
 })

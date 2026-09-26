@@ -1,3 +1,4 @@
+import { useState, useEffect, useRef, type ChangeEvent, type FocusEvent } from 'react'
 import { useLocalizedString } from '../../hooks/useLocalizedString'
 import { activatePluginAction, badgeToneClasses, pluginIcon, type PluginActionContext } from './plugin-ui-utils'
 import type { DeclarativeNode, PluginBadgeTone } from '@shared/plugin.js'
@@ -58,6 +59,235 @@ export interface DeclarativeRendererProps {
   node: DeclarativeNode
   values?: Record<string, unknown>
   context?: PluginActionContext & { pluginId?: string }
+}
+
+function parseCssColor(color: string): { bg: string; text: string; border: string } {
+  const trimmed = color.trim()
+  if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(trimmed)) {
+    const hex =
+      trimmed.length === 4 ? `#${trimmed[1]}${trimmed[1]}${trimmed[2]}${trimmed[2]}${trimmed[3]}${trimmed[3]}` : trimmed
+    return {
+      bg: `${hex}1f`,
+      text: hex,
+      border: `${hex}4d`,
+    }
+  }
+  return {
+    bg: `color-mix(in srgb, ${trimmed} 12%, transparent)`,
+    text: trimmed,
+    border: `color-mix(in srgb, ${trimmed} 30%, transparent)`,
+  }
+}
+
+function DeclarativeTextField({
+  node,
+  isTextarea,
+  values = {},
+  context = {},
+}: {
+  node: Extract<DeclarativeNode, { type: 'input' }>
+  isTextarea?: boolean
+  values?: Record<string, unknown>
+  context?: PluginActionContext & { pluginId?: string }
+}) {
+  const localize = useLocalizedString()
+  const externalVal = interpolate(node.defaultValue ?? '', values)
+  const [localVal, setLocalVal] = useState(externalVal)
+  const isFocusedRef = useRef(false)
+  const pendingExternalRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (isFocusedRef.current) {
+      // Never fight the user's typing: remember the incoming value and apply it
+      // on blur instead of dropping it.
+      pendingExternalRef.current = externalVal
+      return
+    }
+    pendingExternalRef.current = null
+    setLocalVal(externalVal)
+  }, [externalVal])
+
+  const releaseFocus = (typedValue: string) => {
+    isFocusedRef.current = false
+    const pending = pendingExternalRef.current
+    pendingExternalRef.current = null
+    if (pending !== null && pending !== typedValue) {
+      setLocalVal(pending)
+    }
+  }
+
+  const triggerAction = (action: typeof node.onChange, value: string) => {
+    if (action) {
+      void activatePluginAction(context.pluginId, action, { ...context, fieldId: node.id, value })
+    }
+  }
+
+  const handleFocus = () => {
+    isFocusedRef.current = true
+  }
+
+  const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const val = e.target.value
+    setLocalVal(val)
+    triggerAction(node.onChange, val)
+  }
+
+  const handleBlur = (e: FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    releaseFocus(e.target.value)
+    triggerAction(node.onBlur, e.target.value)
+  }
+
+  const placeholder = node.placeholder ? localize(node.placeholder) : undefined
+  const disabledClass = node.disabled ? 'opacity-60 cursor-not-allowed bg-bg-secondary/80 select-none' : ''
+
+  const lineCount = localVal ? localVal.split('\n').length : 1
+  const computedRows = Math.min(Math.max(node.rows ?? 2, lineCount), 15)
+
+  return (
+    <div className="flex-1 min-w-0">
+      {node.label && (
+        <label htmlFor={node.id} className="text-xs text-text-secondary block mb-0.5">
+          {localize(node.label)}
+        </label>
+      )}
+      {isTextarea ? (
+        <textarea
+          id={node.id}
+          rows={computedRows}
+          disabled={node.disabled}
+          value={localVal}
+          placeholder={placeholder}
+          onFocus={handleFocus}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          className={`w-full px-2.5 py-1.5 bg-bg-tertiary border border-border rounded text-xs font-mono text-text-primary focus:outline-none focus:border-accent-primary resize-y ${disabledClass}`}
+        />
+      ) : (
+        <input
+          id={node.id}
+          type={node.inputType ?? 'text'}
+          disabled={node.disabled}
+          value={localVal}
+          placeholder={placeholder}
+          onFocus={handleFocus}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          className={`w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-primary focus:outline-none focus:border-accent-primary ${disabledClass}`}
+        />
+      )}
+    </div>
+  )
+}
+
+function DeclarativeCheckbox({
+  node,
+  values = {},
+  context = {},
+}: {
+  node: Extract<DeclarativeNode, { type: 'input' }>
+  values?: Record<string, unknown>
+  context?: PluginActionContext & { pluginId?: string }
+}) {
+  const localize = useLocalizedString()
+  const raw = values[node.id]
+  const externalChecked = raw !== undefined ? raw === true || raw === 'true' : Boolean(node.defaultChecked)
+  const [isChecked, setIsChecked] = useState(externalChecked)
+
+  useEffect(() => {
+    setIsChecked(externalChecked)
+  }, [externalChecked])
+
+  return (
+    <label
+      htmlFor={node.id}
+      className={`inline-flex items-center gap-2 select-none text-xs text-text-primary ${
+        node.disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
+      }`}
+    >
+      <input
+        id={node.id}
+        type="checkbox"
+        disabled={node.disabled}
+        checked={isChecked}
+        onChange={(e) => {
+          const next = e.target.checked
+          setIsChecked(next)
+          if (node.onChange) {
+            void activatePluginAction(context.pluginId, node.onChange, {
+              ...context,
+              fieldId: node.id,
+              value: next ? 'true' : 'false',
+            })
+          }
+        }}
+        className={`w-4 h-4 rounded border-border bg-bg-tertiary text-accent-primary focus:ring-accent-primary/30 accent-accent-primary shrink-0 ${
+          node.disabled ? 'cursor-not-allowed' : 'cursor-pointer'
+        }`}
+      />
+      {node.label && <span>{localize(node.label)}</span>}
+    </label>
+  )
+}
+
+function DeclarativeSelect({
+  node,
+  values = {},
+  context = {},
+}: {
+  node: Extract<DeclarativeNode, { type: 'select' }>
+  values?: Record<string, unknown>
+  context?: PluginActionContext & { pluginId?: string }
+}) {
+  const localize = useLocalizedString()
+  const externalVal = interpolate(node.defaultValue ?? '', values)
+  const [value, setValue] = useState(externalVal)
+  const isFocusedRef = useRef(false)
+
+  useEffect(() => {
+    // Keep the select in sync with refreshed panel content, but never yank the
+    // value out from under an open dropdown.
+    if (!isFocusedRef.current) {
+      setValue(externalVal)
+    }
+  }, [externalVal])
+
+  return (
+    <div className="flex-1 min-w-0">
+      {node.label && (
+        <label htmlFor={node.id} className="text-xs text-text-secondary block mb-0.5">
+          {localize(node.label)}
+        </label>
+      )}
+      <select
+        id={node.id}
+        value={value}
+        onFocus={() => {
+          isFocusedRef.current = true
+        }}
+        onBlur={() => {
+          isFocusedRef.current = false
+        }}
+        onChange={(e) => {
+          const next = e.target.value
+          setValue(next)
+          if (node.onChange) {
+            void activatePluginAction(context.pluginId, node.onChange, {
+              ...context,
+              fieldId: node.id,
+              value: next,
+            })
+          }
+        }}
+        className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-primary focus:outline-none focus:border-accent-primary cursor-pointer"
+      >
+        {node.options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {localize(option.label)}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
 }
 
 export function DeclarativeRenderer({ node, values = {}, context = {} }: DeclarativeRendererProps) {
@@ -136,29 +366,48 @@ export function DeclarativeRenderer({ node, values = {}, context = {} }: Declara
       )
     }
 
-    case 'badge':
+    case 'badge': {
+      const colorScheme = node.color ? parseCssColor(node.color) : undefined
+      const customStyle = colorScheme
+        ? {
+            backgroundColor: colorScheme.bg,
+            color: colorScheme.text,
+            borderColor: colorScheme.border,
+          }
+        : undefined
+
       return (
         <span
-          className={`inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium ${badgeToneClasses(
-            node.tone,
-          )}`}
+          style={customStyle}
+          className={`inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium whitespace-nowrap shrink-0 select-none ${
+            node.color ? '' : badgeToneClasses(node.tone)
+          } ${node.className ?? ''}`}
         >
           {localize(node.label)}
         </span>
       )
+    }
 
     case 'button': {
       const Icon = node.icon ? pluginIcon(node.icon) : null
       const labelText = localize(node.label)
       const isGhost = node.variant === 'ghost'
       const showLabel = !isGhost || !Icon
+      const tooltipText = node.title ? localize(node.title) : labelText
       return (
         <button
           type="button"
-          title={labelText || undefined}
-          aria-label={labelText || undefined}
-          onClick={() => void activatePluginAction(context.pluginId, node.onActivate, context)}
+          disabled={node.disabled}
+          title={tooltipText || undefined}
+          aria-label={tooltipText || labelText || undefined}
+          onClick={() => {
+            if (!node.disabled) {
+              void activatePluginAction(context.pluginId, node.onActivate, context)
+            }
+          }}
           className={`transition-colors inline-flex items-center justify-center ${
+            node.disabled ? 'opacity-50 cursor-not-allowed' : ''
+          } ${
             isGhost
               ? `${BUTTON_VARIANT_CLASSES.ghost} ${!Icon ? 'px-2.5 py-1.5 text-sm' : ''}`
               : `gap-1.5 px-3 py-1.5 rounded text-sm font-medium ${BUTTON_VARIANT_CLASSES[node.variant ?? 'default']}`
@@ -174,6 +423,7 @@ export function DeclarativeRenderer({ node, values = {}, context = {} }: Declara
       return <hr className="border-border my-2" />
 
     case 'stack': {
+      if (node.children.length === 0) return null
       const directionClass = node.direction === 'row' ? 'flex flex-row w-full' : 'flex flex-col'
       const gapClass = GAP_CLASSES[node.gap ?? 'sm']
       const alignClass = ALIGN_CLASSES[node.align ?? 'start']
@@ -246,57 +496,19 @@ export function DeclarativeRenderer({ node, values = {}, context = {} }: Declara
     }
 
     case 'input': {
-      const triggerAction = (action: typeof node.onChange, value: string) => {
-        if (action) {
-          void activatePluginAction(context.pluginId, action, { ...context, fieldId: node.id, value })
-        }
+      if (node.inputType === 'checkbox') {
+        return <DeclarativeCheckbox node={node} values={values} context={context} />
       }
-      return (
-        <div className="flex-1 min-w-0">
-          {node.label && <label className="text-xs text-text-secondary block mb-0.5">{localize(node.label)}</label>}
-          <input
-            id={node.id}
-            type={node.inputType ?? 'text'}
-            defaultValue={interpolate(node.defaultValue ?? '', values)}
-            placeholder={node.placeholder ? localize(node.placeholder) : undefined}
-            onChange={(e) => {
-              triggerAction(node.onChange, e.target.value)
-            }}
-            onBlur={(e) => {
-              triggerAction(node.onBlur, e.target.value)
-            }}
-            className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-primary focus:outline-none focus:border-accent-primary"
-          />
-        </div>
-      )
+
+      if (node.inputType === 'textarea') {
+        return <DeclarativeTextField node={node} isTextarea values={values} context={context} />
+      }
+
+      return <DeclarativeTextField node={node} values={values} context={context} />
     }
 
     case 'select': {
-      return (
-        <div className="flex-1 min-w-0">
-          {node.label && <label className="text-xs text-text-secondary block mb-0.5">{localize(node.label)}</label>}
-          <select
-            id={node.id}
-            defaultValue={node.defaultValue}
-            onChange={(e) => {
-              if (node.onChange) {
-                void activatePluginAction(context.pluginId, node.onChange, {
-                  ...context,
-                  fieldId: node.id,
-                  value: e.target.value,
-                })
-              }
-            }}
-            className="w-full px-2 py-1 bg-bg-tertiary border border-border rounded text-xs text-text-primary focus:outline-none focus:border-accent-primary cursor-pointer"
-          >
-            {node.options.map((option) => (
-              <option key={option.value} value={option.value}>
-                {localize(option.label)}
-              </option>
-            ))}
-          </select>
-        </div>
-      )
+      return <DeclarativeSelect node={node} values={values} context={context} />
     }
 
     case 'iframe': {

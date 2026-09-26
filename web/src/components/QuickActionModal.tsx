@@ -16,6 +16,8 @@ import { useSessionScope, useScopedPaneState } from '../stores/session/session-s
 import { dedupById, fuzzyMatch, handleModalNavigation } from '../lib/modal-utils'
 import type { WorkflowScope } from '@shared/types.js'
 import { useResetSearchOnOpen } from '../hooks/useResetSearchOnOpen'
+import { usePlugins } from '../hooks/usePlugins'
+import { useLocalizedString } from '../hooks/useLocalizedString'
 
 interface QuickActionModalProps {
   isOpen: boolean
@@ -50,6 +52,9 @@ export function QuickActionModal({
   isAutoScrollActive,
 }: QuickActionModalProps) {
   const t = useT()
+  const loc = useLocalizedString()
+  const { contributions } = usePlugins()
+  const pluginDangerLevels = contributions.dangerLevels ?? []
   const [, navigate] = useLocation()
   const sessionId = useSessionScope()
   const currentMode = useScopedPaneState(
@@ -167,14 +172,22 @@ export function QuickActionModal({
       prefix: t({ en: 'Workflow > Run', fr: 'Workflow > Exécuter' }),
       action: () => onSelectWorkflow(w.id, w.scope),
     })),
-    ...(['normal', 'dangerous'] as const)
+    ...(['normal', ...pluginDangerLevels.map((dl) => dl.id), 'dangerous'] as const)
       .filter((m) => m !== currentDangerLevel)
-      .map((m) => ({
-        id: m,
-        name: m === 'dangerous' ? t({ en: 'Dangerous', fr: 'Dangereux' }) : t({ en: 'Normal', fr: 'Normal' }),
-        prefix: t({ en: 'Mode > Switch to', fr: 'Mode > Passer à' }),
-        action: () => sessionId && switchDangerLevel(sessionId, m),
-      })),
+      .map((m) => {
+        const customDl = pluginDangerLevels.find((dl) => dl.id === m)
+        const name = customDl
+          ? loc(customDl.label)
+          : m === 'dangerous'
+            ? t({ en: 'Dangerous', fr: 'Dangereux' })
+            : t({ en: 'Normal', fr: 'Normal' })
+        return {
+          id: m,
+          name,
+          prefix: t({ en: 'Mode > Switch to', fr: 'Mode > Passer à' }),
+          action: () => sessionId && switchDangerLevel(sessionId, m),
+        }
+      }),
   ]
 
   const filteredItems = items.filter((item) => fuzzyMatch(`${item.prefix} ${item.name}`, search))

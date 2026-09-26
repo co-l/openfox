@@ -105,14 +105,14 @@ header.
 
 ### Manifest reference
 
-| Field                  | Required   | Description                                                                                                                    |
-| ---------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `openfox.apiVersion`   | yes        | `1` (providers only, legacy) or `2` (full plugin API)                                                                          |
-| `openfox.entry`        | yes for v2 | Path to the ESM entry point, relative to the package root. `openfox.plugin` is accepted for v1 packages                        |
-| `openfox.displayName`  | no         | Shown in the Plugins tab. Defaults to the package name                                                                         |
-| `openfox.description`  | no         | Shown in the Plugins tab                                                                                                       |
-| `openfox.capabilities` | no         | `providers`, `models`, `settings`, `tools`, `commands`, `skills`, `ui`, `hooks`, `notifications`, `workflows`, `rpc`, `assets` |
-| `openfox.timeoutMs`    | no         | Per-plugin RPC timeout in ms (default 30 000)                                                                                  |
+| Field                  | Required   | Description                                                                                                                                  |
+| ---------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `openfox.apiVersion`   | yes        | `1` (providers only, legacy) or `2` (full plugin API)                                                                                        |
+| `openfox.entry`        | yes for v2 | Path to the ESM entry point, relative to the package root. `openfox.plugin` is accepted for v1 packages                                      |
+| `openfox.displayName`  | no         | Shown in the Plugins tab. Defaults to the package name                                                                                       |
+| `openfox.description`  | no         | Shown in the Plugins tab                                                                                                                     |
+| `openfox.capabilities` | no         | `providers`, `models`, `settings`, `tools`, `commands`, `skills`, `ui`, `hooks`, `notifications`, `workflows`, `rpc`, `assets`, `transforms` |
+| `openfox.timeoutMs`    | no         | Per-plugin RPC timeout in ms (default 30 000)                                                                                                |
 
 ### Discovery and lifecycle
 
@@ -229,14 +229,95 @@ registry.registerSettings({
 })
 ```
 
-- Types: `text`, `password`, `number`, `boolean`, `select`, `textarea`, `path`.
+- Types: `text`, `password`, `number`, `boolean`, `select`, `textarea`, `path`, `list`.
 - A form is auto-rendered in the Plugins tab from the schema — you never write UI code for it.
 - Values are stored per plugin in the database. `scope: 'project'` on a field
   stores it per project; otherwise the request scope applies (`global` by default).
 - Secret fields (`secret: true` or `type: 'password'`) are **never returned in
   cleartext**: reads return them in a `secretsSet` list, and an empty submitted
   value keeps the stored secret.
+- `storageKey` backs a field with the plugin's own storage (`context.storage`)
+  instead of the settings store — the way to surface a secret an earlier version
+  of the plugin kept in storage, so the field shows as filled instead of empty.
+  Reads, writes and the `secretsSet` flag all follow that row; storage-backed
+  fields are global.
 - Read them at runtime with `context.settings(scope?, projectId?)`.
+
+#### Repeatable rows (`list`)
+
+`type: 'list'` renders one inline row per item — sub-fields side by side, a
+remove button per row and an add button below:
+
+```ts
+{
+  key: 'registries',
+  type: 'list',
+  label: { en: 'Registries', fr: 'Registres' },
+  addLabel: { en: 'Add registry', fr: 'Ajouter un registre' },
+  removeLabel: { en: 'Remove', fr: 'Supprimer' },
+  minItems: 1,
+  maxItems: 5,
+  default: '[]',
+  itemFields: [
+    {
+      key: 'source',
+      type: 'select',
+      label: { en: 'Source', fr: 'Source' },
+      options: [
+        { value: 'github', label: { en: 'GitHub', fr: 'GitHub' } },
+        { value: 'gitlab', label: { en: 'GitLab', fr: 'GitLab' } },
+      ],
+      default: 'github',
+    },
+    { key: 'url', type: 'text', label: { en: 'Registry URL', fr: 'URL du registre' } },
+    { key: 'token', type: 'password', label: { en: 'Token', fr: 'Jeton' }, secret: true },
+  ],
+}
+```
+
+- `itemFields` accepts the same field types as top-level fields (minus `list`,
+  `button`, `status`); sub-field defaults seed a freshly added row.
+- The value is a **JSON array string**, so `context.settings()` hands you
+  `'[{"source":"github","url":"…","token":"…"}]'` — parse it yourself.
+- Secret sub-fields are masked in the settings view like any other secret. A
+  masked or empty submitted value keeps the token stored **for the same row
+  index**, so removing a row drops its token.
+- `minItems` / `maxItems` bound the number of rows; every item is validated
+  against `itemFields` on save (`Setting 'registries[0].url' must be a string`).
+
+#### Open-the-provider-page button (`linkButton`)
+
+`linkButton` renders a small "open in a new tab" button next to a field input —
+typically to send the user to the page where an access token is generated. It
+works on a top-level field or on a `list` sub-field:
+
+```ts
+{
+  key: 'token',
+  type: 'password',
+  label: { en: 'Personal Access Token', fr: 'Jeton d’accès personnel' },
+  secret: true,
+  linkButton: {
+    label: { en: 'Generate a token', fr: 'Générer un jeton' },
+    href: 'https://github.com/settings/tokens/new',
+    hrefByField: 'source',
+    hrefByValue: {
+      github: 'https://github.com/settings/tokens/new',
+      gitlab: '{{url.origin}}/-/user_settings/personal_access_tokens',
+    },
+  },
+}
+```
+
+- `href` is a URL template. `{{key}}` is replaced by the value of `key`, and
+  `{{key.origin}}` by its URL origin (`https://gitlab.corp.com/g/r/-/raw/main/index.json`
+  → `https://gitlab.corp.com`) — the way to reach a self-hosted instance.
+- `hrefByField` + `hrefByValue` pick the template from the value of another
+  field of the same row (e.g. a `source` select); `href` is the fallback.
+- A list sub-field resolves placeholders against its own row (falling back to
+  the top-level fields); a top-level field resolves against the whole form.
+- The button is **disabled while the resolved URL is not an absolute http(s)
+  URL**, so a template built from a not-yet-filled field stays greyed out.
 
 ### UI (`ui`)
 
@@ -246,14 +327,21 @@ Rich custom UI is supported through sandboxed iframe panels.
 
 **Slots**
 
-| Slot                     | Rendered in                    |
-| ------------------------ | ------------------------------ |
-| `header.actions`         | Top header                     |
-| `session.header.actions` | Session header                 |
-| `message.actions`        | Message context menu           |
-| `composer.actions`       | Chat composer, above the input |
-| `session.row.badges`     | Session rows in the sidebar    |
-| `session.header.badges`  | Session header                 |
+| Slot                     | Rendered in                              |
+| ------------------------ | ---------------------------------------- |
+| `header.actions`         | Top header                               |
+| `session.header.actions` | Session header                           |
+| `message.actions`        | Message context menu                     |
+| `composer.actions`       | Chat composer, above the input           |
+| `session.row.badges`     | Session rows in the sidebar              |
+| `session.header.badges`  | Session header                           |
+| `plugin.menu`            | The plugin's own row in the plugins menu |
+
+`plugin.menu` is the one slot that does not add a row: it takes over the row
+showing your plugin in the header's plugins menu. `label` becomes the row label
+(replacing `displayName`) and activating the row runs `onActivate`, so a plugin
+can send its name anywhere it likes. Without it the row stays an inert group
+header. Only the first visible `plugin.menu` action of a plugin is used.
 
 Settings are not a slot: `registerSettings()` drives the schema-rendered form
 that appears in the Plugins tab.
@@ -278,8 +366,18 @@ registry.registerUiAction({
 `onActivate` kinds:
 
 - `{ kind: 'rpc', method, params? }` — calls your RPC method with the current
-  context (`sessionId`, `workdir`) attached.
+  context (`sessionId`, `workdir`, `projectId`) attached. The RPC handler may return
+  `{ openPanel: string, content?: DeclarativeNode[] }` to immediately open a panel
+  and pre-fill its content in a single round-trip, and/or
+  `{ invalidate: string[] }` to tell the client which cached item lists went stale
+  (`'agents'`, `'commands'`, `'skills'`, `'workflows'`, `'mcpServers'`). The named
+  lists are refetched in place, so items written to disk by an RPC (an installed
+  pack, a generated agent, …) show up without a page reload or a server restart.
 - `{ kind: 'openPanel', panelId }` — opens one of your panels.
+- `{ kind: 'openSettings', tab? }` — opens the global settings modal, optionally
+  on a given tab: a core tab id (`plugins`, `tools`, `skills`, …) or a full
+  plugin tab reference `plugin:<yourPluginId>:<tabId>` for one of the settings
+  tabs you registered. Omit `tab` for the default tab.
 - `{ kind: 'openUrl', url }` — opens a URL in a new tab.
 
 `visibleWhen` gates a contribution on the slot context: `hasSession`,
@@ -326,30 +424,91 @@ is rendered repeatedly. Existing plugins keep the original session-first cache
 behavior when it is omitted. Session-row badge RPC context includes
 `sessionId`, `projectId`, and the effective `workdir`.
 
-**Panels**
+**Panels and Declarative UI**
 
 ```ts
 registry.registerUiPanel({
   id: 'quota',
   title: { en: 'Usage & quota', fr: 'Utilisation et quota' },
-  size: 'xl', // 'sm' | 'md' | 'lg' | 'xl' (80vw) | 'full' (95vw) (default: 'md')
+  size: 'xl', // 'sm' | 'md' | 'lg' | 'xl' (80vw) | '2xl' | '3xl' | 'full' (95vw) (default: 'md')
   kind: 'declarative',
   content: [
-    { type: 'text', text: { en: 'Live usage', fr: 'Utilisation en direct' } },
+    { type: 'text', text: { en: 'Live usage', fr: 'Utilisation en direct' }, muted: false, className: 'mb-2' },
     { type: 'keyValue', items: [{ key: { en: 'Remaining', fr: 'Restant' }, value: '{{tokens}}' }] },
     { type: 'progress', label: { en: 'Budget', fr: 'Budget' }, value: 25, max: 100, tone: 'info' },
     { type: 'table', columns: [{ en: 'Model', fr: 'Modèle' }], rows: [['gpt-x']] },
-    { type: 'badge', label: { en: 'Pro', fr: 'Pro' }, tone: 'info' },
-    { type: 'button', label: { en: 'Refresh', fr: 'Actualiser' }, onActivate: { kind: 'rpc', method: 'refresh' } },
+    { type: 'badge', label: { en: 'Pro', fr: 'Pro' }, tone: 'info', color: '#10b981', className: 'px-2' },
+    {
+      type: 'button',
+      label: { en: 'Refresh', fr: 'Actualiser' },
+      title: { en: 'Refresh quota', fr: 'Actualiser le quota' },
+      variant: 'default', // 'default' | 'primary' | 'danger' | 'ghost' | 'pill'
+      icon: 'refresh',
+      disabled: false,
+      onActivate: { kind: 'rpc', method: 'refresh' },
+    },
+    {
+      type: 'stack',
+      direction: 'row', // 'row' | 'column'
+      gap: 'sm', // 'none' | 'xs' | 'sm' | 'md' | 'lg'
+      align: 'center', // 'start' | 'center' | 'end' | 'stretch'
+      justify: 'between', // 'start' | 'center' | 'end' | 'between'
+      children: [
+        {
+          type: 'input',
+          id: 'user-input',
+          inputType: 'text', // 'text' | 'number' | 'password' | 'checkbox' | 'textarea'
+          label: { en: 'Name', fr: 'Nom' },
+          placeholder: { en: 'Enter name...', fr: 'Entrer un nom...' },
+          defaultValue: '{{name}}',
+          rows: 3, // for textarea
+          defaultChecked: false, // for checkbox
+          disabled: false,
+          onChange: { kind: 'rpc', method: 'updateField' },
+          onBlur: { kind: 'rpc', method: 'saveField' },
+        },
+        {
+          type: 'select',
+          id: 'category',
+          label: { en: 'Category', fr: 'Catégorie' },
+          options: [{ value: 'general', label: { en: 'General', fr: 'Général' } }],
+          defaultValue: 'general',
+          onChange: { kind: 'rpc', method: 'updateCategory' },
+        },
+      ],
+    },
+    {
+      type: 'card',
+      title: { en: 'Details', fr: 'Détails' },
+      subtitle: { en: 'Summary', fr: 'Résumé' },
+      tone: 'neutral',
+      children: [{ type: 'text', text: { en: 'Card body', fr: 'Corps de carte' } }],
+    },
+    {
+      type: 'details',
+      title: { en: 'Advanced options', fr: 'Options avancées' },
+      defaultOpen: false,
+      children: [{ type: 'text', text: { en: 'Hidden content', fr: 'Contenu masqué' } }],
+    },
+    {
+      type: 'callout',
+      title: { en: 'Notice', fr: 'Remarque' },
+      text: { en: 'Important note', fr: 'Note importante' },
+      tone: 'warning',
+      icon: 'warning',
+    },
+    { type: 'icon', icon: 'star', tone: 'warning' },
+    { type: 'iframe', url: 'https://example.com/widget', height: 250, width: '100%' },
     { type: 'divider' },
   ],
 })
 ```
 
-Declarative node types: `text`, `keyValue`, `table`, `progress`, `badge`,
-`button`, `divider`. String values may contain `{{key}}` placeholders filled
-from values you publish with `context.publish(panelId, key, value)`; published
-state arrives over WebSocket (`plugin.ui_state`) and re-renders the open panel.
+**Declarative node types:** `text`, `keyValue`, `table`, `progress`, `badge`, `button`, `stack`, `card`, `callout`, `icon`, `details`, `input`, `select`, `iframe`, `divider`. String values may contain `{{key}}` placeholders filled from values you publish with `context.publish(panelId, key, value)`; published state arrives over WebSocket (`plugin.ui_state`) and re-renders the open panel.
+
+**Panel Lifecycle Hooks:**
+
+When a declarative panel or settings tab opens, the host automatically calls the plugin's `initPanel` RPC method with `{ panelId: string, tabId?: string }` and the effective project/session context (`workdir`, `projectId`, `sessionId`). The RPC can return `{ content: DeclarativeNode[] }` or publish state to dynamically hydrate or refresh content upon modal display. When a panel is opened via an action returning `{ openPanel, content }`, the pre-filled content takes precedence and `initPanel` is not invoked to prevent accidental overwrites.
 
 Iframe panels:
 
@@ -455,6 +614,28 @@ registry.registerAsset('board.html')
 
 Files are served read-only from `/api/plugins/<id>/assets/<path>`; only
 registered relative paths are reachable, and path traversal is rejected.
+
+### Message transforms (`transforms`)
+
+```ts
+registry.registerMessageTransform({
+  id: 'compressor',
+  priority: 50, // optional ordering (lower runs first, default: 100)
+  transform: async (messages, context) => {
+    // context: { sessionId, projectId?, workdir, model, systemPrompt, mode?, signal? }
+    const compressed = await compress(messages, context.model)
+    return {
+      messages: compressed,
+      systemPrompt: context.systemPrompt,
+      metadata: { tokensSaved: 150 },
+    }
+  },
+})
+```
+
+- Transforms intercept and mutate context messages and/or system prompt before dispatch to the LLM.
+- **Fail-open resilience**: If a transform throws an error or times out (5 s), the core logs a warning and proceeds with uncompressed/unmodified messages without interrupting the turn.
+- Multiple active transforms execute sequentially in priority order.
 
 ### Context API
 

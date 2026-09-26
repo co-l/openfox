@@ -1,8 +1,26 @@
 import { Component, useMemo, type ReactNode } from 'react'
 import { usePlugins } from '../../hooks/usePlugins'
-import { isContributionVisible, type PluginActionContext } from './plugin-ui-utils'
+import { extractScopedValues, isContributionVisible, type PluginActionContext } from './plugin-ui-utils'
 import { DeclarativeRenderer } from './DeclarativeRenderer'
-import type { PluginUiComponent, PluginUiOverride, PluginZoneId } from '@shared/plugin.js'
+import { usePluginUiStore } from '../../stores/pluginUi'
+import type { DeclarativeNode, PluginUiComponent, PluginUiOverride, PluginZoneId } from '@shared/plugin.js'
+
+function DynamicPluginComponent({ comp, context }: { comp: PluginUiComponent; context: PluginActionContext }) {
+  const publishedValues = usePluginUiStore((state) => state.values)
+  const pluginId = comp.pluginId ?? 'unknown'
+
+  const values = extractScopedValues(publishedValues, pluginId, comp.id)
+  if (context.sessionId) {
+    const sessionPrefix = `${pluginId}:${comp.id}:${context.sessionId}:`
+    for (const [k, v] of Object.entries(publishedValues)) {
+      if (k.startsWith(sessionPrefix)) values[k.slice(sessionPrefix.length)] = v
+    }
+  }
+
+  const node: DeclarativeNode = (values['content'] as DeclarativeNode) ?? comp.component
+
+  return <DeclarativeRenderer node={node} values={values} context={{ ...context, pluginId: comp.pluginId }} />
+}
 
 interface ErrorBoundaryProps {
   fallback?: ReactNode
@@ -84,7 +102,7 @@ export function PluginZone({ id, context = {}, children, className }: PluginZone
 
   const renderComponent = (comp: PluginUiComponent) => (
     <PluginErrorBoundary key={`${comp.pluginId ?? 'unknown'}:${comp.id}`}>
-      <DeclarativeRenderer node={comp.component} context={{ ...context, pluginId: comp.pluginId }} />
+      <DynamicPluginComponent comp={comp} context={context} />
     </PluginErrorBoundary>
   )
 

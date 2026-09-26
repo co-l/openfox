@@ -3,10 +3,9 @@ import type { ReactNode } from 'react'
 import { useT } from '../../../hooks/useT'
 import { useLocalizedString } from '../../../hooks/useLocalizedString'
 import { usePlugins } from '../../../hooks/usePlugins'
-import { useCurrentProject } from '../../../hooks/useCurrentProject'
 import { useResource } from '../../../hooks/useResource'
 import { pluginRegistryResource, pluginDiagnosticsResource } from '../../../lib/resources'
-import { installPlugin, setPluginEnabled, uninstallPlugin } from '../../../lib/plugin-actions'
+import { installPlugin, reinstallPlugin, setPluginEnabled, uninstallPlugin } from '../../../lib/plugin-actions'
 import { authFetch } from '../../../lib/api'
 import { Button } from '../../shared/Button'
 import { Toggle } from '../../shared/Toggle'
@@ -20,6 +19,18 @@ interface RegistryPlugin {
   displayName: string
   description: string
   githubUrl: string
+  author?: string
+  icon?: string
+  logo?: string
+}
+
+function getDeveloperName(author?: string, githubUrl?: string): string | undefined {
+  if (author && author.trim()) return author.trim()
+  if (githubUrl) {
+    const match = githubUrl.match(/github\.com\/([^/]+)/)
+    if (match?.[1]) return match[1]
+  }
+  return undefined
 }
 
 const CAPABILITY_ORDER = [
@@ -35,6 +46,8 @@ const CAPABILITY_ORDER = [
   'workflows',
   'rpc',
   'assets',
+  'transforms',
+  'dangerLevels',
 ] as const
 
 function contributionSummaryParts(summary: PluginContributionSummary): { key: string; count: number }[] {
@@ -50,6 +63,8 @@ function contributionSummaryParts(summary: PluginContributionSummary): { key: st
     { key: 'settings', count: summary.settingsFields },
     { key: 'presets', count: summary.presets },
     { key: 'transitions', count: summary.transitions },
+    { key: 'transforms', count: summary.messageTransforms },
+    { key: 'dangerLevels', count: summary.dangerLevels },
   ].filter((entry) => entry.count > 0)
 }
 
@@ -86,13 +101,24 @@ function PluginDescription({ description }: { description?: string }) {
   )
 }
 
-function PluginCardLayout({ header, right, children }: { header: ReactNode; right: ReactNode; children?: ReactNode }) {
+function PluginCardLayout({
+  header,
+  right,
+  footer,
+  children,
+}: {
+  header: ReactNode
+  right: ReactNode
+  footer?: ReactNode
+  children?: ReactNode
+}) {
   return (
-    <div className="border border-border rounded-lg p-4">
+    <div className="border border-border rounded-lg p-4 flex flex-col justify-between">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">{header}</div>
         {right}
       </div>
+      {footer ? <div className="flex items-center justify-between gap-2 pt-2 mt-1">{footer}</div> : null}
       {children}
     </div>
   )
@@ -109,8 +135,8 @@ function InstalledPluginCard({ plugin }: { plugin: PluginInfo }) {
   const [confirmRemove, setConfirmRemove] = useState(false)
 
   const section = contributions.sections.find((candidate) => candidate.pluginId === plugin.id)
-  const project = useCurrentProject()
   const registryEntry = (registry?.plugins ?? []).find((candidate) => candidate.name === plugin.id)
+  const developer = getDeveloperName(plugin.author, registryEntry?.githubUrl)
   const statusLabel = plugin.error
     ? t({ en: 'Error', fr: 'Erreur' })
     : plugin.enabled
@@ -134,10 +160,9 @@ function InstalledPluginCard({ plugin }: { plugin: PluginInfo }) {
   }
 
   const reinstall = async () => {
-    if (!registryEntry) return
     setBusy(true)
     setError(null)
-    const result = await installPlugin({ githubUrl: registryEntry.githubUrl })
+    const result = await reinstallPlugin(plugin.id)
     if (!result.ok) setError(result.error ?? t({ en: 'Reinstall failed', fr: 'Échec de la réinstallation' }))
     await refresh()
     setBusy(false)
@@ -181,11 +206,6 @@ function InstalledPluginCard({ plugin }: { plugin: PluginInfo }) {
               </span>
             ))}
           </div>
-          {parts.length > 0 ? (
-            <p className="text-xs text-text-muted mt-2">
-              {parts.map((part) => `${part.count} ${part.key}`).join(' · ')}
-            </p>
-          ) : null}
           {plugin.error ? <p className="text-xs text-accent-error mt-2">{plugin.error}</p> : null}
           {error ? <p className="text-xs text-accent-error mt-2">{error}</p> : null}
         </>
@@ -199,11 +219,9 @@ function InstalledPluginCard({ plugin }: { plugin: PluginInfo }) {
                 {t({ en: 'Settings', fr: 'Paramètres' })}
               </Button>
             ) : null}
-            {registryEntry ? (
-              <Button variant="secondary" size="sm" disabled={busy} onClick={() => void reinstall()}>
-                {t({ en: 'Reinstall', fr: 'Réinstaller' })}
-              </Button>
-            ) : null}
+            <Button variant="secondary" size="sm" disabled={busy} onClick={() => void reinstall()}>
+              {t({ en: 'Reinstall', fr: 'Réinstaller' })}
+            </Button>
             <Button variant="secondary" size="sm" onClick={() => void openFolder()}>
               {t({ en: 'Open folder', fr: 'Ouvrir le dossier' })}
             </Button>
@@ -219,11 +237,29 @@ function InstalledPluginCard({ plugin }: { plugin: PluginInfo }) {
           </div>
         </div>
       }
+      footer={
+        parts.length > 0 || developer ? (
+          <>
+            {parts.length > 0 ? (
+              <span className="text-xs text-text-muted">
+                {parts.map((part) => `${part.count} ${part.key}`).join(' · ')}
+              </span>
+            ) : (
+              <span />
+            )}
+            {developer ? (
+              <span className="text-xs text-text-muted ml-auto">
+                {t({ en: 'by {{author}}', fr: 'par {{author}}' }, { author: developer })}
+              </span>
+            ) : null}
+          </>
+        ) : null
+      }
     >
       {showSettings && section ? (
         <div className="mt-4 pt-4 border-t border-border">
           <h4 className="text-xs font-medium text-text-secondary mb-3">{localize(section.title)}</h4>
-          <PluginSettingsForm pluginId={plugin.id} {...(project?.id ? { projectId: project.id } : {})} />
+          <PluginSettingsForm pluginId={plugin.id} hideScopeSelector />
         </div>
       ) : null}
       <ConfirmModal
@@ -245,6 +281,7 @@ function RegistryPluginCard({ plugin, installed }: { plugin: RegistryPlugin; ins
   const { refresh } = usePlugins()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const developer = getDeveloperName(plugin.author, plugin.githubUrl)
 
   const install = async () => {
     setBusy(true)
@@ -259,7 +296,7 @@ function RegistryPluginCard({ plugin, installed }: { plugin: RegistryPlugin; ins
     <PluginCardLayout
       header={
         <>
-          <PluginTitle title={plugin.displayName} subtitle={plugin.name} />
+          <PluginTitle title={plugin.displayName} subtitle={plugin.name} icon={plugin.icon} logo={plugin.logo} />
           <PluginDescription description={plugin.description} />
           <a
             href={plugin.githubUrl}
@@ -285,6 +322,13 @@ function RegistryPluginCard({ plugin, installed }: { plugin: RegistryPlugin; ins
               ? t({ en: 'Installing…', fr: 'Installation…' })
               : t({ en: 'Install', fr: 'Installer' })}
         </Button>
+      }
+      footer={
+        developer ? (
+          <span className="text-xs text-text-muted ml-auto">
+            {t({ en: 'by {{author}}', fr: 'par {{author}}' }, { author: developer })}
+          </span>
+        ) : null
       }
     />
   )

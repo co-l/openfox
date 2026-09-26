@@ -3,36 +3,120 @@
     "name": "openfox-chatgpt",
     "displayName": "ChatGPT",
     "description": "Authenticate with a ChatGPT Plus or Pro account via browser-based OAuth.",
-    "githubUrl": "https://github.com/arthurlacoste/openfox-chatgpt"
+    "githubUrl": "https://github.com/arthurlacoste/openfox-chatgpt",
+    "author": "arthurlacoste",
+    "icon": "https://chatgpt.com/favicon.ico"
   },
   {
     "name": "openfox-github-copilot",
     "displayName": "Github Copilot",
     "description": "Authenticate with a Github copilot account via browser-based OAuth.",
-    "githubUrl": "https://github.com/JamesDAdams/openfox-github-copilot"
+    "githubUrl": "https://github.com/JamesDAdams/openfox-github-copilot",
+    "author": "James Adams",
+    "icon": "https://github.githubassets.com/favicons/favicon.png"
   },
   {
     "name": "openfox-google-antigravity",
     "displayName": "Google Antigravity",
     "description": "Authenticate with a Google Antigravity account via browser-based OAuth | ⚠️ Using this plugin violates Google's Terms of Service.",
-    "githubUrl": "https://github.com/JamesDAdams/openfox-google-antigravity"
+    "githubUrl": "https://github.com/JamesDAdams/openfox-google-antigravity",
+    "author": "James Adams",
+    "icon": "https://brandlogos.net/wp-content/uploads/2025/12/google_antigravity-logo_brandlogos.net_qu4jc.png"
   },
   {
     "name": "openfox-xai-supergrok",
     "displayName": "xAI Grok (SuperGrok)",
     "description": "Authenticate with an X (xAI) SuperGrok subscription via OAuth. No API key required. | ⚠️ Using this plugin may violate xAI's Terms of Service.",
-    "githubUrl": "https://github.com/Olgean-Group/openfox-xai-supergrok"
+    "githubUrl": "https://github.com/Olgean-Group/openfox-xai-supergrok",
+    "author": "Olgean-Group",
+    "icon": "https://x.ai/favicon.ico"
   },
   {
     "name": "openfox-openrouter-free",
     "displayName": "OpenRouter (Free Models)",
     "description": "OpenRouter provider filtered to include only free plans, with automatic hourly updates (once per hour) and 1-Click OAuth / API key authentication.",
-    "githubUrl": "https://github.com/JamesDAdams/openfox-openrouter-free"
+    "githubUrl": "https://github.com/JamesDAdams/openfox-openrouter-free",
+    "author": "James Adams",
+    "icon": "https://openrouter.ai/favicon.ico"
   },
   {
     "name": "openfox-opencode-free",
     "displayName": "OpenCode (Free Models)",
     "description": "OpenCode provider filtered to free models only (-free suffix), with automatic hourly model updates (1x/hour) and API key auth.",
-    "githubUrl": "https://github.com/JamesDAdams/openfox-opencode-free"
+    "githubUrl": "https://github.com/JamesDAdams/openfox-opencode-free",
+    "author": "James Adams",
+    "icon": "https://opencode.ai/_build/assets/preview-opencode-logo-dark-ZBwNGoYp.png"
+  },
+  {
+    "name": "openfox-opencode-go",
+    "displayName": "OpenCode Go",
+    "description": "Access curated open coding models with generous limits via your OpenCode Go subscription ($10/month).",
+    "githubUrl": "https://github.com/JamesDAdams/openfox-opencode-go",
+    "author": "James Adams",
+    "icon": "https://opencode.ai/_build/assets/preview-opencode-logo-dark-ZBwNGoYp.png"
+  },
+  {
+    "name": "openfox-cheaperinference",
+    "displayName": "Cheaper Inference",
+    "description": "Access leading discounted AI models from multiple providers through one API with live marketplace rates.",
+    "githubUrl": "https://github.com/JamesDAdams/openfox-cheaperinference",
+    "author": "James Adams",
+    "icon": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT61SdDKpiR436_O4PWXqxT2q9bx4G3E_GoijE7Hxskhw&s"
+  },
+  {
+    "name": "openfox-headroom",
+    "displayName": "Headroom Compression",
+    "description": "Native context compression for OpenFox using Headroom proxy to optimize tokens and reduce costs without breaking prefix caching.",
+    "githubUrl": "https://github.com/JamesDAdams/openfox-headroom",
+    "author": "James Adams",
+    "icon": "https://avatars.githubusercontent.com/u/294291659?s=60&v=4"
+  },
+  {
+    "name": "openfox-omniroute-quota",
+    "displayName": "OmniRoute Quota",
+    "description": "Reports OmniRoute usage and quotas to OpenFox via the quota plugin.",
+    "githubUrl": "https://github.com/JamesDAdams/openfox-omniroute-quota",
+    "author": "James Adams",
+    "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#8B5CF6\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><polygon points=\"16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76\"/></svg>"
+  },
+  {
+    "name": "openfox-quota",
+    "displayName": "Usage & Quotas",
+    "description": "Usage and quota tracking plugin for OpenFox with generic providers and custom component overrides.",
+    "githubUrl": "https://github.com/JamesDAdams/openfox-quota",
+    "author": "James Adams",
+    "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#3B82F6\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48 2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48 2.83-2.83\"/><circle cx=\"12\" cy=\"12\" r=\"4\"/></svg>"
+  },
+  {
+    "name": "openfox-model-pricing",
+    "displayName": "Model Pricing",
+    "description": "Comprehensive model pricing, discount badges, dynamic rates, and real-time session cost tracking plugin for OpenFox.",
+    "githubUrl": "https://github.com/JamesDAdams/openfox-model-pricing",
+    "author": "James Adams",
+    "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#10B981\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><line x1=\"12\" y1=\"1\" x2=\"12\" y2=\"23\"></line><path d=\"M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6\"></path></svg>"
+  },
+  {
+    "name": "openfox-rtk",
+    "displayName": "RTK Token Optimizer",
+    "description": "Reduce token consumption by filtering and rewriting shell command output through RTK (Rust Token Killer).",
+    "githubUrl": "https://github.com/JamesDAdams/openfox-rtk",
+    "author": "James Adams",
+    "icon": "https://avatars.githubusercontent.com/u/258253854?s=60&v=4"
+  },
+  {
+    "name": "openfox-community-hub",
+    "displayName": "Community Hub",
+    "description": "Share, export, import, and install OpenFox workflows, agents, sub-agents, MCP servers, skills, and commands via static Git/CDN registries.",
+    "githubUrl": "https://github.com/JamesDAdams/openfox-community-hub",
+    "author": "James Adams",
+    "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"9\"></circle><path d=\"M3.3 9h17.4\"></path><path d=\"M3.3 15h17.4\"></path><path d=\"M12 3c2.4 2.5 3.7 5.6 3.7 9S14.4 18.5 12 21c-2.4-2.5-3.7-5.6-3.7-9S9.6 5.5 12 3z\"></path></svg>"
+  },
+  {
+    "name": "openfox-whitelist",
+    "displayName": "Whitelist File Access",
+    "description": "Adds Whitelist and Whitelist Only danger levels to allow configured external paths without confirmation, and optionally auto-reject unauthorized files.",
+    "githubUrl": "https://github.com/JamesDAdams/openfox-whitelist",
+    "author": "James Adams",
+    "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#10B981\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z\"/><polyline points=\"9 12 11 14 15 10\"/></svg>"
   }
 ]

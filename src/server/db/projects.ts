@@ -1,4 +1,4 @@
-import type { Project } from '../../shared/types.js'
+import type { Project, DangerLevel } from '../../shared/types.js'
 import { getDatabase } from './index.js'
 
 // ============================================================================
@@ -212,4 +212,4 @@ function rowToProject(row: ProjectRow): Project {
   }
 }
 
-export type DangerLevel = 'normal' | 'dangerous'
+export type { DangerLevel } from '../../shared/types.js'

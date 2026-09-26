@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, within, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { DisplayTab } from './DisplayTab'
 import { setLocale } from '@shared/i18n/index.js'
@@ -133,8 +133,13 @@ describe('DisplayTab Model Selector', () => {
     expect(select.value).toBe('default')
 
     const checkboxes = screen.getAllByRole('checkbox') as HTMLInputElement[]
-    expect(checkboxes.length).toBe(2)
-    checkboxes.forEach((checkbox) => expect(checkbox.checked).toBe(false))
+    const modelCheckboxes = checkboxes.filter(
+      (c) =>
+        c.closest('label')?.textContent?.includes('Collapse providers by default') ||
+        c.closest('label')?.textContent?.includes('Collapse favorites by default'),
+    )
+    expect(modelCheckboxes.length).toBe(2)
+    modelCheckboxes.forEach((checkbox) => expect(checkbox.checked).toBe(false))
   })
 
   it('updates the dropdown size setting when changed', async () => {
@@ -198,5 +203,45 @@ describe('DisplayTab Fullscreen slash commands', () => {
         'Choisissez si la vue des commandes utilise la taille par défaut ou remplit la hauteur d’écran disponible.',
       ),
     ).toBeTruthy()
+  })
+})
+
+describe('DisplayTab Danger Level Selector settings', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    Object.keys(mockSettings).forEach((k) => delete mockSettings[k])
+    setLocale('en')
+  })
+
+  it('renders Danger Level Selector settings and allows changing display style', async () => {
+    const user = userEvent.setup()
+    render(<DisplayTab />)
+
+    expect(screen.getByText('Danger Level Selector')).toBeTruthy()
+    expect(screen.getByText('Display style')).toBeTruthy()
+    expect(screen.getByText('Auto-switch to list if more than threshold')).toBeTruthy()
+
+    const selects = screen.getAllByRole('combobox') as HTMLSelectElement[]
+    const dangerStyleSelect = selects.find((s) => s.closest('label')?.textContent?.includes('Display style'))!
+    await user.selectOptions(dangerStyleSelect, 'list')
+
+    expect(mockSetSetting).toHaveBeenCalledWith(SETTINGS_KEYS.DISPLAY_DANGER_LEVEL_DISPLAY_MODE, 'list')
+  })
+
+  it('toggles auto-switch and displays threshold input', async () => {
+    const user = userEvent.setup()
+    mockSettings[SETTINGS_KEYS.DISPLAY_DANGER_LEVEL_AUTO_LIST] = 'true'
+    mockSettings[SETTINGS_KEYS.DISPLAY_DANGER_LEVEL_AUTO_LIST_THRESHOLD] = '4'
+    render(<DisplayTab />)
+
+    expect(screen.getByText('Auto-switch threshold')).toBeTruthy()
+    const input = screen.getByDisplayValue('4') as HTMLInputElement
+    expect(input).toBeTruthy()
+
+    await user.clear(input)
+    await user.type(input, '5')
+    fireEvent.blur(input)
+
+    expect(mockSetSetting).toHaveBeenCalledWith(SETTINGS_KEYS.DISPLAY_DANGER_LEVEL_AUTO_LIST_THRESHOLD, '5')
   })
 })

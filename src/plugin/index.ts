@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { ModelConfig, Provider } from '../shared/types.js'
+import type { LLMMessage } from '../server/llm/types.js'
 import type {
   LocalizedString,
   PluginBadgeTone,
@@ -28,12 +29,15 @@ export type {
   DeclarativeNode,
   LocalizedString,
   PluginActivation,
+  PluginBadgeTone,
   PluginCapability,
   PluginContributionSummary,
+  PluginDangerLevelView,
   PluginInfo,
   PluginNotification,
   PluginNotificationAction,
   PluginSettingsField,
+  PluginSettingsLinkButton,
   PluginSettingsSchema,
   PluginSettingsTab,
   PluginSettingScope,
@@ -70,12 +74,14 @@ export const PLUGIN_API_VERSION = 2
 export const pluginManifestSchema = z.object({
   name: z.string().min(1),
   version: z.string().min(1),
+  author: z.union([z.string(), z.object({ name: z.string().optional() })]).optional(),
   openfox: z.object({
     apiVersion: z.number().int(),
     entry: z.string().min(1).optional(),
     plugin: z.string().min(1).optional(),
     displayName: z.string().min(1).optional(),
     description: z.string().optional(),
+    author: z.string().optional(),
     icon: z.string().optional(),
     logo: z.string().optional(),
     capabilities: z.array(z.string()).optional(),
@@ -86,12 +92,14 @@ export const pluginManifestSchema = z.object({
 export interface PluginManifest {
   name: string
   version: string
+  author?: string
   openfox: {
     apiVersion: number
     entry?: string
     plugin?: string
     displayName?: string
     description?: string
+    author?: string
     icon?: string
     logo?: string
     capabilities?: PluginCapability[]
@@ -275,6 +283,52 @@ export interface PluginRegistry {
   ): void
   registerRpc(method: string, handler: PluginRpcHandler): void
   registerAsset(relativePath: string): void
+  registerMessageTransform(transform: PluginMessageTransform): void
+  registerDangerLevel(dangerLevel: PluginDangerLevel): void
+}
+
+export interface PluginPathAccessContext {
+  paths: string[]
+  workdir: string
+  sessionId: string
+  projectId?: string | undefined
+  tool: string
+  command?: string | undefined
+}
+
+export type PluginPathAccessDecision = { action: 'allow' } | { action: 'deny'; message?: string } | { action: 'ask' }
+
+export interface PluginDangerLevel {
+  id: string
+  label: LocalizedString
+  description?: LocalizedString
+  badgeTone?: PluginBadgeTone
+  evaluatePathAccess?(context: PluginPathAccessContext): Promise<PluginPathAccessDecision> | PluginPathAccessDecision
+}
+
+export interface PluginMessageTransformContext {
+  sessionId: string
+  projectId?: string
+  workdir: string
+  model: string
+  systemPrompt: string
+  mode?: string
+  signal?: AbortSignal
+}
+
+export interface PluginMessageTransformResult {
+  messages: LLMMessage[]
+  systemPrompt?: string
+  metadata?: Record<string, unknown>
+}
+
+export interface PluginMessageTransform {
+  id: string
+  priority?: number
+  transform(
+    messages: LLMMessage[],
+    context: PluginMessageTransformContext,
+  ): Promise<PluginMessageTransformResult | LLMMessage[]> | PluginMessageTransformResult | LLMMessage[]
 }
 
 export interface PluginTransitionContext {

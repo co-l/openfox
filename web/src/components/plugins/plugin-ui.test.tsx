@@ -1,6 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
+import { useState } from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -9,6 +10,7 @@ import { PluginBadges } from './PluginBadges'
 import { PluginPanelHost } from './PluginPanelHost'
 import { PluginZone } from './PluginZone'
 import { DeclarativeRenderer } from './DeclarativeRenderer'
+import { activatePluginAction } from './plugin-ui-utils'
 import { usePluginUiStore } from '../../stores/pluginUi'
 import { useLocaleStore } from '../../stores/locale'
 import { clearBadgeCache } from '../../lib/plugin-badge-cache'
@@ -34,6 +36,17 @@ vi.mock('../../lib/plugin-actions', () => ({
   invokePluginRpc: (...args: unknown[]) => invokePluginRpc(...args),
 }))
 
+const refreshItemResources = vi.fn()
+vi.mock('../../lib/resources', () => ({
+  providersResource: { refresh: vi.fn() },
+  refreshItemResources: (kinds: string[]) => refreshItemResources(kinds),
+}))
+
+const openSettings = vi.fn()
+vi.mock('../settings/GlobalSettingsModal', () => ({
+  openSettings: (...args: unknown[]) => openSettings(...args),
+}))
+
 describe('plugin UI slots', () => {
   beforeEach(() => {
     contributionsRef.current = {
@@ -46,6 +59,8 @@ describe('plugin UI slots', () => {
       overrides: [],
     }
     invokePluginRpc.mockReset()
+    refreshItemResources.mockReset()
+    openSettings.mockReset()
     usePluginUiStore.setState({ values: {}, activePanel: null })
     useLocaleStore.setState({ locale: 'en' })
   })
@@ -91,6 +106,49 @@ describe('plugin UI slots', () => {
         },
       ),
     )
+  })
+
+  it('refreshes the item resources named by the RPC invalidate list', async () => {
+    invokePluginRpc.mockResolvedValue({ invalidate: ['agents', 'commands', 'skills'] })
+    contributionsRef.current = {
+      ...contributionsRef.current,
+      actions: [
+        {
+          id: 'install',
+          pluginId: 'demo',
+          slot: 'header.actions',
+          label: { en: 'Install pack', fr: 'Installer le pack' },
+          onActivate: { kind: 'rpc', method: 'install' },
+        },
+      ],
+    }
+    render(<PluginSlot slot="header.actions" context={{}} />)
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Install pack' }))
+
+    await waitFor(() => expect(refreshItemResources).toHaveBeenCalledWith(['agents', 'commands', 'skills']))
+  })
+
+  it('ignores a non-array invalidate value', async () => {
+    invokePluginRpc.mockResolvedValue({ invalidate: 'agents' })
+    contributionsRef.current = {
+      ...contributionsRef.current,
+      actions: [
+        {
+          id: 'install',
+          pluginId: 'demo',
+          slot: 'header.actions',
+          label: { en: 'Install pack', fr: 'Installer le pack' },
+          onActivate: { kind: 'rpc', method: 'install' },
+        },
+      ],
+    }
+    render(<PluginSlot slot="header.actions" context={{}} />)
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Install pack' }))
+
+    await waitFor(() => expect(invokePluginRpc).toHaveBeenCalled())
+    expect(refreshItemResources).not.toHaveBeenCalled()
   })
 
   it('localizes action labels in French', () => {
@@ -492,6 +550,336 @@ describe('plugin UI slots', () => {
     expect(url.searchParams.get('workdir')).toBe('/workspace/project')
     expect(iframe.getAttribute('sandbox')).toBe('allow-scripts allow-forms')
   })
+
+  it('forwards the panel RPC context when refreshing an opened panel via initPanel', async () => {
+    contributionsRef.current = {
+      ...contributionsRef.current,
+      actions: [
+        {
+          id: 'open-quota',
+          pluginId: 'demo',
+          slot: 'header.actions',
+          label: { en: 'Open quota', fr: 'Ouvrir le quota' },
+          onActivate: { kind: 'openPanel', panelId: 'quota' },
+        },
+      ],
+      panels: [
+        {
+          id: 'quota',
+          pluginId: 'demo',
+          title: { en: 'Usage', fr: 'Utilisation' },
+          kind: 'declarative',
+          content: [{ type: 'text', text: { en: 'Live usage', fr: 'Utilisation en direct' } }],
+        },
+      ],
+    }
+    invokePluginRpc.mockResolvedValue(undefined)
+
+    render(
+      <>
+        <PluginSlot slot="header.actions" context={{ sessionId: 's1', workdir: '/workspace/project' }} />
+        <PluginPanelHost />
+      </>,
+    )
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Open quota' }))
+
+    await waitFor(() =>
+      expect(invokePluginRpc).toHaveBeenCalledWith(
+        'demo',
+        'initPanel',
+        { panelId: 'quota' },
+        { sessionId: 's1', workdir: '/workspace/project' },
+      ),
+    )
+  })
+
+  it('does not let an initPanel refresh clobber content supplied by the opening action', async () => {
+    contributionsRef.current = {
+      ...contributionsRef.current,
+      actions: [
+        {
+          id: 'edit-pack',
+          pluginId: 'demo',
+          slot: 'header.actions',
+          label: { en: 'Edit pack', fr: 'Modifier le pack' },
+          onActivate: { kind: 'rpc', method: 'editPack' },
+        },
+      ],
+      panels: [
+        {
+          id: 'publish',
+          pluginId: 'demo',
+          title: { en: 'Publish', fr: 'Publier' },
+          kind: 'declarative',
+          content: [],
+        },
+      ],
+    }
+    invokePluginRpc.mockImplementation(async (_pluginId: string, method: string) => {
+      if (method === 'editPack') {
+        return {
+          ok: true,
+          openPanel: 'publish',
+          content: [{ type: 'text', text: { en: 'Prefilled pack', fr: 'Pack prérempli' } }],
+        }
+      }
+      return { content: [{ type: 'text', text: { en: 'Default empty', fr: 'Vide par défaut' } }] }
+    })
+
+    render(
+      <>
+        <PluginSlot slot="header.actions" context={{}} />
+        <PluginPanelHost />
+      </>,
+    )
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Edit pack' }))
+
+    expect(screen.getByText('Prefilled pack')).toBeDefined()
+    expect(screen.queryByText('Default empty')).toBeNull()
+    expect(invokePluginRpc).not.toHaveBeenCalledWith('demo', 'initPanel', expect.anything(), expect.anything())
+  })
+
+  it('pre-fills all pack fields (name, description, incremented version, components, MCP configs) upon opening publish modal via Edit RPC flow', async () => {
+    const user = userEvent.setup()
+
+    contributionsRef.current = {
+      ...contributionsRef.current,
+      actions: [
+        {
+          id: 'edit-pack-action',
+          pluginId: 'pack-manager',
+          slot: 'header.actions',
+          label: { en: 'Modifier', fr: 'Modifier' },
+          onActivate: { kind: 'rpc', method: 'editPack', params: { packId: 'pack-123' } },
+        },
+      ],
+      panels: [
+        {
+          id: 'pack-publish',
+          pluginId: 'pack-manager',
+          title: { en: 'Publish Pack', fr: 'Publier le pack' },
+          kind: 'declarative',
+          content: [
+            { type: 'input', id: 'pack-name', label: { en: 'Pack Name', fr: 'Nom du pack' }, defaultValue: '' },
+            {
+              type: 'input',
+              id: 'pack-desc',
+              inputType: 'textarea',
+              label: { en: 'Description', fr: 'Description' },
+              defaultValue: '',
+            },
+            { type: 'input', id: 'pack-version', label: { en: 'Version', fr: 'Version' }, defaultValue: '1.0.0' },
+            {
+              type: 'input',
+              id: 'pack-component-toggle',
+              inputType: 'checkbox',
+              label: { en: 'Include Components', fr: 'Inclure les composants' },
+              defaultChecked: false,
+            },
+            {
+              type: 'input',
+              id: 'pack-mcp-configs',
+              label: { en: 'MCP Configs', fr: 'Configs MCP' },
+              defaultValue: '',
+            },
+          ],
+        },
+      ],
+    }
+
+    invokePluginRpc.mockImplementation(async (pluginId, method) => {
+      if (pluginId === 'pack-manager' && method === 'editPack') {
+        return {
+          openPanel: 'pack-publish',
+          content: [
+            {
+              type: 'input',
+              id: 'pack-name',
+              label: { en: 'Pack Name', fr: 'Nom du pack' },
+              defaultValue: 'Existing Pack',
+            },
+            {
+              type: 'input',
+              id: 'pack-desc',
+              inputType: 'textarea',
+              label: { en: 'Description', fr: 'Description' },
+              defaultValue: 'Existing pack description for update',
+            },
+            { type: 'input', id: 'pack-version', label: { en: 'Version', fr: 'Version' }, defaultValue: '1.1.0' },
+            {
+              type: 'input',
+              id: 'pack-component-toggle',
+              inputType: 'checkbox',
+              label: { en: 'Include Components', fr: 'Inclure les composants' },
+              defaultChecked: true,
+            },
+            {
+              type: 'input',
+              id: 'pack-mcp-configs',
+              label: { en: 'MCP Configs', fr: 'Configs MCP' },
+              defaultValue: '{"server": "custom-mcp"}',
+            },
+          ],
+        }
+      }
+      return undefined
+    })
+
+    render(
+      <>
+        <PluginSlot slot="header.actions" context={{}} />
+        <PluginPanelHost />
+      </>,
+    )
+
+    // Trigger Modifier (Edit) action
+    const editBtn = screen.getByRole('button', { name: 'Modifier' })
+    await user.click(editBtn)
+
+    // Verify modal opens and all pre-filled fields are rendered with their updated values
+    await waitFor(() => expect(screen.getByText('Publish Pack')).toBeDefined())
+
+    const nameInput = screen.getByLabelText('Pack Name') as HTMLInputElement
+    expect(nameInput.value).toBe('Existing Pack')
+
+    const descInput = screen.getByLabelText('Description') as HTMLTextAreaElement
+    expect(descInput.value).toBe('Existing pack description for update')
+
+    const versionInput = screen.getByLabelText('Version') as HTMLInputElement
+    expect(versionInput.value).toBe('1.1.0')
+
+    const checkbox = screen.getByLabelText('Include Components') as HTMLInputElement
+    expect(checkbox.checked).toBe(true)
+
+    const mcpInput = screen.getByLabelText('MCP Configs') as HTMLInputElement
+    expect(mcpInput.value).toBe('{"server": "custom-mcp"}')
+  })
+
+  it('opens a clean empty form when clicking Share a Pack and isolates state from previous pre-filled sessions', async () => {
+    const user = userEvent.setup()
+
+    contributionsRef.current = {
+      ...contributionsRef.current,
+      actions: [
+        {
+          id: 'share-pack-action',
+          pluginId: 'pack-manager',
+          slot: 'header.actions',
+          label: { en: 'Share a Pack', fr: 'Partager un pack' },
+          onActivate: { kind: 'openPanel', panelId: 'pack-publish' },
+        },
+        {
+          id: 'edit-pack-action',
+          pluginId: 'pack-manager',
+          slot: 'header.actions',
+          label: { en: 'Modifier', fr: 'Modifier' },
+          onActivate: { kind: 'rpc', method: 'editPack' },
+        },
+      ],
+      panels: [
+        {
+          id: 'pack-publish',
+          pluginId: 'pack-manager',
+          title: { en: 'Publish Pack', fr: 'Publier le pack' },
+          kind: 'declarative',
+          content: [
+            { type: 'input', id: 'pack-name', label: { en: 'Pack Name', fr: 'Nom du pack' }, defaultValue: '' },
+            {
+              type: 'input',
+              id: 'pack-desc',
+              inputType: 'textarea',
+              label: { en: 'Description', fr: 'Description' },
+              defaultValue: '',
+            },
+            { type: 'input', id: 'pack-version', label: { en: 'Version', fr: 'Version' }, defaultValue: '1.0.0' },
+            {
+              type: 'input',
+              id: 'pack-component-toggle',
+              inputType: 'checkbox',
+              label: { en: 'Include Components', fr: 'Inclure les composants' },
+              defaultChecked: false,
+            },
+          ],
+        },
+      ],
+    }
+
+    invokePluginRpc.mockImplementation(async (pluginId, method) => {
+      if (pluginId === 'pack-manager' && method === 'editPack') {
+        return {
+          openPanel: 'pack-publish',
+          content: [
+            {
+              type: 'input',
+              id: 'pack-name',
+              label: { en: 'Pack Name', fr: 'Nom du pack' },
+              defaultValue: 'Modified Pack',
+            },
+            {
+              type: 'input',
+              id: 'pack-desc',
+              inputType: 'textarea',
+              label: { en: 'Description', fr: 'Description' },
+              defaultValue: 'Modified pack description',
+            },
+            { type: 'input', id: 'pack-version', label: { en: 'Version', fr: 'Version' }, defaultValue: '2.0.0' },
+            {
+              type: 'input',
+              id: 'pack-component-toggle',
+              inputType: 'checkbox',
+              label: { en: 'Include Components', fr: 'Inclure les composants' },
+              defaultChecked: true,
+            },
+          ],
+        }
+      }
+      return undefined
+    })
+
+    render(
+      <>
+        <PluginSlot slot="header.actions" context={{}} />
+        <PluginPanelHost />
+      </>,
+    )
+
+    // 1. Direct Share a Pack click -> clean empty form
+    const shareBtn = screen.getByRole('button', { name: 'Share a Pack' })
+    await user.click(shareBtn)
+
+    expect(screen.getByText('Publish Pack')).toBeDefined()
+    expect((screen.getByLabelText('Pack Name') as HTMLInputElement).value).toBe('')
+    expect((screen.getByLabelText('Description') as HTMLTextAreaElement).value).toBe('')
+    expect((screen.getByLabelText('Version') as HTMLInputElement).value).toBe('1.0.0')
+    expect((screen.getByLabelText('Include Components') as HTMLInputElement).checked).toBe(false)
+
+    // Close modal
+    const closeBtn = screen.getByLabelText('Close')
+    await user.click(closeBtn)
+    await waitFor(() => expect(screen.queryByText('Publish Pack')).toBeNull())
+
+    // 2. Click Modifier -> pre-filled form
+    const editBtn = screen.getByRole('button', { name: 'Modifier' })
+    await user.click(editBtn)
+    await waitFor(() => expect(screen.getByText('Publish Pack')).toBeDefined())
+    expect((screen.getByLabelText('Pack Name') as HTMLInputElement).value).toBe('Modified Pack')
+    expect((screen.getByLabelText('Description') as HTMLTextAreaElement).value).toBe('Modified pack description')
+    expect((screen.getByLabelText('Version') as HTMLInputElement).value).toBe('2.0.0')
+    expect((screen.getByLabelText('Include Components') as HTMLInputElement).checked).toBe(true)
+
+    // Close modal again (which clears panel-specific published state)
+    const closeBtn2 = screen.getByLabelText('Close')
+    await user.click(closeBtn2)
+    await waitFor(() => expect(screen.queryByText('Publish Pack')).toBeNull())
+
+    // 3. Re-open Share a Pack -> verify it opens clean again, not retaining previous edit pre-fills
+    await user.click(shareBtn)
+    await waitFor(() => expect(screen.getByText('Publish Pack')).toBeDefined())
+    expect((screen.getByLabelText('Pack Name') as HTMLInputElement).value).toBe('')
+    expect((screen.getByLabelText('Description') as HTMLTextAreaElement).value).toBe('')
+    expect((screen.getByLabelText('Version') as HTMLInputElement).value).toBe('1.0.0')
+    expect((screen.getByLabelText('Include Components') as HTMLInputElement).checked).toBe(false)
+  })
 })
 
 describe('PluginZone and DeclarativeRenderer', () => {
@@ -599,6 +987,12 @@ describe('PluginZone and DeclarativeRenderer', () => {
     expect(screen.getByTestId('native-header')).toBeDefined()
     expect(screen.getByText('After Text')).toBeDefined()
     expect(container.textContent).toBe('Before TextNative HeaderAfter Text')
+  })
+
+  it('renders nothing for an empty stack so a hidden header component leaves no full-width gap', () => {
+    const { container } = render(<DeclarativeRenderer node={{ type: 'stack', direction: 'row', children: [] }} />)
+
+    expect(container.innerHTML).toBe('')
   })
 
   it('renders all rich declarative primitives (stack, card, callout, icon, input, select, button)', async () => {
@@ -733,6 +1127,229 @@ describe('PluginZone and DeclarativeRenderer', () => {
     )
     const svgEl = container.querySelector('svg')
     expect(svgEl).toBeTruthy()
+  })
+
+  it('updates dynamic PluginZone components when plugin publishes reactive values', () => {
+    contributionsRef.current = {
+      ...contributionsRef.current,
+      components: [
+        {
+          id: 'stats-cost-card',
+          pluginId: 'model-pricing',
+          zone: 'stats.modal.summary',
+          position: 'after',
+          component: {
+            type: 'card',
+            title: { en: 'Price', fr: 'Prix' },
+            children: [{ type: 'text', text: { en: 'Cost: {{cost}}', fr: 'Coût: {{cost}}' } }],
+          },
+        },
+      ],
+    }
+
+    usePluginUiStore.getState().setState('model-pricing', 'stats-cost-card', 'cost', '$0.42')
+
+    render(
+      <PluginZone id="stats.modal.summary">
+        <span data-testid="native-summary">Native Summary</span>
+      </PluginZone>,
+    )
+
+    expect(screen.getByTestId('native-summary')).toBeDefined()
+    expect(screen.getByText('Price')).toBeDefined()
+    expect(screen.getByText('Cost: $0.42')).toBeDefined()
+  })
+
+  it('resolves session-scoped reactive values in PluginZone when sessionId is present', () => {
+    contributionsRef.current = {
+      ...contributionsRef.current,
+      components: [
+        {
+          id: 'headroom-stats-summary',
+          pluginId: 'openfox-headroom',
+          zone: 'stats.modal.summary',
+          component: {
+            type: 'card',
+            title: { en: 'Headroom Token Optimization', fr: 'Optimisation des tokens Headroom' },
+            children: [{ type: 'text', text: { en: 'Tokens Saved: {{saved}}', fr: 'Jetons économisés : {{saved}}' } }],
+          },
+        },
+      ],
+    }
+
+    usePluginUiStore.getState().setState('openfox-headroom', 'headroom-stats-summary', 'sess-abc:saved', '1,250 tokens')
+
+    render(
+      <PluginZone id="stats.modal.summary" context={{ sessionId: 'sess-abc' }}>
+        <span data-testid="native-summary">Native Summary</span>
+      </PluginZone>,
+    )
+
+    expect(screen.getByText('Headroom Token Optimization')).toBeDefined()
+    expect(screen.getByText('Tokens Saved: 1,250 tokens')).toBeDefined()
+  })
+
+  it('keeps focus and preserves typing flow across continuous input keystrokes in DeclarativeRenderer', async () => {
+    const user = userEvent.setup()
+
+    function InteractiveHost() {
+      const [val] = useState('')
+      return (
+        <DeclarativeRenderer
+          node={{
+            type: 'input',
+            id: 'pack-name-input',
+            label: { en: 'Pack Name', fr: 'Nom du pack' },
+            defaultValue: val,
+            onChange: { kind: 'rpc', method: 'updateName' },
+          }}
+          values={{ 'pack-name-input': val }}
+          context={{
+            pluginId: 'test-plugin',
+            fieldId: 'pack-name-input',
+          }}
+        />
+      )
+    }
+
+    const { container } = render(<InteractiveHost />)
+    const input = container.querySelector('input') as HTMLInputElement
+    expect(input).toBeTruthy()
+
+    input.focus()
+    expect(document.activeElement).toBe(input)
+
+    await user.type(input, 'SuperPack')
+
+    // Verify input retains focus after continuous typing
+    expect(document.activeElement).toBe(input)
+    expect(input.value).toBe('SuperPack')
+  })
+
+  it('maintains focus in DeclarativeRenderer textarea during multiline typing', async () => {
+    const user = userEvent.setup()
+
+    const { container } = render(
+      <DeclarativeRenderer
+        node={{
+          type: 'input',
+          id: 'desc-textarea',
+          inputType: 'textarea',
+          label: { en: 'Description', fr: 'Description' },
+          defaultValue: '',
+          onChange: { kind: 'rpc', method: 'updateDesc' },
+        }}
+        context={{ pluginId: 'test-plugin' }}
+      />,
+    )
+    const textarea = container.querySelector('textarea') as HTMLTextAreaElement
+    expect(textarea).toBeTruthy()
+
+    textarea.focus()
+    expect(document.activeElement).toBe(textarea)
+
+    await user.type(textarea, 'Line 1{enter}Line 2')
+    expect(document.activeElement).toBe(textarea)
+    expect(textarea.value).toBe('Line 1\nLine 2')
+  })
+
+  it('preserves keyboard focus when toggling a DeclarativeRenderer checkbox via Spacebar', async () => {
+    const user = userEvent.setup()
+
+    function CheckboxHost() {
+      const [checked] = useState(false)
+      return (
+        <DeclarativeRenderer
+          node={{
+            type: 'input',
+            id: 'option-check',
+            inputType: 'checkbox',
+            label: { en: 'Option', fr: 'Option' },
+            defaultChecked: checked,
+            onChange: { kind: 'rpc', method: 'toggleOption' },
+          }}
+          values={{ 'option-check': checked }}
+          context={{ pluginId: 'test-plugin' }}
+        />
+      )
+    }
+
+    const { container } = render(<CheckboxHost />)
+    const checkbox = container.querySelector('input[type="checkbox"]') as HTMLInputElement
+    expect(checkbox).toBeTruthy()
+
+    checkbox.focus()
+    expect(document.activeElement).toBe(checkbox)
+
+    await user.keyboard(' ')
+    expect(document.activeElement).toBe(checkbox)
+  })
+
+  it('applies an external value that arrives while a text field is focused, once focus is released', async () => {
+    const user = userEvent.setup()
+    const node = {
+      type: 'input' as const,
+      id: 'pack-name',
+      defaultValue: '{{name}}',
+      onChange: { kind: 'rpc' as const, method: 'updateName' },
+    }
+    const context = { pluginId: 'test-plugin' }
+
+    const view = render(<DeclarativeRenderer node={node} values={{ name: 'first' }} context={context} />)
+    const input = screen.getByRole('textbox') as HTMLInputElement
+    expect(input.value).toBe('first')
+
+    await user.click(input)
+    expect(document.activeElement).toBe(input)
+
+    // Server-side change lands mid-typing: it must not fight the user...
+    view.rerender(<DeclarativeRenderer node={node} values={{ name: 'server-value' }} context={context} />)
+    expect(input.value).toBe('first')
+
+    // ...but it must not be dropped either — it applies when focus is released.
+    await user.tab()
+    await waitFor(() => expect(input.value).toBe('server-value'))
+  })
+
+  it('syncs a select with refreshed panel content while it is not focused', async () => {
+    const node = {
+      type: 'select' as const,
+      id: 'install-scope',
+      defaultValue: '{{scope}}',
+      options: [
+        { value: 'project', label: { en: 'Project', fr: 'Projet' } },
+        { value: 'global', label: { en: 'Global', fr: 'Global' } },
+      ],
+      onChange: { kind: 'rpc' as const, method: 'updateScope' },
+    }
+    const context = { pluginId: 'test-plugin' }
+
+    const view = render(<DeclarativeRenderer node={node} values={{ scope: 'project' }} context={context} />)
+    const select = screen.getByRole('combobox') as HTMLSelectElement
+    expect(select.value).toBe('project')
+
+    view.rerender(<DeclarativeRenderer node={node} values={{ scope: 'global' }} context={context} />)
+    expect(select.value).toBe('global')
+
+    await userEvent.setup().selectOptions(select, 'project')
+    expect(invokePluginRpc).toHaveBeenCalledWith(
+      'test-plugin',
+      'updateScope',
+      { fieldId: 'install-scope', value: 'project' },
+      {},
+    )
+  })
+})
+
+describe('activatePluginAction', () => {
+  it('opens the settings modal on the tab requested by the plugin', async () => {
+    await activatePluginAction('hello', { kind: 'openSettings', tab: 'plugin:hello:hello-tab' })
+    await waitFor(() => expect(openSettings).toHaveBeenCalledWith('plugin:hello:hello-tab'))
+  })
+
+  it('opens the settings modal on its default tab when no tab is requested', async () => {
+    await activatePluginAction('hello', { kind: 'openSettings' })
+    await waitFor(() => expect(openSettings).toHaveBeenCalledWith(undefined))
   })
 })
 

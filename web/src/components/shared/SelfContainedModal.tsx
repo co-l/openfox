@@ -8,7 +8,7 @@ interface ModalProps {
   label?: ReactNode
   title?: ReactNode
   headerRight?: ReactNode
-  size?: 'sm' | 'md' | 'lg' | 'xl' | 'full'
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | 'full'
   minHeight?: string
   children: ReactNode
   footer?: ReactNode
@@ -26,6 +26,8 @@ const sizeClasses = {
   md: 'max-w-md',
   lg: 'max-w-2xl',
   xl: 'max-w-4xl',
+  '2xl': 'max-w-6xl',
+  '3xl': 'max-w-7xl',
   full: 'max-w-[95vw] h-[90vh] flex-1',
 }
 

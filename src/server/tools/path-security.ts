@@ -5,6 +5,7 @@ import type { ServerMessage } from '../../shared/protocol.js'
 import { createChatPathConfirmationMessage } from '../ws/protocol.js'
 import { getEventStore } from '../events/index.js'
 import { getPlatformShell } from '../utils/platform.js'
+import { evaluatePluginPathAccess } from '../plugins/danger-levels.js'
 
 // ===========================================================================
 // Constants
@@ -1318,6 +1319,7 @@ export async function requestPathAccess(
   dangerLevel?: string,
   command?: string,
   isSubAgent?: boolean,
+  projectId?: string,
 ): Promise<void> {
   // Sub-agent shortcut: skip all confirmation dialogs since they don't render
   // properly in the small sub-agent window. Fail closed in normal mode;
@@ -1330,6 +1332,29 @@ export async function requestPathAccess(
       const allPaths = [...new Set([...result.deniedPaths, ...result.sensitivePaths])]
       addAllowedPaths(sessionId, allPaths)
       return
+    }
+
+    if (dangerLevel && dangerLevel !== 'normal' && dangerLevel !== 'dangerous') {
+      const allPaths = [...new Set([...result.deniedPaths, ...result.sensitivePaths])]
+      const decision = await evaluatePluginPathAccess(dangerLevel, {
+        paths: allPaths,
+        workdir,
+        sessionId,
+        projectId,
+        tool,
+        command,
+      })
+      if (decision?.action === 'allow') {
+        addAllowedPaths(sessionId, allPaths)
+        return
+      }
+      if (decision?.action === 'deny') {
+        const hasDenied = result.deniedPaths.length > 0
+        const hasSensitive = result.sensitivePaths.length > 0
+        const reason: PathDenialReason =
+          hasDenied && hasSensitive ? 'both' : hasDenied ? 'outside_workdir' : 'sensitive_file'
+        throw new PathAccessDeniedError(allPaths, tool, reason, decision.message)
+      }
     }
 
     const allPaths = [...new Set([...result.deniedPaths, ...result.sensitivePaths])]
@@ -1423,6 +1448,25 @@ export async function requestPathAccess(
       : hasDenied
         ? ('outside_workdir' as const)
         : ('sensitive_file' as const)
+
+  // Custom plugin danger level evaluation
+  if (dangerLevel && dangerLevel !== 'normal') {
+    const decision = await evaluatePluginPathAccess(dangerLevel, {
+      paths: allPathsNeedingConfirmation,
+      workdir,
+      sessionId,
+      projectId,
+      tool,
+      command,
+    })
+    if (decision?.action === 'allow') {
+      addAllowedPaths(sessionId, allPathsNeedingConfirmation)
+      return
+    }
+    if (decision?.action === 'deny') {
+      throw new PathAccessDeniedError(allPathsNeedingConfirmation, tool, reason, decision.message)
+    }
+  }
 
   // Emit pending event for persistence
   emitPendingEvent(allPathsNeedingConfirmation, reason)

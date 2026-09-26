@@ -334,7 +334,6 @@ export function ToolsTab() {
   const tavilyKeySetting = useSetting(SETTINGS_KEYS.SEARCH_TAVILY_API_KEY).value
   const searxngUrlSetting = useSetting(SETTINGS_KEYS.SEARCH_SEARXNG_URL).value
   const searxngKeySetting = useSetting(SETTINGS_KEYS.SEARCH_SEARXNG_API_KEY).value
-  const useRtkSetting = useSetting(SETTINGS_KEYS.TOOLS_USE_RTK).value
   const confirmWorkspaceSetting = useSetting(SETTINGS_KEYS.CONFIRM_ON_WORKSPACE_ACTIONS).value
   const shellSetting = useSetting(SETTINGS_KEYS.TOOLS_SHELL).value
   const perSessionMcpSetting = useSetting(SETTINGS_KEYS.FEATURES_PER_SESSION_MCP).value
@@ -398,17 +397,6 @@ export function ToolsTab() {
       return res.json()
     })
   }
-
-  // ── RTK availability ──
-  const [rtkStatus, setRtkStatus] = useState<'checking' | 'available' | 'unavailable'>('checking')
-
-  useEffect(() => {
-    // Authorized transient read: one-shot RTK availability probe on mount.
-    authFetch('/api/tools/rtk-check')
-      .then((r) => r.json())
-      .then((data) => setRtkStatus(data.available ? 'available' : 'unavailable'))
-      .catch(() => setRtkStatus('unavailable'))
-  }, [])
 
   // ── Shell selection (Windows only; empty list elsewhere) ──
   const [shells, setShells] = useState<{ id: string; label: string; available: boolean }[]>([])
@@ -825,62 +813,6 @@ export function ToolsTab() {
           </div>
         </>
       )}
-
-      <hr className="border-border" />
-
-      {/* ── Token Optimization Section ── */}
-      <div>
-        <h3 className="text-sm font-medium text-text-primary mb-3">
-          {t({ en: 'Token Optimization', fr: 'Optimisation des jetons' })}
-        </h3>
-        <p className="text-sm text-text-muted mb-3">
-          {t({
-            en: 'Reduce token consumption by filtering command output through RTK. See the',
-            fr: 'Réduisez la consommation de jetons en filtrant la sortie des commandes via RTK. Voir le',
-          })}{' '}
-          <a
-            href="https://github.com/rtk-ai/rtk"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-accent-primary hover:underline"
-          >
-            README
-          </a>{' '}
-          {t({ en: 'for installation.', fr: 'pour l’installation.' })}
-        </p>
-        <div className="flex items-center justify-between py-2">
-          <div className="flex-1">
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-text-primary">
-                {t({ en: 'Enable RTK auto-rewrite', fr: 'Activer la réécriture automatique RTK' })}
-              </span>
-              {rtkStatus === 'checking' && (
-                <span className="text-xs text-text-muted animate-pulse">
-                  {t({ en: 'checking…', fr: 'vérification…' })}
-                </span>
-              )}
-              {rtkStatus === 'available' && (
-                <span className="text-xs text-accent-success">{t({ en: '● installed', fr: '● installé' })}</span>
-              )}
-              {rtkStatus === 'unavailable' && (
-                <span className="text-xs text-accent-error">{t({ en: '○ not found', fr: '○ introuvable' })}</span>
-              )}
-            </div>
-          </div>
-          <Toggle
-            enabled={useRtkSetting === 'true'}
-            onClick={() => void setSetting(SETTINGS_KEYS.TOOLS_USE_RTK, useRtkSetting === 'true' ? 'false' : 'true')}
-          />
-        </div>
-        {shells.length > 0 && useRtkSetting === 'true' && currentShell !== 'gitbash' && (
-          <p className="text-xs text-accent-warning mt-1">
-            {t({
-              en: 'RTK only rewrites Unix-style commands — with this shell it will rarely apply and can break some commands. Git Bash is recommended.',
-              fr: 'RTK ne réécrit que les commandes de type Unix — avec ce shell, il s’appliquera rarement et peut casser certaines commandes. Git Bash est recommandé.',
-            })}
-          </p>
-        )}
-      </div>
 
       <hr className="border-border" />
 

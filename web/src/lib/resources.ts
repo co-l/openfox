@@ -1,5 +1,5 @@
 import { authFetch } from './api'
-import { resource, snapshot } from './resourceCache'
+import { refreshPrefix, resource, snapshot } from './resourceCache'
 import {
   fetchPluginList,
   fetchNotifications,
@@ -626,6 +626,9 @@ export const SETTINGS_KEYS = {
   DISPLAY_MODEL_FAVORITES: 'display.modelFavorites',
   DISPLAY_MOBILE_FULLSCREEN_COMPOSER: 'display.mobileFullscreenComposer',
   DISPLAY_FULLSCREEN_SLASH_COMMAND: 'display.fullscreenSlashCommand',
+  DISPLAY_DANGER_LEVEL_DISPLAY_MODE: 'display.dangerLevelDisplayMode',
+  DISPLAY_DANGER_LEVEL_AUTO_LIST: 'display.dangerLevelAutoList',
+  DISPLAY_DANGER_LEVEL_AUTO_LIST_THRESHOLD: 'display.dangerLevelAutoListThreshold',
   LLM_DYNAMIC_SYSTEM_PROMPT: 'llm.dynamicSystemPrompt',
   LLM_CAVEMAN_THINKING: 'llm.cavemanThinking',
   CACHE_WARMING: 'cache.warming',
@@ -638,7 +641,6 @@ export const SETTINGS_KEYS = {
   SEARCH_TAVILY_API_KEY: 'search.tavilyApiKey',
   SEARCH_SEARXNG_URL: 'search.searxngUrl',
   SEARCH_SEARXNG_API_KEY: 'search.searxngApiKey',
-  TOOLS_USE_RTK: 'tools.useRtk',
   TOOLS_SHELL: 'tools.shell',
   CONFIRM_ON_WORKSPACE_ACTIONS: 'tools.confirmOnWorkspaceActions',
   FEATURES_PER_SESSION_MCP: 'features.perSessionMcp',
@@ -666,6 +668,9 @@ export const DISPLAY_SETTINGS_KEYS = [
   SETTINGS_KEYS.DISPLAY_SHOW_TOOL_CALL_STREAMING,
   SETTINGS_KEYS.DISPLAY_FEED_VIRTUALIZATION,
   SETTINGS_KEYS.DISPLAY_FULLSCREEN_SLASH_COMMAND,
+  SETTINGS_KEYS.DISPLAY_DANGER_LEVEL_DISPLAY_MODE,
+  SETTINGS_KEYS.DISPLAY_DANGER_LEVEL_AUTO_LIST,
+  SETTINGS_KEYS.DISPLAY_DANGER_LEVEL_AUTO_LIST_THRESHOLD,
 ] as const
 
 export async function fetchChangelog(since?: string): Promise<string> {
@@ -892,3 +897,23 @@ export const pluginToolsResource = resource<{ tools: PluginToolInfo[] }, []>({
   fetch: fetchPluginTools,
   maxAgeMs: 0,
 })
+
+/**
+ * Cache-key prefixes of the core item domains, so a plugin RPC that writes
+ * items to disk can declare what changed and have every mounted view converge.
+ */
+export const ITEM_RESOURCE_PREFIXES: Record<string, string> = {
+  agents: 'agents:',
+  commands: 'commands:',
+  skills: 'skills:',
+  workflows: 'workflows:',
+  mcpServers: 'mcp:servers',
+}
+
+/** Refetch the cached item lists for the given domains (`agents`, `skills`, …). */
+export function refreshItemResources(kinds: string[]): void {
+  for (const kind of kinds) {
+    const prefix = ITEM_RESOURCE_PREFIXES[kind]
+    if (prefix) refreshPrefix(prefix)
+  }
+}

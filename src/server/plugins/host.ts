@@ -1,5 +1,7 @@
-import { readdir, rm } from 'node:fs/promises'
+import { readdir, rm, stat } from 'node:fs/promises'
 import { join, resolve, sep } from 'node:path'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import type { EventStore } from '../events/store.js'
 import type { StoredEvent } from '../events/types.js'
 import type { Tool, ToolContext } from '../tools/types.js'
@@ -33,11 +35,26 @@ import { PluginRegistry } from './registry.js'
 import { HookBus, type HookLogger } from './hooks.js'
 import { NotificationService } from './notifications.js'
 import { loadPluginFromDirectory, loadPlugins, readPluginManifest, type PluginDiagnostic } from './loader.js'
-import { installPluginFromGithub, installPluginFromNpm, installPluginFromPath, removeNpmArtifacts } from './install.js'
-import { readPluginSettings, readPluginSettingsView, writePluginSettings } from './settings.js'
+import {
+  buildIfNeeded,
+  installPluginFromGithub,
+  installPluginFromNpm,
+  installPluginFromPath,
+  removeNpmArtifacts,
+} from './install.js'
+import {
+  pluginStorageKey as storageKey,
+  readPluginSettings,
+  readPluginSettingsView,
+  writePluginSettings,
+} from './settings.js'
 import { setPluginModelMetadataProviders } from './model-metadata.js'
+import { setPluginMessageTransforms } from './message-transforms.js'
+import { setPluginDangerLevels } from './danger-levels.js'
 import { setPluginHookEmitter } from './hook-emitter.js'
+import { PluginUpdateChecker, type PluginUpdateInfo } from './update-checker.js'
 
+const execFileP = promisify(execFile)
 const DISABLED_KEY = 'plugin.disabled'
 
 export interface PluginHostOptions {
@@ -60,6 +77,7 @@ export class PluginHost {
   readonly registry: PluginRegistry
   readonly hooks: HookBus
   readonly notifications: NotificationService
+  readonly updateChecker: PluginUpdateChecker
   private readonly records = new Map<string, PluginRecord>()
   private readonly pendingDeactivates = new Map<string, () => void | Promise<void>>()
   private readonly logger: HookLogger
@@ -72,6 +90,11 @@ export class PluginHost {
       options.registry ?? new PluginRegistry({ mode: options.mode, configDirectory: options.configDirectory })
     this.hooks = new HookBus(this.registry, options.logger)
     this.notifications = new NotificationService()
+    this.updateChecker = new PluginUpdateChecker({
+      configDirectory: options.configDirectory,
+      notifications: this.notifications,
+      logger: options.logger,
+    })
   }
 
   async start(): Promise<PluginDiagnostic[]> {
@@ -100,7 +123,16 @@ export class PluginHost {
     setPluginHookEmitter((event, payload) => {
       void this.hooks.emit(event, payload)
     })
+    this.updateChecker.start()
     return diagnostics
+  }
+
+  stop(): void {
+    this.updateChecker.stop()
+  }
+
+  async checkUpdates(): Promise<PluginUpdateInfo[]> {
+    return this.updateChecker.checkUpdates()
   }
 
   getDiagnostics(): PluginDiagnostic[] {
@@ -112,6 +144,7 @@ export class PluginHost {
       id: record.diagnostic.packageName,
       displayName: record.diagnostic.displayName,
       ...(record.diagnostic.description ? { description: record.diagnostic.description } : {}),
+      ...(record.diagnostic.author ? { author: record.diagnostic.author } : {}),
       ...(record.diagnostic.icon ? { icon: record.diagnostic.icon } : {}),
       ...(record.diagnostic.logo ? { logo: record.diagnostic.logo } : {}),
       version: record.diagnostic.version ?? '0.0.0',
@@ -263,6 +296,35 @@ export class PluginHost {
     return this.installFromDirectory(dir)
   }
 
+  async reinstall(pluginId: string): Promise<PluginDiagnostic> {
+    const record = this.records.get(pluginId)
+    if (!record) throw new Error(`Plugin not found: ${pluginId}`)
+    const source = record.diagnostic.source
+
+    const isGit = await stat(join(source, '.git')).catch(() => null)
+    if (isGit?.isDirectory()) {
+      try {
+        const { stdout: remoteUrl } = await execFileP('git', ['-C', source, 'config', '--get', 'remote.origin.url'], {
+          timeout: 5000,
+        })
+        const url = remoteUrl.trim()
+        if (url) {
+          return await this.installFromGithub(url)
+        }
+      } catch {
+        // Fall back to local rebuild
+      }
+    }
+
+    const nodeModules = join(this.pluginsDir(), 'node_modules')
+    if (resolve(source, '..') === resolve(nodeModules) || resolve(source, '../..') === resolve(nodeModules)) {
+      return await this.installFromNpm(pluginId)
+    }
+
+    await buildIfNeeded(source)
+    return await this.installFromDirectory(source)
+  }
+
   private async installFromDirectory(dir: string): Promise<PluginDiagnostic> {
     const manifest = await readPluginManifest(dir)
     if (!manifest) throw new Error('Installed package is not an OpenFox plugin (missing openfox manifest)')
@@ -322,6 +384,8 @@ export class PluginHost {
       this.registry.getOwnedCommands().map((entry) => toCommandDefinition(entry.command, entry.pluginId)),
     )
     setPluginModelMetadataProviders(this.registry.getModelMetadataProviders())
+    setPluginMessageTransforms(this.registry.getMessageTransforms())
+    setPluginDangerLevels(this.registry.getDangerLevels())
     void this.refreshSkillSources()
   }
 
@@ -457,10 +521,6 @@ export class PluginHost {
 
 function joinPluginsDir(configDirectory: string): string {
   return `${configDirectory}/plugins`
-}
-
-function storageKey(pluginId: string, key: string): string {
-  return `plugin.${pluginId}.storage.${key}`
 }
 
 function readStorageValue(pluginId: string, key: string): PluginSettingValue | undefined {

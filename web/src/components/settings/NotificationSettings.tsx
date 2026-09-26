@@ -6,9 +6,11 @@ import {
   DEFAULT_SOUNDS,
   resolveEventConfig,
   type SoundEvent,
+  type PluginUpdateInterval,
 } from '../../stores/notifications'
 import { requestNotificationPermission } from '../../lib/sound'
 import { ChevronDownIcon } from '../shared/icons'
+import { Toggle } from '../shared/Toggle'
 import { useT } from '../../hooks/useT'
 
 function SoundPicker({
@@ -102,7 +104,7 @@ export function NotificationSettings() {
         <h3 className="text-sm font-medium text-text-primary">
           {t({ en: 'Master Controls', fr: 'Contrôles principaux' })}
         </h3>
-        <Toggle
+        <NotificationToggle
           label={t({ en: 'Sound notifications', fr: 'Notifications sonores' })}
           description={t({
             en: 'Play sounds when events occur',
@@ -111,7 +113,7 @@ export function NotificationSettings() {
           checked={settings.soundEnabled}
           onChange={(v) => update({ ...settings, soundEnabled: v })}
         />
-        <Toggle
+        <NotificationToggle
           label={t({ en: 'Browser notifications', fr: 'Notifications du navigateur' })}
           description={t({
             en: 'Show desktop notifications when the window is not focused',
@@ -136,6 +138,54 @@ export function NotificationSettings() {
               })}
             </p>
           )}
+      </div>
+
+      <div className="space-y-3">
+        <h3 className="text-sm font-medium text-text-primary">
+          {t({ en: 'Plugin Notifications', fr: 'Notifications des plugins' })}
+        </h3>
+        <NotificationToggle
+          label={t({ en: 'Plugin update notifications', fr: 'Notifications de mise à jour des plugins' })}
+          description={t({
+            en: 'Notify when an update is available for an installed plugin',
+            fr: 'Notifier lorsqu’une mise à jour est disponible pour un plugin installé',
+          })}
+          checked={settings.pluginUpdateNotificationEnabled}
+          onChange={(v) => update({ ...settings, pluginUpdateNotificationEnabled: v })}
+        />
+        <div className="flex items-center justify-between gap-3 pt-1">
+          <div className="flex-1 min-w-0">
+            <div className="text-sm text-text-primary">
+              {t({ en: 'Check for plugin updates', fr: 'Vérification des mises à jour' })}
+            </div>
+            <div className="text-xs text-text-muted mt-0.5">
+              {t({
+                en: 'Frequency to check for new plugin versions',
+                fr: 'Fréquence de vérification des nouvelles versions de plugins',
+              })}
+            </div>
+          </div>
+          <div className="relative flex-shrink-0">
+            <select
+              value={settings.pluginUpdateCheckInterval}
+              disabled={!settings.pluginUpdateNotificationEnabled}
+              aria-label={t({ en: 'Check for plugin updates', fr: 'Vérification des mises à jour' })}
+              onChange={(e) =>
+                update({
+                  ...settings,
+                  pluginUpdateCheckInterval: e.target.value as PluginUpdateInterval,
+                })
+              }
+              className="appearance-none bg-bg-tertiary border border-border rounded px-2.5 py-1 pr-7 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-accent-primary disabled:opacity-40 cursor-pointer"
+            >
+              <option value="1h">{t({ en: 'Every hour', fr: 'Toutes les heures' })}</option>
+              <option value="6h">{t({ en: 'Every 6 hours', fr: 'Toutes les 6 heures' })}</option>
+              <option value="24h">{t({ en: 'Every 24 hours', fr: 'Toutes les 24h' })}</option>
+              <option value="startup">{t({ en: 'On OpenFox startup', fr: 'Au lancement d’OpenFox' })}</option>
+            </select>
+            <ChevronDownIcon className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none text-text-muted" />
+          </div>
+        </div>
       </div>
 
       <div className="space-y-3">
@@ -218,7 +268,7 @@ export function NotificationSettings() {
   )
 }
 
-function Toggle({
+function NotificationToggle({
   label,
   description,
   checked,
@@ -236,21 +286,7 @@ function Toggle({
         <div className="text-xs text-text-muted mt-0.5">{description}</div>
       </div>
       <div className="flex-shrink-0 pt-0.5">
-        <div
-          className={`relative w-9 h-5 rounded-full transition-colors ${
-            checked ? 'bg-accent-primary' : 'bg-bg-tertiary border border-border'
-          }`}
-          onClick={(e) => {
-            e.preventDefault()
-            onChange(!checked)
-          }}
-        >
-          <div
-            className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
-              checked ? 'translate-x-4' : 'translate-x-0.5'
-            }`}
-          />
-        </div>
+        <Toggle enabled={checked} onClick={() => onChange(!checked)} label={label} />
       </div>
     </label>
   )

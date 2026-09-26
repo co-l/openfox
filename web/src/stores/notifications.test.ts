@@ -35,6 +35,8 @@ describe('notifications store', () => {
     const { settings } = useNotificationSettingsStore.getState()
     expect(settings.soundEnabled).toBe(true)
     expect(settings.browserNotificationEnabled).toBe(false)
+    expect(settings.pluginUpdateNotificationEnabled).toBe(true)
+    expect(settings.pluginUpdateCheckInterval).toBe('1h')
     expect(settings.events.complete.soundEnabled).toBe(true)
     expect(settings.events.complete.browserNotification).toBe(false)
     expect(settings.events.complete.customSoundUrl).toBeNull()

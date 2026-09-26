@@ -14,6 +14,12 @@ export interface ActivePluginPanel {
   pluginId: string
   panelId: string
   context?: PluginPanelContext
+  /**
+   * Set when the panel was opened by an RPC action that already supplied the
+   * panel `content`. The host then skips the on-open `initPanel` refresh so it
+   * cannot clobber the freshly computed content.
+   */
+  skipInitPanel?: boolean
 }
 
 interface PluginUiStore {
@@ -22,7 +28,12 @@ interface PluginUiStore {
   setState: (pluginId: string, panelId: string | undefined, key: string, value: unknown) => void
   read: (pluginId: string, panelId: string | undefined, key: string) => unknown
   clearPanel: (pluginId: string, panelId: string) => void
-  openPanel: (pluginId: string, panelId: string, context?: PluginPanelContext) => void
+  openPanel: (
+    pluginId: string,
+    panelId: string,
+    context?: PluginPanelContext,
+    options?: { skipInitPanel?: boolean },
+  ) => void
   closePanel: () => void
 }
 
@@ -39,12 +50,13 @@ export const usePluginUiStore = create<PluginUiStore>((set, get) => ({
         values: Object.fromEntries(Object.entries(state.values).filter(([key]) => !key.startsWith(prefix))),
       }
     }),
-  openPanel: (pluginId, panelId, context) =>
+  openPanel: (pluginId, panelId, context, options) =>
     set({
       activePanel: {
         pluginId,
         panelId,
         ...(context && Object.keys(context).length > 0 ? { context } : {}),
+        ...(options?.skipInitPanel ? { skipInitPanel: true } : {}),
       },
     }),
   closePanel: () => set({ activePanel: null }),

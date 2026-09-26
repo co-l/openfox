@@ -5,10 +5,10 @@
  * is stored in the events table and derived via EventStore folding.
  */
 
-import type { Session, SessionSummary, SessionMode, SessionPhase } from '../../shared/types.js'
+import type { Session, SessionSummary, SessionMode, SessionPhase, DangerLevel } from '../../shared/types.js'
 import { getDatabase } from './index.js'
 import { resolveDefaultAgentId } from '../agents/registry.js'
-export type DangerLevel = 'normal' | 'dangerous'
+export type { DangerLevel } from '../../shared/types.js'
 
 function getProjectDangerLevel(projectId: string): DangerLevel {
   try {

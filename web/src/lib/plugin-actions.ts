@@ -35,6 +35,7 @@ export interface RegistryPlugin {
   displayName: string
   description: string
   githubUrl: string
+  author?: string
 }
 
 export async function fetchPluginRegistry(): Promise<{ plugins: RegistryPlugin[] }> {
@@ -100,6 +101,11 @@ export async function setPluginEnabled(pluginId: string, enabled: boolean): Prom
 
 export async function uninstallPlugin(pluginId: string): Promise<{ ok: boolean; error?: string }> {
   const res = await authFetch(`/api/plugins/${encodeURIComponent(pluginId)}/uninstall`, { method: 'POST' })
+  return okOrError(res)
+}
+
+export async function reinstallPlugin(pluginId: string): Promise<{ ok: boolean; error?: string }> {
+  const res = await authFetch(`/api/plugins/${encodeURIComponent(pluginId)}/reinstall`, { method: 'POST' })
   return okOrError(res)
 }
 

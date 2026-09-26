@@ -3,7 +3,7 @@ import * as iconsModule from '../shared/icons'
 import { invokePluginRpc } from '../../lib/plugin-actions'
 import { usePluginUiStore } from '../../stores/pluginUi'
 import { usePluginToastStore } from '../../stores/pluginToasts'
-import type { PluginActivation, PluginBadgeTone, PluginVisibilityCondition } from '@shared/plugin.js'
+import type { DeclarativeNode, PluginActivation, PluginBadgeTone, PluginVisibilityCondition } from '@shared/plugin.js'
 
 export type PluginActionContext = {
   sessionId?: string
@@ -140,6 +140,59 @@ export function badgeToneTextClass(tone: PluginBadgeTone | undefined): string {
   }
 }
 
+export function applyPanelContent(pluginId: string, targetId: string, result: unknown): boolean {
+  if (result && typeof result === 'object') {
+    const resultObj = result as Record<string, unknown>
+    const content = Array.isArray(resultObj['content'])
+      ? (resultObj['content'] as DeclarativeNode[])
+      : Array.isArray(resultObj['nodes'])
+        ? (resultObj['nodes'] as DeclarativeNode[])
+        : undefined
+    if (content) {
+      usePluginUiStore.getState().setState(pluginId, targetId, 'content', content)
+      return true
+    }
+  }
+  return false
+}
+
+export function extractScopedValues(
+  publishedValues: Record<string, unknown>,
+  pluginId: string,
+  panelOrTabId?: string,
+): Record<string, unknown> {
+  const values: Record<string, unknown> = {}
+  const pluginPrefix = `${pluginId}::`
+  const targetPrefix = panelOrTabId ? `${pluginId}:${panelOrTabId}:` : undefined
+
+  for (const [key, value] of Object.entries(publishedValues)) {
+    if (key.startsWith(pluginPrefix)) {
+      values[key.slice(pluginPrefix.length)] = value
+    }
+  }
+
+  if (targetPrefix) {
+    for (const [key, value] of Object.entries(publishedValues)) {
+      if (key.startsWith(targetPrefix)) {
+        values[key.slice(targetPrefix.length)] = value
+      }
+    }
+  }
+
+  return values
+}
+
+export function nodeDeclarativeKey(node: DeclarativeNode, index: number): string {
+  if ('id' in node && typeof node.id === 'string' && node.id) {
+    return `field-${node.id}`
+  }
+  if (node.type === 'card' && node.title) {
+    const titleStr = typeof node.title === 'string' ? node.title : (node.title.en ?? '')
+    return `card-${index}-${titleStr}`
+  }
+  return `node-${index}-${node.type}`
+}
+
 export function isContributionVisible(
   condition: PluginVisibilityCondition | undefined,
   context: PluginActionContext,
@@ -160,7 +213,7 @@ export function isContributionVisible(
   return true
 }
 
-export function pluginRpcContext(context: PluginActionContext): {
+export function pluginRpcContext(context: { sessionId?: unknown; workdir?: unknown; projectId?: unknown }): {
   sessionId?: string
   workdir?: string
   projectId?: string
@@ -192,25 +245,30 @@ export async function activatePluginAction(
         ...(context['modelId'] ? { modelId: context['modelId'] } : {}),
         ...(context['providerId'] ? { providerId: context['providerId'] } : {}),
       }
-      await invokePluginRpc(pluginId, activation.method, mergedParams, pluginRpcContext(context))
+      const rpcResult = await invokePluginRpc(pluginId, activation.method, mergedParams, pluginRpcContext(context))
 
-      // If active panel is currently open and belongs to this plugin, refresh dynamic content if supported
-      const activePanel = usePluginUiStore.getState().activePanel
-      if (activePanel && activePanel.pluginId === pluginId) {
-        try {
-          const res = (await invokePluginRpc(
-            pluginId,
-            `${activePanel.panelId}.getContent`,
-            {},
-            pluginRpcContext(context),
-          )) as {
-            nodes?: unknown[]
+      // If the RPC returned updated declarative nodes or content, update the active panel immediately
+      if (rpcResult && typeof rpcResult === 'object') {
+        const resultObj = rpcResult as Record<string, unknown>
+        const suppliedContent = Array.isArray(resultObj['content']) || Array.isArray(resultObj['nodes'])
+        if (typeof resultObj['openPanel'] === 'string') {
+          usePluginUiStore.getState().openPanel(pluginId, resultObj['openPanel'] as string, pluginRpcContext(context), {
+            skipInitPanel: suppliedContent,
+          })
+          applyPanelContent(pluginId, resultObj['openPanel'] as string, resultObj)
+        } else {
+          const activePanel = usePluginUiStore.getState().activePanel
+          const targetId =
+            activePanel && activePanel.pluginId === pluginId
+              ? activePanel.panelId
+              : ((context['tabId'] as string | undefined) ?? (context['tab'] as string | undefined))
+          if (targetId) {
+            applyPanelContent(pluginId, targetId, resultObj)
           }
-          if (res && Array.isArray(res.nodes)) {
-            usePluginUiStore.getState().setState(pluginId, activePanel.panelId, 'content', res.nodes)
-          }
-        } catch {
-          // Gracefully ignore if custom getContent not implemented
+        }
+        const invalidate = resultObj['invalidate']
+        if (Array.isArray(invalidate)) {
+          void import('../../lib/resources').then((m) => m.refreshItemResources(invalidate as string[])).catch(() => {})
         }
       }
 
@@ -220,6 +278,14 @@ export async function activatePluginAction(
 
     if (activation.kind === 'openPanel') {
       usePluginUiStore.getState().openPanel(pluginId, activation.panelId, pluginRpcContext(context))
+      return
+    }
+
+    if (activation.kind === 'openSettings') {
+      const tab = activation.tab
+      void import('../settings/GlobalSettingsModal')
+        .then((settings) => settings.openSettings(tab as Parameters<typeof settings.openSettings>[0]))
+        .catch(() => {})
       return
     }
 

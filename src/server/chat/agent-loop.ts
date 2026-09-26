@@ -53,6 +53,7 @@ import { drainQueue } from './drain-queue.js'
 import { COMPACTION_PROMPT, CONTINUE_PROMPT, CONTINUE_AFTER_STREAM_ERROR_PROMPT } from './prompts.js'
 import { logger } from '../utils/logger.js'
 import { emitPluginHook } from '../plugins/hook-emitter.js'
+import { applyPluginMessageTransforms } from '../plugins/message-transforms.js'
 import type { LLMRetryPolicy } from '../runner/types.js'
 import { DEFAULT_LLM_RETRY_POLICY } from '../runner/types.js'
 import { serverT } from '../i18n.js'
@@ -402,12 +403,22 @@ export async function runTopLevelAgentLoop(
       const allAgents = await loadAllAgentsDefault(sessionManager.getProjectWorkdir(sessionId))
       const subAgentAliases = new Set(getSubAgents(allAgents).map((a) => a.metadata.id))
 
+      const transformResult = await applyPluginMessageTransforms(assembledRequest.messages, {
+        sessionId,
+        ...(session.projectId ? { projectId: session.projectId } : {}),
+        workdir: sessionManager.getEffectiveWorkdir(sessionId),
+        model: attemptClient.getModel(),
+        systemPrompt: assembledRequest.systemPrompt,
+        ...(config.mode ? { mode: config.mode } : {}),
+        ...(signal ? { signal } : {}),
+      })
+
       const streamGen = streamLLMPure({
         messageId: assistantMsgId,
-        systemPrompt: assembledRequest.systemPrompt,
+        systemPrompt: transformResult.systemPrompt,
         llmClient: attemptClient,
         sessionId,
-        messages: assembledRequest.messages,
+        messages: transformResult.messages,
         tools: assembledRequest.tools,
         toolChoice: 'auto',
         signal,

@@ -1,12 +1,10 @@
-import { spawn } from 'node:child_process'
 import { resolve, isAbsolute } from 'node:path'
-import { access } from 'node:fs/promises'
 import stripAnsi from 'strip-ansi'
 import { OUTPUT_LIMITS } from './types.js'
 import { createTool, requestUserConfirmation } from './tool-helpers.js'
 import { serverT } from '../i18n.js'
 import { checkAborted, spawnShellProcess } from '../utils/shell.js'
-import { decodeUtf8, createUtf8StreamDecoder } from '../utils/utf8.js'
+import { createUtf8StreamDecoder } from '../utils/utf8.js'
 import {
   extractAbsolutePathsFromCommand,
   extractSensitivePathsFromCommand,
@@ -14,7 +12,6 @@ import {
 } from './path-security.js'
 import { terminateProcessTree } from '../utils/process-tree.js'
 import { stripTailPipe } from './shell-tail.js'
-import { getSetting, SETTINGS_KEYS } from '../db/settings.js'
 
 /**
  * Check if a command performs a Git mutation that changes branches or workspace state.
@@ -30,35 +27,6 @@ export function detectGitMutation(command: string): string | null {
   }
 
   return null
-}
-
-let rtkAvailable: boolean | undefined
-
-async function checkRtkAvailability(): Promise<boolean> {
-  if (rtkAvailable !== undefined) return rtkAvailable
-  try {
-    await access('/usr/local/bin/rtk')
-    rtkAvailable = true
-  } catch {
-    try {
-      const out = await new Promise<string>((resolve, reject) => {
-        const proc = spawn('rtk', ['--version'], { stdio: ['ignore', 'pipe', 'pipe'] })
-        let output = ''
-        proc.stdout?.on('data', (d: Buffer) => {
-          output += d.toString()
-        })
-        proc.on('error', reject)
-        proc.on('close', (code) => {
-          if (code === 0) resolve(output.trim())
-          else reject(new Error(`exit ${code}`))
-        })
-      })
-      rtkAvailable = out.startsWith('rtk ')
-    } catch {
-      rtkAvailable = false
-    }
-  }
-  return rtkAvailable
 }
 
 export function formatDuration(ms: number): string {
@@ -182,11 +150,8 @@ export const runCommandTool = createTool<RunCommandArgs>(
     const tailInfo = stripTailPipe(args.command)
     const execCommand = tailInfo ? tailInfo.command : args.command
 
-    const useRtk = getSetting(SETTINGS_KEYS.TOOLS_USE_RTK) === 'true'
-    const finalCommand = useRtk ? await tryRtkRewrite(execCommand) : execCommand
-
     const execStart = Date.now()
-    const result = await executeCommand(finalCommand, workingDir, timeout, context.signal, context.onProgress)
+    const result = await executeCommand(execCommand, workingDir, timeout, context.signal, context.onProgress)
 
     let output = ''
 
@@ -248,31 +213,6 @@ interface CommandResult {
   stderr: string
   exitCode: number
   interrupted?: boolean
-}
-
-async function tryRtkRewrite(command: string): Promise<string> {
-  if (!(await checkRtkAvailability())) return command
-  try {
-    const result = await new Promise<string>((resolve, reject) => {
-      const proc = spawn('rtk', ['rewrite', command], {
-        stdio: ['ignore', 'pipe', 'pipe'],
-        timeout: 2_000,
-      })
-      const chunks: Buffer[] = []
-      proc.stdout?.on('data', (data: Buffer) => {
-        chunks.push(data)
-      })
-      proc.on('error', reject)
-      proc.on('close', (code) => {
-        if (code === 0 || code === 3) resolve(decodeUtf8(chunks).trim())
-        else reject(new Error(`exit ${code}`))
-      })
-    })
-    if (result && result !== command) return result
-  } catch {
-    // rewrite failed — fall through
-  }
-  return command
 }
 
 function executeCommand(
