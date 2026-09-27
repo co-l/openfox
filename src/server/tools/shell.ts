@@ -15,6 +15,7 @@ import {
 import { terminateProcessTree } from '../utils/process-tree.js'
 import { stripTailPipe } from './shell-tail.js'
 import { getSetting, SETTINGS_KEYS } from '../db/settings.js'
+import { SKIP_TIMEOUT_WINDOW_MS } from '../../shared/constants.js'
 
 /**
  * Check if a command performs a Git mutation that changes branches or workspace state.
@@ -292,8 +293,9 @@ async function tryRtkRewrite(command: string): Promise<string> {
 const commandTimeoutSkips = new Map<string, () => void>()
 
 /**
- * Grant one extra full timeout window to the run_command call identified by
- * toolCallId. Returns false when no active command is registered for that id.
+ * Grant one extra fixed timeout window (SKIP_TIMEOUT_WINDOW_MS) to the
+ * run_command call identified by toolCallId. Returns false when no active
+ * command is registered for that id.
  */
 export function skipCommandTimeout(toolCallId: string): boolean {
   const rearm = commandTimeoutSkips.get(toolCallId)
@@ -362,14 +364,16 @@ function executeCommand(
       void terminateProcessTree(proc, { exited: () => exited })
     }
 
+    let deadline = Date.now() + timeout
     let timer: ReturnType<typeof setTimeout>
-    timer = setTimeout(fireTimeout, timeout)
-    // A skip (WS `command.skipTimeout`) re-arms the timer with one fresh full
+    timer = setTimeout(fireTimeout, Math.max(0, deadline - Date.now()))
+    // A skip (WS `command.skipTimeout`) extends the deadline by one fixed
     // window — each click buys exactly one more window, not an infinite one.
     onTimer?.(() => {
       if (exited || settled) return
+      deadline += SKIP_TIMEOUT_WINDOW_MS
       clearTimeout(timer)
-      timer = setTimeout(fireTimeout, timeout)
+      timer = setTimeout(fireTimeout, Math.max(0, deadline - Date.now()))
     })
 
     const onAbort = () => {

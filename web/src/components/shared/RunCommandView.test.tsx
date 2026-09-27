@@ -257,6 +257,42 @@ describe('RunCommandView skip timeout button', () => {
     expect(button?.textContent).toBe('✓ +60 s')
   })
 
+  it('extends the displayed deadline by a fixed 60s when skip is clicked', () => {
+    vi.useFakeTimers()
+    try {
+      const startedAt = Date.now()
+      const { container } = render(
+        <RunCommandView
+          command="echo hello"
+          timeout={10_000}
+          status="pending"
+          startedAt={startedAt}
+          callId="call-123"
+          streamingOutput={[{ stream: 'stdout', content: 'out\n' }]}
+        />,
+      )
+
+      const counter = () => container.textContent?.match(/(\d+\.\d)s \/ (\d+)s/)?.[0]
+      expect(counter()).toBe('0.0s / 10s')
+
+      // Advance near the end of the window, then click skip.
+      act(() => {
+        vi.advanceTimersByTime(9_500)
+      })
+      const button = container.querySelector('button')
+      act(() => {
+        button?.click()
+      })
+
+      // The server extends the deadline by a fixed 60s (not a fresh window
+      // sized to the command's timeout), so the displayed total grows from
+      // 10s to 70s and the elapsed is kept.
+      expect(counter()).toBe('9.5s / 70s')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('does not render the button once the command has finished', () => {
     const { container } = render(
       <RunCommandView

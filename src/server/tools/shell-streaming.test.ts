@@ -443,7 +443,7 @@ describe('skipCommandTimeout', () => {
     expect(skipCommandTimeout('no-such-call')).toBe(false)
   })
 
-  it('grants one extra full timeout window per skip', async () => {
+  it('grants one extra fixed 60s window per skip', async () => {
     const context: ToolContext = {
       sessionManager: mockSessionManager,
       workdir: tempDir,
@@ -451,9 +451,9 @@ describe('skipCommandTimeout', () => {
       toolCallId: 'call-skip-1',
     }
 
-    // 1.2s command with a 1s timeout — dies without a skip, survives with one
-    // (skip at 400ms re-arms the deadline to 1400ms)
-    const pending = runCommandTool.execute({ command: 'node -e "setTimeout(() => {}, 1200)"', timeout: 1000 }, context)
+    // 1.5s command with a 1s timeout — dies without a skip. A skip at 400ms
+    // extends the deadline by a fixed 60s (to ~60.4s), so the command survives.
+    const pending = runCommandTool.execute({ command: 'node -e "setTimeout(() => {}, 1500)"', timeout: 1000 }, context)
 
     await new Promise((r) => setTimeout(r, 400))
     expect(skipCommandTimeout('call-skip-1')).toBe(true)

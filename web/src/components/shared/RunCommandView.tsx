@@ -6,6 +6,7 @@ import { memo, useEffect, useRef, useState } from 'react'
 import { ansiToReact } from '../../lib/ansiParser'
 import { useT } from '../../hooks/useT'
 import { wsClient } from '../../lib/ws'
+import { SKIP_TIMEOUT_WINDOW_MS } from '@shared/constants.js'
 
 interface StreamingChunk {
   stream: 'stdout' | 'stderr'
@@ -42,6 +43,9 @@ export const RunCommandView = memo(function RunCommandView({
   const scrollRef = useRef<OverlayScrollbarsComponentRef<'div'>>(null)
   const [elapsed, setElapsed] = useState(0)
   const [skipFeedback, setSkipFeedback] = useState(false)
+  // Deadline (timestamp) when the timeout fires. Starts at start + window;
+  // each skip extends it by one fixed window (mirrors the server's extension).
+  const [deadline, setDeadline] = useState<number | null>(null)
 
   const getViewport = useViewport(scrollRef)
   const { setAutoScroll, force_scroll_to_bottom, handleScrollbarGesture } = useAutoScroll(scrollRef, null, getViewport)
@@ -62,15 +66,17 @@ export const RunCommandView = memo(function RunCommandView({
   useEffect(() => {
     if (status !== 'pending' || !startedAt) return
 
+    setDeadline((d) => (d === null ? startedAt + timeout : d))
     const interval = setInterval(() => {
       setElapsed(Date.now() - startedAt)
     }, 100)
 
     return () => clearInterval(interval)
-  }, [status, startedAt])
+  }, [status, startedAt, timeout])
 
   // Format timeout display
-  const timeoutSec = timeout / 1000
+  const totalMs = status === 'pending' && deadline && startedAt ? deadline - startedAt : timeout
+  const totalSec = totalMs / 1000
   const elapsedSec = status === 'pending' ? elapsed / 1000 : (durationMs ?? 0) / 1000
 
   // Combine streaming chunks into displayable output
@@ -96,14 +102,17 @@ export const RunCommandView = memo(function RunCommandView({
                 try {
                   wsClient.send('command.skipTimeout', { toolCallId: callId })
                   setSkipFeedback(true)
+                  // Extend the displayed deadline by one fixed window, matching
+                  // the server's extension so the counter reflects the skip.
+                  setDeadline((d) => (d ?? (startedAt ? startedAt + timeout : Date.now())) + SKIP_TIMEOUT_WINDOW_MS)
                   setTimeout(() => setSkipFeedback(false), 2500)
                 } catch {
                   // Socket not connected — nothing to do
                 }
               }}
               title={t({
-                en: 'Grant one extra timeout window',
-                fr: 'Accorder une fenêtre de timeout supplémentaire',
+                en: 'Grant an extra 60 s',
+                fr: 'Accorder 60 s supplémentaires',
               })}
               className="px-1.5 py-0.5 rounded border border-accent-warning/40 text-accent-warning hover:bg-accent-warning/10 transition-colors text-[10px] flex-shrink-0"
             >
@@ -114,7 +123,7 @@ export const RunCommandView = memo(function RunCommandView({
             <span className="text-red-400">{t({ en: 'interrupted', fr: 'interrompu' })}</span>
           )}
           <span className={status === 'pending' ? 'text-text-secondary' : 'text-text-muted'}>
-            {`${elapsedSec.toFixed(1)}s / ${timeoutSec}s`}
+            {`${elapsedSec.toFixed(1)}s / ${totalSec.toFixed(0)}s`}
           </span>
         </div>
       </div>
@@ -124,7 +133,7 @@ export const RunCommandView = memo(function RunCommandView({
         <div className="h-1 bg-bg-tertiary rounded overflow-hidden">
           <div
             className="h-full bg-accent-warning transition-all duration-100"
-            style={{ width: `${Math.min(100, (elapsed / timeout) * 100)}%` }}
+            style={{ width: `${Math.min(100, (elapsed / totalMs) * 100)}%` }}
           />
         </div>
       )}
