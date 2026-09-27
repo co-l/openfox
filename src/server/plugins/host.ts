@@ -307,12 +307,6 @@ export class PluginHost {
    */
   setOpenFoxInternals(internals: import('../../plugin/index.js').PluginOpenFoxInternals | undefined): void {
     this.currentOpenFoxInternals = internals
-    // Refresh openFoxInternals on already-loaded plugin contexts so plugins
-    // loaded before this call see the new value on next access.
-    for (const record of this.records.values()) {
-      const ctx = record.context as { openFoxInternals?: typeof internals }
-      ctx.openFoxInternals = internals
-    }
   }
 
   private async handleStoredEvent(event: StoredEvent): Promise<void> {
@@ -397,6 +391,7 @@ export class PluginHost {
 
   private createContext(manifest: PluginManifest, _source: string): PluginContext {
     const pluginId = manifest.name
+    const host = this
     return {
       id: pluginId,
       version: manifest.version,
@@ -429,7 +424,9 @@ export class PluginHost {
           }),
         )
       },
-      openFoxInternals: this.currentOpenFoxInternals,
+      get openFoxInternals(): import('../../plugin/index.js').PluginOpenFoxInternals | undefined {
+        return host.currentOpenFoxInternals
+      },
     }
   }
 
