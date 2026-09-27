@@ -238,6 +238,30 @@ export interface PluginLogger {
   error(message: string, context?: Record<string, unknown>): void
 }
 
+export interface PluginOpenFoxInternals {
+  /** Host's session manager — exposes createSession + setRunning. */
+  readonly sessionManager: PluginSessionManagerFacade
+  /**
+   * Host wrapper around launchWorkflowRun. The plugin supplies the
+   * session id + payload (workflowId, params, content, attachments);
+   * the host injects broadcast, llmClient, statsIdentity internally.
+   */
+  runWorkflow(sessionId: string, payload: PluginWorkflowLaunchPayload): void
+}
+
+export interface PluginSessionManagerFacade {
+  createSession(projectId: string, title: string): Promise<{ id: string; workdir?: string }>
+  setRunning(sessionId: string, running: boolean): void
+}
+
+export interface PluginWorkflowLaunchPayload {
+  workflowId?: string
+  params?: Record<string, string>
+  content?: string
+  attachments?: unknown[]
+  subGroup?: string
+}
+
 export interface PluginContext {
   readonly id: string
   readonly version: string
@@ -247,6 +271,8 @@ export interface PluginContext {
   settings(scope?: 'global' | 'project', projectId?: string): Record<string, PluginSettingValue>
   notify(request: PluginNotificationRequest): void
   publish(panelId: string | undefined, key: string, value: unknown): void
+  /** Host internals exposed for workflow-orchestration plugins. */
+  readonly openFoxInternals?: PluginOpenFoxInternals
 }
 
 export interface PluginRegistry {

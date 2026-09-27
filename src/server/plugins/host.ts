@@ -47,6 +47,8 @@ export interface PluginHostOptions {
   cwd?: string
   rpcTimeoutMs?: number
   registry?: PluginRegistry
+  /** Optional host internals exposed to plugins via PluginContext. */
+  openFoxInternals?: import('../../plugin/index.js').PluginOpenFoxInternals
 }
 
 interface PluginRecord {
@@ -64,6 +66,7 @@ export class PluginHost {
   private readonly pendingDeactivates = new Map<string, () => void | Promise<void>>()
   private readonly logger: HookLogger
   private readonly rpcTimeoutMs: number
+  private currentOpenFoxInternals: import('../../plugin/index.js').PluginOpenFoxInternals | undefined
 
   constructor(private readonly options: PluginHostOptions) {
     this.logger = options.logger
@@ -296,6 +299,16 @@ export class PluginHost {
     })()
   }
 
+  /**
+   * Set or replace the host internals exposed to plugins via PluginContext.
+   * Plugins loaded after this call receive the new internals. Use when
+   * internals (sessionManager, runner deps) are constructed after the
+   * PluginHost itself.
+   */
+  setOpenFoxInternals(internals: import('../../plugin/index.js').PluginOpenFoxInternals | undefined): void {
+    this.currentOpenFoxInternals = internals
+  }
+
   private async handleStoredEvent(event: StoredEvent): Promise<void> {
     const payload = event.data as Record<string, unknown>
     const sessionId = event.sessionId
@@ -378,6 +391,7 @@ export class PluginHost {
 
   private createContext(manifest: PluginManifest, _source: string): PluginContext {
     const pluginId = manifest.name
+    const host = this
     return {
       id: pluginId,
       version: manifest.version,
@@ -409,6 +423,9 @@ export class PluginHost {
             value,
           }),
         )
+      },
+      get openFoxInternals(): import('../../plugin/index.js').PluginOpenFoxInternals | undefined {
+        return host.currentOpenFoxInternals
       },
     }
   }

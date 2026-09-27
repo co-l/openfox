@@ -3686,6 +3686,31 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     )
   }
 
+  // Expose host internals to plugins via PluginContext.openFoxInternals.
+  // Plugins can create sessions and launch workflows without reaching into
+  // private server paths. The runWorkflow wrapper delegates to the shared
+  // launcher built above so all the session/provider/broadcast plumbing
+  // stays consistent with the WS runner path.
+  pluginHost.setOpenFoxInternals({
+    sessionManager: {
+      async createSession(projectId: string, title: string) {
+        const s = sessionManager.createSession(projectId, title)
+        return { id: s.id, workdir: s.workdir }
+      },
+      setRunning(sessionId: string, running: boolean) {
+        sessionManager.setRunning(sessionId, running)
+      },
+    },
+    runWorkflow(sessionId: string, payload) {
+      deferTasksLaunchWorkflow(sessionId, {
+        ...(payload.workflowId ? { workflowId: payload.workflowId } : {}),
+        ...(payload.params ? { params: payload.params } : {}),
+        ...(payload.content ? { content: payload.content } : {}),
+        ...(payload.subGroup ? { subGroup: payload.subGroup } : {}),
+      })
+    },
+  })
+
   // Wire MCP config tool to broadcast changes to all connected UIs
   setNotifyMcpServersChanged((sessionId: string) => {
     const servers = mcpManager.getAllServers()
