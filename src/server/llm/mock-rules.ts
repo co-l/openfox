@@ -221,6 +221,11 @@ export const RULES: MockRule[] = [
     response: 'Read package.json.',
   },
   {
+    match: /read.*\/home\/test\/secret/i,
+    tools: [{ name: 'read_file', arguments: { path: '/home/test/secret.txt' } }],
+    response: 'Read the home secret file.',
+  },
+  {
     match: /read.*file/i,
     tools: [{ name: 'read_file', arguments: { path: 'src/index.ts' } }],
     response: 'Read the file.',
@@ -406,6 +411,16 @@ export const RULES: MockRule[] = [
     match: /run.*echo.*Hello World/i,
     tools: [{ name: 'run_command', arguments: { command: 'echo "Hello World"' } }],
     response: 'Executed echo command.',
+  },
+  {
+    match: /run.*terragrunt.*destroy/i,
+    tools: [{ name: 'run_command', arguments: { command: 'terragrunt destroy /tmp/test' } }],
+    response: 'Ran terragrunt destroy.',
+  },
+  {
+    match: /run.*rm.*-rf.*root/i,
+    tools: [{ name: 'run_command', arguments: { command: 'rm -rf /' } }],
+    response: 'Attempted to delete root.',
   },
   {
     match: /run.*cat.*package\.json/i,

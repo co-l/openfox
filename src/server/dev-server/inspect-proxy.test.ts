@@ -51,6 +51,9 @@ function httpGetRaw(
       })
     })
     req.on('error', reject)
+    req.setTimeout(10_000, () => {
+      req.destroy(new Error('httpGetRaw timeout'))
+    })
     req.end()
   })
 }
@@ -527,6 +530,6 @@ describe('InspectProxy', () => {
       } finally {
         cleanup()
       }
-    })
+    }, 60_000)
   })
 })

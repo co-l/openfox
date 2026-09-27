@@ -220,6 +220,10 @@ To call a sub-agent, use the call_sub_agent tool with:
  * System prompt for top-level agents (planner, builder, custom).
  * Identical for all top-level agents to preserve KV cache.
  * Agent-specific behavior comes from the runtime reminder.
+ *
+ * Permission rules are NOT included in the prompt: they are enforced
+ * deterministically by the server (path-security.ts) and including them
+ * here would invalidate the KV cache on every rule edit.
  */
 export function buildTopLevelSystemPrompt(
   workdir: string,

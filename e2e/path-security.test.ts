@@ -8,12 +8,12 @@
  * The path security system:
  * 1. Detects operations on paths outside workdir or sensitive files
  * 2. Emits chat.path_confirmation event to client
- * 3. Waits for user approval via path.confirm message
+ * 3. Waits for user approval via REST API
  * 4. Proceeds or aborts based on user response
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
-import { writeFile, mkdir, rm } from 'node:fs/promises'
+import { writeFile, mkdir, rm, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
@@ -82,6 +82,17 @@ describe('Path Security', () => {
     // Create a directory outside the workdir for testing
     outsideDir = join(tmpdir(), `openfox-outside-${Date.now()}`)
     await mkdir(outsideDir, { recursive: true })
+
+    // Tests write fixture files to /home/test and approve those writes, leaving
+    // the files on disk. A pre-existing file makes write_file fail its
+    // read-before-write preflight before the path confirmation is emitted, so
+    // start every test from a clean slate. The /home/test dir itself may not be
+    // removable (owned by root), so clear its contents instead.
+    const fixtureHome = '/home/test'
+    const fixtureEntries = await readdir(fixtureHome).catch(() => [])
+    await Promise.all(
+      fixtureEntries.map((entry) => rm(join(fixtureHome, entry), { recursive: true, force: true }).catch(() => {})),
+    )
 
     const restProject = await createProject(server.url, { name: 'Path Security Test', workdir: testDir.path })
     const restSession = await createSession(server.url, { projectId: restProject.id })
@@ -284,9 +295,10 @@ describe('Path Security', () => {
 
       if (confirmationEvent) {
         const payload = confirmationEvent.payload as PathConfirmationPayload
+        const session = client.getSession()!
 
         // Approve
-        await client.answerPathConfirmation(payload.callId, true)
+        await answerPathConfirmation(server.url, session.id, payload.callId, true)
         await client.waitFor('chat.done').catch(() => null)
 
         client.clearEvents()

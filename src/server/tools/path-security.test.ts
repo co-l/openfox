@@ -10,6 +10,10 @@ import {
   resolveRelativeTraversals,
   addAllowedPath,
   addAllowedPaths,
+  addSessionAllowedRule,
+  listSessionGrants,
+  revokeAllowedPath,
+  revokeSessionAllowedRule,
   checkPathsAccess,
   PathAccessDeniedError,
   clearAllowedPaths,
@@ -1453,6 +1457,35 @@ describe('path-security', () => {
       expect(isPathAllowed('session-persist', path)).toBe(true)
     })
 
+    it('records the tool and reason that triggered an alwaysAllow approval', () => {
+      const path = '/tmp/secret-origin'
+      registerPathConfirmation('origin-call', [path], 'session-origin', 'read_file', '/tmp', 'sensitive_file')
+
+      providePathConfirmation('origin-call', true, true)
+
+      const grants = listSessionGrants().find((g) => g.sessionId === 'session-origin')
+      expect(grants?.paths).toEqual([
+        expect.objectContaining({
+          path: normalize(path),
+          tool: 'read_file',
+          reason: 'sensitive_file',
+          grantedAt: expect.any(Number),
+        }),
+      ])
+      clearAllowedPaths('session-origin')
+    })
+
+    it('does not add paths to allowlist for rule_denied confirmations, even with alwaysAllow', () => {
+      const path = '/tmp/secret-rule-denied'
+      registerPathConfirmation('rule-denied-call', [path], 'session-rule-denied', 'read_file', '/tmp', 'rule_denied')
+
+      const result = providePathConfirmation('rule-denied-call', true, true)
+      expect(result.found).toBe(true)
+
+      expect(isPathAllowed('session-rule-denied', path)).toBe(false)
+      expect(listSessionGrants().some((g) => g.sessionId === 'session-rule-denied')).toBe(false)
+    })
+
     // Note: Full flow testing requires the interrupt to be thrown and caught,
     // which is integration-level testing. Unit tests verify the API exists.
   })
@@ -1542,10 +1575,65 @@ describe('path-security', () => {
 
       it('detects SSH keys as sensitive', () => {
         expect(isSensitivePath('id_rsa')).toBe(true)
-        expect(isSensitivePath('id_rsa.pub')).toBe(true)
+        expect(isSensitivePath('id_rsa.pub')).toBe(false)
         expect(isSensitivePath('id_ed25519')).toBe(true)
         expect(isSensitivePath('id_ecdsa')).toBe(true)
         expect(isSensitivePath('/home/user/.ssh/id_rsa')).toBe(true)
+      })
+    })
+
+    describe('key stores and credential files', () => {
+      it.each([
+        '/proj/certs/client.p12',
+        '/proj/certs/client.pfx',
+        '/proj/android/release.jks',
+        '/proj/app/release.keystore',
+        '/home/user/putty/key.ppk',
+        '/home/user/.pgpass',
+        '/home/user/.git-credentials',
+      ])('detects %s as sensitive', (path) => {
+        expect(isSensitivePath(path)).toBe(true)
+      })
+
+      it.each(['/proj/cert.crt', '/proj/src/keystore.ts', '/proj/.pgpass.example'])(
+        'does NOT detect %s as sensitive',
+        (path) => {
+          expect(isSensitivePath(path)).toBe(false)
+        },
+      )
+    })
+
+    describe('secret-bearing directories (even inside the workdir)', () => {
+      it.each([
+        '/home/user/.gnupg/pubring.kbx',
+        '/home/user/.aws/credentials',
+        '/home/user/.kube/config',
+        '/home/user/.docker/config.json',
+        '/etc/shadow',
+        '/etc/gshadow',
+        '/etc/sudoers',
+        '/etc/sudoers.d/90-cloud-init',
+        '/etc/ssl/private/snakeoil.key',
+        '/etc/ssh/sshd_config',
+      ])('detects %s as sensitive', (path) => {
+        expect(isSensitivePath(path)).toBe(true)
+      })
+
+      it.each([
+        // Only SSH private keys are secret: public keys and config stay readable.
+        '/home/user/.ssh/config',
+        '/home/user/.ssh/known_hosts',
+        '/home/user/.ssh/authorized_keys',
+        '/home/user/.ssh/id_ed25519.pub',
+        '.ssh/config',
+        '/home/user/.ssh-notes/todo.md',
+        '/home/user/proj/src/ssh/config.ts',
+        '/home/user/.aws/config',
+        '/home/user/.kube/cache/discovery.json',
+        '/etc/hosts',
+        '/etc/passwd',
+      ])('does NOT detect %s as sensitive', (path) => {
+        expect(isSensitivePath(path)).toBe(false)
       })
     })
 
@@ -1987,6 +2075,62 @@ describe('path-security', () => {
     })
   })
 
+  describe('session grants', () => {
+    afterEach(() => {
+      clearAllowedPaths('grants-x')
+      clearAllowedPaths('grants-y')
+    })
+
+    it('keeps the first approval when a path is approved again', () => {
+      addAllowedPath('grants-x', '/tmp/g1', { tool: 'read_file', reason: 'outside_workdir' })
+      addAllowedPath('grants-x', '/tmp/g1', { tool: 'run_command', reason: 'sensitive_file' })
+
+      const grants = listSessionGrants().find((g) => g.sessionId === 'grants-x')
+      expect(grants?.paths).toHaveLength(1)
+      expect(grants?.paths[0]).toMatchObject({ tool: 'read_file', reason: 'outside_workdir' })
+    })
+
+    it('lists paths sorted and promoted rules with their grant time, and omits empty sessions', () => {
+      addAllowedPaths('grants-x', ['/tmp/g-b', '/tmp/g-a'])
+      addSessionAllowedRule('grants-y', { effect: 'ALLOW', tool: 'read_file', pattern: '**/x/**' })
+
+      const all = listSessionGrants()
+      expect(all.find((g) => g.sessionId === 'grants-x')?.paths.map((p) => p.path)).toEqual([
+        normalize('/tmp/g-a'),
+        normalize('/tmp/g-b'),
+      ])
+      expect(all.find((g) => g.sessionId === 'grants-y')?.rules).toEqual([
+        expect.objectContaining({ tool: 'read_file', pattern: '**/x/**', grantedAt: expect.any(Number) }),
+      ])
+      expect(all.some((g) => g.sessionId === 'grants-unknown')).toBe(false)
+    })
+
+    it('revokeAllowedPath removes one path, drops the empty session, and returns false when absent', () => {
+      addAllowedPaths('grants-x', ['/tmp/g-a', '/tmp/g-b'])
+
+      expect(revokeAllowedPath('grants-x', '/tmp/g-a')).toBe(true)
+      expect(isPathAllowed('grants-x', '/tmp/g-a')).toBe(false)
+      expect(isPathAllowed('grants-x', '/tmp/g-b')).toBe(true)
+      expect(revokeAllowedPath('grants-x', '/tmp/g-a')).toBe(false)
+
+      expect(revokeAllowedPath('grants-x', '/tmp/g-b')).toBe(true)
+      expect(listSessionGrants().some((g) => g.sessionId === 'grants-x')).toBe(false)
+      expect(revokeAllowedPath('grants-unknown', '/tmp/g-a')).toBe(false)
+    })
+
+    it('revokeSessionAllowedRule removes only rules matching tool and pattern and returns the count', () => {
+      addSessionAllowedRule('grants-y', { effect: 'ALLOW', tool: 'read_file', pattern: '**/a/**' })
+      addSessionAllowedRule('grants-y', { effect: 'ALLOW', tool: 'read_file', pattern: '**/b/**' })
+      addSessionAllowedRule('grants-y', { effect: 'ALLOW', tool: 'run_command' })
+
+      expect(revokeSessionAllowedRule('grants-y', 'read_file', '**/a/**')).toBe(1)
+      expect(revokeSessionAllowedRule('grants-y', 'run_command', undefined)).toBe(1)
+      expect(revokeSessionAllowedRule('grants-y', 'read_file', '**/nope/**')).toBe(0)
+      expect(revokeSessionAllowedRule('grants-unknown', 'read_file', '**/a/**')).toBe(0)
+      expect(listSessionGrants().find((g) => g.sessionId === 'grants-y')?.rules).toHaveLength(1)
+    })
+  })
+
   describe('non-path confirmations do not pollute allowlist', () => {
     it('does not add paths to allowlist for dangerous_command confirmations', () => {
       const callId = 'cmd-confirm-1'
@@ -2121,6 +2265,24 @@ describe('path-security', () => {
       expect(isPathAllowed('session-sub-dangerous', CANONICAL_PASSWD)).toBe(true)
       // Cleanup
       clearAllowedPaths('session-sub-dangerous')
+    })
+
+    it('records dangerous_auto as the origin of paths auto-approved in dangerous mode', async () => {
+      await requestPathAccess(
+        ['/etc/passwd'],
+        WORKDIR,
+        'session-dangerous-origin',
+        'call-dangerous-origin',
+        'read_file',
+        vi.fn(),
+        'dangerous',
+      )
+
+      const grants = listSessionGrants().find((g) => g.sessionId === 'session-dangerous-origin')
+      expect(grants?.paths).toEqual([
+        expect.objectContaining({ path: CANONICAL_PASSWD, tool: 'read_file', reason: 'dangerous_auto' }),
+      ])
+      clearAllowedPaths('session-dangerous-origin')
     })
 
     it('allows paths inside workdir when isSubAgent (no confirmation needed)', async () => {

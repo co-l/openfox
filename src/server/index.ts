@@ -54,6 +54,7 @@ import { buildOpenFoxMcpBootstrap } from './mcp/server/bootstrap.js'
 import type { OpenFoxMcpToolDeps } from './mcp/server/types.js'
 import { createDevServerRoutes } from './routes/dev-server.js'
 import { createWorkspaceConfigRoutes } from './routes/workspace-config.js'
+import { createPermissionsRoutes } from './routes/permissions.js'
 import { createTerminalRoutes } from './routes/terminals.js'
 import { WorkspaceInUseError } from './utils/errors.js'
 import { createDirectoryRoutes } from './routes/directories.js'
@@ -62,6 +63,7 @@ import { createAutoUpdateRoutes } from './routes/auto-update.js'
 import { createProviderAuthRoutes } from './routes/provider-auth.js'
 import { devServerManager } from './dev-server/manager.js'
 import { getGlobalConfigDir } from '../cli/paths.js'
+import { seedDefaultPermissionRules } from './permissions/defaults.js'
 import { ProviderRegistry } from './providers/plugins/index.js'
 import { PluginHost } from './plugins/host.js'
 import { createPluginRoutes } from './routes/plugins.js'
@@ -134,6 +136,13 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   // Get config directory for loading user items
   const configDir = getGlobalConfigDir(config.mode ?? 'production')
+
+  // First launch: write the default permission rules (user-deletable) once.
+  try {
+    await seedDefaultPermissionRules(configDir)
+  } catch (err) {
+    logger.warn('Could not seed default permission rules', { error: err instanceof Error ? err.message : String(err) })
+  }
 
   // Discover provider plugins before creating transport-aware clients.
   const providerAdapters = new ProviderRegistry({
@@ -822,7 +831,14 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
         tool: string
         paths: string[]
         workdir: string
-        reason: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify'
+        reason:
+          | 'outside_workdir'
+          | 'sensitive_file'
+          | 'both'
+          | 'dangerous_command'
+          | 'git_no_verify'
+          | 'rule_denied'
+          | 'rule_ask'
       }>
     > = {}
     for (const s of sessions) {
@@ -1047,13 +1063,15 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
     // Cancel any active execution before deleting — mirrors /stop endpoint
     const { stopSessionExecution } = await import('./session/chat-handler.js')
-    const { cancelQuestionsForSession, cancelPathConfirmationsForSession } = await import('./tools/index.js')
+    const { cancelQuestionsForSession, cancelPathConfirmationsForSession, clearAllowedPaths } =
+      await import('./tools/index.js')
 
     sessionManager.clearMessageQueue(sessionId)
     stopSessionExecution(sessionId, sessionManager)
     abortSession(sessionId)
     cancelQuestionsForSession(sessionId, 'Session deleted')
     cancelPathConfirmationsForSession(sessionId, 'Session deleted')
+    clearAllowedPaths(sessionId)
 
     sessionManager.deleteSession(sessionId)
     wssExports.broadcastAll({
@@ -1649,7 +1667,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
 
     const { stopSessionExecution } = await import('./session/chat-handler.js')
-    const { cancelQuestionsForSession, cancelPathConfirmationsForSession } = await import('./tools/index.js')
+    const { cancelQuestionsForSession, cancelPathConfirmationsForSession, clearAllowedPaths } =
+      await import('./tools/index.js')
 
     // Drain queued messages BEFORE stopping execution, so the QueueProcessor
     // doesn't pick them up when running_changed fires from setRunning(false)
@@ -1662,6 +1681,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
     cancelQuestionsForSession(sessionId, 'Session stopped by user')
     cancelPathConfirmationsForSession(sessionId, 'Session stopped by user')
+    clearAllowedPaths(sessionId)
 
     const eventStore = (await import('./events/index.js')).getEventStore()
     eventStore.append(sessionId, { type: 'running.changed', data: { isRunning: false } })
@@ -3398,6 +3418,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   app.use('/api/workflows', createWorkflowRoutes(configDir, config, projectDir))
   app.use('/api/dev-server', createDevServerRoutes())
   app.use('/api/workspace', createWorkspaceConfigRoutes(sessionManager))
+  app.use('/api/permissions', createPermissionsRoutes(configDir))
   app.use('/api/terminals', createTerminalRoutes())
   app.use(
     '/api/auto-update',

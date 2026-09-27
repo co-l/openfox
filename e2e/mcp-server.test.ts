@@ -8,6 +8,8 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { rm, readdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import {
@@ -34,6 +36,15 @@ describe('MCP server endpoint', () => {
       .join('\n')
 
   beforeAll(async () => {
+    // Step 6 writes /home/test/secret.txt after approval. A pre-existing file
+    // fails the read-before-write preflight before the confirmation is emitted,
+    // so clear any fixture files left by earlier runs. The /home/test dir itself
+    // may not be removable (owned by root), so clear its contents instead.
+    const fixtureHome = '/home/test'
+    const fixtureEntries = await readdir(fixtureHome).catch(() => [])
+    await Promise.all(
+      fixtureEntries.map((entry) => rm(join(fixtureHome, entry), { recursive: true, force: true }).catch(() => {})),
+    )
     server = await createTestServer()
   }, 60000)
 
