@@ -3694,6 +3694,34 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     wssExports.broadcastForSession(sessionId, createContextStateMessage(state))
   })
 
+  // Minimal in-process orchestration facade for plugins. Reuses the
+  // session manager and the task-seeded workflow launcher already used by
+  // the MCP / WS paths so we don't introduce a second implementation.
+  pluginHost.setHost({
+    sessions: {
+      async create(input: { projectId: string; title?: string }) {
+        const session = sessionManager.createSession(input.projectId, input.title)
+        return { sessionId: session.id, workdir: session.workdir }
+      },
+      stop(sessionId: string) {
+        const session = sessionManager.getSession(sessionId)
+        if (!session || session.isRunning) {
+          sessionManager.setRunning(sessionId, false)
+        }
+      },
+    },
+    workflows: {
+      launch(input) {
+        deferTasksLaunchWorkflow(input.sessionId, {
+          ...(input.workflowId ? { workflowId: input.workflowId } : {}),
+          ...(input.params ? { params: input.params } : {}),
+          ...(input.content !== undefined ? { content: input.content } : {}),
+          ...(input.subGroup ? { subGroup: input.subGroup } : {}),
+        })
+      },
+    },
+  })
+
   // Wire up QueueProcessor - listens for queue events and starts turns
   const { QueueProcessor } = await import('./queue/processor.js')
   const queueProcessor = new QueueProcessor({
