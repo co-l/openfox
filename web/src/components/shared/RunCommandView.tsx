@@ -41,6 +41,7 @@ export const RunCommandView = memo(function RunCommandView({
   const t = useT()
   const scrollRef = useRef<OverlayScrollbarsComponentRef<'div'>>(null)
   const [elapsed, setElapsed] = useState(0)
+  const [skipFeedback, setSkipFeedback] = useState(false)
 
   const getViewport = useViewport(scrollRef)
   const { setAutoScroll, force_scroll_to_bottom, handleScrollbarGesture } = useAutoScroll(scrollRef, null, getViewport)
@@ -94,6 +95,8 @@ export const RunCommandView = memo(function RunCommandView({
               onClick={() => {
                 try {
                   wsClient.send('command.skipTimeout', { toolCallId: callId })
+                  setSkipFeedback(true)
+                  setTimeout(() => setSkipFeedback(false), 2500)
                 } catch {
                   // Socket not connected — nothing to do
                 }
@@ -104,7 +107,7 @@ export const RunCommandView = memo(function RunCommandView({
               })}
               className="px-1.5 py-0.5 rounded border border-accent-warning/40 text-accent-warning hover:bg-accent-warning/10 transition-colors text-[10px] flex-shrink-0"
             >
-              {t({ en: 'Skip timeout', fr: 'Passer le timeout' })}
+              {skipFeedback ? t({ en: '✓ +60 s', fr: '✓ +60 s' }) : t({ en: 'Skip timeout', fr: 'Passer le timeout' })}
             </button>
           )}
           {status === 'interrupted' && (

@@ -249,8 +249,12 @@ describe('RunCommandView skip timeout button', () => {
     expect(button).toBeTruthy()
     expect(button?.textContent).toBe('Skip timeout')
 
-    button?.click()
+    act(() => {
+      button?.click()
+    })
     expect(wsSendMock).toHaveBeenCalledWith('command.skipTimeout', { toolCallId: 'call-123' })
+    // Confirmation feedback is shown briefly after the click
+    expect(button?.textContent).toBe('✓ +60 s')
   })
 
   it('does not render the button once the command has finished', () => {
