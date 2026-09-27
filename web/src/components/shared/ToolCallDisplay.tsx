@@ -239,7 +239,7 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
               result={result}
               error={error}
               durationMs={durationMs}
-              callId={args.id as string | undefined}
+              callId={callId}
             />
           )}
 
