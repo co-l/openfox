@@ -232,13 +232,14 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
           {tool === 'run_command' && (
             <RunCommandView
               command={String(args.command ?? '')}
-              timeout={(args.timeout as number | undefined) ?? 120_000}
+              timeout={(args.timeout as number | undefined) ?? 60_000}
               startedAt={startedAt}
               streamingOutput={streamingOutput}
               status={status}
               result={result}
               error={error}
               durationMs={durationMs}
+              callId={callId}
             />
           )}
 

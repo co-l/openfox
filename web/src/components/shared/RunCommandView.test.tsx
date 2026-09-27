@@ -4,9 +4,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { RunCommandView } from './RunCommandView'
 
+const wsSendMock = vi.fn()
+vi.mock('../../lib/ws', () => ({
+  wsClient: {
+    send: (...args: unknown[]) => wsSendMock(...args),
+  },
+}))
+
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  wsSendMock.mockClear()
+})
 
 interface ScrollMetrics {
   scrollHeight: number
@@ -219,5 +229,97 @@ describe('RunCommandView auto-scroll', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('RunCommandView fast-forward button', () => {
+  it('renders the button while pending and advances the elapsed by +60s per click without extending the total', () => {
+    vi.useFakeTimers()
+    try {
+      const startedAt = Date.now()
+      const { container } = render(
+        <RunCommandView
+          command="echo hello"
+          timeout={600_000}
+          status="pending"
+          startedAt={startedAt}
+          callId="call-123"
+          streamingOutput={[{ stream: 'stdout', content: 'out\n' }]}
+        />,
+      )
+
+      const counter = () => container.textContent?.match(/(\d+\.\d)s \/ (\d+)s/)?.[0]
+      expect(counter()).toBe('0.0s / 600s')
+
+      const button = container.querySelector('button')
+      expect(button).toBeTruthy()
+      expect(button?.textContent).toBe('Skip timeout')
+
+      // One click advances the elapsed by 60s; the total stays at 600s and no
+      // fast-forward is sent because 60s < 600s.
+      act(() => {
+        button?.click()
+      })
+      expect(counter()).toBe('60.0s / 600s')
+      expect(wsSendMock).not.toHaveBeenCalled()
+      // Confirmation feedback is shown briefly after the click
+      expect(button?.textContent).toBe('✓ +60 s')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('sends command.fastForward with the callId when the fast-forwarded elapsed reaches the total', () => {
+    vi.useFakeTimers()
+    try {
+      const startedAt = Date.now()
+      const { container } = render(
+        <RunCommandView
+          command="echo hello"
+          timeout={600_000}
+          status="pending"
+          startedAt={startedAt}
+          callId="call-123"
+          streamingOutput={[{ stream: 'stdout', content: 'out\n' }]}
+        />,
+      )
+
+      const counter = () => container.textContent?.match(/(\d+\.\d)s \/ (\d+)s/)?.[0]
+
+      // ~10 clicks of +60s reach the 600s total; the fast-forward is sent only
+      // on the click that crosses the threshold.
+      for (let i = 0; i < 9; i++) {
+        act(() => {
+          container.querySelector('button')?.click()
+        })
+      }
+      expect(counter()).toBe('540.0s / 600s')
+      expect(wsSendMock).not.toHaveBeenCalled()
+
+      act(() => {
+        container.querySelector('button')?.click()
+      })
+      expect(counter()).toBe('600.0s / 600s')
+      expect(wsSendMock).toHaveBeenCalledWith('command.fastForward', { toolCallId: 'call-123' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not render the button once the command has finished', () => {
+    const { container } = render(
+      <RunCommandView
+        command="echo hello"
+        timeout={10_000}
+        status="success"
+        startedAt={Date.now()}
+        durationMs={100}
+        result="done"
+        callId="call-123"
+      />,
+    )
+
+    expect(container.querySelector('button')).toBeNull()
+    expect(wsSendMock).not.toHaveBeenCalled()
   })
 })

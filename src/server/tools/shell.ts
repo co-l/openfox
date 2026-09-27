@@ -118,7 +118,7 @@ export const runCommandTool = createTool<RunCommandArgs>(
           },
           timeout: {
             type: 'number',
-            description: 'Timeout in milliseconds (default: 120000)',
+            description: 'Timeout in milliseconds (default: 60000)',
           },
         },
         required: ['command'],
@@ -126,7 +126,7 @@ export const runCommandTool = createTool<RunCommandArgs>(
     },
   },
   async (args, context, helpers) => {
-    const timeout = args.timeout ?? 120_000
+    const timeout = args.timeout ?? 60_000
 
     if (hasBackgroundAmpersand(args.command)) {
       return helpers.error(
@@ -185,8 +185,20 @@ export const runCommandTool = createTool<RunCommandArgs>(
     const useRtk = getSetting(SETTINGS_KEYS.TOOLS_USE_RTK) === 'true'
     const finalCommand = useRtk ? await tryRtkRewrite(execCommand) : execCommand
 
+    const registerFastForward = (fastForward: () => void) => {
+      if (context.toolCallId) commandFastForwards.set(context.toolCallId, fastForward)
+    }
+
     const execStart = Date.now()
-    const result = await executeCommand(finalCommand, workingDir, timeout, context.signal, context.onProgress)
+    const result = await executeCommand(
+      finalCommand,
+      workingDir,
+      timeout,
+      context.signal,
+      context.onProgress,
+      registerFastForward,
+    )
+    if (context.toolCallId) commandFastForwards.delete(context.toolCallId)
 
     let output = ''
 
@@ -275,20 +287,48 @@ async function tryRtkRewrite(command: string): Promise<string> {
   return command
 }
 
+// Active run_command calls that may be fast-forwarded (wired from the
+// `command.fastForward` WS message). toolCallId → terminate fn.
+const commandFastForwards = new Map<string, () => void>()
+
+/**
+ * Fast-forward the run_command call identified by toolCallId, terminating it
+ * as if the user had interrupted it. Returns false when no active command is
+ * registered for that id.
+ */
+export function fastForwardCommand(toolCallId: string): boolean {
+  const fastForward = commandFastForwards.get(toolCallId)
+  if (!fastForward) return false
+  fastForward()
+  return true
+}
+
 function executeCommand(
   command: string,
   cwd: string,
   timeout: number,
   signal?: AbortSignal,
   onProgress?: (message: string) => void,
+  onFastForward?: (fastForward: () => void) => void,
 ): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
-    if (checkAborted(signal)) {
+    // Combine the context cancellation signal with a per-command fast-forward
+    // abort. Fast-forwarding (WS `command.fastForward`) terminates the command
+    // as if the user had interrupted it.
+    const fastForwardAbort = new AbortController()
+    const onContextAbort = () => fastForwardAbort.abort()
+    if (signal) {
+      if (signal.aborted) fastForwardAbort.abort()
+      else signal.addEventListener('abort', onContextAbort, { once: true })
+    }
+    const cmdSignal = fastForwardAbort.signal
+
+    if (checkAborted(cmdSignal)) {
       reject(new Error('Command aborted before execution'))
       return
     }
 
-    const proc = spawnShellProcess(command, cwd, signal, true)
+    const proc = spawnShellProcess(command, cwd, cmdSignal, true)
     const stdoutDecoder = createUtf8StreamDecoder()
     const stderrDecoder = createUtf8StreamDecoder()
     let stdout = ''
@@ -313,7 +353,8 @@ function executeCommand(
       settled = true
       clearTimeout(timer)
       if (graceTimer !== undefined) clearTimeout(graceTimer)
-      signal?.removeEventListener('abort', onAbort)
+      cmdSignal.removeEventListener('abort', onAbort)
+      if (signal) signal.removeEventListener('abort', onContextAbort)
       const out = (stdout + stdoutDecoder.end()).trim()
       resolve({
         stdout: appendix ? (out ? `${out}\n\n${appendix}` : appendix) : out,
@@ -323,7 +364,7 @@ function executeCommand(
       })
     }
 
-    const timer = setTimeout(() => {
+    const fireTimeout = () => {
       timedOut = true
       // The shell already exited and a detached child is holding the pipes:
       // there is nothing left to kill, so settle immediately.
@@ -332,7 +373,15 @@ function executeCommand(
         return
       }
       void terminateProcessTree(proc, { exited: () => exited })
-    }, timeout)
+    }
+
+    const timer = setTimeout(fireTimeout, timeout)
+    // A fast-forward (WS `command.fastForward`) terminates the command as if
+    // the user had interrupted it — the timeout itself is never extended.
+    onFastForward?.(() => {
+      if (exited || settled) return
+      fastForwardAbort.abort()
+    })
 
     const onAbort = () => {
       if (!timedOut && !aborted) {
@@ -344,7 +393,7 @@ function executeCommand(
         void terminateProcessTree(proc, { exited: () => exited, immediate: true })
       }
     }
-    signal?.addEventListener('abort', onAbort)
+    cmdSignal.addEventListener('abort', onAbort)
 
     proc.stdout?.on('data', (data: Buffer) => {
       const text = stdoutDecoder.write(data)
@@ -404,7 +453,8 @@ function executeCommand(
     proc.on('error', (error) => {
       clearTimeout(timer)
       if (graceTimer !== undefined) clearTimeout(graceTimer)
-      signal?.removeEventListener('abort', onAbort)
+      cmdSignal.removeEventListener('abort', onAbort)
+      if (signal) signal.removeEventListener('abort', onContextAbort)
       reject(error)
     })
   })

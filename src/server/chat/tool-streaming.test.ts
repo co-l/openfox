@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { createToolProgressHandler, parseProgressMessage } from './tool-streaming.js'
+import { createToolProgressHandler, parseProgressMessage, MAX_TOOL_OUTPUT_EVENTS_PER_CALL } from './tool-streaming.js'
 import { EventStore } from '../events/store.js'
 import Database from 'better-sqlite3'
 
@@ -133,6 +133,36 @@ describe('tool streaming', () => {
         messageId: 'msg-B',
         toolCallId: 'call-B',
         content: 'from B',
+      })
+    })
+
+    it('caps persisted tool.output events per call at MAX_TOOL_OUTPUT_EVENTS_PER_CALL', () => {
+      const handler = createToolProgressHandler(append, 'msg-1', 'call-1', 'test-session')
+      for (let i = 0; i < MAX_TOOL_OUTPUT_EVENTS_PER_CALL + 100; i++) {
+        handler(`[stdout] line ${i}`)
+      }
+
+      const events = eventStore.getEvents('test-session')
+      expect(events).toHaveLength(MAX_TOOL_OUTPUT_EVENTS_PER_CALL)
+      expect(events[0]!.data).toMatchObject({ content: 'line 0' })
+      expect(events[MAX_TOOL_OUTPUT_EVENTS_PER_CALL - 1]!.data).toMatchObject({
+        content: `line ${MAX_TOOL_OUTPUT_EVENTS_PER_CALL - 1}`,
+      })
+    })
+
+    it('counts the cap per tool call, not per session', () => {
+      const handler1 = createToolProgressHandler(append, 'msg-A', 'call-A', 'test-session')
+      const handler2 = createToolProgressHandler(append, 'msg-B', 'call-B', 'test-session')
+      for (let i = 0; i < MAX_TOOL_OUTPUT_EVENTS_PER_CALL; i++) {
+        handler1(`[stdout] A ${i}`)
+      }
+      handler2('[stdout] B first')
+
+      const events = eventStore.getEvents('test-session')
+      expect(events).toHaveLength(MAX_TOOL_OUTPUT_EVENTS_PER_CALL + 1)
+      expect(events[MAX_TOOL_OUTPUT_EVENTS_PER_CALL]!.data).toMatchObject({
+        toolCallId: 'call-B',
+        content: 'B first',
       })
     })
   })

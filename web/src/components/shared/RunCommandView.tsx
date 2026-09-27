@@ -5,6 +5,8 @@ import { useViewport } from '../../hooks/useViewport'
 import { memo, useEffect, useRef, useState } from 'react'
 import { ansiToReact } from '../../lib/ansiParser'
 import { useT } from '../../hooks/useT'
+import { wsClient } from '../../lib/ws'
+import { FAST_FORWARD_STEP_MS } from '@shared/constants.js'
 
 interface StreamingChunk {
   stream: 'stdout' | 'stderr'
@@ -20,6 +22,7 @@ interface RunCommandViewProps {
   result?: string // final output (shown after completion)
   error?: string
   durationMs?: number
+  callId?: string // tool call id (for command.fastForward)
 }
 
 /**
@@ -34,10 +37,16 @@ export const RunCommandView = memo(function RunCommandView({
   result,
   error,
   durationMs,
+  callId,
 }: RunCommandViewProps) {
   const t = useT()
   const scrollRef = useRef<OverlayScrollbarsComponentRef<'div'>>(null)
   const [elapsed, setElapsed] = useState(0)
+  const [skipFeedback, setSkipFeedback] = useState(false)
+  // Fast-forward offset (ms) added to the real elapsed time. Each click adds
+  // one fixed step; the total (timeout) is never extended. When the displayed
+  // elapsed reaches the total, the command is terminated on the server.
+  const [elapsedOffset, setElapsedOffset] = useState(0)
 
   const getViewport = useViewport(scrollRef)
   const { setAutoScroll, force_scroll_to_bottom, handleScrollbarGesture } = useAutoScroll(scrollRef, null, getViewport)
@@ -65,9 +74,12 @@ export const RunCommandView = memo(function RunCommandView({
     return () => clearInterval(interval)
   }, [status, startedAt])
 
-  // Format timeout display
-  const timeoutSec = timeout / 1000
-  const elapsedSec = status === 'pending' ? elapsed / 1000 : (durationMs ?? 0) / 1000
+  // Format timeout display. The total is the fixed timeout; the displayed
+  // elapsed is the real elapsed plus the fast-forward offset.
+  const totalMs = timeout
+  const totalSec = totalMs / 1000
+  const displayElapsedMs = status === 'pending' ? elapsed + elapsedOffset : (durationMs ?? 0)
+  const elapsedSec = displayElapsedMs / 1000
 
   // Combine streaming chunks into displayable output
   const displayOutput = status === 'pending' ? (streamingOutput?.map((c) => c.content).join('') ?? '') : (result ?? '')
@@ -86,11 +98,37 @@ export const RunCommandView = memo(function RunCommandView({
           {status === 'pending' && (
             <span className="animate-pulse text-accent-warning">{t({ en: 'running', fr: 'en cours' })}</span>
           )}
+          {status === 'pending' && (
+            <button
+              onClick={() => {
+                const newOffset = elapsedOffset + FAST_FORWARD_STEP_MS
+                setElapsedOffset(newOffset)
+                // Once the fast-forwarded elapsed reaches the total, terminate
+                // the command on the server so the call settles as completed.
+                if (elapsed + newOffset >= timeout) {
+                  try {
+                    wsClient.send('command.fastForward', { toolCallId: callId })
+                  } catch {
+                    // Socket not connected — nothing to do
+                  }
+                }
+                setSkipFeedback(true)
+                setTimeout(() => setSkipFeedback(false), 2500)
+              }}
+              title={t({
+                en: 'Fast-forward +60 s (terminates at the total)',
+                fr: 'Avancer de 60 s (termine au total)',
+              })}
+              className="px-1.5 py-0.5 rounded border border-accent-warning/40 text-accent-warning hover:bg-accent-warning/10 transition-colors text-[10px] flex-shrink-0"
+            >
+              {skipFeedback ? t({ en: '✓ +60 s', fr: '✓ +60 s' }) : t({ en: 'Skip timeout', fr: 'Passer le timeout' })}
+            </button>
+          )}
           {status === 'interrupted' && (
             <span className="text-red-400">{t({ en: 'interrupted', fr: 'interrompu' })}</span>
           )}
           <span className={status === 'pending' ? 'text-text-secondary' : 'text-text-muted'}>
-            {`${elapsedSec.toFixed(1)}s / ${timeoutSec}s`}
+            {`${elapsedSec.toFixed(1)}s / ${totalSec.toFixed(0)}s`}
           </span>
         </div>
       </div>
@@ -100,7 +138,7 @@ export const RunCommandView = memo(function RunCommandView({
         <div className="h-1 bg-bg-tertiary rounded overflow-hidden">
           <div
             className="h-full bg-accent-warning transition-all duration-100"
-            style={{ width: `${Math.min(100, (elapsed / timeout) * 100)}%` }}
+            style={{ width: `${Math.min(100, (displayElapsedMs / totalMs) * 100)}%` }}
           />
         </div>
       )}

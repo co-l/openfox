@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { runCommandTool } from './shell.js'
+import { runCommandTool, fastForwardCommand } from './shell.js'
 import type { ToolContext } from './types.js'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -421,6 +421,68 @@ for i in a b c d e f g h i j; do echo "$i"; done
       15000,
     )
   })
+})
+
+describe('fastForwardCommand', () => {
+  let tempDir: string
+  const mockSessionManager = {
+    recordFileRead: vi.fn(),
+    getReadFiles: vi.fn().mockReturnValue({}),
+    updateFileHash: vi.fn(),
+  } as any
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'shell-ff-'))
+  })
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
+  })
+
+  it('returns false for an unknown toolCallId', () => {
+    expect(fastForwardCommand('no-such-call')).toBe(false)
+  })
+
+  it('terminates the command promptly when fast-forwarded', async () => {
+    const context: ToolContext = {
+      sessionManager: mockSessionManager,
+      workdir: tempDir,
+      sessionId: 'test-session',
+      toolCallId: 'call-ff-1',
+    }
+
+    // 5s command with a 10s timeout — fast-forwarding at 400ms terminates it
+    // promptly (well before either the 5s completion or the 10s timeout).
+    const pending = runCommandTool.execute({ command: 'node -e "setTimeout(() => {}, 5000)"', timeout: 10000 }, context)
+
+    const started = Date.now()
+    await new Promise((r) => setTimeout(r, 400))
+    expect(fastForwardCommand('call-ff-1')).toBe(true)
+
+    const result = await pending
+    expect(Date.now() - started).toBeLessThan(3000)
+    expect(result.success).toBe(false)
+    expect(result.output).toContain('[interrupted by user]')
+
+    // Registry entry is cleaned up once the call settles
+    expect(fastForwardCommand('call-ff-1')).toBe(false)
+  }, 10000)
+
+  it('does not extend the timeout when not fast-forwarded', async () => {
+    const context: ToolContext = {
+      sessionManager: mockSessionManager,
+      workdir: tempDir,
+      sessionId: 'test-session',
+      toolCallId: 'call-ff-2',
+    }
+
+    // 1.5s command with a 1s timeout — with no fast-forward the timeout stays
+    // at 1s and the command is killed by the timeout.
+    const pending = runCommandTool.execute({ command: 'node -e "setTimeout(() => {}, 1500)"', timeout: 1000 }, context)
+    const result = await pending
+    expect(result.success).toBe(false)
+    expect(result.output).toContain('[Process timed out')
+  }, 10000)
 })
 
 // Separate import for afterEach

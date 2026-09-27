@@ -41,6 +41,8 @@ export type ClientMessageType =
   | 'path.confirm' // User response to path confirmation request
   // Ask user
   | 'ask.answer' // User response to ask_user question
+  // Command
+  | 'command.fastForward' // Fast-forward a running run_command call by one fixed step (terminates it at the total)
 
 export interface ClientMessage<T = unknown> {
   id: string
@@ -61,6 +63,11 @@ export interface AskAnswerPayload {
   callId: string
   answer: string
   skip?: boolean
+}
+
+// Command payload
+export interface CommandFastForwardPayload {
+  toolCallId: string
 }
 
 // Shared queue types

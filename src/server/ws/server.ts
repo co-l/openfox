@@ -22,6 +22,7 @@ import { launchWorkflowRun } from '../runner/launch.js'
 import { appendCompactionPrompt } from '../context/compactor.js'
 import { computeSessionHash, applyDynamicContext, computeUnifiedDiff } from '../chat/dynamic-context.js'
 import { provideAnswer } from '../tools/index.js'
+import { fastForwardCommand } from '../tools/shell.js'
 import { logger } from '../utils/logger.js'
 import { devServerManager } from '../dev-server/manager.js'
 import { onProcessEvent } from '../tools/background-process/manager.js'
@@ -1689,6 +1690,32 @@ async function handleClientMessage(
 
       send({ type: 'ack', payload: {}, id: message.id })
       _startTurnWithCompletionChain(retrySessionId, controller)
+      break
+    }
+
+    case 'command.fastForward': {
+      const payload = message.payload as import('../../shared/protocol.js').CommandFastForwardPayload | undefined
+      const ffToolCallId = payload?.toolCallId
+      if (!ffToolCallId) {
+        send(
+          createErrorMessage(
+            'INVALID_PAYLOAD',
+            serverT({ en: 'Invalid command.fastForward payload', fr: 'Payload de command.fastForward invalide' }),
+            message.id,
+          ),
+        )
+        return
+      }
+      const fastForwarded = fastForwardCommand(ffToolCallId)
+      send(
+        fastForwarded
+          ? { type: 'ack', payload: { fastForwarded: true }, id: message.id }
+          : createErrorMessage(
+              'NO_ACTIVE_COMMAND',
+              serverT({ en: 'No active command to fast-forward', fr: 'Aucune commande active à avancer' }),
+              message.id,
+            ),
+      )
       break
     }
 
