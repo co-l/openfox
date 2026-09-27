@@ -272,7 +272,7 @@ export interface PluginContext {
   notify(request: PluginNotificationRequest): void
   publish(panelId: string | undefined, key: string, value: unknown): void
   /** Host internals exposed for workflow-orchestration plugins. */
-  readonly openFoxInternals?: PluginOpenFoxInternals
+  readonly openFoxInternals?: PluginOpenFoxInternals | undefined
 }
 
 export interface PluginRegistry {
