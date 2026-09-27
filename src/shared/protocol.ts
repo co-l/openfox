@@ -42,7 +42,7 @@ export type ClientMessageType =
   // Ask user
   | 'ask.answer' // User response to ask_user question
   // Command
-  | 'command.skipTimeout' // Grant one extra timeout window to a running run_command call
+  | 'command.fastForward' // Fast-forward a running run_command call by one fixed step (terminates it at the total)
 
 export interface ClientMessage<T = unknown> {
   id: string
@@ -66,7 +66,7 @@ export interface AskAnswerPayload {
 }
 
 // Command payload
-export interface CommandSkipTimeoutPayload {
+export interface CommandFastForwardPayload {
   toolCallId: string
 }
 

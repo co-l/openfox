@@ -22,7 +22,7 @@ import { launchWorkflowRun } from '../runner/launch.js'
 import { appendCompactionPrompt } from '../context/compactor.js'
 import { computeSessionHash, applyDynamicContext, computeUnifiedDiff } from '../chat/dynamic-context.js'
 import { provideAnswer } from '../tools/index.js'
-import { skipCommandTimeout } from '../tools/shell.js'
+import { fastForwardCommand } from '../tools/shell.js'
 import { logger } from '../utils/logger.js'
 import { devServerManager } from '../dev-server/manager.js'
 import { onProcessEvent } from '../tools/background-process/manager.js'
@@ -1693,26 +1693,26 @@ async function handleClientMessage(
       break
     }
 
-    case 'command.skipTimeout': {
-      const payload = message.payload as import('../../shared/protocol.js').CommandSkipTimeoutPayload | undefined
-      const skipToolCallId = payload?.toolCallId
-      if (!skipToolCallId) {
+    case 'command.fastForward': {
+      const payload = message.payload as import('../../shared/protocol.js').CommandFastForwardPayload | undefined
+      const ffToolCallId = payload?.toolCallId
+      if (!ffToolCallId) {
         send(
           createErrorMessage(
             'INVALID_PAYLOAD',
-            serverT({ en: 'Invalid command.skipTimeout payload', fr: 'Payload de command.skipTimeout invalide' }),
+            serverT({ en: 'Invalid command.fastForward payload', fr: 'Payload de command.fastForward invalide' }),
             message.id,
           ),
         )
         return
       }
-      const skipped = skipCommandTimeout(skipToolCallId)
+      const fastForwarded = fastForwardCommand(ffToolCallId)
       send(
-        skipped
-          ? { type: 'ack', payload: { skipped: true }, id: message.id }
+        fastForwarded
+          ? { type: 'ack', payload: { fastForwarded: true }, id: message.id }
           : createErrorMessage(
-              'NO_ACTIVE_TIMEOUT',
-              serverT({ en: 'No active command timeout to skip', fr: 'Aucun timeout de commande actif à passer' }),
+              'NO_ACTIVE_COMMAND',
+              serverT({ en: 'No active command to fast-forward', fr: 'Aucune commande active à avancer' }),
               message.id,
             ),
       )

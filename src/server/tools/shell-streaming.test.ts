@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { runCommandTool, skipCommandTimeout } from './shell.js'
+import { runCommandTool, fastForwardCommand } from './shell.js'
 import type { ToolContext } from './types.js'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -423,7 +423,7 @@ for i in a b c d e f g h i j; do echo "$i"; done
   })
 })
 
-describe('skipCommandTimeout', () => {
+describe('fastForwardCommand', () => {
   let tempDir: string
   const mockSessionManager = {
     recordFileRead: vi.fn(),
@@ -432,7 +432,7 @@ describe('skipCommandTimeout', () => {
   } as any
 
   beforeEach(async () => {
-    tempDir = await mkdtemp(join(tmpdir(), 'shell-skip-'))
+    tempDir = await mkdtemp(join(tmpdir(), 'shell-ff-'))
   })
 
   afterEach(async () => {
@@ -440,30 +440,48 @@ describe('skipCommandTimeout', () => {
   })
 
   it('returns false for an unknown toolCallId', () => {
-    expect(skipCommandTimeout('no-such-call')).toBe(false)
+    expect(fastForwardCommand('no-such-call')).toBe(false)
   })
 
-  it('grants one extra fixed 60s window per skip', async () => {
+  it('terminates the command promptly when fast-forwarded', async () => {
     const context: ToolContext = {
       sessionManager: mockSessionManager,
       workdir: tempDir,
       sessionId: 'test-session',
-      toolCallId: 'call-skip-1',
+      toolCallId: 'call-ff-1',
     }
 
-    // 1.5s command with a 1s timeout — dies without a skip. A skip at 400ms
-    // extends the deadline by a fixed 60s (to ~60.4s), so the command survives.
-    const pending = runCommandTool.execute({ command: 'node -e "setTimeout(() => {}, 1500)"', timeout: 1000 }, context)
+    // 5s command with a 10s timeout — fast-forwarding at 400ms terminates it
+    // promptly (well before either the 5s completion or the 10s timeout).
+    const pending = runCommandTool.execute({ command: 'node -e "setTimeout(() => {}, 5000)"', timeout: 10000 }, context)
 
+    const started = Date.now()
     await new Promise((r) => setTimeout(r, 400))
-    expect(skipCommandTimeout('call-skip-1')).toBe(true)
+    expect(fastForwardCommand('call-ff-1')).toBe(true)
 
     const result = await pending
-    expect(result.success).toBe(true)
-    expect(result.output).not.toContain('[Process timed out')
+    expect(Date.now() - started).toBeLessThan(3000)
+    expect(result.success).toBe(false)
+    expect(result.output).toContain('[interrupted by user]')
 
     // Registry entry is cleaned up once the call settles
-    expect(skipCommandTimeout('call-skip-1')).toBe(false)
+    expect(fastForwardCommand('call-ff-1')).toBe(false)
+  }, 10000)
+
+  it('does not extend the timeout when not fast-forwarded', async () => {
+    const context: ToolContext = {
+      sessionManager: mockSessionManager,
+      workdir: tempDir,
+      sessionId: 'test-session',
+      toolCallId: 'call-ff-2',
+    }
+
+    // 1.5s command with a 1s timeout — with no fast-forward the timeout stays
+    // at 1s and the command is killed by the timeout.
+    const pending = runCommandTool.execute({ command: 'node -e "setTimeout(() => {}, 1500)"', timeout: 1000 }, context)
+    const result = await pending
+    expect(result.success).toBe(false)
+    expect(result.output).toContain('[Process timed out')
   }, 10000)
 })
 
