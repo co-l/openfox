@@ -14,6 +14,7 @@ import {
   foldTurnEventsToSnapshotMessages,
   foldWaitingWorkflow,
   reorderToolMessages,
+  trimSnapshotStreamingOutput,
 } from './folding.js'
 import type { ContextMessage, MessageWithId } from './fold-types.js'
 const baseEvent = {
@@ -2996,15 +2997,28 @@ describe('buildSnapshot streamingOutput de-duplication', () => {
     expect(tc.result?.output).toBe('Done')
   })
 
-  it('keeps streamingOutput integral for pending tool calls (no result yet)', () => {
-    // 1100 chunks × 1KB ≈ 1.1MB — pending (in-flight) streams are preserved
-    // in full, no size cap: a mid-run reload must keep showing the live feed.
+  it('caps streamingOutput of pending tool calls, keeping the tail', () => {
+    // 1100 chunks × 1KB ≈ 1.1MB — the pending stream is capped so one runaway
+    // stream (infinite-loop command) cannot bloat a snapshot past V8's ~512MB
+    // string limit and break JSON.stringify. The tail (most recent output) is
+    // kept: that is what the user is watching.
     const state = foldSessionState(makeEvents(1100, 1024, false), 'window-1', 200000)
     const snapshot = buildSnapshot(state, 100)
 
     const tc = snapshot.messages[0]!.toolCalls![0]!
-    const joined = tc.streamingOutput?.map((c) => c.content).join('') ?? ''
-    expect(joined.length).toBe(1100 * 1024)
+    expect(tc.streamingOutputTruncated).toBe(true)
+    const kept = tc.streamingOutput!
+    expect(kept.length).toBeLessThanOrEqual(200)
+    expect(kept[kept.length - 1]!.content.startsWith('chunk-01099:')).toBe(true)
+    expect(kept[0]!.content.startsWith('chunk-00999:')).toBe(true)
+  })
+
+  it('keeps small pending streamingOutput integral (under the cap)', () => {
+    const state = foldSessionState(makeEvents(50, 1024, false), 'window-1', 200000)
+    const snapshot = buildSnapshot(state, 100)
+
+    const tc = snapshot.messages[0]!.toolCalls![0]!
+    expect(tc.streamingOutput?.length).toBe(50)
     expect(tc.streamingOutputTruncated).toBeUndefined()
   })
 
@@ -3024,6 +3038,17 @@ describe('buildSnapshot streamingOutput de-duplication', () => {
 
     expect(state.messages[0]!.toolCalls![0]!.streamingOutput!.length).toBe(originalLength)
     expect(state.messages[0]!.toolCalls![0]!.streamingOutputTruncated).toBeUndefined()
+  })
+
+  it('trimSnapshotStreamingOutput reports truncated pending streams separately', () => {
+    const events = makeEvents(300, 1024, false)
+    const state = foldSessionState(events, 'window-1', 200000)
+    const { messages, droppedStreams, keptStreams, truncatedStreams } = trimSnapshotStreamingOutput(state.messages)
+
+    expect(droppedStreams).toBe(0)
+    expect(keptStreams).toBe(1)
+    expect(truncatedStreams).toBe(1)
+    expect(messages[0]!.toolCalls![0]!.streamingOutputTruncated).toBe(true)
   })
 })
 

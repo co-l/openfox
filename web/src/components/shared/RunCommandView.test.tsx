@@ -4,9 +4,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { RunCommandView } from './RunCommandView'
 
+const wsSendMock = vi.fn()
+vi.mock('../../lib/ws', () => ({
+  wsClient: {
+    send: (...args: unknown[]) => wsSendMock(...args),
+  },
+}))
+
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  wsSendMock.mockClear()
+})
 
 interface ScrollMetrics {
   scrollHeight: number
@@ -219,5 +229,44 @@ describe('RunCommandView auto-scroll', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('RunCommandView skip timeout button', () => {
+  it('renders the button while pending and sends command.skipTimeout with the callId', () => {
+    const { container } = render(
+      <RunCommandView
+        command="echo hello"
+        timeout={10_000}
+        status="pending"
+        startedAt={Date.now()}
+        callId="call-123"
+        streamingOutput={[{ stream: 'stdout', content: 'out\n' }]}
+      />,
+    )
+
+    const button = container.querySelector('button')
+    expect(button).toBeTruthy()
+    expect(button?.textContent).toBe('Skip timeout')
+
+    button?.click()
+    expect(wsSendMock).toHaveBeenCalledWith('command.skipTimeout', { toolCallId: 'call-123' })
+  })
+
+  it('does not render the button once the command has finished', () => {
+    const { container } = render(
+      <RunCommandView
+        command="echo hello"
+        timeout={10_000}
+        status="success"
+        startedAt={Date.now()}
+        durationMs={100}
+        result="done"
+        callId="call-123"
+      />,
+    )
+
+    expect(container.querySelector('button')).toBeNull()
+    expect(wsSendMock).not.toHaveBeenCalled()
   })
 })

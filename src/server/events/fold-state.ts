@@ -448,22 +448,30 @@ export function foldWaitingWorkflow(events: EventLike[]): FoldedSessionState['wa
 // accumulated 41MB of it). We drop it from snapshots for EVERY finished call
 // (one that has a result) — unconditionally, no content inspection needed,
 // because no consumer ever reads a finished call's stream. Pending (in-flight)
-// calls keep their stream in full, without any size cap: a mid-run reload must
-// keep showing the live feed, and the raw tool.output events remain the source
+// calls keep their stream so a mid-run reload keeps showing the live feed, but
+// it is capped (tail kept): a single runaway stream (e.g. an infinite-loop
+// command) must not be able to bloat a snapshot past V8's ~512MB string limit
+// and make JSON.stringify throw. The raw tool.output events remain the source
 // of truth while the session runs.
 // ============================================================================
 
+const STREAMING_OUTPUT_MAX_CHUNKS = 200
+const STREAMING_OUTPUT_MAX_BYTES = 100 * 1024
+
 /**
- * Remove streaming output from finished tool calls in snapshot messages.
+ * Remove streaming output from finished tool calls in snapshot messages, and
+ * cap the streaming output of pending calls (see above).
  * Returns new message objects for modified messages — inputs are not mutated.
  */
 export function trimSnapshotStreamingOutput(messages: SnapshotMessage[]): {
   messages: SnapshotMessage[]
   droppedStreams: number
   keptStreams: number
+  truncatedStreams: number
 } {
   let droppedStreams = 0
   let keptStreams = 0
+  let truncatedStreams = 0
   const trimmedMessages = messages.map((message) => {
     const toolCalls = message.toolCalls
     if (!toolCalls) return message
@@ -480,14 +488,37 @@ export function trimSnapshotStreamingOutput(messages: SnapshotMessage[]): {
         void _omittedFlag
         return rest as ToolCallWithResult
       }
-      // Pending call: keep the live stream so a mid-run reload keeps showing it.
+      // Pending call: keep the live stream so a mid-run reload keeps showing
+      // it — capped, with the tail kept (most recent output is what the user
+      // is watching).
+      const chunks = tc.streamingOutput
+      let totalBytes = 0
+      for (const chunk of chunks) totalBytes += chunk.content.length
+      if (chunks.length > STREAMING_OUTPUT_MAX_CHUNKS || totalBytes > STREAMING_OUTPUT_MAX_BYTES) {
+        keptStreams++
+        truncatedStreams++
+        changed = true
+        const kept: typeof chunks = []
+        let keptBytes = 0
+        for (
+          let i = chunks.length - 1;
+          i >= 0 && kept.length < STREAMING_OUTPUT_MAX_CHUNKS && keptBytes <= STREAMING_OUTPUT_MAX_BYTES;
+          i--
+        ) {
+          const chunk = chunks[i]
+          if (!chunk) break
+          keptBytes += chunk.content.length
+          kept.unshift(chunk)
+        }
+        return { ...tc, streamingOutput: kept, streamingOutputTruncated: true }
+      }
       keptStreams++
       return tc
     })
     if (!changed) return message
     return { ...message, toolCalls: newToolCalls }
   })
-  return { messages: trimmedMessages, droppedStreams, keptStreams }
+  return { messages: trimmedMessages, droppedStreams, keptStreams, truncatedStreams }
 }
 
 export function buildSnapshot(

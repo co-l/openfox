@@ -118,7 +118,7 @@ export const runCommandTool = createTool<RunCommandArgs>(
           },
           timeout: {
             type: 'number',
-            description: 'Timeout in milliseconds (default: 120000)',
+            description: 'Timeout in milliseconds (default: 60000)',
           },
         },
         required: ['command'],
@@ -126,7 +126,7 @@ export const runCommandTool = createTool<RunCommandArgs>(
     },
   },
   async (args, context, helpers) => {
-    const timeout = args.timeout ?? 120_000
+    const timeout = args.timeout ?? 60_000
 
     if (hasBackgroundAmpersand(args.command)) {
       return helpers.error(
@@ -185,8 +185,20 @@ export const runCommandTool = createTool<RunCommandArgs>(
     const useRtk = getSetting(SETTINGS_KEYS.TOOLS_USE_RTK) === 'true'
     const finalCommand = useRtk ? await tryRtkRewrite(execCommand) : execCommand
 
+    const registerTimeoutSkip = (rearm: () => void) => {
+      if (context.toolCallId) commandTimeoutSkips.set(context.toolCallId, rearm)
+    }
+
     const execStart = Date.now()
-    const result = await executeCommand(finalCommand, workingDir, timeout, context.signal, context.onProgress)
+    const result = await executeCommand(
+      finalCommand,
+      workingDir,
+      timeout,
+      context.signal,
+      context.onProgress,
+      registerTimeoutSkip,
+    )
+    if (context.toolCallId) commandTimeoutSkips.delete(context.toolCallId)
 
     let output = ''
 
@@ -275,12 +287,28 @@ async function tryRtkRewrite(command: string): Promise<string> {
   return command
 }
 
+// Active run_command calls that may be granted one extra timeout window
+// (wired from the `command.skipTimeout` WS message). toolCallId → rearm fn.
+const commandTimeoutSkips = new Map<string, () => void>()
+
+/**
+ * Grant one extra full timeout window to the run_command call identified by
+ * toolCallId. Returns false when no active command is registered for that id.
+ */
+export function skipCommandTimeout(toolCallId: string): boolean {
+  const rearm = commandTimeoutSkips.get(toolCallId)
+  if (!rearm) return false
+  rearm()
+  return true
+}
+
 function executeCommand(
   command: string,
   cwd: string,
   timeout: number,
   signal?: AbortSignal,
   onProgress?: (message: string) => void,
+  onTimer?: (rearm: () => void) => void,
 ): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
     if (checkAborted(signal)) {
@@ -323,7 +351,7 @@ function executeCommand(
       })
     }
 
-    const timer = setTimeout(() => {
+    const fireTimeout = () => {
       timedOut = true
       // The shell already exited and a detached child is holding the pipes:
       // there is nothing left to kill, so settle immediately.
@@ -332,7 +360,17 @@ function executeCommand(
         return
       }
       void terminateProcessTree(proc, { exited: () => exited })
-    }, timeout)
+    }
+
+    let timer: ReturnType<typeof setTimeout>
+    timer = setTimeout(fireTimeout, timeout)
+    // A skip (WS `command.skipTimeout`) re-arms the timer with one fresh full
+    // window — each click buys exactly one more window, not an infinite one.
+    onTimer?.(() => {
+      if (exited || settled) return
+      clearTimeout(timer)
+      timer = setTimeout(fireTimeout, timeout)
+    })
 
     const onAbort = () => {
       if (!timedOut && !aborted) {

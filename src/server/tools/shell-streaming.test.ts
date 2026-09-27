@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { runCommandTool } from './shell.js'
+import { runCommandTool, skipCommandTimeout } from './shell.js'
 import type { ToolContext } from './types.js'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -421,6 +421,50 @@ for i in a b c d e f g h i j; do echo "$i"; done
       15000,
     )
   })
+})
+
+describe('skipCommandTimeout', () => {
+  let tempDir: string
+  const mockSessionManager = {
+    recordFileRead: vi.fn(),
+    getReadFiles: vi.fn().mockReturnValue({}),
+    updateFileHash: vi.fn(),
+  } as any
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'shell-skip-'))
+  })
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
+  })
+
+  it('returns false for an unknown toolCallId', () => {
+    expect(skipCommandTimeout('no-such-call')).toBe(false)
+  })
+
+  it('grants one extra full timeout window per skip', async () => {
+    const context: ToolContext = {
+      sessionManager: mockSessionManager,
+      workdir: tempDir,
+      sessionId: 'test-session',
+      toolCallId: 'call-skip-1',
+    }
+
+    // 1.2s command with a 1s timeout — dies without a skip, survives with one
+    // (skip at 400ms re-arms the deadline to 1400ms)
+    const pending = runCommandTool.execute({ command: 'node -e "setTimeout(() => {}, 1200)"', timeout: 1000 }, context)
+
+    await new Promise((r) => setTimeout(r, 400))
+    expect(skipCommandTimeout('call-skip-1')).toBe(true)
+
+    const result = await pending
+    expect(result.success).toBe(true)
+    expect(result.output).not.toContain('[Process timed out')
+
+    // Registry entry is cleaned up once the call settles
+    expect(skipCommandTimeout('call-skip-1')).toBe(false)
+  }, 10000)
 })
 
 // Separate import for afterEach

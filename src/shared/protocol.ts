@@ -41,6 +41,8 @@ export type ClientMessageType =
   | 'path.confirm' // User response to path confirmation request
   // Ask user
   | 'ask.answer' // User response to ask_user question
+  // Command
+  | 'command.skipTimeout' // Grant one extra timeout window to a running run_command call
 
 export interface ClientMessage<T = unknown> {
   id: string
@@ -61,6 +63,11 @@ export interface AskAnswerPayload {
   callId: string
   answer: string
   skip?: boolean
+}
+
+// Command payload
+export interface CommandSkipTimeoutPayload {
+  toolCallId: string
 }
 
 // Shared queue types

@@ -5,6 +5,7 @@ import { useViewport } from '../../hooks/useViewport'
 import { memo, useEffect, useRef, useState } from 'react'
 import { ansiToReact } from '../../lib/ansiParser'
 import { useT } from '../../hooks/useT'
+import { wsClient } from '../../lib/ws'
 
 interface StreamingChunk {
   stream: 'stdout' | 'stderr'
@@ -20,6 +21,7 @@ interface RunCommandViewProps {
   result?: string // final output (shown after completion)
   error?: string
   durationMs?: number
+  callId?: string // tool call id (for command.skipTimeout)
 }
 
 /**
@@ -34,6 +36,7 @@ export const RunCommandView = memo(function RunCommandView({
   result,
   error,
   durationMs,
+  callId,
 }: RunCommandViewProps) {
   const t = useT()
   const scrollRef = useRef<OverlayScrollbarsComponentRef<'div'>>(null)
@@ -85,6 +88,24 @@ export const RunCommandView = memo(function RunCommandView({
         <div className="flex items-center gap-2 text-xs text-text-muted flex-shrink-0">
           {status === 'pending' && (
             <span className="animate-pulse text-accent-warning">{t({ en: 'running', fr: 'en cours' })}</span>
+          )}
+          {status === 'pending' && (
+            <button
+              onClick={() => {
+                try {
+                  wsClient.send('command.skipTimeout', { toolCallId: callId })
+                } catch {
+                  // Socket not connected — nothing to do
+                }
+              }}
+              title={t({
+                en: 'Grant one extra timeout window',
+                fr: 'Accorder une fenêtre de timeout supplémentaire',
+              })}
+              className="px-1.5 py-0.5 rounded border border-accent-warning/40 text-accent-warning hover:bg-accent-warning/10 transition-colors text-[10px] flex-shrink-0"
+            >
+              {t({ en: 'Skip timeout', fr: 'Passer le timeout' })}
+            </button>
           )}
           {status === 'interrupted' && (
             <span className="text-red-400">{t({ en: 'interrupted', fr: 'interrompu' })}</span>
