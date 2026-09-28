@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.stubGlobal('requestAnimationFrame', (cb: () => void) => setTimeout(cb, 0))
 vi.stubGlobal('cancelAnimationFrame', (id: number) => clearTimeout(id))
@@ -759,6 +759,68 @@ describe('chat.stats handler', () => {
     })
 
     expect(useSessionStore.getState().liveTurnStats).toEqual(liveStats)
+  })
+})
+
+describe('chat.thinking timing latch', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('latches the thinking start on the first payload and keeps it for later payloads', async () => {
+    const useSessionStore = await loadSessionStore()
+    // Import after the store's resetModules so this is the same module instance
+    // the handler writes through.
+    const timing = await import('../../lib/thinking-timing')
+
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000_000)
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.thinking',
+      sessionId: 'session-1',
+      payload: { messageId: 'msg-t1', content: 'one' },
+    })
+    expect(timing.getThinkingStart('msg-t1')).toBe(1_000_000)
+
+    vi.setSystemTime(1_060_000)
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.thinking',
+      sessionId: 'session-1',
+      payload: { messageId: 'msg-t1', content: 'two' },
+    })
+    expect(timing.getThinkingStart('msg-t1')).toBe(1_000_000)
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.thinking',
+      sessionId: 'session-1',
+      payload: { messageId: 'msg-t2', content: 'three' },
+    })
+    expect(timing.getThinkingStart('msg-t2')).toBe(1_060_000)
+  })
+
+  it('latches the thinking end on the first non-thinking output, not on a later remount', async () => {
+    const useSessionStore = await loadSessionStore()
+    const timing = await import('../../lib/thinking-timing')
+
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000_000)
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.thinking',
+      sessionId: 'session-1',
+      payload: { messageId: 'msg-te', content: 'think' },
+    })
+
+    vi.setSystemTime(1_050_000)
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.delta',
+      sessionId: 'session-1',
+      payload: { messageId: 'msg-te', content: 'hello' },
+    })
+
+    // Simulates a scroll-driven remount 60s after thinking ended
+    vi.setSystemTime(1_110_000)
+    expect(timing.latchThinkingEnd('msg-te')).toBe(50)
   })
 })
 

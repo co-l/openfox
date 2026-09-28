@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
+import { latchThinkingStart } from '../../lib/thinking-timing'
 import { ThinkingSummary } from './ThinkingSummary'
 
 afterEach(() => {
@@ -19,6 +20,18 @@ describe('ThinkingSummary', () => {
     act(() => vi.advanceTimersByTime(12_000))
 
     expect(container.textContent).toContain('(12s)')
+  })
+
+  it('starts the elapsed time from the thinking start, not the collapse time', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(100_000)
+    latchThinkingStart('m-late')
+
+    // The block is collapsed 30s after thinking began
+    vi.setSystemTime(130_000)
+    const { container } = render(<ThinkingSummary messageId="m-late" isStreaming thinkingFinished={false} />)
+
+    expect(container.textContent).toContain('Thinking… (30s)')
   })
 
   it('ticks every 100ms while under ten seconds', () => {

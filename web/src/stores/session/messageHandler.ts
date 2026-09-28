@@ -40,6 +40,7 @@ import type { AgentType } from '../notifications'
 import type { SessionState, PendingQuestion, SessionPane } from './types'
 import { handleGlobalSoundEffects, resolveAgentType } from './sounds'
 import { getBuffer, scheduleStreamingFlush, cancelStreamingFlush } from './streamingBuffer'
+import { latchThinkingEnd, latchThinkingStart } from '../../lib/thinking-timing'
 import { snapshot } from '../../lib/resourceCache'
 import { mcpServersResource, settingResource, SETTINGS_KEYS, type McpServerInfo } from '../../lib/resources'
 import {
@@ -562,6 +563,7 @@ export function handleServerMessage(
     case 'chat.delta': {
       const sessionId = message.sessionId
       const payload = message.payload as ChatDeltaPayload
+      latchThinkingEnd(payload.messageId)
       if (
         !applyChat(set, get, sessionId, (pane) => {
           if (sessionId === activeSessionId) {
@@ -589,6 +591,7 @@ export function handleServerMessage(
     case 'chat.thinking': {
       const sessionId = message.sessionId
       const payload = message.payload as ChatThinkingPayload
+      latchThinkingStart(payload.messageId)
       if (
         !applyChat(set, get, sessionId, (pane) => {
           const buf = getBuffer(sessionId ?? '')
@@ -607,6 +610,7 @@ export function handleServerMessage(
     case 'chat.tool_preparing': {
       const sessionId = message.sessionId
       const payload = message.payload as ChatToolPreparingPayload
+      latchThinkingEnd(payload.messageId)
       if (
         !applyChat(set, get, sessionId, (pane) => {
           const msg = pane.messages.find((m) => m.id === payload.messageId)
