@@ -1,7 +1,6 @@
 import { createTool } from '../tool-helpers.js'
 import * as manager from './manager.js'
 import * as store from './store.js'
-import { serverT } from '../../i18n.js'
 
 export interface BackgroundProcessToolArgs {
   action: 'start' | 'stop' | 'list' | 'status' | 'logs'
@@ -15,7 +14,7 @@ export interface BackgroundProcessToolArgs {
 }
 
 function processNotFoundError(id: string | undefined): string {
-  return serverT({ en: 'Process not found: {{id}}', fr: 'Processus introuvable : {{id}}' }, { id: id ?? '' })
+  return `Process not found: ${id ?? ''}`
 }
 
 export const backgroundProcessTool = createTool<BackgroundProcessToolArgs>(
@@ -92,13 +91,7 @@ These processes run independently of agent turns and persist across session comp
 
         if (count >= maxPerSession) {
           return helpers.error(
-            serverT(
-              {
-                en: 'Maximum number of background processes ({{count}}) reached. Stop existing processes before starting new ones.',
-                fr: 'Nombre maximal de processus en arrière-plan ({{count}}) atteint. Arrêtez des processus existants avant d’en démarrer de nouveaux.',
-              },
-              { count: maxPerSession },
-            ),
+            `Maximum number of background processes (${maxPerSession}) reached. Stop existing processes before starting new ones.`,
           )
         }
 
@@ -106,18 +99,13 @@ These processes run independently of agent turns and persist across session comp
         const process = manager.createProcess(sessionId, name, args.command!, cwd, args.timeout)
 
         if (!process) {
-          return helpers.error(
-            serverT({
-              en: 'Failed to create process. Maximum limit may have been reached.',
-              fr: 'Échec de la création du processus. La limite maximale a peut-être été atteinte.',
-            }),
-          )
+          return helpers.error('Failed to create process. Maximum limit may have been reached.')
         }
 
         const pid = manager.startProcessCommand(process.id, sessionId, args.command!, cwd)
 
         if (!pid) {
-          return helpers.error(serverT({ en: 'Failed to start process.', fr: 'Échec du démarrage du processus.' }))
+          return helpers.error('Failed to start process.')
         }
 
         return helpers.success(
@@ -140,15 +128,7 @@ These processes run independently of agent turns and persist across session comp
         if (!proc) return helpers.error(processNotFoundError(args.processId))
 
         if (proc.status !== 'running') {
-          return helpers.error(
-            serverT(
-              {
-                en: 'Process is not running (status: {{status}}). Cannot stop.',
-                fr: 'Le processus n’est pas en cours d’exécution (statut : {{status}}). Impossible de l’arrêter.',
-              },
-              { status: proc.status },
-            ),
-          )
+          return helpers.error(`Process is not running (status: ${proc.status}). Cannot stop.`)
         }
 
         await manager.stopProcess(args.processId!, sessionId)
@@ -225,9 +205,7 @@ These processes run independently of agent turns and persist across session comp
       }
 
       default:
-        return helpers.error(
-          serverT({ en: 'Unknown action: {{action}}', fr: 'Action inconnue : {{action}}' }, { action: args.action }),
-        )
+        return helpers.error(`Unknown action: ${args.action}`)
     }
   },
 )

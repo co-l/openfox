@@ -6,7 +6,6 @@ import { computeFileHash } from './file-tracker.js'
 import { detectEncoding, decodeContent } from '../utils/encoding.js'
 import { fileTypeFromBuffer } from 'file-type'
 import { isPdfBuffer, extractPdfText, processPdfContent, formatPdfErrorMessage } from './pdf-utils.js'
-import { serverT } from '../i18n.js'
 
 interface ReadFileArgs {
   path: string
@@ -133,32 +132,18 @@ export const readFileTool = createTool<ReadFileArgs>(
       // General file size safety cap (checked before type-specific limits)
       if (stats.size > OUTPUT_LIMITS.read_file.maxFileBytes) {
         return helpers.error(
-          serverT(
-            {
-              en: 'File size ({{size}} bytes) exceeds maximum file size (20MB). Use shell command to process large files.',
-              fr: 'La taille du fichier ({{size}} octets) dépasse la taille maximale (20 Mo). Utilisez une commande shell pour traiter les fichiers volumineux.',
-            },
-            { size: stats.size },
-          ),
+          `File size (${stats.size} bytes) exceeds maximum file size (20MB). Use shell command to process large files.`,
         )
       }
 
       // Check image size limit before reading
       if (stats.size > OUTPUT_LIMITS.read_file.maxImageBytes) {
         return helpers.error(
-          serverT(
-            {
-              en: 'File size ({{size}} bytes) exceeds image size limit (2MB). Use shell command to process large files.',
-              fr: 'La taille du fichier ({{size}} octets) dépasse la limite pour les images (2 Mo). Utilisez une commande shell pour traiter les fichiers volumineux.',
-            },
-            { size: stats.size },
-          ),
+          `File size (${stats.size} bytes) exceeds image size limit (2MB). Use shell command to process large files.`,
         )
       }
     } catch {
-      return helpers.error(
-        serverT({ en: 'File not found: {{path}}', fr: 'Fichier introuvable : {{path}}' }, { path: args.path }),
-      )
+      return helpers.error(`File not found: ${args.path}`)
     }
 
     // Read file as binary first to detect type
@@ -183,22 +168,15 @@ export const readFileTool = createTool<ReadFileArgs>(
         )
       }
 
-      return helpers.success(
-        serverT(
-          { en: '[Image: {{path}} ({{mime}}, {{size}} bytes)]', fr: '[Image : {{path}} ({{mime}}, {{size}} octets)]' },
-          { path: args.path, mime: mimeType, size: rawBuffer.length },
-        ),
-        false,
-        {
-          metadata: {
-            mimeType,
-            size: rawBuffer.length,
-            base64Data,
-            dataUrl,
-            path: fullPath,
-          },
+      return helpers.success(`[Image: ${args.path} (${mimeType}, ${rawBuffer.length} bytes)]`, false, {
+        metadata: {
+          mimeType,
+          size: rawBuffer.length,
+          base64Data,
+          dataUrl,
+          path: fullPath,
         },
-      )
+      })
     }
 
     // Detect if this is a PDF file

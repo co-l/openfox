@@ -6,7 +6,6 @@ import type { Mode } from '../../cli/main.js'
 import { loadGlobalConfig, saveGlobalConfig } from '../../cli/config.js'
 import { createMcpTools } from '../mcp/tool-adapter.js'
 import { applyMcpServerUpdate } from '../mcp/update-server.js'
-import { serverT } from '../i18n.js'
 
 interface McpConfigArgs {
   action: 'list' | 'add' | 'update' | 'remove' | 'toggle-tool' | 'bootstrap'
@@ -136,19 +135,14 @@ export const mcpConfigTool: Tool = createTool<McpConfigArgs>(
 
     if (args.action === 'bootstrap') {
       if (!mcpBootstrapForTools) {
-        return helpers.error(
-          serverT({
-            en: 'MCP bootstrap is not available for this server',
-            fr: 'Le bootstrap MCP n’est pas disponible pour ce serveur',
-          }),
-        )
+        return helpers.error('MCP bootstrap is not available for this server')
       }
       const config = await mcpBootstrapForTools()
       return helpers.success(JSON.stringify(config, null, 2))
     }
 
     if (!mcpManagerForTools) {
-      return helpers.error(serverT({ en: 'MCP manager not available', fr: 'Gestionnaire MCP indisponible' }))
+      return helpers.error('MCP manager not available')
     }
 
     async function persistAndRebuild(
@@ -160,10 +154,7 @@ export const mcpConfigTool: Tool = createTool<McpConfigArgs>(
       await saveGlobalConfig(mcpConfigMode, { ...globalConfig, mcpServers: updated }, mcpConfigPath)
     }
 
-    const APPLY_PROMPT_MESSAGE = serverT({
-      en: 'Tool changes are announced automatically.',
-      fr: 'Les modifications d’outils sont annoncées automatiquement.',
-    })
+    const APPLY_PROMPT_MESSAGE = 'Tool changes are announced automatically.'
 
     async function notifyContextChanged(sessionId: string): Promise<void> {
       context.sessionManager.setDynamicContextChanged(sessionId, true)
@@ -183,7 +174,7 @@ export const mcpConfigTool: Tool = createTool<McpConfigArgs>(
     if (args.action === 'list') {
       const servers = mcpManagerForTools.getAllServers()
       if (servers.length === 0) {
-        return helpers.success(serverT({ en: 'No MCP servers configured.', fr: 'Aucun serveur MCP configuré.' }))
+        return helpers.success('No MCP servers configured.')
       }
 
       const { getSessionDisabledServers } = await import('../mcp/session-overrides.js')
@@ -191,7 +182,7 @@ export const mcpConfigTool: Tool = createTool<McpConfigArgs>(
 
       const visibleServers = servers.filter((server) => !disabledForSession.has(server.name))
       if (visibleServers.length === 0) {
-        return helpers.success(serverT({ en: 'No MCP servers configured.', fr: 'Aucun serveur MCP configuré.' }))
+        return helpers.success('No MCP servers configured.')
       }
 
       const lines: string[] = []
@@ -201,63 +192,35 @@ export const mcpConfigTool: Tool = createTool<McpConfigArgs>(
           ? `${server.config.command} ${(server.config.args ?? []).join(' ')}`
           : (server.config.url ?? '')
         const hasCachedTools = server.tools.length > 0
-        const sourceLabel =
-          server.status === 'connected'
-            ? serverT({ en: ' (live)', fr: ' (en direct)' })
-            : hasCachedTools
-              ? serverT({ en: ' (from cache)', fr: ' (depuis le cache)' })
-              : ''
+        const sourceLabel = server.status === 'connected' ? ' (live)' : hasCachedTools ? ' (from cache)' : ''
         const statusLine = server.error
           ? `${server.status}${sourceLabel}: ${server.error}`
           : `${server.status}${sourceLabel}`
         lines.push(`${connStr} ${server.name} (${server.config.transport}) — ${statusLine}`)
         lines.push(`  ${cmdStr}`)
-        lines.push(
-          serverT(
-            { en: '  {{count}} tools, ~{{tokens}} tokens', fr: '  {{count}} outils, ~{{tokens}} tokens' },
-            { count: server.tools.length, tokens: server.estimatedTokens },
-          ),
-        )
+        lines.push(`  ${server.tools.length} tools, ~${server.estimatedTokens} tokens`)
 
         const enabledTools = server.tools.filter((t) => t.enabled)
         const disabledTools = server.tools.filter((t) => !t.enabled)
         if (enabledTools.length > 0) {
-          lines.push(
-            serverT(
-              { en: '  Enabled: {{list}}', fr: '  Activés : {{list}}' },
-              { list: enabledTools.map((t) => t.name).join(', ') },
-            ),
-          )
+          lines.push(`  Enabled: ${enabledTools.map((t) => t.name).join(', ')}`)
         }
         if (disabledTools.length > 0) {
-          lines.push(
-            serverT(
-              { en: '  Disabled: {{list}}', fr: '  Désactivés : {{list}}' },
-              { list: disabledTools.map((t) => t.name).join(', ') },
-            ),
-          )
+          lines.push(`  Disabled: ${disabledTools.map((t) => t.name).join(', ')}`)
         }
       }
       return helpers.success(lines.join('\n'))
     }
 
     if (args.action === 'add') {
-      if (!args.name)
-        return helpers.error(serverT({ en: 'Missing required field: name', fr: 'Champ requis manquant : name' }))
+      if (!args.name) return helpers.error('Missing required field: name')
       if (args.transport === 'http') {
-        if (!args.url)
-          return helpers.error(
-            serverT({ en: 'url is required for http transport', fr: 'url est requis pour le transport http' }),
-          )
+        if (!args.url) return helpers.error('url is required for http transport')
       } else if (!args.command) {
-        return helpers.error(
-          serverT({ en: 'command is required for stdio transport', fr: 'command est requis pour le transport stdio' }),
-        )
+        return helpers.error('command is required for stdio transport')
       }
       if (args.timeout !== undefined && (typeof args.timeout !== 'number' || args.timeout <= 0)) {
-        return helpers.error(
-          serverT({ en: 'timeout must be a positive number', fr: 'timeout doit être un nombre positif' }),
-        )
+        return helpers.error('timeout must be a positive number')
       }
 
       const serverCfg: McpServerConfig = {
@@ -281,27 +244,14 @@ export const mcpConfigTool: Tool = createTool<McpConfigArgs>(
       const server = mcpManagerForTools.getServer(args.name)
       const toolCount = server?.tools.length ?? 0
       return helpers.success(
-        serverT(
-          {
-            en: 'Added MCP server "{{name}}" ({{count}} tools discovered). {{prompt}}',
-            fr: 'Serveur MCP « {{name}} » ajouté ({{count}} outils découverts). {{prompt}}',
-          },
-          { name: args.name ?? '', count: toolCount, prompt: APPLY_PROMPT_MESSAGE },
-        ),
+        `Added MCP server "${args.name ?? ''}" (${toolCount} tools discovered). ${APPLY_PROMPT_MESSAGE}`,
       )
     }
 
     if (args.action === 'update') {
-      if (!args.name)
-        return helpers.error(serverT({ en: 'Missing required field: name', fr: 'Champ requis manquant : name' }))
+      if (!args.name) return helpers.error('Missing required field: name')
       const existing = mcpManagerForTools.getServer(args.name)
-      if (!existing)
-        return helpers.error(
-          serverT(
-            { en: 'MCP server "{{name}}" not found', fr: 'Serveur MCP « {{name}} » introuvable' },
-            { name: args.name ?? '' },
-          ),
-        )
+      if (!existing) return helpers.error(`MCP server "${args.name ?? ''}" not found`)
 
       const globalConfig = await loadGlobalConfig(mcpConfigMode, mcpConfigPath)
       const mcpServers = { ...((globalConfig.mcpServers ?? {}) as Record<string, McpServerConfig>) }
@@ -335,19 +285,12 @@ export const mcpConfigTool: Tool = createTool<McpConfigArgs>(
       const server = mcpManagerForTools.getServer(args.name)
       const toolCount = server?.tools.length ?? 0
       return helpers.success(
-        serverT(
-          {
-            en: 'Updated MCP server "{{name}}" ({{count}} tools discovered). {{prompt}}',
-            fr: 'Serveur MCP « {{name}} » mis à jour ({{count}} outils découverts). {{prompt}}',
-          },
-          { name: args.name ?? '', count: toolCount, prompt: APPLY_PROMPT_MESSAGE },
-        ),
+        `Updated MCP server "${args.name ?? ''}" (${toolCount} tools discovered). ${APPLY_PROMPT_MESSAGE}`,
       )
     }
 
     if (args.action === 'remove') {
-      if (!args.name)
-        return helpers.error(serverT({ en: 'Missing required field: name', fr: 'Champ requis manquant : name' }))
+      if (!args.name) return helpers.error('Missing required field: name')
       await persistAndRebuild((mcpServers) => {
         delete mcpServers[args.name!]
         return mcpServers
@@ -355,23 +298,13 @@ export const mcpConfigTool: Tool = createTool<McpConfigArgs>(
       mcpManagerForTools.removeServer(args.name)
       await rebuildTools()
       await notifyContextChanged(context.sessionId)
-      return helpers.success(
-        serverT(
-          { en: 'Removed MCP server "{{name}}". {{prompt}}', fr: 'Serveur MCP « {{name}} » supprimé. {{prompt}}' },
-          { name: args.name ?? '', prompt: APPLY_PROMPT_MESSAGE },
-        ),
-      )
+      return helpers.success(`Removed MCP server "${args.name ?? ''}". ${APPLY_PROMPT_MESSAGE}`)
     }
 
     if (args.action === 'toggle-tool') {
-      if (!args.name)
-        return helpers.error(serverT({ en: 'Missing required field: name', fr: 'Champ requis manquant : name' }))
-      if (!args.toolName)
-        return helpers.error(
-          serverT({ en: 'Missing required field: toolName', fr: 'Champ requis manquant : toolName' }),
-        )
-      if (args.enabled === undefined)
-        return helpers.error(serverT({ en: 'Missing required field: enabled', fr: 'Champ requis manquant : enabled' }))
+      if (!args.name) return helpers.error('Missing required field: name')
+      if (!args.toolName) return helpers.error('Missing required field: toolName')
+      if (args.enabled === undefined) return helpers.error('Missing required field: enabled')
 
       const server = mcpManagerForTools.getServer(args.name)
       const currentDisabled = (server?.tools ?? []).filter((t) => !t.enabled).map((t) => t.name)
@@ -398,23 +331,12 @@ export const mcpConfigTool: Tool = createTool<McpConfigArgs>(
       await notifyContextChanged(context.sessionId)
 
       return helpers.success(
-        serverT(
-          {
-            en: 'Tool "{{tool}}" {{state}} on server "{{name}}". {{prompt}}',
-            fr: 'Outil « {{tool}} » {{state}} sur le serveur « {{name}} ». {{prompt}}',
-          },
-          {
-            tool: args.toolName ?? '',
-            state: args.enabled
-              ? serverT({ en: 'enabled', fr: 'activé' })
-              : serverT({ en: 'disabled', fr: 'désactivé' }),
-            name: args.name ?? '',
-            prompt: APPLY_PROMPT_MESSAGE,
-          },
-        ),
+        `Tool "${args.toolName ?? ''}" ${
+          args.enabled ? 'enabled' : 'disabled'
+        } on server "${args.name ?? ''}". ${APPLY_PROMPT_MESSAGE}`,
       )
     }
 
-    return helpers.error(serverT({ en: 'Unexpected error', fr: 'Erreur inattendue' }))
+    return helpers.error('Unexpected error')
   },
 )

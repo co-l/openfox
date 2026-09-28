@@ -1,7 +1,7 @@
 import type { Message, Attachment, StatsSource } from '../../shared/types.js'
 import type { StoredEvent, TurnEvent, SessionSnapshot, SnapshotMessage } from './types.js'
 import { applyEvents } from './apply-events.js'
-import stripAnsi from 'strip-ansi'
+import { renderToolResultContent } from '../chat/tool-result-content.js'
 import type { ContextMessage, ContextMessageBuildOptions, EventLike, MessageWithId } from './fold-types.js'
 
 function cloneMessage(message: Message): Message {
@@ -371,13 +371,7 @@ export function handleToolResult(
     const toolMsg: MessageWithId = {
       id: `tool-${data.toolCallId}`,
       role: 'tool',
-      content: stripAnsi(
-        data.result.success
-          ? (data.result.output ?? 'Success')
-          : data.result.output
-            ? `${data.result.output}\n\nError: ${data.result.error}`
-            : `Error: ${data.result.error}`,
-      ),
+      content: renderToolResultContent(data.result),
       toolCallId: data.toolCallId,
     }
     if (imageMeta?.dataUrl && imageMeta?.mimeType?.startsWith('image/')) {

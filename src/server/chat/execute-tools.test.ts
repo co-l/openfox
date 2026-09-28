@@ -3,12 +3,22 @@ import type { ToolCall } from '../../shared/types.js'
 import type { TurnMetrics } from './stream-pure.js'
 import type { ToolRegistry } from '../tools/types.js'
 import type { TurnEvent } from '../events/types.js'
-import { executeTools, transformSubAgentAliases } from './execute-tools.js'
+import { executeTools, transformSubAgentAliases, createInterruptedResult } from './execute-tools.js'
+import { PathAccessDeniedError } from '../tools/index.js'
 
 vi.mock('../agents/registry.js', () => ({
   loadAllAgentsDefault: vi.fn(),
   findAgentById: vi.fn(),
 }))
+
+// Force the fr display locale: persisted LLM-facing strings must stay English.
+vi.mock('../db/settings.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../db/settings.js')>()
+  return {
+    ...actual,
+    getSetting: (key: string) => (key === actual.SETTINGS_KEYS.DISPLAY_LOCALE ? 'fr' : 'false'),
+  }
+})
 
 describe('executeTools', () => {
   const mockToolRegistry = {
@@ -188,7 +198,32 @@ describe('executeTools', () => {
 
     expect(execute).not.toHaveBeenCalled()
     expect(result.toolMessages).toHaveLength(1)
-    expect(result.toolMessages[0]?.content).toContain('Failed to parse')
+    const content = result.toolMessages[0]?.content ?? ''
+    expect(content).toContain('Failed to parse tool call arguments: Invalid JSON')
+    // LLM-facing: English even under the fr locale forced by the mock
+    expect(content).not.toContain('Erreur')
+    expect(content).not.toContain('Échec')
+  })
+
+  it('renders PathAccessDenied results with the English message', async () => {
+    const append = vi.fn()
+    mockToolRegistry.execute = vi.fn().mockRejectedValue(new PathAccessDeniedError(['/tmp/secret'], 'run_command'))
+
+    const toolCalls: ToolCall[] = [{ id: 'call-1', name: 'run_command', arguments: { command: 'cat /tmp/secret' } }]
+
+    const result = await executeTools('msg-1', toolCalls, makeCtx(), append)
+
+    const content = result.toolMessages[0]?.content ?? ''
+    expect(content).toContain('User denied access to /tmp/secret')
+    expect(content).not.toContain('Accès')
+  })
+
+  it('createInterruptedResult carries the interrupted flag and an English error', () => {
+    const r = createInterruptedResult(1000)
+    expect(r.success).toBe(false)
+    expect(r.error).toBe('Tool execution was interrupted by user')
+    expect(r.metadata?.['interrupted']).toBe(true)
+    expect(r.truncated).toBe(false)
   })
 
   it('short-circuits preflight-rejected calls without calling tool registry', async () => {
@@ -263,9 +298,10 @@ describe('executeTools', () => {
     for (const [event] of resultEvents) {
       const te = event as TurnEvent
       expect(te.type).toBe('tool.result')
-      const data = te.data as { result: { success: boolean; error?: string } }
+      const data = te.data as { result: { success: boolean; error?: string; metadata?: Record<string, unknown> } }
       expect(data.result.success).toBe(false)
-      expect(data.result.error).toContain('interrupted')
+      expect(data.result.error).toBe('Tool execution was interrupted by user')
+      expect(data.result.metadata?.['interrupted']).toBe(true)
     }
 
     // toolMessages should contain interrupted messages

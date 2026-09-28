@@ -1,9 +1,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { hasBackgroundAmpersand, runCommandTool, detectGitMutation } from './shell.js'
+import { hasBackgroundAmpersand, runCommandTool, detectGitMutation, formatDuration } from './shell.js'
 import type { ToolContext } from './types.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+
+// Force the fr display locale for every test in this file: the LLM-facing
+// run_command error strings must remain English no matter the UI locale.
+vi.mock('../db/settings.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../db/settings.js')>()
+  return {
+    ...actual,
+    getSetting: (key: string) => (key === actual.SETTINGS_KEYS.DISPLAY_LOCALE ? 'fr' : 'false'),
+  }
+})
 
 describe('hasBackgroundAmpersand', () => {
   it('detects trailing & as background operator', () => {
@@ -285,3 +295,144 @@ describe('detectGitMutation', () => {
     expect(detectGitMutation('git branch --show-current')).toBeNull()
   })
 })
+
+describe('formatDuration', () => {
+  const cases: Array<[number, string]> = [
+    [0, '0ms'],
+    [42, '42ms'],
+    [999, '999ms'],
+    [1000, '1.0s'],
+    [4200, '4.2s'],
+    [59999, '60.0s'],
+    [60000, '1m 0s'],
+    [61000, '1m 1s'],
+    [125000, '2m 5s'],
+  ]
+
+  it.each(cases)('formatDuration(%i) === %s', (ms, expected) => {
+    expect(formatDuration(ms)).toBe(expected)
+  })
+})
+
+describe('run_command duration reporting', () => {
+  let tempDir: string
+  let context: ToolContext
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'shell-duration-test-'))
+    context = baseContext(tempDir)
+  })
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true })
+  })
+
+  it('appends a [Duration: …] line to normal runs', async () => {
+    const result = await runCommandTool.execute({ command: 'echo hi', timeout: 10000 }, context)
+
+    expect(result.success).toBe(true)
+    expect(result.output).toContain('[Exit code: 0]')
+    expect(result.output).toMatch(/\[Duration: \d+ms\]\s*$/)
+  }, 15000)
+
+  it('reports a positive duration for interrupted runs', async () => {
+    const controller = new AbortController()
+    const context: ToolContext = { ...baseContext(tempDir), signal: controller.signal }
+
+    const pending = runCommandTool.execute({ command: 'node -e "setTimeout(() => {}, 5000)"', timeout: 10000 }, context)
+    await new Promise((r) => setTimeout(r, 300))
+    controller.abort()
+
+    const result = await pending
+    const output = result.output ?? ''
+    expect(output).toContain('[interrupted by user]')
+    expect(output).toContain('[Exit code: 130]')
+    expect(result.success).toBe(false)
+    expect(result.error).toMatch(/interrupted/i)
+    // Server is the single source of truth for "interrupted" — the client
+    // must not re-derive it from output heuristics.
+    expect(result.metadata?.['interrupted']).toBe(true)
+
+    const match = output.match(/\[Duration: ([\d.]+)(ms|s)\]|\[Duration: (\d+)m (\d+)s\]/)
+    expect(match).not.toBeNull()
+    expect(parseDurationMs(match!)).toBeGreaterThan(0)
+  }, 15000)
+
+  it('does not flag a non-interrupted run with metadata.interrupted', async () => {
+    const result = await runCommandTool.execute({ command: 'echo hi', timeout: 10000 }, context)
+    expect(result.success).toBe(true)
+    expect(result.metadata?.['interrupted']).toBeUndefined()
+  }, 15000)
+
+  it('does not treat a command that prints the marker and exits 1 as interrupted', async () => {
+    const result = await runCommandTool.execute(
+      { command: `echo '[interrupted by user]' && exit 1`, timeout: 10000 },
+      context,
+    )
+    expect(result.success).toBe(false)
+    expect(result.metadata?.['interrupted']).toBeUndefined()
+    expect(result.error).toMatch(/exited with code 1/)
+  }, 15000)
+
+  it('keeps the [Duration: …] line after output truncation', async () => {
+    const result = await runCommandTool.execute(
+      { command: `node -e "process.stdout.write('X'.repeat(51000))"`, timeout: 10000 },
+      context,
+    )
+
+    expect(result.truncated).toBe(true)
+    const output = result.output ?? ''
+    expect(output).toContain('[Output truncated due to size limit]')
+    expect(output).toMatch(/\[Duration: \d+ms\]\s*$/)
+    expect(output.indexOf('[Duration:')).toBeGreaterThan(output.indexOf('[Output truncated due to size limit]'))
+  }, 15000)
+})
+
+describe('run_command LLM-facing errors under fr locale (module mock forces display.locale=fr)', () => {
+  let tempDir: string
+  let context: ToolContext
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'shell-fr-test-'))
+    context = baseContext(tempDir)
+  })
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true })
+  })
+
+  it('keeps the interrupted-run error in English', async () => {
+    const controller = new AbortController()
+    const ctx: ToolContext = { ...context, signal: controller.signal }
+    const pending = runCommandTool.execute({ command: 'node -e "setTimeout(() => {}, 5000)"', timeout: 10000 }, ctx)
+    await new Promise((r) => setTimeout(r, 300))
+    controller.abort()
+    const result = await pending
+
+    expect(result.error).toBe('Command was interrupted by user')
+  }, 15000)
+
+  it('keeps the exit-code error in English', async () => {
+    const result = await runCommandTool.execute({ command: 'exit 1', timeout: 10000 }, context)
+
+    expect(result.success).toBe(false)
+    expect(result.error).toBe('Command exited with code 1')
+  }, 15000)
+})
+
+function baseContext(tempDir: string): ToolContext {
+  return {
+    sessionManager: {
+      recordFileRead: vi.fn(),
+      getReadFiles: vi.fn().mockReturnValue({}),
+      updateFileHash: vi.fn(),
+    } as any,
+    workdir: tempDir,
+    sessionId: 'test-session',
+  }
+}
+
+function parseDurationMs(match: RegExpMatchArray): number {
+  if (match[1]) return Number(match[1]) * (match[2] === 'ms' ? 1 : 1000)
+  return Number(match[3]) * 60_000 + Number(match[4]) * 1000
+}

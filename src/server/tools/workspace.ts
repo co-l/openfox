@@ -1,6 +1,5 @@
 import { createTool, requestUserConfirmation } from './tool-helpers.js'
 import { getGitBranch, listWorkspaces, isGitRepository } from '../git/workspace.js'
-import { serverT } from '../i18n.js'
 
 interface WorkspaceArgs {
   action: 'switch' | 'list' | 'delete'
@@ -66,32 +65,17 @@ export const workspaceTool = createTool<WorkspaceArgs>(
 
     const validActions = ['switch', 'list', 'delete'] as const
     if (!validActions.includes(args.action as (typeof validActions)[number])) {
-      return helpers.error(
-        serverT(
-          {
-            en: 'Invalid action: {{action}}. Must be one of: {{allowed}}',
-            fr: 'Action invalide : {{action}}. Doit être l’une des actions suivantes : {{allowed}}',
-          },
-          { action: args.action, allowed: validActions.join(', ') },
-        ),
-      )
+      return helpers.error(`Invalid action: ${args.action}. Must be one of: ${validActions.join(', ')}`)
     }
 
     switch (args.action) {
       case 'switch': {
         if (!args.target || typeof args.target !== 'string') {
-          return helpers.error(
-            serverT({
-              en: 'Parameter "target" is required for action=switch ("original" or a workspace name)',
-              fr: 'Le paramètre « target » est requis pour action=switch (« original » ou un nom de workspace)',
-            }),
-          )
+          return helpers.error('Parameter "target" is required for action=switch ("original" or a workspace name)')
         }
 
         if ((await isGitRepository(context.workdir)) === false) {
-          return helpers.error(
-            serverT({ en: 'Project is not a git repository', fr: 'Le projet n’est pas un dépôt git' }),
-          )
+          return helpers.error('Project is not a git repository')
         }
 
         const currentSession = sessionManager.getSession(sessionId)
@@ -109,10 +93,8 @@ export const workspaceTool = createTool<WorkspaceArgs>(
         const approved = await requestUserConfirmation(context, 'workspace', desc)
         if (!approved)
           return helpers.error(
-            serverT(
-              { en: 'User denied: {{what}}', fr: 'Refusé par l’utilisateur : {{what}}' },
-              { what: isBranchChange ? 'branch change' : `switch to ${label}` },
-            ),
+            // LLM-facing (rendered into the tool content) — English by design.
+            `User denied: ${isBranchChange ? 'branch change' : `switch to ${label}`}`,
           )
 
         const updated = await sessionManager.switchWorkspace(sessionId, args.target, args.branch, args.sourceBranch)
@@ -126,14 +108,8 @@ export const workspaceTool = createTool<WorkspaceArgs>(
               branch,
               message:
                 args.target === 'original'
-                  ? serverT({ en: 'Switched to original project', fr: 'Basculement vers le projet d’origine' })
-                  : serverT(
-                      {
-                        en: 'Switched to workspace "{{name}}" on branch "{{branch}}"',
-                        fr: 'Basculement vers le workspace « {{name}} » sur la branche « {{branch}} »',
-                      },
-                      { name: wsName, branch: branch ?? 'unknown' },
-                    ),
+                  ? 'Switched to original project'
+                  : `Switched to workspace "${wsName}" on branch "${branch ?? 'unknown'}"`,
             },
             null,
             2,
@@ -143,10 +119,10 @@ export const workspaceTool = createTool<WorkspaceArgs>(
 
       case 'list': {
         const session = sessionManager.getSession(sessionId)
-        if (!session) return helpers.error(serverT({ en: 'Session not found', fr: 'Session introuvable' }))
+        if (!session) return helpers.error('Session not found')
 
         const project = sessionManager.getProject(session.projectId)
-        if (!project) return helpers.error(serverT({ en: 'Project not found', fr: 'Projet introuvable' }))
+        if (!project) return helpers.error('Project not found')
 
         const currentBranch = await getGitBranch(sessionManager.getEffectiveWorkdir(session.id))
         const named = await listWorkspaces(project.name, project.workdir)
@@ -166,25 +142,12 @@ export const workspaceTool = createTool<WorkspaceArgs>(
 
       case 'delete': {
         if (!args.target || typeof args.target !== 'string') {
-          return helpers.error(
-            serverT({
-              en: 'Parameter "target" is required for action=delete (the workspace name)',
-              fr: 'Le paramètre « target » est requis pour action=delete (le nom du workspace)',
-            }),
-          )
+          return helpers.error('Parameter "target" is required for action=delete (the workspace name)')
         }
-        if (args.target === 'original')
-          return helpers.error(
-            serverT({
-              en: 'Cannot delete the original workspace',
-              fr: 'Impossible de supprimer le workspace d’origine',
-            }),
-          )
+        if (args.target === 'original') return helpers.error('Cannot delete the original workspace')
 
         if ((await isGitRepository(context.workdir)) === false) {
-          return helpers.error(
-            serverT({ en: 'Project is not a git repository', fr: 'Le projet n’est pas un dépôt git' }),
-          )
+          return helpers.error('Project is not a git repository')
         }
 
         const forceDesc = args.force ? ' (will auto-switch other sessions to original)' : ''
@@ -195,13 +158,8 @@ export const workspaceTool = createTool<WorkspaceArgs>(
         )
         if (!approved)
           return helpers.error(
-            serverT(
-              {
-                en: 'User denied: delete workspace "{{name}}"',
-                fr: 'Refusé par l’utilisateur : supprimer le workspace « {{name}} »',
-              },
-              { name: args.target },
-            ),
+            // LLM-facing (rendered into the tool content) — English by design.
+            `User denied: delete workspace "${args.target}"`,
           )
 
         await sessionManager.deleteWorkspace(sessionId, args.target, args.force === true)
@@ -209,10 +167,7 @@ export const workspaceTool = createTool<WorkspaceArgs>(
           JSON.stringify(
             {
               workspace: args.target,
-              message: serverT(
-                { en: 'Workspace "{{name}}" has been deleted', fr: 'Le workspace « {{name}} » a été supprimé' },
-                { name: args.target },
-              ),
+              message: `Workspace "${args.target}" has been deleted`,
             },
             null,
             2,
@@ -221,9 +176,7 @@ export const workspaceTool = createTool<WorkspaceArgs>(
       }
 
       default:
-        return helpers.error(
-          serverT({ en: 'Unknown action: {{action}}', fr: 'Action inconnue : {{action}}' }, { action: args.action }),
-        )
+        return helpers.error(`Unknown action: ${args.action}`)
     }
   },
 )

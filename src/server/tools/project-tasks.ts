@@ -2,7 +2,6 @@ import { createTool, validateActionWithPermission, type ToolHelpers } from './to
 import type { TasksService } from '../tasks/service.js'
 import { isTaskGateError, isTaskConflictError } from '../tasks/service.js'
 import { getGateConfig } from '../db/tasks.js'
-import { serverT } from '../i18n.js'
 import { OUTPUT_LIMITS } from './types.js'
 import { decodeDataUrl } from '../utils/data-url.js'
 import { isPdfBuffer, extractPdfText, processPdfContent, formatPdfErrorMessage } from './pdf-utils.js'
@@ -155,7 +154,7 @@ export const projectTasksTool = createTool<ProjectTasksArgs>(
     if (permError) return permError
 
     const session = context.sessionManager.getSession(context.sessionId)
-    if (!session) return helpers.error(serverT({ en: 'Session not found', fr: 'Session introuvable' }))
+    if (!session) return helpers.error('Session not found')
     const projectId = session.projectId
     const svc = getTasksService()
     const actor = { actor: 'agent' as const, actorName: 'agent' }
@@ -166,13 +165,7 @@ export const projectTasksTool = createTool<ProjectTasksArgs>(
           const status = args.status
           if (status !== undefined && !LIST_STATUSES.includes(status)) {
             return helpers.error(
-              serverT(
-                {
-                  en: 'Invalid "status" filter for action=list: "{{status}}". Expected one of: todo, in_progress, done, all.',
-                  fr: 'Filtre « status » invalide pour action=list : « {{status}} ». Valeurs attendues : todo, in_progress, done, all.',
-                },
-                { status: String(status) },
-              ),
+              `Invalid "status" filter for action=list: "${String(status)}". Expected one of: todo, in_progress, done, all.`,
             )
           }
           const page = parseListPage(args.limit, args.offset)
@@ -216,13 +209,7 @@ export const projectTasksTool = createTool<ProjectTasksArgs>(
         }
 
         case 'edit': {
-          if (!args.taskId)
-            return helpers.error(
-              serverT({
-                en: 'Parameter "taskId" is required for action=edit',
-                fr: 'Le paramètre « taskId » est requis pour action=edit',
-              }),
-            )
+          if (!args.taskId) return helpers.error('Parameter "taskId" is required for action=edit')
           const result = await svc.update(
             projectId,
             args.taskId,
@@ -240,20 +227,9 @@ export const projectTasksTool = createTool<ProjectTasksArgs>(
         }
 
         case 'move': {
-          if (!args.taskId)
-            return helpers.error(
-              serverT({
-                en: 'Parameter "taskId" is required for action=move',
-                fr: 'Le paramètre « taskId » est requis pour action=move',
-              }),
-            )
+          if (!args.taskId) return helpers.error('Parameter "taskId" is required for action=move')
           if (!args.to)
-            return helpers.error(
-              serverT({
-                en: 'Parameter "to" is required for action=move ("todo" | "in_progress" | "done")',
-                fr: 'Le paramètre « to » est requis pour action=move (« todo » | « in_progress » | « done »)',
-              }),
-            )
+            return helpers.error('Parameter "to" is required for action=move ("todo" | "in_progress" | "done")')
           const result = await svc.move(projectId, args.taskId, args.to, {
             actor: 'agent',
             actorName: 'agent',
@@ -265,27 +241,9 @@ export const projectTasksTool = createTool<ProjectTasksArgs>(
         }
 
         case 'set_gate_value': {
-          if (!args.taskId)
-            return helpers.error(
-              serverT({
-                en: 'Parameter "taskId" is required for action=set_gate_value',
-                fr: 'Le paramètre « taskId » est requis pour action=set_gate_value',
-              }),
-            )
-          if (!args.gateId)
-            return helpers.error(
-              serverT({
-                en: 'Parameter "gateId" is required for action=set_gate_value',
-                fr: 'Le paramètre « gateId » est requis pour action=set_gate_value',
-              }),
-            )
-          if (args.value === undefined)
-            return helpers.error(
-              serverT({
-                en: 'Parameter "value" is required for action=set_gate_value',
-                fr: 'Le paramètre « value » est requis pour action=set_gate_value',
-              }),
-            )
+          if (!args.taskId) return helpers.error('Parameter "taskId" is required for action=set_gate_value')
+          if (!args.gateId) return helpers.error('Parameter "gateId" is required for action=set_gate_value')
+          if (args.value === undefined) return helpers.error('Parameter "value" is required for action=set_gate_value')
           const result = await svc.setGateValue(
             projectId,
             args.taskId,
@@ -299,61 +257,25 @@ export const projectTasksTool = createTool<ProjectTasksArgs>(
         }
 
         case 'get_attachment': {
-          if (!args.taskId)
-            return helpers.error(
-              serverT({
-                en: 'Parameter "taskId" is required for action=get_attachment',
-                fr: 'Le paramètre « taskId » est requis pour action=get_attachment',
-              }),
-            )
-          if (!args.attachmentId)
-            return helpers.error(
-              serverT({
-                en: 'Parameter "attachmentId" is required for action=get_attachment',
-                fr: 'Le paramètre « attachmentId » est requis pour action=get_attachment',
-              }),
-            )
+          if (!args.taskId) return helpers.error('Parameter "taskId" is required for action=get_attachment')
+          if (!args.attachmentId) return helpers.error('Parameter "attachmentId" is required for action=get_attachment')
           const task = svc.get(projectId, args.taskId)
-          if (!task)
-            return helpers.error(
-              serverT({ en: 'Task not found: {{id}}', fr: 'Tâche introuvable : {{id}}' }, { id: args.taskId }),
-            )
-          if (task.attachments.length === 0)
-            return helpers.error(
-              serverT(
-                { en: 'Task {{id}} has no attachments', fr: 'La tâche {{id}} n’a aucune pièce jointe' },
-                { id: task.id },
-              ),
-            )
+          if (!task) return helpers.error(`Task not found: ${args.taskId}`)
+          if (task.attachments.length === 0) return helpers.error(`Task ${task.id} has no attachments`)
           const attachment = task.attachments.find((a) => a.id === args.attachmentId)
           if (!attachment) {
             const available = task.attachments.map((a) => `${a.id} (${a.filename})`).join(', ')
             return helpers.error(
-              serverT(
-                {
-                  en: 'Attachment {{id}} not found on task {{taskId}}. Available: {{available}}',
-                  fr: 'Pièce jointe {{id}} introuvable sur la tâche {{taskId}}. Disponibles : {{available}}',
-                },
-                { id: args.attachmentId, taskId: task.id, available },
-              ),
+              `Attachment ${args.attachmentId} not found on task ${task.id}. Available: ${available}`,
             )
           }
           return await attachmentContent(attachment, helpers)
         }
 
         case 'delete': {
-          if (!args.taskId)
-            return helpers.error(
-              serverT({
-                en: 'Parameter "taskId" is required for action=delete',
-                fr: 'Le paramètre « taskId » est requis pour action=delete',
-              }),
-            )
+          if (!args.taskId) return helpers.error('Parameter "taskId" is required for action=delete')
           const task = svc.get(projectId, args.taskId)
-          if (!task)
-            return helpers.error(
-              serverT({ en: 'Task not found: {{id}}', fr: 'Tâche introuvable : {{id}}' }, { id: args.taskId ?? '' }),
-            )
+          if (!task) return helpers.error(`Task not found: ${args.taskId ?? ''}`)
           await svc.remove(projectId, args.taskId, actor)
           return helpers.success(
             JSON.stringify(
@@ -365,32 +287,18 @@ export const projectTasksTool = createTool<ProjectTasksArgs>(
         }
 
         default:
-          return helpers.error(
-            serverT(
-              { en: 'Unknown action: {{action}}', fr: 'Action inconnue : {{action}}' },
-              { action: String(action) },
-            ),
-          )
+          return helpers.error(`Unknown action: ${String(action)}`)
       }
     } catch (error) {
       if (isTaskGateError(error)) {
         const missing = error.missing.map((m) => `'${m.name}' (${m.gateId}): ${m.description}`).join('; ')
         return helpers.error(
-          serverT(
-            {
-              en: 'Move blocked by column gates. Missing required gate fields: {{missing}}. Fill them with action=set_gate_value (taskId, gateId, value=<acceptable proof>) and then call move again. You set these values as part of your work — this is the intended loop, not a dead end.',
-              fr: 'Déplacement bloqué par les portes de colonne. Champs de porte requis manquants : {{missing}}. Renseignez-les avec action=set_gate_value (taskId, gateId, value=<preuve acceptable>) puis appelez à nouveau move. Vous définissez ces valeurs dans le cadre de votre travail — c’est la boucle prévue, pas une impasse.',
-            },
-            { missing },
-          ),
+          `Move blocked by column gates. Missing required gate fields: ${missing}. Fill them with action=set_gate_value (taskId, gateId, value=<acceptable proof>) and then call move again. You set these values as part of your work — this is the intended loop, not a dead end.`,
         )
       }
       if (isTaskConflictError(error)) {
         return helpers.error(
-          serverT({
-            en: 'Task changed, refresh and retry. Another actor modified this task since your last read. Re-list and retry with the latest updatedAt.',
-            fr: 'Tâche modifiée, actualisez et réessayez. Un autre acteur a modifié cette tâche depuis votre dernière lecture. Re-listez et réessayez avec le updatedAt le plus récent.',
-          }),
+          'Task changed, refresh and retry. Another actor modified this task since your last read. Re-list and retry with the latest updatedAt.',
         )
       }
       throw error
@@ -471,49 +379,24 @@ async function attachmentContent(attachment: Attachment, helpers: ToolHelpers): 
 
   if (mime.startsWith('image/')) {
     const decoded = decodeDataUrl(attachment.data)
-    if (!decoded)
-      return helpers.error(
-        serverT(
-          {
-            en: 'Image attachment {{filename}} has corrupt or undecodable data',
-            fr: 'La pièce jointe image {{filename}} est corrompue ou illisible',
-          },
-          { filename },
-        ),
-      )
+    if (!decoded) return helpers.error(`Image attachment ${filename} has corrupt or undecodable data`)
     const size = attachment.size > 0 ? attachment.size : decoded.length
     if (size > OUTPUT_LIMITS.read_file.maxImageBytes || decoded.length > OUTPUT_LIMITS.read_file.maxImageBytes) {
       return helpers.error(
-        serverT(
-          {
-            en: 'Image attachment {{filename}} ({{size}} bytes) exceeds the image size limit ({{limit}} bytes, same as read_file). Stored attachments cannot be modified in place — ask the user to compress or downsize the image and re-upload it.',
-            fr: 'La pièce jointe image {{filename}} ({{size}} octets) dépasse la limite pour les images ({{limit}} octets, comme read_file). Les pièces jointes stockées ne peuvent pas être modifiées en place — demandez à l’utilisateur de compacter ou réduire l’image et de la réenvoyer.',
-          },
-          { filename, size, limit: OUTPUT_LIMITS.read_file.maxImageBytes },
-        ),
+        `Image attachment ${filename} (${size} bytes) exceeds the image size limit (${OUTPUT_LIMITS.read_file.maxImageBytes} bytes, same as read_file). Stored attachments cannot be modified in place — ask the user to compress or downsize the image and re-upload it.`,
       )
     }
     const base64Data = decoded.toString('base64')
-    return helpers.success(
-      serverT(
-        {
-          en: '[Attachment: {{filename}} ({{mime}}, {{size}} bytes)]',
-          fr: '[Pièce jointe : {{filename}} ({{mime}}, {{size}} octets)]',
-        },
-        { filename, mime, size },
-      ),
-      false,
-      {
-        metadata: {
-          mimeType: mime,
-          size,
-          base64Data,
-          dataUrl: `data:${mime};base64,${base64Data}`,
-          path: filename,
-          ...(attachment.description ? { description: attachment.description } : {}),
-        },
+    return helpers.success(`[Attachment: ${filename} (${mime}, ${size} bytes)]`, false, {
+      metadata: {
+        mimeType: mime,
+        size,
+        base64Data,
+        dataUrl: `data:${mime};base64,${base64Data}`,
+        path: filename,
+        ...(attachment.description ? { description: attachment.description } : {}),
       },
-    )
+    })
   }
 
   // Same text-MIME set as the chat attachment pipeline (TEXT_MIME_EXACT + prefixes).
@@ -541,28 +424,14 @@ async function attachmentContent(attachment: Attachment, helpers: ToolHelpers): 
     }
     const buffer = decodeDataUrl(attachment.data)
     if (!buffer || !isPdfBuffer(buffer))
-      return helpers.error(
-        serverT(
-          {
-            en: 'PDF attachment {{filename}} has corrupt or undecodable data',
-            fr: 'La pièce jointe PDF {{filename}} est corrompue ou illisible',
-          },
-          { filename },
-        ),
-      )
+      return helpers.error(`PDF attachment ${filename} has corrupt or undecodable data`)
     try {
       const { text, pageCount, title, author } = await extractPdfText(buffer)
       const { output, truncated, isScanned } = processPdfContent(text, OUTPUT_LIMITS.read_file.maxBytes)
       const metadata = { format: 'pdf', pageCount, title, author, path: filename }
       if (isScanned) {
         return helpers.success(
-          serverT(
-            {
-              en: '[PDF: {{filename}} — This PDF has no text layer (scanned or image-only), so its text cannot be extracted. Ask the user to re-upload a version with a text layer, or to describe its content.]',
-              fr: '[PDF : {{filename}} — Ce PDF n’a pas de couche texte (scanné ou image uniquement), son texte ne peut donc pas être extrait. Demandez à l’utilisateur de renvoyer une version avec une couche texte, ou de décrire son contenu.]',
-            },
-            { filename },
-          ),
+          `[PDF: ${filename} — This PDF has no text layer (scanned or image-only), so its text cannot be extracted. Ask the user to re-upload a version with a text layer, or to describe its content.]`,
           false,
           { metadata },
         )
@@ -574,12 +443,6 @@ async function attachmentContent(attachment: Attachment, helpers: ToolHelpers): 
   }
 
   return helpers.error(
-    serverT(
-      {
-        en: 'Unsupported attachment type: {{mime}} ({{filename}}). Supported: image/*, text/* and common text types (JSON, XML, YAML, …), application/pdf.',
-        fr: 'Type de pièce jointe non pris en charge : {{mime}} ({{filename}}). Pris en charge : image/*, text/* et les types texte courants (JSON, XML, YAML, …), application/pdf.',
-      },
-      { mime, filename },
-    ),
+    `Unsupported attachment type: ${mime} (${filename}). Supported: image/*, text/* and common text types (JSON, XML, YAML, …), application/pdf.`,
   )
 }

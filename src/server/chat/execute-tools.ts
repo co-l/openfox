@@ -14,9 +14,7 @@ import { createToolCallEvent, createToolResultEvent, createChatDoneEvent } from 
 import { PathAccessDeniedError, AskUserInterrupt } from '../tools/index.js'
 import { loadAllAgentsDefault, findAgentById } from '../agents/registry.js'
 import { serverT } from '../i18n.js'
-import { logger } from '../utils/logger.js'
-import { sanitizeUtf8 } from '../utils/utf8.js'
-import stripAnsi from 'strip-ansi'
+import { renderToolResultContent } from './tool-result-content.js'
 
 export interface ToolBatchContext {
   toolRegistry: ToolRegistry
@@ -51,11 +49,9 @@ export interface ExecutedToolCall {
   index: number
 }
 
+// LLM-facing (rendered into the tool content) — English by design.
 function interruptedError(): string {
-  return serverT({
-    en: 'Tool execution was interrupted by user',
-    fr: 'L’exécution de l’outil a été interrompue par l’utilisateur',
-  })
+  return 'Tool execution was interrupted by user'
 }
 
 /**
@@ -91,12 +87,13 @@ export async function transformSubAgentAliases(
   }
 }
 
-function createInterruptedResult(startTime?: number): ToolResult {
+export function createInterruptedResult(startTime?: number): ToolResult {
   return {
     success: false,
     error: interruptedError(),
     durationMs: startTime ? Date.now() - startTime : 0,
     truncated: false,
+    metadata: { interrupted: true },
   }
 }
 
@@ -131,14 +128,9 @@ export async function executeTools(
   ): Promise<ToolResult> => {
     if (error instanceof PathAccessDeniedError) {
       return {
+        // LLM-facing (rendered into the tool content) — English by design.
         success: false,
-        error: serverT(
-          {
-            en: 'User denied access to {{paths}}. If you need this file, explain why and ask for permission.',
-            fr: 'Accès refusé par l’utilisateur : {{paths}}. Si vous avez besoin de ce fichier, expliquez pourquoi et demandez l’autorisation.',
-          },
-          { paths: error.paths.join(', ') },
-        ),
+        error: `User denied access to ${error.paths.join(', ')}. If you need this file, explain why and ask for permission.`,
         durationMs: Date.now() - startTime,
         truncated: false,
       }
@@ -185,7 +177,7 @@ export async function executeTools(
       return {
         toolCall,
         toolResult,
-        content: serverT({ en: 'Error: {{message}}', fr: 'Erreur : {{message}}' }, { message: interruptedError() }),
+        content: renderToolResultContent(toolResult),
         index,
       }
     }
@@ -197,13 +189,8 @@ export async function executeTools(
       } else {
         const toolResult: ToolResult = {
           success: false,
-          error: serverT(
-            {
-              en: 'Failed to parse tool call arguments: {{error}}. Please ensure your JSON function call arguments are valid.',
-              fr: 'Échec de l’analyse des arguments de l’appel d’outil : {{error}}. Assurez-vous que vos arguments JSON d’appel de fonction sont valides.',
-            },
-            { error: toolCall.parseError ?? '' },
-          ),
+          // LLM-facing (rendered into the tool content) — English by design.
+          error: `Failed to parse tool call arguments: ${toolCall.parseError ?? ''}. Please ensure your JSON function call arguments are valid.`,
           durationMs: 0,
           truncated: false,
         }
@@ -211,10 +198,7 @@ export async function executeTools(
         return {
           toolCall,
           toolResult,
-          content: serverT(
-            { en: 'Error: {{message}}', fr: 'Erreur : {{message}}' },
-            { message: toolResult.error ?? '' },
-          ),
+          content: renderToolResultContent(toolResult),
           index,
         }
       }
@@ -283,23 +267,9 @@ export async function executeTools(
       stepDoneCalled = true
     }
 
-    const rawContent = stripAnsi(
-      toolResult.success
-        ? (toolResult.output ?? serverT({ en: 'Success', fr: 'Succès' }))
-        : toolResult.output
-          ? serverT(
-              { en: '{{output}}\n\nError: {{error}}', fr: '{{output}}\n\nErreur : {{error}}' },
-              { output: toolResult.output, error: toolResult.error ?? '' },
-            )
-          : serverT({ en: 'Error: {{error}}', fr: 'Erreur : {{error}}' }, { error: toolResult.error ?? '' }),
-    )
-    const { clean: content, corrupted } = sanitizeUtf8(rawContent)
-    if (corrupted) {
-      logger.warn('Tool result contained invalid UTF-8 (U+FFFD); sanitized before sending to the LLM', {
-        toolCallId: toolCall.id,
-        tool: toolCall.name,
-      })
-    }
+    // Single locale-free renderer — must stay byte-identical to the
+    // history-fold path (fold-messages.ts) to preserve the KV-cache prefix.
+    const content = renderToolResultContent(toolResult)
 
     append(createToolResultEvent(assistantMsgId, toolCall.id, toolResult))
 
