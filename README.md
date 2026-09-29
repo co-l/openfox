@@ -22,6 +22,24 @@ openfox
 
 On first run, OpenFox automatically detects your local LLM backend (vLLM, sglang, ollama, llamacpp) and configures itself.
 
+> **Persistent launcher (optional).** After installing globally, you can create a project-scoped launcher that persists across sessions:
+>
+> ```bash
+> openfox install --check     # Inspect what will be created
+> openfox install             # Create persistent launcher
+> ```
+
+> **Service mode (optional).** Run OpenFox as a background systemd service that survives reboots:
+>
+> ```bash
+> openfox service install     # Install & enable (auto-starts on boot)
+> openfox service start       # Start now
+> openfox service stop        # Stop
+> openfox service status      # Check status
+> openfox service logs        # View logs
+> openfox service uninstall   # Remove
+> ```
+
 ## What's New in 2.0
 
 - **Multi-Turn Agent Engine** — Completely rewritten agent loop with EventStore as single source of truth. All modes (builder, planner, verifier, sub-agents, compaction) run through the same unified loop.
@@ -53,6 +71,21 @@ openfox provider add      # Add new provider
 openfox provider list     # List configured providers
 openfox provider use      # Switch active provider
 openfox provider remove   # Remove provider
+
+# Manage the systemd service (install, start, stop, status, logs, uninstall)
+openfox service
+
+# Manage the PWA installation (install, uninstall, launch, update, status)
+openfox pwa
+
+# Print a paste-ready MCP client config for this server
+openfox mcp
+
+# Install a persistent OpenFox launcher (use --check to inspect)
+openfox install
+
+# Update OpenFox to the latest version
+openfox update
 ```
 
 ## CLI Options
