@@ -1,5 +1,5 @@
 import { mkdtemp, rm, mkdir, realpath } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, normalize, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 import { requestPathAccess, PathAccessDeniedError, isPathAllowed, clearAllowedPaths } from './path-security.js'
@@ -15,11 +15,25 @@ let WORKDIR: string
 let OUTSIDE_PATH: string
 let testDir: string
 
+/**
+ * Canonicalize like the implementation's safeRealpath: realpath when the path
+ * exists, plain resolve otherwise. Lets the Unix literal /etc/passwd act as a
+ * "nonexistent path outside the sandbox" on Windows (D:\etc\passwd) instead of
+ * crashing the fixture with ENOENT. Mirrors path-security.test.ts.
+ */
+async function canonicalOrResolved(path: string): Promise<string> {
+  try {
+    return await realpath(path)
+  } catch {
+    return normalize(resolve(path))
+  }
+}
+
 beforeAll(async () => {
   testDir = await mkdtemp(join(tmpdir(), 'openfox-plugin-danger-level-'))
   WORKDIR = join(testDir, 'project', 'workdir')
   await mkdir(WORKDIR, { recursive: true })
-  OUTSIDE_PATH = await realpath('/etc/passwd')
+  OUTSIDE_PATH = await canonicalOrResolved('/etc/passwd')
 })
 
 afterAll(async () => {
