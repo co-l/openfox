@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useSessionStore } from '../../stores/session'
 import { useProjects } from '../../hooks/useProjects'
 import { ChevronUpIcon, ChevronDownIcon, XCloseIcon, PlusIcon } from '../shared/icons'
@@ -16,6 +16,14 @@ interface SplitControlPanelProps {
   collapsed?: boolean
   layout: SplitLayoutMode
   onLayoutChange: (layout: SplitLayoutMode) => void
+  /**
+   * Render as a bottom sheet overlaying the panes instead of an inline column.
+   * A phone-width w-56 column would starve the chat, so the sheet takes the
+   * panel out of the horizontal flow entirely.
+   */
+  mobile?: boolean
+  /** Called when the sheet is dismissed (backdrop tap, close button, Escape). */
+  onClose?: () => void
 }
 
 /**
@@ -23,9 +31,25 @@ interface SplitControlPanelProps {
  * reorder controls) followed by every session across projects — running first,
  * then most recent. Clicking a session opens it as a pane.
  */
-export function SplitControlPanel({ collapsed = false, layout, onLayoutChange }: SplitControlPanelProps) {
+export function SplitControlPanel({
+  collapsed = false,
+  layout,
+  onLayoutChange,
+  mobile = false,
+  onClose,
+}: SplitControlPanelProps) {
   const t = useT()
   const [newSessionOpen, setNewSessionOpen] = useState(false)
+  const sheetOpen = mobile && !collapsed
+
+  useEffect(() => {
+    if (!sheetOpen || !onClose) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [sheetOpen, onClose])
   const openSessionIds = useSessionStore((state) => state.openSessionIds)
   const focusedSessionId = useSessionStore((state) => state.focusedSessionId ?? state.currentSession?.id)
   const panes = useSessionStore((state) => state.panes)
@@ -53,15 +77,47 @@ export function SplitControlPanel({ collapsed = false, layout, onLayoutChange }:
     }
   }
 
-  return (
+  // On mobile the panel body becomes a bottom sheet: a dimmed backdrop closes
+  // it on tap, and Escape / the close button are wired above. The inline column
+  // keeps its exact desktop markup.
+  const body = (
     <aside
       data-testid="split-control-panel"
-      className={`shrink-0 border-r border-border bg-secondary flex flex-col min-h-0 transition-[width] duration-200 ${
-        collapsed ? 'w-0 overflow-hidden border-r-0' : 'w-56'
-      }`}
-      aria-hidden={collapsed}
+      className={
+        mobile
+          ? // h-full is required: as a block-level child of the fixed-height
+            // sheet dialog the aside would otherwise size to its content and
+            // the inner scroller would never get a bounded height.
+            'flex h-full flex-col min-h-0 w-full bg-secondary'
+          : `shrink-0 border-r border-border bg-secondary flex flex-col min-h-0 transition-[width] duration-200 ${
+              collapsed ? 'w-0 overflow-hidden border-r-0' : 'w-56'
+            }`
+      }
+      aria-hidden={!mobile && collapsed}
     >
-      <div className="flex items-center gap-1 px-2 h-9 border-b border-border shrink-0">
+      {mobile && (
+        <div className="relative flex items-center gap-2 px-3 h-9 border-b border-border shrink-0">
+          <span
+            aria-hidden="true"
+            className="absolute left-1/2 -translate-x-1/2 top-1.5 w-9 h-1 rounded-full bg-border"
+          />
+          <span className="text-xs font-semibold uppercase tracking-wide text-text-muted whitespace-nowrap">
+            {t({ en: 'Split view', fr: 'Vue divisée' })}
+          </span>
+          <span className="text-xs text-text-muted">{openSessionIds.length}</span>
+          <button
+            type="button"
+            data-testid="split-sheet-close"
+            onClick={() => onClose?.()}
+            className="ml-auto p-1 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
+            title={t({ en: 'Close', fr: 'Fermer' })}
+            aria-label={t({ en: 'Close', fr: 'Fermer' })}
+          >
+            <XCloseIcon className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+      <div className={`flex items-center gap-1 px-2 h-9 border-b border-border shrink-0 ${mobile ? 'hidden' : ''}`}>
         <span className="text-xs font-semibold uppercase tracking-wide text-text-muted whitespace-nowrap">
           {t({ en: 'Split view', fr: 'Vue divisée' })}
         </span>
@@ -240,5 +296,28 @@ export function SplitControlPanel({ collapsed = false, layout, onLayoutChange }:
       </div>
       <SplitNewSessionModal isOpen={newSessionOpen} onClose={() => setNewSessionOpen(false)} />
     </aside>
+  )
+
+  if (!mobile) return body
+
+  if (!sheetOpen) return null
+
+  return (
+    <div data-testid="split-sheet" data-modal-root="true" className="fixed inset-0 z-50 flex items-end">
+      <div
+        data-testid="split-sheet-backdrop"
+        aria-hidden="true"
+        onClick={() => onClose?.()}
+        className="absolute inset-0 bg-black/50"
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={t({ en: 'Split view controls', fr: 'Contrôles de la vue divisée' })}
+        className="relative w-full h-[85vh] max-h-[85vh] rounded-t-xl overflow-hidden shadow-2xl"
+      >
+        {body}
+      </div>
+    </div>
   )
 }

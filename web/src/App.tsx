@@ -9,6 +9,7 @@ import {
 } from './lib/resources'
 import { useSetting } from './hooks/useSetting'
 import { useVisualViewport } from './hooks/useVisualViewport'
+import { useIsMobile, useViewportWidth } from './hooks/useIsMobile'
 import { Route, Switch, useRoute, useLocation } from 'wouter'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useSessionStore } from './stores/session'
@@ -353,15 +354,9 @@ function App() {
   const [leftMobileOpen, setLeftMobileOpen] = useState(false)
   const [rightMobileOpen, setRightMobileOpen] = useState(false)
 
-  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth)
+  const viewportWidth = useViewportWidth()
+  const isMobile = useIsMobile()
   const viewport = useVisualViewport()
-  const isMobile = viewportWidth < 768
-
-  useEffect(() => {
-    const onResize = () => setViewportWidth(window.innerWidth)
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [])
 
   const [location] = useLocation()
   const isProjectPage = /^\/p\/[^/]+$/.test(location)
