@@ -259,7 +259,7 @@ function InstalledPluginCard({ plugin }: { plugin: PluginInfo }) {
       {showSettings && section ? (
         <div className="mt-4 pt-4 border-t border-border">
           <h4 className="text-xs font-medium text-text-secondary mb-3">{localize(section.title)}</h4>
-          <PluginSettingsForm pluginId={plugin.id} hideScopeSelector />
+          <PluginSettingsForm pluginId={plugin.id} initialSchema={section.schema} hideScopeSelector />
         </div>
       ) : null}
       <ConfirmModal
