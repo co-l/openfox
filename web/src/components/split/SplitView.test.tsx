@@ -3,13 +3,15 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import { SplitView } from './SplitView'
 
-const { focusPaneMock, closePaneMock, navigateMock, controlCollapsedMock, listHomeSessionsMock } = vi.hoisted(() => ({
-  focusPaneMock: vi.fn(),
-  closePaneMock: vi.fn(),
-  navigateMock: vi.fn(),
-  controlCollapsedMock: vi.fn(),
-  listHomeSessionsMock: vi.fn(async () => undefined),
-}))
+const { focusPaneMock, closePaneMock, navigateMock, controlCollapsedMock, controlMobileMock, listHomeSessionsMock } =
+  vi.hoisted(() => ({
+    focusPaneMock: vi.fn(),
+    closePaneMock: vi.fn(),
+    navigateMock: vi.fn(),
+    controlCollapsedMock: vi.fn(),
+    controlMobileMock: vi.fn(),
+    listHomeSessionsMock: vi.fn(async () => undefined),
+  }))
 
 let storeState: Record<string, unknown> = {}
 
@@ -19,21 +21,33 @@ vi.mock('../../stores/session', () => ({
   }),
 }))
 
+let mountCount = 0
 vi.mock('./SessionPane', () => ({
-  SessionPane: ({ sessionId, focused, onFocus, onClose }: Record<string, unknown>) => (
-    <div data-testid="pane" data-session={sessionId as string} data-focused={String(focused)}>
-      <span>pane-{sessionId as string}</span>
-      <button onClick={onFocus as () => void}>focus</button>
-      <button onClick={onClose as () => void}>close</button>
-    </div>
-  ),
+  SessionPane: ({ sessionId, focused, onFocus, onClose }: Record<string, unknown>) => {
+    mountCount += 1
+    return (
+      <div data-testid="pane" data-session={sessionId as string} data-focused={String(focused)}>
+        <span>pane-{sessionId as string}</span>
+        <button onClick={onFocus as () => void}>focus</button>
+        <button onClick={onClose as () => void}>close</button>
+      </div>
+    )
+  },
 }))
 
 vi.mock('./SplitControlPanel', () => ({
-  SplitControlPanel: (props: { collapsed?: boolean }) => {
+  SplitControlPanel: (props: { collapsed?: boolean; mobile?: boolean; onClose?: () => void }) => {
     controlCollapsedMock(props.collapsed)
+    controlMobileMock(props.mobile === true)
     return <div data-testid="control-panel">panel</div>
   },
+}))
+
+let mobileWidth = 1280
+vi.mock('../../hooks/useIsMobile', () => ({
+  useIsMobile: () => mobileWidth < 768,
+  useViewportWidth: () => mobileWidth,
+  MOBILE_BREAKPOINT: 768,
 }))
 
 vi.mock('wouter', () => ({
@@ -64,7 +78,10 @@ describe('SplitView', () => {
     closePaneMock.mockClear()
     navigateMock.mockClear()
     controlCollapsedMock.mockClear()
+    controlMobileMock.mockClear()
     listHomeSessionsMock.mockClear()
+    mobileWidth = 1280
+    mountCount = 0
   })
 
   afterEach(() => {
@@ -174,5 +191,81 @@ describe('SplitView', () => {
     Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
     document.dispatchEvent(new Event('visibilitychange'))
     expect(listHomeSessionsMock).toHaveBeenCalledTimes(4)
+  })
+
+  describe('mobile', () => {
+    beforeEach(() => {
+      mobileWidth = 390
+    })
+
+    it('renders only the focused pane, not every open session', () => {
+      storeState.openSessionIds = ['s1', 's2', 's3']
+      storeState.focusedSessionId = 's2'
+      storeState.panes = { s1: makePane('s1'), s2: makePane('s2'), s3: makePane('s3') }
+      render(<SplitView />)
+      const panes = screen.getAllByTestId('pane')
+      expect(panes).toHaveLength(1)
+      expect(panes[0]!.getAttribute('data-session')).toBe('s2')
+      expect(panes[0]!.getAttribute('data-focused')).toBe('true')
+    })
+
+    it('shows a tab per open session so unfocused ones stay reachable', () => {
+      storeState.openSessionIds = ['s1', 's2', 's3']
+      storeState.focusedSessionId = 's2'
+      storeState.panes = { s1: makePane('s1'), s2: makePane('s2'), s3: makePane('s3') }
+      render(<SplitView />)
+      expect(screen.getAllByTestId('session-tab')).toHaveLength(3)
+    })
+
+    it('does not reserve any horizontal space for the control column', () => {
+      storeState.openSessionIds = ['s1']
+      storeState.focusedSessionId = 's1'
+      storeState.panes = { s1: makePane('s1') }
+      render(<SplitView />)
+      // The panel is mounted, but in sheet mode — never as an inline w-56 column.
+      expect(controlMobileMock).toHaveBeenCalledWith(true)
+    })
+
+    it('focuses the tapped session from the tab strip', () => {
+      storeState.openSessionIds = ['s1', 's2']
+      storeState.focusedSessionId = 's1'
+      storeState.panes = { s1: makePane('s1'), s2: makePane('s2') }
+      render(<SplitView />)
+      fireEvent.click(screen.getAllByRole('tab')[1]!)
+      expect(focusPaneMock).toHaveBeenCalledWith('s2')
+    })
+
+    it('falls back to the first open pane when no session is focused', () => {
+      storeState.openSessionIds = ['s1', 's2']
+      storeState.focusedSessionId = null
+      storeState.panes = { s1: makePane('s1'), s2: makePane('s2') }
+      render(<SplitView />)
+      expect(screen.getAllByTestId('pane')[0]!.getAttribute('data-session')).toBe('s1')
+    })
+
+    it('remounts the pane when the focused session changes', () => {
+      // Without key={focusedId} React reuses the SessionPane/PlanPanel/ChatInput
+      // instance, leaking the previous session's draft into the new composer.
+      mountCount = 0
+      storeState.openSessionIds = ['s1', 's2']
+      storeState.focusedSessionId = 's1'
+      storeState.panes = { s1: makePane('s1'), s2: makePane('s2') }
+      const { rerender } = render(<SplitView />)
+      expect(mountCount).toBe(1)
+      storeState.focusedSessionId = 's2'
+      rerender(<SplitView />)
+      expect(mountCount).toBe(2)
+    })
+
+    it('keeps the desktop layout out of the mobile regime', () => {
+      mobileWidth = 1280
+      storeState.openSessionIds = ['s1', 's2']
+      storeState.focusedSessionId = 's1'
+      storeState.panes = { s1: makePane('s1'), s2: makePane('s2') }
+      render(<SplitView />)
+      // Both panes mounted side by side at 1280px, and the panel stays inline.
+      expect(screen.getAllByTestId('pane')).toHaveLength(2)
+      expect(controlMobileMock).toHaveBeenCalledWith(false)
+    })
   })
 })

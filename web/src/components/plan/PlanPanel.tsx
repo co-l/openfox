@@ -240,7 +240,10 @@ export function PlanPanel({
     const handleEscape = (e: KeyboardEvent) => {
       const popupOpen =
         showQuickAction || showCommandsModal || showWorkflowsModal || showMessageSearch || turnStatsModal
-      if (e.key === 'Escape' && isRunning && !popupOpen && targetSessionId) {
+      // A modal overlay (e.g. the mobile split-view sheet) owns Escape while it
+      // is open — dismissing it must not also stop the generation behind it.
+      const modalOpen = document.querySelector('[data-modal-root="true"]') !== null
+      if (e.key === 'Escape' && isRunning && !popupOpen && !modalOpen && targetSessionId) {
         stopGeneration(targetSessionId)
       }
       if (e.key === 'ScrollLock') {

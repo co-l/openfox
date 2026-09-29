@@ -242,9 +242,9 @@ export function ChatInput({
     if (!sessionId) return
     const draftKey = `openfox:draft:${sessionId}`
     const savedDraft = localStorage.getItem(draftKey)
-    if (savedDraft !== null) {
-      setInput(savedDraft)
-    }
+    // Always assign, including the empty case: a session with no saved draft
+    // must not inherit the previous session's text.
+    setInput(savedDraft ?? '')
   }, [sessionId, setInput])
 
   useEffect(() => {
@@ -255,14 +255,21 @@ export function ChatInput({
   useEffect(() => {
     if (!sessionId) return
     const draftKey = `openfox:draft:${sessionId}`
-    const timeoutId = setTimeout(() => {
+    const persist = () => {
       if (input) {
         localStorage.setItem(draftKey, input)
       } else {
         localStorage.removeItem(draftKey)
       }
-    }, 500)
-    return () => clearTimeout(timeoutId)
+    }
+    const timeoutId = setTimeout(persist, 500)
+    return () => {
+      clearTimeout(timeoutId)
+      // Flush on unmount: switching tabs in the mobile split view unmounts this
+      // composer, and a draft typed inside the debounce window would otherwise be
+      // silently dropped.
+      persist()
+    }
   }, [sessionId, input])
 
   useEffect(() => {
