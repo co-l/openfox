@@ -5,6 +5,7 @@ import type {
   GitDiffFile,
   SessionListPayload,
   SessionRunningPayload,
+  SessionAwaitingAnswerPayload,
   SessionPausePayload,
   ChatAskUserPayload,
   ChatDeltaPayload,
@@ -470,6 +471,12 @@ export function handleServerMessage(
       if (payload.isRunning) {
         set((state) => updatePane(state, eventSessionId, (p) => ({ ...p, restoredInput: null, liveTurnStats: null })))
       }
+      break
+    }
+
+    case 'session.awaiting_answer': {
+      const payload = message.payload as SessionAwaitingAnswerPayload
+      updateSessionField(message, set, get, (s) => ({ ...s, awaitingAnswer: payload.awaitingAnswer }))
       break
     }
 

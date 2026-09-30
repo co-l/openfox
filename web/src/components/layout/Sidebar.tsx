@@ -67,6 +67,7 @@ export function Sidebar({ projectId, isOpen = true, overlay = false, onClose }: 
   const sessionsPaginationLoading = useSessionStore((state) => state.sessionsPaginationLoading)
   const sessionsWithPendingConfirmations = useSessionStore((state) => state.sessionsWithPendingConfirmations)
   const pendingPathConfirmations = useSessionStore((state) => state.pendingPathConfirmations)
+  const currentPendingQuestionsCount = useSessionStore((state) => state.pendingQuestions?.length ?? 0)
   const toggleFavorite = useSessionStore((state) => state.toggleFavorite)
 
   const currentProject = useCurrentProject()
@@ -492,6 +493,7 @@ export function Sidebar({ projectId, isOpen = true, overlay = false, onClose }: 
                         projectId,
                         sessionsWithPendingConfirmations,
                         pendingPathConfirmations,
+                        currentPendingQuestionsCount,
                         searchQuery,
                         focusedIndex,
                         t,
@@ -546,6 +548,7 @@ function renderSessionList(
   projectId: string,
   sessionsWithPendingConfirmations: string[],
   pendingPathConfirmations: PendingPathConfirmation[],
+  currentPendingQuestionsCount: number,
   searchQuery: string,
   focusedIndex: number,
   t: (
@@ -564,6 +567,7 @@ function renderSessionList(
     const isFavorite = session.isFavorite
     const hasPendingConfirmation =
       sessionsWithPendingConfirmations.includes(session.id) || (isActive && pendingPathConfirmations.length > 0)
+    const isAwaitingAnswer = isActive ? currentPendingQuestionsCount > 0 : session.awaitingAnswer === true
 
     return (
       <div
@@ -641,6 +645,12 @@ function renderSessionList(
               <span title={t({ en: 'Awaiting confirmation', fr: 'En attente de confirmation' })}>
                 <StopIcon className="w-3 h-3 text-red-400 flex-shrink-0" />
               </span>
+            ) : isAwaitingAnswer ? (
+              <span
+                aria-label={t({ en: 'Waiting for your answer', fr: 'En attente de votre réponse' })}
+                title={t({ en: 'Waiting for your answer', fr: 'En attente de votre réponse' })}
+                className="w-2.5 h-2.5 rounded-full bg-amber-400 ring-2 ring-amber-400/40 animate-pulse flex-shrink-0"
+              />
             ) : isRunning ? (
               <SpinIcon />
             ) : hasUnread && !isActive ? (

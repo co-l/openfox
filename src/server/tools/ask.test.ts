@@ -7,7 +7,71 @@ import {
   hasPendingQuestion,
   provideAnswer,
   getPendingQuestionsForSession,
+  isSessionAwaitingAnswer,
+  onAwaitingAnswerChange,
 } from './ask.js'
+
+async function ask(sessionId: string, toolCallId: string): Promise<void> {
+  try {
+    await askUserTool.execute(
+      { question: 'Q?' },
+      { workdir: '/tmp/project', sessionId, sessionManager: {} as never, toolCallId },
+    )
+  } catch {
+    // AskUserInterrupt expected
+  }
+}
+
+describe('awaiting-answer notifications', () => {
+  it('notifies only on transitions of a session awaiting state', async () => {
+    const changes: Array<[string, boolean]> = []
+    const unsubscribe = onAwaitingAnswerChange((sessionId, awaiting) => changes.push([sessionId, awaiting]))
+
+    await ask('s-await', 'c-await-1')
+    await ask('s-await', 'c-await-2')
+    expect(isSessionAwaitingAnswer('s-await')).toBe(true)
+    provideAnswer('c-await-1', 'x')
+    expect(isSessionAwaitingAnswer('s-await')).toBe(true)
+    cancelQuestion('c-await-2', 'stop')
+    expect(isSessionAwaitingAnswer('s-await')).toBe(false)
+
+    await ask('s-await', 'c-await-3')
+    cancelQuestionsForSession('s-await', 'deleted')
+
+    unsubscribe()
+    await ask('s-await', 'c-await-4')
+    provideAnswer('c-await-4', 'x')
+
+    expect(changes).toEqual([
+      ['s-await', true],
+      ['s-await', false],
+      ['s-await', true],
+      ['s-await', false],
+    ])
+  })
+
+  it('reports false for a session with no pending question', () => {
+    expect(isSessionAwaitingAnswer('never-asked')).toBe(false)
+  })
+
+  it('keeps the per-session count exact when a call id is asked twice', async () => {
+    await ask('s-dup', 'c-dup-1')
+    await ask('s-dup', 'c-dup-1')
+    expect(getPendingQuestionsForSession('s-dup')).toHaveLength(1)
+    provideAnswer('c-dup-1', 'x')
+    expect(isSessionAwaitingAnswer('s-dup')).toBe(false)
+  })
+
+  it('is independent across sessions', async () => {
+    await ask('s-a', 'c-a-1')
+    await ask('s-b', 'c-b-1')
+    cancelQuestionsForSession('s-a', 'deleted')
+    expect(isSessionAwaitingAnswer('s-a')).toBe(false)
+    expect(isSessionAwaitingAnswer('s-b')).toBe(true)
+    provideAnswer('c-b-1', 'x')
+    expect(isSessionAwaitingAnswer('s-b')).toBe(false)
+  })
+})
 
 describe('ask_user tool', () => {
   it('throws an AskUserInterrupt and tracks the pending question', async () => {

@@ -143,6 +143,22 @@ describe('Sidebar', () => {
     expect(html).not.toContain('bg-black/50')
   })
 
+  it('shows a waiting-for-answer marker on a background session awaiting an answer, above the unread dot', () => {
+    sessionStoreStateRef.current = {
+      ...sessionStoreState,
+      sessions: sessionStoreState.sessions.map((s) => (s.id === 'session-3' ? { ...s, awaitingAnswer: true } : s)),
+    }
+    const html = renderToStaticMarkup(<Sidebar projectId="project-1" />)
+    expect(html).toContain('Waiting for your answer')
+    expect(html).not.toContain('Unread activity')
+  })
+
+  it('shows the waiting-for-answer marker on the active session while its question is pending', () => {
+    sessionStoreStateRef.current = { ...sessionStoreState, pendingQuestions: [{ callId: 'c1' }] } as never
+    const html = renderToStaticMarkup(<Sidebar projectId="project-1" />)
+    expect(html.match(/Waiting for your answer/g)?.length).toBe(2)
+  })
+
   it('collapses the inline sidebar to zero width when closed', () => {
     const html = renderToStaticMarkup(<Sidebar projectId="project-1" isOpen={false} overlay={false} />)
     expect(html).toContain('w-0')

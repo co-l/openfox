@@ -13,7 +13,12 @@ import { initDatabase } from './db/index.js'
 import { getProject, deleteProject } from './db/projects.js'
 import { initEventStore, getEventStore, combineEventsWithSnapshot } from './events/index.js'
 import { buildMessagesFromStoredEvents } from './events/folding.js'
-import { provideAnswer, getPendingQuestionsForSession } from './tools/ask.js'
+import {
+  provideAnswer,
+  getPendingQuestionsForSession,
+  isSessionAwaitingAnswer,
+  onAwaitingAnswerChange,
+} from './tools/ask.js'
 import { providePathConfirmation, getPendingConfirmationsBySession } from './tools/path-security.js'
 import './llm/proxy.js'
 import { detectModel, getLlmStatus, getBackendDisplayName } from './llm/index.js'
@@ -825,6 +830,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
     const sessionsWithPrompts = sessions.map((session) => ({
       ...session,
+      awaitingAnswer: isSessionAwaitingAnswer(session.id),
       recentUserPrompts: getRecentUserPromptsForSession(session.id, 10),
     }))
 
@@ -857,7 +863,11 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
    * Registered before /api/sessions/:id so 'home' is not treated as an id.
    */
   app.get('/api/sessions/home', (_req, res) => {
-    res.json({ sessions: sessionManager.listHomeSessions() })
+    res.json({
+      sessions: sessionManager
+        .listHomeSessions()
+        .map((session) => ({ ...session, awaitingAnswer: isSessionAwaitingAnswer(session.id) })),
+    })
   })
 
   /**
@@ -3655,6 +3665,10 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     () => mcpManager.getAllServers(),
   )
   const wss = wssExports.wss
+
+  onAwaitingAnswerChange((sessionId, awaitingAnswer) => {
+    wssExports.broadcastAll({ type: 'session.awaiting_answer', sessionId, payload: { awaitingAnswer } })
+  })
 
   // Point the plugin host at the live WebSocket broadcaster now that it exists.
   pluginHost.setBroadcaster((message) => wssExports.broadcastAll(message))

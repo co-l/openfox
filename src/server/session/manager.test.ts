@@ -218,6 +218,46 @@ describe('SessionManager', () => {
     expect(getSessionDisabledServers(session.id)).toEqual([])
   })
 
+  it('cancels pending ask_user questions when a session is deleted', async () => {
+    const { askUserTool, getPendingQuestionsForSession, isSessionAwaitingAnswer } = await import('../tools/ask.js')
+    const session = manager.createSession(projectId)
+    const other = manager.createSession(projectId)
+    for (const [id, callId] of [
+      [session.id, 'del-q-1'],
+      [other.id, 'del-q-2'],
+    ] as const) {
+      await askUserTool
+        .execute({ question: 'Q?' }, { workdir, sessionId: id, sessionManager: {} as never, toolCallId: callId })
+        .catch(() => {})
+    }
+
+    manager.deleteSession(session.id)
+
+    expect(getPendingQuestionsForSession(session.id)).toEqual([])
+    expect(isSessionAwaitingAnswer(session.id)).toBe(false)
+    expect(isSessionAwaitingAnswer(other.id)).toBe(true)
+  })
+
+  it('cancels pending ask_user questions of every session when all project sessions are deleted', async () => {
+    const { askUserTool, getPendingQuestionsForSession, isSessionAwaitingAnswer } = await import('../tools/ask.js')
+    const sessions = [manager.createSession(projectId), manager.createSession(projectId)]
+    for (const [index, s] of sessions.entries()) {
+      await askUserTool
+        .execute(
+          { question: 'Q?' },
+          { workdir, sessionId: s.id, sessionManager: {} as never, toolCallId: `del-all-q-${index}` },
+        )
+        .catch(() => {})
+    }
+
+    manager.deleteAllSessions(projectId, workdir)
+
+    for (const s of sessions) {
+      expect(getPendingQuestionsForSession(s.id)).toEqual([])
+      expect(isSessionAwaitingAnswer(s.id)).toBe(false)
+    }
+  })
+
   it('uses database is_running as source of truth for session state', () => {
     const session = manager.createSession(projectId)
 

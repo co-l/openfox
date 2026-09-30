@@ -164,6 +164,7 @@ export interface SessionSummary {
   mode: SessionMode
   phase: SessionPhase // Current workflow phase
   isRunning: boolean
+  awaitingAnswer?: boolean // An ask_user question is pending an answer from the user
   isFavorite: boolean // Whether the session is favorited for pinning
   providerId?: string | null // Per-session provider override
   providerModel?: string | null // Per-session model override

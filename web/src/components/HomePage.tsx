@@ -117,6 +117,14 @@ function SessionProjectMenu({
 /** Color-coded activity dot for a session row on the homepage list. */
 function SessionStatusDot({ session, waiting }: { session: SessionSummary; waiting: boolean }) {
   const t = useT()
+  if (waiting) {
+    return (
+      <span
+        className="w-2.5 h-2.5 rounded-full shrink-0 bg-amber-400 ring-2 ring-amber-400/40 animate-pulse"
+        title={t({ en: 'Waiting for your input', fr: 'En attente de votre intervention' })}
+      />
+    )
+  }
   if (session.isRunning) {
     return (
       <span
@@ -125,17 +133,8 @@ function SessionStatusDot({ session, waiting }: { session: SessionSummary; waiti
       />
     )
   }
-  if (waiting || session.phase === 'blocked') {
-    return (
-      <span
-        className="w-2 h-2 rounded-full shrink-0 bg-amber-400"
-        title={
-          waiting
-            ? t({ en: 'Waiting for your input', fr: 'En attente de votre intervention' })
-            : t({ en: 'Blocked', fr: 'Bloqué' })
-        }
-      />
-    )
+  if (session.phase === 'blocked') {
+    return <span className="w-2 h-2 rounded-full shrink-0 bg-amber-400" title={t({ en: 'Blocked', fr: 'Bloqué' })} />
   }
   return <span className="w-2 h-2 rounded-full shrink-0 bg-text-muted/60" />
 }
@@ -313,7 +312,7 @@ export function HomePage() {
             const project = projectById.get(session.projectId)
             const displayTitle = session.title ?? session.id.slice(0, 8)
             const matchType = matchTypes?.get(session.id)
-            const waiting = sessionsWithPendingConfirmations.includes(session.id)
+            const waiting = sessionsWithPendingConfirmations.includes(session.id) || session.awaitingAnswer === true
             const rowClass =
               'flex items-center gap-3 px-3 md:px-4 py-2.5 transition-colors' +
               (project ? ' hover:bg-bg-tertiary/50 cursor-pointer' : ' cursor-default')
