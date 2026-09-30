@@ -117,6 +117,7 @@ const themeStoreState = vi.hoisted(() => ({
   applyPreset: vi.fn(),
   applyTokens: vi.fn(),
   setFollowSystemTheme: vi.fn(),
+  applyServerFollowSystemTheme: vi.fn(),
   initSystemThemeListener: () => () => {},
   basePreset: 'system',
   currentPreset: 'system',

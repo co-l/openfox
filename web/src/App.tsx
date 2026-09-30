@@ -243,7 +243,7 @@ function App() {
     // synchronous localStorage theme already applies; running this early would
     // treat the '' fallbacks as real values (e.g. PUT followSystemTheme=false).
     if (!configFetched) return
-    const { applyPreset, applyTokens, setFollowSystemTheme, initSystemThemeListener } = useThemeStore.getState()
+    const { applyPreset, applyTokens, applyServerFollowSystemTheme, initSystemThemeListener } = useThemeStore.getState()
     const serverTheme = themeSetting
     const serverPresets = userPresetsSetting
     const serverFollowSystem = followSystemSetting
@@ -273,12 +273,7 @@ function App() {
       applyPreset('system')
     }
 
-    if (serverFollowSystem !== undefined) {
-      const currentFollowSystem = useThemeStore.getState().followSystemTheme
-      if (currentFollowSystem !== (serverFollowSystem === 'true')) {
-        setFollowSystemTheme(serverFollowSystem === 'true')
-      }
-    }
+    applyServerFollowSystemTheme(serverFollowSystem)
 
     const cleanup = initSystemThemeListener()
     return () => cleanup()
