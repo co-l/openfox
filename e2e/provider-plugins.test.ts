@@ -230,9 +230,12 @@ describe('Provider Plugin System', () => {
     expect(activateRes.status).toBe(200)
 
     // Activation triggers an async model fetch via the transport adapter, so poll
-    // until the models land instead of racing the first response.
+    // until the models land instead of racing the first response. Bounded by
+    // time rather than attempts: on a loaded machine the fetch can take well
+    // over the ~1 s that 50 quick attempts used to allow.
     let testProvider: { id: string; models: Array<{ id: string; contextWindow: number }> } | undefined
-    for (let i = 0; i < 50; i++) {
+    const deadline = Date.now() + 10_000
+    while (Date.now() < deadline) {
       const modelsRes = await fetch(`${server.url}/api/providers`)
       const providersData = (await modelsRes.json()) as {
         providers: Array<{ id: string; models: Array<{ id: string; contextWindow: number }> }>
