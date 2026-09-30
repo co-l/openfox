@@ -27,6 +27,17 @@ function setupRoot() {
 
 const tick = (ms = 50) => new Promise((resolve) => setTimeout(resolve, ms))
 
+/** Polls until `selector` matches, so a slow machine waits instead of racing the render. */
+async function waitForElement<T extends Element>(selector: string, timeoutMs = 5000): Promise<T> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const element = document.body.querySelector<T>(selector)
+    if (element) return element
+    if (Date.now() > deadline) throw new Error(`Timed out waiting for ${selector}`)
+    await tick(10)
+  }
+}
+
 /** Renders the modal on step 2 with the shared onSave mock, then waits for its effects to settle. */
 async function renderProviderModal(props: Partial<ComponentProps<typeof ProviderModal>> = {}, waitMs = 200) {
   root.render(
@@ -82,9 +93,12 @@ describe('ProviderModal - thinkingLevel persistence', () => {
     await renderProviderModal({ editProvider: makeEditProvider(), editModelId: modelId })
 
     // Find the reasoning effort input (free-text variant; the select variant is
-    // matched via the same aria-label in other tests)
-    const effortInput = document.body.querySelector('input[aria-label="Reasoning effort"]') as HTMLInputElement | null
-    if (thinkingLevel !== undefined && effortInput) setInputValue(effortInput, thinkingLevel)
+    // matched via the same aria-label in other tests). Wait for it rather than
+    // trusting the fixed render delay: the edited provider's models are loaded
+    // by a passive effect, and under heavy load (e.g. the pre-commit hook running
+    // every check in parallel) saving before it runs sends an empty model list.
+    const effortInput = await waitForElement<HTMLInputElement>('input[aria-label="Reasoning effort"]')
+    if (thinkingLevel !== undefined) setInputValue(effortInput, thinkingLevel)
 
     // Click "Save Provider" (no separate review step anymore)
     clickSave()
@@ -1561,12 +1575,16 @@ describe('ProviderModal - model mode merge', () => {
       setTimeout(resolve, 200)
     })
 
-    const syncButton = Array.from(document.body.querySelectorAll('button')).find((b) =>
-      b.textContent?.trim().includes('Sync'),
-    )
-    expect(syncButton).toBeTruthy()
-    syncButton?.click()
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    // Fixed delays raced the async sync on a loaded machine: wait for the state instead.
+    const syncButton = await vi.waitFor(() => {
+      const button = Array.from(document.body.querySelectorAll('button')).find((b) =>
+        b.textContent?.trim().includes('Sync'),
+      )
+      expect(button).toBeTruthy()
+      return button!
+    })
+    syncButton.click()
+    await vi.waitFor(() => expect(document.body.textContent).not.toContain('model-removed'))
 
     const saveButton = document.body.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
     saveButton?.click()
@@ -1797,15 +1815,17 @@ describe('ProviderModal - provider auth zone context', () => {
     await tick(0)
     const nextButton = document.body.querySelector('[data-testid="provider-modal-next"]') as HTMLButtonElement | null
     nextButton?.click()
-    await tick(250)
 
-    const createCall = calls.find((call) => call.url.endsWith('/api/providers') && !call.url.includes('models'))
-    expect(createCall).toBeDefined()
-    // The zone re-renders once the draft id exists, so assert on the latest call.
-    const rpcCalls = calls.filter((call) => call.url.includes('/rpc/getAuthUi'))
-    expect(rpcCalls.length).toBeGreaterThan(0)
-    expect((rpcCalls[rpcCalls.length - 1]?.body as { params?: { providerId?: string } }).params?.providerId).toBe(
-      'draft-provider-id',
-    )
+    // A fixed delay raced the async create on a loaded machine: wait for the calls.
+    await vi.waitFor(() => {
+      const createCall = calls.find((call) => call.url.endsWith('/api/providers') && !call.url.includes('models'))
+      expect(createCall).toBeDefined()
+      // The zone re-renders once the draft id exists, so assert on the latest call.
+      const rpcCalls = calls.filter((call) => call.url.includes('/rpc/getAuthUi'))
+      expect(rpcCalls.length).toBeGreaterThan(0)
+      expect((rpcCalls[rpcCalls.length - 1]?.body as { params?: { providerId?: string } }).params?.providerId).toBe(
+        'draft-provider-id',
+      )
+    })
   })
 })
