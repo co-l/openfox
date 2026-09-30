@@ -18,7 +18,7 @@ export interface OpenFoxMcpToolDeps {
   /** Create a project at the given directory (creates the dir, initializes git if enabled, then registers it). */
   createProject(name: string, workdir: string): Promise<Project>
   /** Delete a project and all its sessions. Returns whether a project was found and removed. */
-  deleteProject(projectId: string): boolean
+  deleteProject(projectId: string): Promise<boolean>
   /** Set the full entry list for a metadata key (criteria, todos, review_findings, ...). Same store as the agent's session_metadata tool. */
   setMetadataEntries(sessionId: string, key: string, entries: MetadataEntry[]): void
   listWorkflows(projectDir?: string): Promise<WorkflowListItem[]>

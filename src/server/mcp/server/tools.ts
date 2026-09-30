@@ -231,7 +231,7 @@ export function createOpenFoxMcpTools(deps: OpenFoxMcpToolDeps): OpenFoxMcpTool[
         if (typeof projectId !== 'string' || projectId.length === 0) {
           return fail('projectId is required')
         }
-        const deleted = deps.deleteProject(projectId)
+        const deleted = await deps.deleteProject(projectId)
         return ok({ deleted })
       },
     },

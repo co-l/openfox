@@ -535,6 +535,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     if (!project) {
       return res.status(404).json({ error: 'Project not found' })
     }
+    await teardownProjectSessions(project.id, 'Project deleted')
+    sessionManager.deleteAllSessions(project.id, project.workdir)
     deleteProject(req.params.id)
     res.json({ success: true })
   })
@@ -1061,14 +1063,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
 
     // Cancel any active execution before deleting — mirrors /stop endpoint
-    const { stopSessionExecution } = await import('./session/chat-handler.js')
-    const { cancelQuestionsForSession, cancelPathConfirmationsForSession } = await import('./tools/index.js')
-
-    sessionManager.clearMessageQueue(sessionId)
-    stopSessionExecution(sessionId, sessionManager)
-    abortSession(sessionId)
-    cancelQuestionsForSession(sessionId, 'Session deleted')
-    cancelPathConfirmationsForSession(sessionId, 'Session deleted')
+    await teardownSession(sessionId, 'Session deleted')
 
     sessionManager.deleteSession(sessionId)
     wssExports.broadcastAll({
@@ -1079,12 +1074,13 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     res.json({ success: true })
   })
 
-  app.delete('/api/projects/:projectId/sessions', (req, res) => {
+  app.delete('/api/projects/:projectId/sessions', async (req, res) => {
     const projectId = req.params['projectId'] as string
     const project = sessionManager.getProject(projectId)
     if (!project) {
       return res.status(404).json({ error: 'Project not found' })
     }
+    await teardownProjectSessions(projectId, 'Session deleted')
     sessionManager.deleteAllSessions(projectId, project.workdir)
     wssExports.broadcastAll({
       type: 'session.deletedAll',
@@ -3767,6 +3763,23 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     return aborted
   }
 
+  const teardownSession = async (sessionId: string, reason: string) => {
+    const { stopSessionExecution } = await import('./session/chat-handler.js')
+    const { cancelQuestionsForSession, cancelPathConfirmationsForSession } = await import('./tools/index.js')
+    sessionManager.clearMessageQueue(sessionId)
+    stopSessionExecution(sessionId, sessionManager)
+    abortSession(sessionId)
+    cancelQuestionsForSession(sessionId, reason)
+    cancelPathConfirmationsForSession(sessionId, reason)
+  }
+
+  const teardownProjectSessions = async (projectId: string, reason: string) => {
+    const { sessions } = sessionManager.listSessionsByProject(projectId, 10000, 0)
+    for (const session of sessions) {
+      await teardownSession(session.id, reason)
+    }
+  }
+
   // Note: /stop endpoint uses abortSession below
 
   mcpToolDeps = {
@@ -3778,9 +3791,11 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       const globalConfig = await loadGlobalConfig(config.mode ?? 'production', config.globalConfigPath)
       return createProjectDirectory(name, workdir, globalConfig.workspace?.autoGitInit ?? true)
     },
-    deleteProject: (projectId) => {
+    deleteProject: async (projectId) => {
       const project = getProject(projectId)
       if (!project) return false
+      await teardownProjectSessions(projectId, 'Project deleted')
+      sessionManager.deleteAllSessions(projectId, project.workdir)
       deleteProject(projectId)
       return true
     },
