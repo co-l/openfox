@@ -622,7 +622,10 @@ export class EventStore {
     const row = this.db
       .prepare(
         `SELECT COUNT(*) AS events,
-                COALESCE(SUM(LENGTH(payload)), 0) AS bytes,
+                -- CAST to BLOB: LENGTH() on a TEXT value counts characters, not
+                -- bytes, so a non-ASCII payload (accents, CJK, emoji) would
+                -- understate the tail by up to 3x and overshoot the byte budget.
+                COALESCE(SUM(LENGTH(CAST(payload AS BLOB))), 0) AS bytes,
                 COALESCE(SUM(CASE WHEN event_type = 'message.start' THEN 1 ELSE 0 END), 0)
                   - COALESCE(SUM(CASE WHEN event_type = 'message.done' THEN 1 ELSE 0 END), 0) AS openMessages,
                 COALESCE(SUM(CASE WHEN event_type = 'tool.call' THEN 1 ELSE 0 END), 0)
@@ -642,21 +645,37 @@ export class EventStore {
   /**
    * Count real (non system-generated) user messages in a session.
    *
+   * Real user messages live in two places: the ones already folded into the
+   * latest snapshot, and the `message.start` rows appended since. Their raw rows
+   * are deleted by `cleanupOldEvents()` (which does not whitelist them, unlike
+   * `mode.changed` or `context.state`), so counting only the raw rows makes the
+   * count collapse to ~0 after every prune — which re-arms the "is this the
+   * first user message?" condition that drives session naming.
+   *
    * Session naming only needs the count: materializing every event to count
    * `message.start` events re-reads the whole log on a path that runs at
    * session creation and on the sidebar.
    */
   countUserMessages(sessionId: string): number {
+    const snapshot = this.getLatestSnapshot(sessionId)
+    let count = 0
+    for (const message of snapshot?.data.messages ?? []) {
+      if (message.role === 'user' && message.isSystemGenerated !== true) count++
+    }
+
     const row = this.db
       .prepare(
-        `SELECT COUNT(*) AS n FROM events
-         WHERE session_id = ? AND event_type = 'message.start'
-           AND json_extract(payload, '$.role') = 'user'
-           AND COALESCE(json_extract(payload, '$.isSystemGenerated'), 0) = 0`,
+        `SELECT COUNT(*) AS n FROM events e
+         WHERE e.session_id = ? AND e.seq > ? AND e.event_type = 'message.start'
+           AND json_extract(e.payload, '$.role') = 'user'
+           AND COALESCE(json_extract(e.payload, '$.isSystemGenerated'), 0) = 0
+           AND NOT EXISTS (
+             SELECT 1 FROM tombstones t WHERE t.session_id = e.session_id AND t.seq = e.seq
+           )`,
       )
-      .get(sessionId) as { n: number }
+      .get(sessionId, snapshot?.seq ?? 0) as { n: number }
 
-    return row.n
+    return count + row.n
   }
 
   /**

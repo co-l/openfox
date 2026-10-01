@@ -480,12 +480,33 @@ export function buildContextMessagesFromEventHistory(
   // abort-snapshot) are dropped, exactly as the pre-unification fold did — the
   // snapshot content stays authoritative and synthetic events can never be
   // double-appended by a later delta/thinking/tool.result.
+  //
+  // Exception: an event that *completes* the snapshot rather than duplicating it
+  // must be kept. A mid-turn snapshot can capture a tool call whose result has
+  // not been emitted yet — a sub-agent's cadence fires while its parent turn is
+  // still awaiting that call (the parent's in-flight call became the nested
+  // cadence's baseline, so it does not defer the snapshot), and
+  // `cleanupOldEvents()` then deletes the parent's `tool.call` row. Dropping the
+  // parent's later `tool.result` would leave the snapshot's tool call
+  // unfulfilled, and `stripOrphanedToolCalls` would remove the call from the
+  // message entirely — silently losing the sub-agent's return value from the
+  // parent's context.
   const snapshotMessageIds = new Set(snapshot.messages.map((message) => message.id))
-  const laterEvents = events.filter(
-    (event) =>
-      event.seq > snapshotEvent.seq &&
-      !('messageId' in event.data && snapshotMessageIds.has((event.data as { messageId: string }).messageId)),
-  )
+  const unresolvedToolCallIds = new Set<string>()
+  for (const message of snapshot.messages) {
+    for (const toolCall of message.toolCalls ?? []) {
+      if (toolCall.result === undefined) unresolvedToolCallIds.add(toolCall.id)
+    }
+  }
+  const laterEvents = events.filter((event) => {
+    if (event.seq <= snapshotEvent.seq) return false
+    if (!('messageId' in event.data)) return true
+    if (!snapshotMessageIds.has((event.data as { messageId: string }).messageId)) return true
+    // The snapshot already holds this message. Keep only what completes it.
+    if (event.type !== 'tool.result') return false
+    const toolCallId = (event.data as { toolCallId?: string }).toolCallId
+    return toolCallId !== undefined && unresolvedToolCallIds.has(toolCallId)
+  })
 
   return buildContextMessagesFromStoredEvents(
     [...snapshotMessagesToEvents(snapshot.messages, snapshotEvent.sessionId), ...laterEvents],

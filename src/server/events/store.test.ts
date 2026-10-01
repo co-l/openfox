@@ -1350,6 +1350,100 @@ describe('EventStore - Event Cleanup', () => {
 
       expect(store.countUserMessages('session-1')).toBe(1)
     })
+
+    it('counts user messages folded into the latest snapshot, whose raw rows were pruned', () => {
+      // Realistic seq layout: session.initialized takes seq 1, which
+      // cleanupOldEvents() deliberately preserves.
+      store.append('session-1', {
+        type: 'session.initialized',
+        data: { projectId: 'p', workdir: '/tmp', contextWindowId: 'window-1' },
+      })
+      store.append('session-1', { type: 'message.start', data: { messageId: 'u1', role: 'user', content: 'first' } })
+      store.append('session-1', { type: 'message.start', data: { messageId: 'u2', role: 'user', content: 'second' } })
+      store.append('session-1', {
+        type: 'turn.snapshot',
+        data: {
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          messages: [
+            { id: 'u1', role: 'user', content: 'first', timestamp: 1 },
+            { id: 'u2', role: 'user', content: 'second', timestamp: 2 },
+          ],
+          criteria: [],
+          metadataEntries: {},
+          contextState: {
+            currentTokens: 0,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+            dynamicContextChanged: false,
+          },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          readFiles: [],
+          snapshotSeq: 3,
+          snapshotAt: Date.now(),
+        },
+      })
+      expect(store.cleanupOldEvents('session-1')).toBeGreaterThan(0)
+
+      // Counting only the raw rows now reports 0, which re-arms the
+      // "is this the first user message?" condition driving session naming.
+      expect(store.countUserMessages('session-1')).toBe(2)
+    })
+
+    it('still counts user messages appended after the snapshot', () => {
+      store.append('session-1', {
+        type: 'session.initialized',
+        data: { projectId: 'p', workdir: '/tmp', contextWindowId: 'window-1' },
+      })
+      store.append('session-1', { type: 'message.start', data: { messageId: 'u1', role: 'user', content: 'first' } })
+      store.append('session-1', {
+        type: 'turn.snapshot',
+        data: {
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          messages: [{ id: 'u1', role: 'user', content: 'first', timestamp: 1 }],
+          criteria: [],
+          metadataEntries: {},
+          contextState: {
+            currentTokens: 0,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+            dynamicContextChanged: false,
+          },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          readFiles: [],
+          snapshotSeq: 2,
+          snapshotAt: Date.now(),
+        },
+      })
+      store.cleanupOldEvents('session-1')
+      store.append('session-1', { type: 'message.start', data: { messageId: 'u2', role: 'user', content: 'second' } })
+
+      expect(store.countUserMessages('session-1')).toBe(2)
+    })
+  })
+
+  describe('getEventLogTail', () => {
+    it('measures UTF-8 bytes, not characters, for the snapshot byte budget', () => {
+      // SQLite's LENGTH() on a TEXT value counts characters, so a non-ASCII
+      // payload (accents, CJK, emoji) would understate the tail by up to 3x
+      // and let the 48 MB budget overshoot before a snapshot is taken.
+      const content = '修复事件日志无限增长的问题 🦊 déjà réglé'
+      store.append('session-1', { type: 'message.delta', data: { messageId: 'm1', content } })
+
+      const tail = store.getEventLogTail('session-1', 0)
+
+      expect(tail.bytes).toBeGreaterThan(content.length)
+      expect(tail.bytes).toBeGreaterThanOrEqual(Buffer.byteLength(content, 'utf8'))
+    })
   })
 
   describe('getContextWindowEvents', () => {
