@@ -665,7 +665,8 @@ registry.registerMessageTransform({
 ```
 
 - Transforms intercept and mutate context messages and/or system prompt before dispatch to the LLM.
-- **Fail-open resilience**: If a transform throws an error or times out (5 s), the core logs a warning and proceeds with uncompressed/unmodified messages without interrupting the turn.
+- **Input isolation**: the `messages` array and its messages are a private copy owned by the core. Edits made in place are adopted, but they never reach the caller's array, and a transform that throws or times out cannot alter the messages the core sends.
+- **Fail-open resilience**: If a transform throws an error or times out (5 s), the core logs a warning, discards that transform's contribution and proceeds with the messages, system prompt and metadata of the last successful transform, without interrupting the turn.
 - Multiple active transforms execute sequentially in priority order.
 
 ### Context API
