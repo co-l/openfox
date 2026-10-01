@@ -11,6 +11,7 @@ import { mkdtempSync, rmSync, existsSync, statSync, writeFileSync, utimesSync } 
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { EventStore, initEventStore, getStaleRunningSessionIds } from './store.js'
+import { foldContextState } from './folding.js'
 import { SETTINGS_KEYS } from '../db/settings.js'
 import type { TurnEvent, StoredEvent, SessionSnapshot } from './types.js'
 
@@ -1323,6 +1324,199 @@ describe('EventStore - Event Cleanup', () => {
     })
   })
 
+  describe('countUserMessages', () => {
+    it('counts real user messages, ignoring system-generated ones', () => {
+      store.append('session-1', { type: 'message.start', data: { messageId: 'u1', role: 'user', content: 'hi' } })
+      store.append('session-1', {
+        type: 'message.start',
+        data: { messageId: 'a1', role: 'assistant', content: 'hello' },
+      })
+      store.append('session-1', {
+        type: 'message.start',
+        data: { messageId: 's1', role: 'user', content: 'auto prompt', isSystemGenerated: true },
+      })
+      store.append('session-1', {
+        type: 'message.start',
+        data: { messageId: 'u2', role: 'user', content: 'again', isSystemGenerated: false },
+      })
+      store.append('session-1', { type: 'message.delta', data: { messageId: 'u1', content: 'x' } })
+
+      expect(store.countUserMessages('session-1')).toBe(2)
+    })
+
+    it('is scoped to its session', () => {
+      store.append('session-1', { type: 'message.start', data: { messageId: 'u1', role: 'user', content: 'hi' } })
+      store.append('session-2', { type: 'message.start', data: { messageId: 'u2', role: 'user', content: 'yo' } })
+
+      expect(store.countUserMessages('session-1')).toBe(1)
+    })
+  })
+
+  describe('getContextWindowEvents', () => {
+    const contextState = {
+      currentTokens: 10,
+      maxTokens: 200000,
+      compactionCount: 0,
+      dangerZone: false,
+      canCompact: false,
+      dynamicContextChanged: false,
+    }
+    const snapshotData = {
+      mode: 'planner' as const,
+      phase: 'plan' as const,
+      isRunning: false,
+      messages: [],
+      criteria: [],
+      metadataEntries: {},
+      contextState,
+      currentContextWindowId: 'window-2',
+      todos: [],
+      readFiles: [],
+      snapshotSeq: 6,
+      snapshotAt: Date.now(),
+    }
+
+    const seedEvents = (sessionId: string) => {
+      store.append(sessionId, {
+        type: 'session.initialized',
+        data: { projectId: 'p', workdir: '/tmp', contextWindowId: 'window-1' },
+      })
+      store.append(sessionId, { type: 'message.start', data: { messageId: 'm1', role: 'user', content: 'hi' } })
+      store.append(sessionId, { type: 'context.state', data: contextState })
+      store.append(sessionId, {
+        type: 'file.read',
+        data: { path: '/tmp/a.ts', tokenCount: 3, contextWindowId: 'window-1' },
+      })
+      store.append(sessionId, {
+        type: 'context.compacted',
+        data: {
+          closedWindowId: 'window-1',
+          newWindowId: 'window-2',
+          beforeTokens: 10,
+          afterTokens: 0,
+          summary: 'sum',
+        },
+      })
+      store.append(sessionId, { type: 'turn.snapshot', data: snapshotData })
+    }
+
+    it('folds to the same current window as the full event log', () => {
+      seedEvents('session-1')
+
+      // The window id is a pure function of four event types. Reading (and
+      // JSON-parsing) the whole log to recover it is what pinned the main
+      // thread for ~6 s per call on a 322k-event session.
+      const filtered = store.getContextWindowEvents('session-1')
+      const full = store.getEvents('session-1')
+
+      expect(foldContextState(filtered, '').currentContextWindowId).toBe(
+        foldContextState(full, '').currentContextWindowId,
+      )
+      expect(filtered.map((event) => event.type)).toEqual([
+        'session.initialized',
+        'context.state',
+        'context.compacted',
+        'turn.snapshot',
+      ])
+    })
+
+    it('excludes tombstoned events', () => {
+      seedEvents('session-1')
+
+      const compacted = store.getEvents('session-1').find((event) => event.type === 'context.compacted')!
+      store.tombstoneEvents('session-1', [compacted.seq])
+
+      const filtered = store.getContextWindowEvents('session-1')
+      expect(filtered.map((event) => event.type)).not.toContain('context.compacted')
+      // Tombstoned events must be invisible here exactly as they are in
+      // getEvents — the fold result has to match the remaining raw events.
+      const survivors = store.getEvents('session-1').filter((event) => event.seq !== compacted.seq)
+      expect(foldContextState(filtered, '').currentContextWindowId).toBe(
+        foldContextState(survivors, '').currentContextWindowId,
+      )
+    })
+  })
+
+  describe('events indexes', () => {
+    it('migrates a legacy database to the (session_id, event_type, seq) index', () => {
+      // Pre-migration schema: the snapshot lookup (type filter + ORDER BY seq
+      // DESC LIMIT 1) had no usable index, so SQLite walked every event of the
+      // session backwards and fetched each row (105 ms on a 322k-event session).
+      const legacy = new Database(':memory:')
+      legacy.exec(`
+        CREATE TABLE events (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id TEXT NOT NULL,
+          seq INTEGER NOT NULL,
+          timestamp INTEGER NOT NULL,
+          event_type TEXT NOT NULL,
+          payload TEXT NOT NULL,
+          UNIQUE(session_id, seq)
+        )
+      `)
+      legacy.exec(`CREATE INDEX idx_events_session_seq ON events(session_id, seq)`)
+      legacy.exec(`CREATE INDEX idx_events_session_type ON events(session_id, event_type)`)
+
+      const migrated = new EventStore(legacy)
+
+      const indexNames = (
+        legacy.prepare(`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'events'`).all() as {
+          name: string
+        }[]
+      ).map((row) => row.name)
+
+      expect(indexNames).toContain('idx_events_session_type_seq')
+      // Redundant: (session_id, seq) is the UNIQUE constraint's auto-index and
+      // (session_id, event_type) is a prefix of the new covering index. Both
+      // only cost a write per appended event.
+      expect(indexNames).not.toContain('idx_events_session_seq')
+      expect(indexNames).not.toContain('idx_events_session_type')
+      // A migrated database must still resolve snapshots — the store queries
+      // name the covering index explicitly.
+      expect(migrated.getLatestSnapshotSeq('session-1')).toBe(0)
+      legacy.close()
+    })
+
+    it('serves the snapshot lookup from the covering index', () => {
+      store.append('session-1', {
+        type: 'message.delta',
+        data: { messageId: 'm1', content: 'x'.repeat(1000) },
+      })
+      store.append('session-1', {
+        type: 'turn.snapshot',
+        data: {
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          messages: [],
+          criteria: [],
+          metadataEntries: {},
+          contextState: {
+            currentTokens: 0,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+            dynamicContextChanged: false,
+          },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          readFiles: [],
+          snapshotSeq: 2,
+          snapshotAt: Date.now(),
+        },
+      })
+
+      const plan = db
+        .prepare(
+          `EXPLAIN QUERY PLAN SELECT * FROM events WHERE session_id = ? AND event_type = 'turn.snapshot' ORDER BY seq DESC LIMIT 1`,
+        )
+        .all('session-1') as { detail: string }[]
+
+      expect(plan.map((row) => row.detail).join(' ')).toContain('idx_events_session_type_seq')
+    })
+  })
+
   describe('cleanup after snapshot', () => {
     it('should keep only snapshot and current window events after cleanup', () => {
       // Simulate a conversation with multiple turns
@@ -1739,6 +1933,35 @@ describe('EventStore - Event Cleanup', () => {
       expect(second).toBeDefined()
       expect(second!.data.mode).toBe('builder')
       expect(second).not.toBe(first)
+    })
+
+    it('keeps the cached snapshot across non-snapshot appends', () => {
+      store.append('session-1', { type: 'turn.snapshot', data: snapshotData('planner', 1) })
+      const first = store.getLatestSnapshot('session-1')
+
+      // Streaming appends dominate a long turn (deltas, thinking, preparing)
+      // and cannot change the latest snapshot. Evicting it on every one of them
+      // makes the cache permanently cold: each state load then pays a full
+      // backward scan of the session to find the snapshot again.
+      store.append('session-1', { type: 'message.delta', data: { messageId: 'm1', content: 'chunk' } })
+      store.append('session-1', { type: 'message.thinking', data: { messageId: 'm1', content: 'thought' } })
+      store.appendBatch('session-1', [
+        { type: 'message.delta', data: { messageId: 'm1', content: 'more' } },
+        { type: 'message.delta', data: { messageId: 'm1', content: 'still more' } },
+      ])
+
+      expect(store.getLatestSnapshot('session-1')).toBe(first)
+    })
+
+    it('drops the cached snapshot when its row is deleted', () => {
+      store.append('session-1', { type: 'turn.snapshot', data: snapshotData('planner', 1) })
+      expect(store.getLatestSnapshot('session-1')).toBeDefined()
+
+      // Deletion paths can remove the snapshot itself — the cache must not
+      // outlive the row, or every later read replays a deleted snapshot.
+      store.deleteEventsAfterSeq('session-1', 0)
+
+      expect(store.getLatestSnapshot('session-1')).toBeUndefined()
     })
 
     it('does not bake the first caller limit into the cached prompts', () => {

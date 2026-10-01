@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3'
 import type { Config } from '../config.js'
 import { logger } from '../utils/logger.js'
+import { EVENTS_INDEX_DDL } from './events-schema.js'
 
 let db: Database.Database | null = null
 
@@ -222,7 +223,7 @@ function runMigrations(db: Database.Database): void {
 
   // Create events table for EventStore (single source of truth)
   // Note: EventStore creates this table with its own schema in initSchema()
-  // We just ensure the index exists for the event_type column
+  // We just ensure the event indexes exist on databases it did not create
   db.exec(`
     CREATE TABLE IF NOT EXISTS events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -236,13 +237,7 @@ function runMigrations(db: Database.Database): void {
     )
   `)
 
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_events_session_seq ON events(session_id, seq)
-  `)
-
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_events_session_type ON events(session_id, event_type)
-  `)
+  db.exec(EVENTS_INDEX_DDL)
 
   // Migration: Add per-session provider/model columns
   if (!columnNames.includes('provider_id')) {

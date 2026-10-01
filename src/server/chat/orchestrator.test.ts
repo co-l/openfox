@@ -27,6 +27,7 @@ const {
 vi.mock('../events/index.js', () => ({
   getEventStore: getEventStoreMock,
   getContextMessages: getContextMessagesMock,
+  combineEventsWithSnapshot: (_sessionId: string, _snapshot: unknown, events: unknown[]) => events,
   getCurrentContextWindowId: getCurrentContextWindowIdMock,
   getCurrentWindowMessageOptions: vi.fn((sessionId: string) => {
     const id = getCurrentContextWindowIdMock(sessionId)
@@ -199,6 +200,15 @@ function createEventStore() {
     }),
     cleanupOldEvents: vi.fn((_sessionId: string) => 0),
     getLatestSnapshot: vi.fn((_sessionId: string) => undefined),
+    getLatestSnapshotSeq: vi.fn((sessionId: string) => {
+      const events = eventsBySession.get(sessionId) ?? []
+      return [...events].reverse().find((event) => event.type === 'turn.snapshot')?.seq ?? 0
+    }),
+    getEventsSinceSnapshot: vi.fn((sessionId: string) => ({
+      snapshot: undefined,
+      events: eventsBySession.get(sessionId) ?? [],
+    })),
+    getEventLogTail: vi.fn(() => ({ events: 0, bytes: 0 })),
   }
 }
 

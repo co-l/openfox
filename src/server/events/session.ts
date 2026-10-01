@@ -30,7 +30,7 @@ import type {
   MessageSegment,
   Attachment,
 } from '../../shared/types.js'
-import type { SessionSnapshot, SnapshotMessage, ReadFileEntry } from './types.js'
+import type { SessionSnapshot, SnapshotMessage, ReadFileEntry, StoredEvent } from './types.js'
 import { getEventStore } from './store.js'
 import { getRuntimeConfig } from '../runtime-config.js'
 import {
@@ -45,13 +45,16 @@ import {
 
 export function combineEventsWithSnapshot(
   sessionId: string,
-  snapshot: import('./types.js').SessionSnapshot | undefined,
-  events: import('./types.js').StoredEvent[],
-): import('./types.js').StoredEvent[] {
+  snapshot: SessionSnapshot | undefined,
+  events: StoredEvent[],
+  options?: { snapshotSeq?: number },
+): StoredEvent[] {
   if (!snapshot) return events
 
-  const snapshotEvent: import('./types.js').StoredEvent = {
-    seq: 0,
+  const snapshotEvent: StoredEvent = {
+    // Callers that persist back into the snapshot row (image enrichment) must
+    // pass its real seq; 0 marks a purely synthetic view with no row to update.
+    seq: options?.snapshotSeq ?? 0,
     timestamp: snapshot.snapshotAt,
     sessionId,
     type: 'turn.snapshot',
@@ -77,7 +80,7 @@ export function combineEventsWithSnapshot(
   // `success` flag drives error classification. We dedupe by `toolCall.id`
   // against the post-snapshot event stream so a tool call that happens to
   // be replayed post-snapshot is not double-counted.
-  const reconstructed: import('./types.js').StoredEvent[] = []
+  const reconstructed: StoredEvent[] = []
   let syntheticSeq = -1
 
   for (const compaction of snapshot.contextWindows ?? []) {
@@ -175,7 +178,7 @@ export function combineEventsWithSnapshot(
  * the count is zero / unknown.
  */
 export function getLegacyCompactionBaseline(
-  snapshot: import('./types.js').SessionSnapshot | undefined,
+  snapshot: SessionSnapshot | undefined,
 ): { legacyCompactionCount: number; compactionsDetailsAvailable: boolean } | null {
   if (!snapshot) return null
   const cw = snapshot.contextWindows
@@ -318,10 +321,11 @@ export function getContextMessages(sessionId: string): ContextMessage[] {
  * Get current context window ID
  */
 export function getCurrentContextWindowId(sessionId: string): string | undefined {
+  // Only four event types feed the window id. Reading the whole log to recover
+  // it cost ~6 s of synchronous work per call on a 322k-event session, and this
+  // runs inside tool execution (sub-agents, MCP config, every LLM round).
   const eventStore = getEventStore()
-  const events = eventStore.getEvents(sessionId)
-
-  const contextResult = foldContextState(events, '')
+  const contextResult = foldContextState(eventStore.getContextWindowEvents(sessionId), '')
   return contextResult.currentContextWindowId || undefined
 }
 

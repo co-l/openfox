@@ -195,6 +195,30 @@ describe('db migrations', () => {
     db.close()
   })
 
+  it('replaces the legacy event indexes with the covering index on upgrade', () => {
+    // The old schema ships idx_events_session_seq and idx_events_session_type.
+    // Neither can serve the snapshot lookup (`event_type = ? ORDER BY seq DESC
+    // LIMIT 1`), so the covering index replaces both.
+    createOldSchemaDatabase(dbPath)
+
+    const config = loadConfig()
+    config.database.path = dbPath
+    initDatabase(config)
+
+    const db = new Database(dbPath)
+    const indexNames = (
+      db.prepare(`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'events'`).all() as {
+        name: string
+      }[]
+    ).map((row) => row.name)
+
+    expect(indexNames).toContain('idx_events_session_type_seq')
+    expect(indexNames).not.toContain('idx_events_session_seq')
+    expect(indexNames).not.toContain('idx_events_session_type')
+
+    db.close()
+  })
+
   it('adds workspace column when neither worktree nor workspace exists', () => {
     // Create a fresh database (no worktree, no workspace — the initial
     // CREATE TABLE already has workdir, not worktree)

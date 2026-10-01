@@ -4,7 +4,7 @@
  * Tests the event-sourced session API: emitting events and reading derived state.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import Database from 'better-sqlite3'
 import { initEventStore, getEventStore } from './store.js'
 import { buildSnapshot } from './folding.js'
@@ -104,6 +104,22 @@ describe('getCurrentContextWindowId', () => {
     emitContextCompacted('s1', 'old-window', 'new-window', 1000, 0, 'Summary')
 
     expect(getCurrentContextWindowId('s1')).toBe('new-window')
+  })
+
+  it('reads only the window-relevant events, never the whole log', () => {
+    initSession('s1', 'win-1')
+    emitUserMessage('s1', 'Hello', { contextWindowId: 'win-1' })
+    emitContextCompacted('s1', 'win-1', 'win-2', 1000, 0, 'Summary')
+
+    // This runs inside tool execution, several times per turn. Reading the full
+    // event log here cost ~6 s of synchronous work per call on the incident
+    // session (322k events) — the main cause of the pinned main thread.
+    const getEvents = vi.spyOn(getEventStore(), 'getEvents')
+
+    expect(getCurrentContextWindowId('s1')).toBe('win-2')
+    expect(getEvents).not.toHaveBeenCalled()
+
+    getEvents.mockRestore()
   })
 })
 

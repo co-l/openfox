@@ -78,6 +78,7 @@ describe('executeTools', () => {
     mockEventStore = {
       append: vi.fn(),
       getEvents: vi.fn().mockReturnValue([]),
+      getContextWindowEvents: vi.fn().mockReturnValue([]),
     } as unknown as EventStore
 
     // Mock the event store singleton
@@ -318,6 +319,7 @@ describe('runTopLevelAgentLoop assembleRequest', () => {
     mockEventStore = {
       append: vi.fn(),
       getEvents: vi.fn().mockReturnValue([]),
+      getContextWindowEvents: vi.fn().mockReturnValue([]),
       getLatestSeq: vi.fn().mockReturnValue(0),
       cleanupOldEvents: vi.fn().mockReturnValue(0),
     } as unknown as EventStore
@@ -417,6 +419,7 @@ describe('runTopLevelAgentLoop compaction', () => {
     mockEventStore = {
       append: vi.fn(),
       getEvents: vi.fn().mockReturnValue([]),
+      getContextWindowEvents: vi.fn().mockReturnValue([]),
       getLatestSeq: vi.fn().mockReturnValue(0),
       cleanupOldEvents: vi.fn().mockReturnValue(0),
     } as unknown as EventStore
@@ -630,6 +633,7 @@ describe('maxTokens clamping', () => {
     mockEventStore = {
       append: vi.fn(),
       getEvents: vi.fn().mockReturnValue([]),
+      getContextWindowEvents: vi.fn().mockReturnValue([]),
       getLatestSeq: vi.fn().mockReturnValue(0),
       cleanupOldEvents: vi.fn().mockReturnValue(0),
     } as unknown as EventStore
@@ -1999,6 +2003,7 @@ describe('runTopLevelAgentLoop live stats', () => {
     mockEventStore = {
       append: vi.fn(),
       getEvents: vi.fn().mockReturnValue([]),
+      getContextWindowEvents: vi.fn().mockReturnValue([]),
       getLatestSeq: vi.fn().mockReturnValue(0),
       cleanupOldEvents: vi.fn().mockReturnValue(0),
     } as unknown as EventStore
@@ -2137,6 +2142,7 @@ describe('runTopLevelAgentLoop queue draining', () => {
     mockEventStore = {
       append: vi.fn(),
       getEvents: vi.fn().mockReturnValue([]),
+      getContextWindowEvents: vi.fn().mockReturnValue([]),
       getLatestSeq: vi.fn().mockReturnValue(0),
       cleanupOldEvents: vi.fn().mockReturnValue(0),
     } as unknown as EventStore
@@ -2289,6 +2295,7 @@ describe('runTopLevelAgentLoop plugin message transforms', () => {
     mockEventStore = {
       append: vi.fn(),
       getEvents: vi.fn().mockReturnValue([]),
+      getContextWindowEvents: vi.fn().mockReturnValue([]),
       getLatestSeq: vi.fn().mockReturnValue(0),
       cleanupOldEvents: vi.fn().mockReturnValue(0),
     } as unknown as EventStore
@@ -2408,6 +2415,7 @@ describe('runTopLevelAgentLoop night mode', () => {
     mockEventStore = {
       append: vi.fn(),
       getEvents: vi.fn().mockReturnValue([]),
+      getContextWindowEvents: vi.fn().mockReturnValue([]),
       getLatestSeq: vi.fn().mockReturnValue(0),
       cleanupOldEvents: vi.fn().mockReturnValue(0),
     } as unknown as EventStore
