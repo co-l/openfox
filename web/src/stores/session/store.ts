@@ -1083,6 +1083,29 @@ export const useSessionStore = create<SessionState>((set, get) => {
       }
     },
 
+    setNightMode: async (sessionId, enabled): Promise<boolean> => {
+      if (!paneFor(get(), sessionId)?.session) return false
+      try {
+        const res = await authFetch(`/api/sessions/${sessionId}/night-mode`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nightMode: enabled }),
+        })
+        if (!res.ok) {
+          console.error('Failed to set night mode:', await res.json())
+          return false
+        }
+        const data = await res.json()
+        if (data.session) {
+          set((state) => updatePaneSession(state, sessionId, () => data.session))
+        }
+        return true
+      } catch (error) {
+        console.error('Error setting night mode:', error)
+        return false
+      }
+    },
+
     editCriteria: async (sessionId, criteria) => {
       if (!paneFor(get(), sessionId)?.session) return
       try {

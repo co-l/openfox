@@ -13,14 +13,18 @@ export type PluginCapability =
   | 'workflows'
   | 'rpc'
   | 'assets'
+  | 'transforms'
+  | 'dangerLevels'
 
 export type PluginSlotName =
   | 'header.actions'
   | 'session.header.actions'
   | 'message.actions'
   | 'composer.actions'
+  | 'composer.top'
   | 'session.row.badges'
   | 'session.header.badges'
+  | 'plugin.menu'
   | (string & {})
 
 export type PluginZoneId =
@@ -44,12 +48,19 @@ export type PluginZoneId =
   | 'message.bubble'
   | 'message.actions'
   | 'composer'
+  | 'composer.top'
   | 'composer.toolbar'
   | 'composer.actions'
   | 'session.footer'
   | 'settings.sidebar'
   | 'settings.content'
   | 'modal.footer'
+  | 'stats.modal'
+  | 'stats.modal.summary'
+  | 'provider.modal.step1'
+  | 'provider.modal.step2'
+  | 'provider.modal.auth'
+  | 'provider.modal.model_config'
   | (string & {})
 
 export type PluginBadgeTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger'
@@ -58,6 +69,14 @@ export type PluginActivation =
   | { kind: 'rpc'; method: string; params?: Record<string, unknown> }
   | { kind: 'openPanel'; panelId: string }
   | { kind: 'openUrl'; url: string }
+  | { kind: 'openSettings'; tab?: PluginSettingsTabRef }
+
+/**
+ * Settings tab opened by an `openSettings` activation: a core tab id
+ * (`plugins`, `tools`, …) or a full plugin tab reference
+ * (`plugin:<pluginId>:<tabId>`).
+ */
+export type PluginSettingsTabRef = string
 
 /**
  * Declarative visibility for a contribution. Every field is ANDed; omitted
@@ -68,11 +87,18 @@ export interface PluginVisibilityCondition {
   hasSession?: boolean
   hasProject?: boolean
   hasMessage?: boolean
+  eq?: Record<string, unknown>
+  neq?: Record<string, unknown>
 }
 
 export interface PluginUiAction {
   id: string
   pluginId?: string
+  /**
+   * `plugin.menu` turns the plugin's own row in the plugins menu into the
+   * action: `label` replaces the plugin display name and activating the row
+   * runs `onActivate`.
+   */
   slot: PluginSlotName
   label: LocalizedString
   icon?: string
@@ -123,13 +149,16 @@ export type DeclarativeNode =
   | { type: 'keyValue'; items: { key: LocalizedString; value: string }[] }
   | { type: 'table'; columns: LocalizedString[]; rows: string[][] }
   | { type: 'progress'; label: LocalizedString; value: number; max: number; tone?: PluginBadgeTone }
-  | { type: 'badge'; label: LocalizedString; tone?: PluginBadgeTone }
+  | { type: 'badge'; label: LocalizedString; tone?: PluginBadgeTone; color?: string; className?: string }
   | {
       type: 'button'
       label: LocalizedString
+      title?: LocalizedString
       variant?: 'default' | 'primary' | 'danger' | 'ghost' | 'pill'
       icon?: string
-      onActivate: PluginActivation
+      disabled?: boolean
+      onActivate?: PluginActivation
+      action?: PluginActivation
     }
   | { type: 'divider' }
   | {
@@ -174,10 +203,23 @@ export type DeclarativeNode =
       id: string
       placeholder?: LocalizedString
       defaultValue?: string
+      defaultChecked?: boolean
       label?: LocalizedString
-      inputType?: 'text' | 'number' | 'password'
+      inputType?: 'text' | 'number' | 'password' | 'checkbox' | 'textarea'
+      rows?: number
+      disabled?: boolean
       onChange?: PluginActivation
       onBlur?: PluginActivation
+    }
+  | {
+      type: 'toggle'
+      id?: string
+      enabled?: boolean
+      defaultChecked?: boolean
+      disabled?: boolean
+      label?: LocalizedString
+      onChange?: PluginActivation
+      onActivate?: PluginActivation
     }
   | {
       type: 'select'
@@ -195,6 +237,19 @@ export type DeclarativeNode =
       width?: string | number
     }
 
+/**
+ * Live content source for a plugin UI contribution. The host calls the RPC with
+ * the zone context (providerId, modelId, tabId, plus sessionId/workdir/projectId)
+ * when the contribution mounts and, when `refreshMs` is set, again on that
+ * interval while it stays mounted. The RPC returns `{ content }` (a single
+ * declarative node) or `{ nodes }` (a list, rendered as a column stack).
+ */
+export interface PluginUiContentSource {
+  kind: 'rpc'
+  method: string
+  refreshMs?: number
+}
+
 export interface PluginUiComponent {
   id: string
   pluginId?: string
@@ -203,6 +258,8 @@ export interface PluginUiComponent {
   order?: number
   visibleWhen?: PluginVisibilityCondition
   component: DeclarativeNode
+  /** When set, the rendered node comes from this RPC instead of `component`. */
+  contentSource?: PluginUiContentSource
 }
 
 export interface PluginUiOverride {
@@ -213,13 +270,15 @@ export interface PluginUiOverride {
   order?: number
   visibleWhen?: PluginVisibilityCondition
   replacement?: DeclarativeNode
+  /** When set, the rendered node comes from this RPC instead of `replacement`. */
+  contentSource?: PluginUiContentSource
 }
 
 export interface PluginUiPanel {
   id: string
   pluginId?: string
   title: LocalizedString
-  size?: 'sm' | 'md' | 'lg' | 'xl' | 'full'
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | 'full'
   kind: 'declarative' | 'iframe'
   content?: DeclarativeNode[]
   url?: string
@@ -234,6 +293,14 @@ export interface PluginSettingsTab {
   content: DeclarativeNode[]
 }
 
+export interface PluginDangerLevelView {
+  id: string
+  pluginId: string
+  label: LocalizedString
+  description?: LocalizedString
+  badgeTone?: PluginBadgeTone
+}
+
 export interface PluginUiContributions {
   actions: PluginUiAction[]
   badges: PluginUiBadge[]
@@ -242,6 +309,7 @@ export interface PluginUiContributions {
   components: PluginUiComponent[]
   overrides: PluginUiOverride[]
   settingsTabs: PluginSettingsTab[]
+  dangerLevels?: PluginDangerLevelView[]
 }
 
 export interface PluginUiSection {
@@ -269,9 +337,10 @@ export interface PluginSettingsOption {
 
 export interface PluginSettingsField {
   key: string
-  type: 'text' | 'password' | 'number' | 'boolean' | 'select' | 'textarea' | 'path' | 'button'
+  type: 'text' | 'password' | 'number' | 'boolean' | 'select' | 'textarea' | 'path' | 'button' | 'status' | 'list'
   label: LocalizedString
   buttonLabel?: LocalizedString
+  buttonVariant?: 'default' | 'primary' | 'secondary' | 'danger' | 'ghost'
   rpcMethod?: string
   description?: LocalizedString
   default?: PluginSettingValue
@@ -283,6 +352,63 @@ export interface PluginSettingsField {
   parentKey?: string
   width?: 'full' | 'half'
   section?: LocalizedString
+  hideWhenInstalled?: boolean
+  /** Display-only field: rendered disabled, always shows `default`, never read from or written to storage. */
+  readOnly?: boolean
+  /** Whether to render a directory browser button to pick files or folders from the filesystem. */
+  browseDirectory?: boolean
+  /** Custom label for the browse directory button. */
+  browseButtonLabel?: LocalizedString
+  /** Danger levels for which this setting field is applicable (e.g. ['whitelist_only']). */
+  dangerLevels?: string[]
+  /**
+   * Sub-fields of a `list` field, rendered inline on a single row per item.
+   * Values are stored as a JSON array string, so a list value always travels
+   * through `PluginSettingsValues` as a `string`.
+   */
+  itemFields?: PluginSettingsField[]
+  /** Label of the "add row" button of a `list` field. */
+  addLabel?: LocalizedString
+  /** Label of the per-row remove button of a `list` field. */
+  removeLabel?: LocalizedString
+  /** Minimum number of rows of a `list` field. */
+  minItems?: number
+  /** Maximum number of rows of a `list` field. */
+  maxItems?: number
+  /**
+   * "Open the provider page" button rendered next to the input — useful to send
+   * the user to the page where an access token is generated.
+   */
+  linkButton?: PluginSettingsLinkButton
+  /**
+   * Backing store of the value. When set, the field is read from and written to
+   * the plugin's own storage (`context.storage`) under that key instead of the
+   * settings store — the way to surface a secret an earlier version of the
+   * plugin kept in storage. Storage-backed fields are global.
+   */
+  storageKey?: string
+}
+
+/**
+ * Button that opens an external page (typically "generate an access token")
+ * next to a field or a `list` sub-field input.
+ *
+ * The URL is a template resolved against the values of the row (or the whole
+ * form for a top-level field):
+ * - `{{key}}` is replaced by the value of `key`,
+ * - `{{key.origin}}` by its URL origin (`https://gitlab.example.com/group/x` → `https://gitlab.example.com`).
+ *
+ * The button is disabled while the resolved URL is not an absolute http(s) URL,
+ * so a template built from a not-yet-filled field stays greyed out.
+ */
+export interface PluginSettingsLinkButton {
+  label: LocalizedString
+  /** URL template, also used as the fallback when `hrefByValue` has no match. */
+  href?: string
+  /** Field whose value selects the template in `hrefByValue`. */
+  hrefByField?: string
+  /** Templates keyed by the value of `hrefByField`. */
+  hrefByValue?: Record<string, string>
 }
 
 export interface PluginSettingsSchema {
@@ -347,12 +473,15 @@ export interface PluginContributionSummary {
   settingsTabs: number
   uiComponents: number
   uiOverrides: number
+  messageTransforms: number
+  dangerLevels: number
 }
 
 export interface PluginInfo {
   id: string
   displayName: string
   description?: string
+  author?: string
   icon?: string
   logo?: string
   version: string
@@ -412,4 +541,6 @@ export const EMPTY_PLUGIN_CONTRIBUTIONS: PluginContributionSummary = {
   settingsTabs: 0,
   uiComponents: 0,
   uiOverrides: 0,
+  messageTransforms: 0,
+  dangerLevels: 0,
 }

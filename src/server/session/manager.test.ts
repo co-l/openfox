@@ -186,6 +186,19 @@ describe('SessionManager', () => {
     expect(sessionEvents).toContain('phase_changed')
   })
 
+  it('setNightMode toggles the session flag without emitting events', () => {
+    const session = manager.createSession(projectId, 'Night')
+    expect(session.nightMode ?? false).toBe(false)
+
+    const enabled = manager.setNightMode(session.id, true)
+    expect(enabled.nightMode).toBe(true)
+    expect(manager.requireSession(session.id).nightMode).toBe(true)
+
+    const disabled = manager.setNightMode(session.id, false)
+    expect(disabled.nightMode).toBe(false)
+    expect(manager.requireSession(session.id).nightMode).toBe(false)
+  })
+
   it('inherits project MCP overrides on createSession and cleans up on deleteSession', async () => {
     const { updateProject } = await import('../db/projects.js')
     const { getSessionDisabledServers } = await import('../mcp/session-overrides.js')

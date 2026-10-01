@@ -70,8 +70,11 @@ async function getDescendants(rootPid: number): Promise<number[]> {
     const pid = parseInt(parts[0]!, 10)
     const ppid = parseInt(parts[1]!, 10)
     if (!isNaN(pid) && !isNaN(ppid) && pid > 0 && ppid >= 0) {
-      if (!children.has(ppid)) children.set(ppid, [])
-      children.get(ppid)!.push(pid)
+      // Filter out processes that have already exited (CIM / ps tables can be stale or contain PID reuse)
+      if (isAlive(pid)) {
+        if (!children.has(ppid)) children.set(ppid, [])
+        children.get(ppid)!.push(pid)
+      }
     }
   }
   const descendants: number[] = []
@@ -84,7 +87,9 @@ async function getDescendants(rootPid: number): Promise<number[]> {
       for (const kid of kids) {
         if (seen.has(kid)) continue
         seen.add(kid)
-        descendants.push(kid)
+        if (isAlive(kid)) {
+          descendants.push(kid)
+        }
         queue.push(kid)
       }
     }

@@ -573,6 +573,178 @@ describe('ProviderManager - Model Selection', () => {
       expect(models[0]!.contextWindow).toBe(900000)
     })
 
+    it('drops models that the authoritative transport catalog dropped on refresh', async () => {
+      const transport = {
+        id: 'example-transport',
+        listModels: vi.fn(async () => [{ id: 'catalog-a', contextWindow: 1048576, source: 'backend' as const }]),
+        complete: vi.fn(),
+        stream: vi.fn(),
+      }
+      const adapters = { getTransport: vi.fn((id?: string) => (id === 'example-transport' ? transport : undefined)) }
+      const chatConfig: Config = {
+        ...config,
+        providers: [
+          {
+            id: 'external',
+            name: 'External Provider',
+            url: 'https://provider.example/v1',
+            backend: 'openai',
+            transportAdapter: 'example-transport',
+            models: [
+              { id: 'picked-model', contextWindow: 200000, source: 'user', selected: true },
+              { id: 'stale-model', contextWindow: 200000, source: 'user' },
+            ],
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+        defaultModelSelection: 'external/picked-model',
+      }
+      const manager = createProviderManager(chatConfig, { adapters: adapters as never })
+
+      await manager.refreshProviderModels('external')
+
+      const models = manager.getProviders()[0]!.models
+      expect(models.map((model) => model.id)).toEqual(['catalog-a'])
+    })
+
+    it('lets the catalog replace a placeholder context window and a profile-derived vision flag', async () => {
+      const transport = {
+        id: 'example-transport',
+        listModels: vi.fn(async () => [
+          { id: 'claude-sonnet-4-6', contextWindow: 250000, supportsVision: true, source: 'backend' as const },
+          { id: 'gemini-3-flash', contextWindow: 1048576, supportsVision: true, source: 'backend' as const },
+        ]),
+        complete: vi.fn(),
+        stream: vi.fn(),
+      }
+      const adapters = { getTransport: vi.fn((id?: string) => (id === 'example-transport' ? transport : undefined)) }
+      const chatConfig: Config = {
+        ...config,
+        providers: [
+          {
+            id: 'external',
+            name: 'External Provider',
+            url: 'https://provider.example/v1',
+            backend: 'openai',
+            transportAdapter: 'example-transport',
+            models: [
+              { id: 'claude-sonnet-4-6', contextWindow: 200000, source: 'user' },
+              { id: 'gemini-3-flash', contextWindow: 300000, supportsVision: false, source: 'user' },
+            ],
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+        defaultModelSelection: 'external/gemini-3-flash',
+      }
+      const manager = createProviderManager(chatConfig, { adapters: adapters as never })
+
+      await manager.refreshProviderModels('external')
+
+      const models = manager.getProviders()[0]!.models
+      const claude = models.find((model) => model.id === 'claude-sonnet-4-6')
+      expect(claude?.contextWindow).toBe(250000)
+      expect(claude?.supportsVision).toBe(true)
+      const gemini = models.find((model) => model.id === 'gemini-3-flash')
+      expect(gemini?.contextWindow).toBe(300000)
+      expect(gemini?.supportsVision).toBe(false)
+    })
+
+    it('replaces a stored raw-id name with the catalog display name', async () => {
+      const transport = {
+        id: 'example-transport',
+        listModels: vi.fn(async () => [
+          {
+            id: 'gemini-3.8-flash-tiered',
+            name: 'Gemini 3.8 Flash',
+            contextWindow: 1048576,
+            source: 'backend' as const,
+          },
+        ]),
+        complete: vi.fn(),
+        stream: vi.fn(),
+      }
+      const adapters = { getTransport: vi.fn((id?: string) => (id === 'example-transport' ? transport : undefined)) }
+      const chatConfig: Config = {
+        ...config,
+        providers: [
+          {
+            id: 'external',
+            name: 'External Provider',
+            url: 'https://provider.example/v1',
+            backend: 'openai',
+            transportAdapter: 'example-transport',
+            models: [
+              {
+                id: 'gemini-3.8-flash-tiered',
+                name: 'gemini-3.8-flash-tiered',
+                contextWindow: 1048576,
+                source: 'user',
+                selected: true,
+              },
+            ],
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+        defaultModelSelection: 'external/gemini-3.8-flash-tiered',
+      }
+      const manager = createProviderManager(chatConfig, { adapters: adapters as never })
+
+      await manager.refreshProviderModels('external')
+
+      const models = manager.getProviders()[0]!.models
+      expect(models.find((model) => model.id === 'gemini-3.8-flash-tiered')?.name).toBe('Gemini 3.8 Flash')
+    })
+
+    it('keeps a stored display name that merely looks like a mode-suffixed catalog name', async () => {
+      const transport = {
+        id: 'example-transport',
+        listModels: vi.fn(async () => [
+          {
+            id: 'gemini-3.6-flash',
+            name: 'Gemini 3.6 Flash',
+            contextWindow: 1048576,
+            source: 'backend' as const,
+          },
+        ]),
+        complete: vi.fn(),
+        stream: vi.fn(),
+      }
+      const adapters = { getTransport: vi.fn((id?: string) => (id === 'example-transport' ? transport : undefined)) }
+      const chatConfig: Config = {
+        ...config,
+        providers: [
+          {
+            id: 'external',
+            name: 'External Provider',
+            url: 'https://provider.example/v1',
+            backend: 'openai',
+            transportAdapter: 'example-transport',
+            models: [
+              {
+                id: 'gemini-3.6-flash',
+                name: 'Gemini 3.6 Flash (High)',
+                contextWindow: 1048576,
+                source: 'user',
+                selected: true,
+              },
+            ],
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+        defaultModelSelection: 'external/gemini-3.6-flash',
+      }
+      const manager = createProviderManager(chatConfig, { adapters: adapters as never })
+
+      await manager.refreshProviderModels('external')
+
+      const models = manager.getProviders()[0]!.models
+      expect(models.find((model) => model.id === 'gemini-3.6-flash')?.name).toBe('Gemini 3.6 Flash (High)')
+    })
+
     it('preserves user overrides during refresh', async () => {
       await providerManager.updateModelContext('provider-1', 'model-a', 150000)
 
@@ -646,6 +818,52 @@ describe('ProviderManager - Model Selection', () => {
       expect(ids).toEqual(['antigravity/gemini-3.6-flash', 'antigravity/other-model'])
       const merged = models.find((m) => m.id === 'antigravity/gemini-3.6-flash')
       expect(merged?.modes?.length).toBe(3)
+    })
+
+    it('adopts a variant context window for a merged mode-chip model on refresh', async () => {
+      const mergedConfig: Config = {
+        ...config,
+        providers: [
+          {
+            id: 'omni',
+            name: 'OmniRoute',
+            url: 'http://localhost:9100',
+            backend: 'openai',
+            models: [
+              {
+                id: 'gemini-3.6-flash',
+                contextWindow: 200000,
+                source: 'user',
+                selected: true,
+                modes: [
+                  { level: 'low', apiModelId: 'gemini-3.6-flash-low' },
+                  { level: 'high', apiModelId: 'gemini-3.6-flash-high' },
+                ],
+              },
+            ],
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      }
+      const manager = createProviderManager(mergedConfig)
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: [
+            { id: 'gemini-3.6-flash-low', max_model_len: 1048576 },
+            { id: 'gemini-3.6-flash-high', max_model_len: 1048576 },
+          ],
+        }),
+      })
+
+      await manager.refreshProviderModels('omni')
+
+      const models = manager.getProviders().find((p) => p.id === 'omni')?.models ?? []
+      expect(models.map((m) => m.id)).toEqual(['gemini-3.6-flash'])
+      expect(models[0]!.contextWindow).toBe(1048576)
+      expect(models[0]!.selected).toBe(true)
     })
 
     it('returns error when backend returns no models', async () => {

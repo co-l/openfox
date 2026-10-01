@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { ChevronDownIcon, CheckIcon } from '../shared/icons'
+import { ChevronDownIcon, CheckIcon, MoonIcon } from '../shared/icons'
 import { getAgentColor } from '../../lib/agents-actions'
 import { useT } from '../../hooks/useT'
 import { AgentsModal } from '../settings/AgentsModal'
@@ -8,6 +8,7 @@ import { useClickOutside } from '../../hooks/useClickOutside'
 import { formatKeybinding } from '../../lib/keybindings'
 import { useSessionScope, useScopedPaneState } from '../../stores/session/session-scope'
 import { useEffortGatedAgentSwitch } from '../../hooks/useEffortGateContext'
+import { useSessionStore } from '../../stores/session'
 import { useResource } from '../../hooks/useResource'
 import { agentsResource } from '../../lib/resources'
 
@@ -27,6 +28,13 @@ export function AgentSelector() {
     undefined,
   )
   const { data } = useResource(agentsResource, currentWorkdir)
+  const nightMode = useScopedPaneState(
+    sessionId,
+    (pane) => pane.session?.nightMode ?? false,
+    (state) => state.currentSession?.nightMode ?? false,
+    false,
+  )
+  const setNightMode = useSessionStore((state) => state.setNightMode)
   const gatedAgentSwitch = useEffortGatedAgentSwitch()
   const agents = data ? [...data.defaults, ...data.userItems, ...data.projectItems] : []
   const [isOpen, setIsOpen] = useState(false)
@@ -63,6 +71,7 @@ export function AgentSelector() {
         className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-bg-tertiary transition-colors"
         title={t({ en: 'Switch agent', fr: 'Changer d’agent' })}
       >
+        {nightMode && <MoonIcon className="w-3 h-3 text-text-muted shrink-0" />}
         <span className="text-sm font-medium" style={{ color: currentColor }}>
           {displayName}
         </span>
@@ -117,6 +126,31 @@ export function AgentSelector() {
             >
               {t({ en: 'Manage Agents...', fr: 'Gérer les agents…' })}
             </button>
+          </div>
+
+          {/* Night mode toggle */}
+          <div className="border-t border-border p-1">
+            <label
+              className="flex items-center gap-2 px-3 py-1.5 rounded text-sm text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors cursor-pointer select-none"
+              title={t({
+                en: 'Night mode: the agent runs unattended — questions are auto-answered and confirmations auto-resolve by danger level',
+                fr: 'Mode nuit : l’agent tourne sans surveillance — les questions sont auto-répondues et les confirmations auto-résolues selon le niveau de danger',
+              })}
+            >
+              <input
+                type="checkbox"
+                checked={nightMode}
+                onChange={(e) => {
+                  if (sessionId) {
+                    void setNightMode(sessionId, e.target.checked)
+                  }
+                }}
+                aria-label={t({ en: 'Night mode', fr: 'Mode nuit' })}
+                className="accent-accent-primary"
+              />
+              <MoonIcon className="w-3.5 h-3.5 text-text-muted" />
+              {t({ en: 'Night mode', fr: 'Mode nuit' })}
+            </label>
           </div>
         </div>
       )}

@@ -2209,6 +2209,196 @@ describe('path-security', () => {
       expect(hasPendingPathConfirmation('call-sub-cmd-normal')).toBe(false)
     })
   })
+
+  // ===========================================================================
+  // Night mode: never prompt, auto-resolve from the danger level
+  // ===========================================================================
+
+  describe('night mode path access', () => {
+    it('auto-approves outside paths without prompting in dangerous mode', async () => {
+      const onEvent = vi.fn()
+      const promise = requestPathAccess(
+        ['/etc/passwd'],
+        WORKDIR,
+        'session-night-dangerous',
+        'call-night-dangerous',
+        'read_file',
+        onEvent,
+        'dangerous',
+        undefined,
+        false,
+        undefined, // projectId
+        true, // nightMode
+      )
+
+      await expect(promise).resolves.toBeUndefined()
+      expect(onEvent).not.toHaveBeenCalled()
+      expect(hasPendingPathConfirmation('call-night-dangerous')).toBe(false)
+      expect(isPathAllowed('session-night-dangerous', CANONICAL_PASSWD)).toBe(true)
+      clearAllowedPaths('session-night-dangerous')
+    })
+
+    it('auto-denies outside paths without prompting in normal mode', async () => {
+      const onEvent = vi.fn()
+      const promise = requestPathAccess(
+        ['/etc/passwd'],
+        WORKDIR,
+        'session-night-normal',
+        'call-night-normal',
+        'read_file',
+        onEvent,
+        'normal',
+        undefined,
+        false,
+        undefined, // projectId
+        true, // nightMode
+      )
+
+      await expect(promise).rejects.toMatchObject({
+        name: 'PathAccessDeniedError',
+        reason: 'outside_workdir',
+        tool: 'read_file',
+        paths: [CANONICAL_PASSWD],
+      })
+      expect(onEvent).not.toHaveBeenCalled()
+      expect(hasPendingPathConfirmation('call-night-normal')).toBe(false)
+      expect(isPathAllowed('session-night-normal', CANONICAL_PASSWD)).toBe(false)
+    })
+
+    it('auto-approves sensitive files in dangerous mode and adds them to the allowlist', async () => {
+      const onEvent = vi.fn()
+      const promise = requestPathAccess(
+        [join(WORKDIR, '.env')],
+        WORKDIR,
+        'session-night-sensitive',
+        'call-night-sensitive',
+        'read_file',
+        onEvent,
+        'dangerous',
+        undefined,
+        false,
+        undefined, // projectId
+        true, // nightMode
+      )
+
+      await expect(promise).resolves.toBeUndefined()
+      expect(onEvent).not.toHaveBeenCalled()
+      expect(isPathAllowed('session-night-sensitive', join(CANONICAL_WORKDIR, '.env'))).toBe(true)
+      clearAllowedPaths('session-night-sensitive')
+    })
+
+    it('auto-denies dangerous commands without prompting in normal mode', async () => {
+      const onEvent = vi.fn()
+      const promise = requestPathAccess(
+        [WORKDIR],
+        WORKDIR,
+        'session-night-dangerous-cmd',
+        'call-night-dangerous-cmd',
+        'run_command',
+        onEvent,
+        'normal',
+        'sudo apt install something',
+        false,
+        undefined, // projectId
+        true, // nightMode
+      )
+
+      await expect(promise).rejects.toMatchObject({
+        name: 'PathAccessDeniedError',
+        reason: 'dangerous_command',
+        tool: 'run_command',
+      })
+      expect(onEvent).not.toHaveBeenCalled()
+      expect(hasPendingPathConfirmation('call-night-dangerous-cmd')).toBe(false)
+    })
+
+    it('auto-approves dangerous commands in dangerous mode', async () => {
+      const onEvent = vi.fn()
+      const promise = requestPathAccess(
+        [WORKDIR],
+        WORKDIR,
+        'session-night-dangerous-cmd-ok',
+        'call-night-dangerous-cmd-ok',
+        'run_command',
+        onEvent,
+        'dangerous',
+        'sudo apt install something',
+        false,
+        undefined, // projectId
+        true, // nightMode
+      )
+
+      await expect(promise).resolves.toBeUndefined()
+      expect(onEvent).not.toHaveBeenCalled()
+      expect(hasPendingPathConfirmation('call-night-dangerous-cmd-ok')).toBe(false)
+    })
+
+    it('auto-denies git --no-verify without prompting in normal mode', async () => {
+      const onEvent = vi.fn()
+      const promise = requestPathAccess(
+        [WORKDIR],
+        WORKDIR,
+        'session-night-git-normal',
+        'call-night-git-normal',
+        'run_command',
+        onEvent,
+        'normal',
+        'git commit --no-verify -m "skip hooks"',
+        false,
+        undefined, // projectId
+        true, // nightMode
+      )
+
+      await expect(promise).rejects.toMatchObject({
+        name: 'PathAccessDeniedError',
+        reason: 'git_no_verify',
+        tool: 'run_command',
+      })
+      expect(onEvent).not.toHaveBeenCalled()
+      expect(hasPendingPathConfirmation('call-night-git-normal')).toBe(false)
+    })
+
+    it('auto-approves git --no-verify in dangerous mode (night mode lifts the always-confirm rule)', async () => {
+      const onEvent = vi.fn()
+      const promise = requestPathAccess(
+        [WORKDIR],
+        WORKDIR,
+        'session-night-git-dangerous',
+        'call-night-git-dangerous',
+        'run_command',
+        onEvent,
+        'dangerous',
+        'git commit --no-verify -m "skip hooks"',
+        false,
+        undefined, // projectId
+        true, // nightMode
+      )
+
+      await expect(promise).resolves.toBeUndefined()
+      expect(onEvent).not.toHaveBeenCalled()
+      expect(hasPendingPathConfirmation('call-night-git-dangerous')).toBe(false)
+    })
+
+    it('still allows sandboxed paths without prompting in normal mode', async () => {
+      const onEvent = vi.fn()
+      const promise = requestPathAccess(
+        [join(WORKDIR, 'src', 'file.ts')],
+        WORKDIR,
+        'session-night-inside',
+        'call-night-inside',
+        'read_file',
+        onEvent,
+        'normal',
+        undefined,
+        false,
+        undefined, // projectId
+        true, // nightMode
+      )
+
+      await expect(promise).resolves.toBeUndefined()
+      expect(onEvent).not.toHaveBeenCalled()
+    })
+  })
 })
 
 // Standalone: no fs fixtures needed, so it runs on any host (the main suite's

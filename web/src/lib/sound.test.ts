@@ -43,6 +43,8 @@ describe('sound integration', () => {
       settings: {
         soundEnabled: true,
         browserNotificationEnabled: false,
+        pluginUpdateNotificationEnabled: true,
+        pluginUpdateCheckInterval: '1h',
         events: {
           complete: { soundEnabled: true, browserNotification: false, customSoundUrl: null },
           waiting_for_user: { soundEnabled: true, browserNotification: false, customSoundUrl: null },

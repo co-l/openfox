@@ -13,7 +13,13 @@ import { useT } from '../../hooks/useT'
 import { shouldAutofocus } from '../../lib/device'
 import { REASONING_EFFORT_VALUES } from '../../lib/model-value'
 import { isSmallContext } from '../../lib/context-warning'
-import { groupModeFamilies, MODE_SUFFIXES, splitModeSuffix } from '@shared/reasoning-effort.js'
+import {
+  groupModeFamilies,
+  collapseModeFamilies,
+  splitModeSuffix,
+  sortByModeLevel,
+  UNKNOWN_CONTEXT_WINDOW,
+} from '@shared/reasoning-effort.js'
 import { openSettings } from '../settings/GlobalSettingsModal'
 import { useProviders } from '../../hooks/useProviders'
 import { usePlugins } from '../../hooks/usePlugins'
@@ -43,26 +49,19 @@ function defaultReasoningEffort(efforts: string[] | undefined): string | undefin
 }
 
 // Build a single merged ModelInfo from a mode-suffix family's base id, its
-// (optionally present) un-suffixed base model, and its members. Shared by the
-// auto-collapse path and the explicit re-merge path so the merged shape stays
-// defined in one place.
+// (optionally present) un-suffixed base model, and its members. Used by the
+// explicit re-merge path in the ProviderModal. The merged display name comes
+// from the base model when the catalog exposes one — member names carry the
+// mode suffix and must not become the merged name.
 function buildMergedModel(baseId: string, baseModel: ModelInfo | undefined, members: ModelInfo[]): ModelInfo {
-  // Order members by semantic reasoning level (low → medium → high → xhigh →
-  // max) rather than lexically, so displayed chips read predictably.
-  const levelOrder = new Map<string, number>(MODE_SUFFIXES.map((s, i) => [s, i]))
-  const sorted = [...members].sort((a, b) => {
-    const la = splitModeSuffix(a.id)?.level
-    const lb = splitModeSuffix(b.id)?.level
-    const ia = la !== undefined ? (levelOrder.get(la) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER
-    const ib = lb !== undefined ? (levelOrder.get(lb) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER
-    return ia - ib || a.id.localeCompare(b.id)
-  })
+  const sorted = sortByModeLevel(members)
+  const baseName = baseModel?.name ?? baseId.split('/').pop()?.replace(/-/g, ' ') ?? baseId
   return {
     id: baseId,
-    name: baseModel?.name ?? sorted[0]?.name ?? baseId.split('/').pop() ?? baseId,
+    name: baseName,
     apiModelId: baseModel?.apiModelId ?? (baseModel ? baseId : undefined),
     requestBody: baseModel?.requestBody,
-    contextWindow: baseModel?.contextWindow ?? sorted[0]?.contextWindow ?? 200000,
+    contextWindow: baseModel?.contextWindow ?? sorted[0]?.contextWindow ?? UNKNOWN_CONTEXT_WINDOW,
     reasoningEfforts: sorted.map((m) => splitModeSuffix(m.id)?.level).filter((l): l is string => Boolean(l)),
     modes: sorted.map((m) => ({
       level: splitModeSuffix(m.id)!.level,
@@ -749,6 +748,9 @@ export function ProviderModal({
   const [selectedModelIds, setSelectedModelIds] = useState<Set<string>>(new Set())
   const [searchQuery, setSearchQuery] = useState('')
   const [draftProviderId, setDraftProviderId] = useState<string | null>(null)
+  // Guards the "provider needs a real id before the auth step" creation so a
+  // failed POST cannot loop the effect that triggers it.
+  const draftProviderAttemptedRef = useRef(false)
   const [providerAuthState, setProviderAuthState] = useState<'disconnected' | 'pending' | 'connected' | 'error'>(
     'disconnected',
   )
@@ -974,6 +976,8 @@ export function ProviderModal({
       setTestResults({})
       setRawModalData(null)
       setDraftProviderId(null)
+      draftProviderAttemptedRef.current = false
+      draftProviderSaved.current = false
       setProviderAuthState('disconnected')
       setDeviceChallenge(null)
       setDevicePageOpened(false)
@@ -982,9 +986,13 @@ export function ProviderModal({
       setManualModelError(null)
 
       if (editProvider?.models?.length) {
+        const providerModels = editProvider.models
         const configs: Record<string, ModelConfig> = {}
         const selected = new Set<string>()
-        for (const m of editProvider.models) {
+        for (const m of providerModels) {
+          const isSelected = m.selected ?? false
+          if (isSelected) selected.add(m.id)
+
           configs[m.id] = {
             contextWindow: m.contextWindow,
             supportsVision: m.supportsVision,
@@ -1004,16 +1012,15 @@ export function ProviderModal({
             maxTokens: m.maxTokens,
             compactionThreshold: m.compactionThreshold,
           }
-          if (m.selected) selected.add(m.id)
         }
         // Auto-select all models if none explicitly selected (legacy / single-model)
         if (selected.size === 0) {
-          for (const m of editProvider.models) selected.add(m.id)
+          for (const m of providerModels) selected.add(m.id)
         }
         setSelectedModelIds(selected)
         setModelConfigs(configs)
-        setModels(editProvider.models)
-        setExpandedModelId(editModelId ?? editProvider.models[0]?.id ?? null)
+        setModels(providerModels)
+        setExpandedModelId(editModelId ?? providerModels[0]?.id ?? null)
       } else {
         setModels([])
         setModelConfigs({})
@@ -1055,7 +1062,9 @@ export function ProviderModal({
     let cancelled = false
     const checkConnection = async () => {
       const state = await refreshProviderAuthStatus(providerId)
-      if (cancelled || state !== 'connected') return
+      if (cancelled) return
+
+      if (state !== 'connected') return
       setDeviceChallenge(null)
       setDevicePageOpened(false)
       setCodeCopied(false)
@@ -1063,12 +1072,26 @@ export function ProviderModal({
     }
 
     void checkConnection()
-    const interval = window.setInterval(() => void checkConnection(), 2000)
+    const interval = window.setInterval(() => void checkConnection(), 1500)
     return () => {
       cancelled = true
       window.clearInterval(interval)
     }
   }, [deviceChallenge, draftProviderId, editProvider?.id])
+
+  // A provider that requires auth needs a real id before the auth step renders:
+  // plugin auth UIs list/link accounts against the provider that created them,
+  // so the zone context must never carry a placeholder id. The draft is removed
+  // on cancel (handleClose) when the provider was never saved.
+  useEffect(() => {
+    if (!isOpen || formStep !== 2) return
+    if (editProvider?.id || draftProviderId || !formAuthAdapter) return
+    if (draftProviderAttemptedRef.current) return
+    draftProviderAttemptedRef.current = true
+    void ensureDraftProvider().catch(() => {
+      draftProviderAttemptedRef.current = false
+    })
+  }, [isOpen, formStep, formAuthAdapter, editProvider?.id, draftProviderId])
 
   async function ensureDraftProvider(): Promise<string> {
     if (editProvider?.id) return editProvider.id
@@ -1089,9 +1112,13 @@ export function ProviderModal({
       }),
     })
     if (!response.ok) throw new Error(t({ en: 'Unable to create provider', fr: 'Impossible de créer le fournisseur' }))
-    const data = (await response.json()) as { provider: { id: string } }
-    setDraftProviderId(data.provider.id)
-    return data.provider.id
+    const data = (await response.json()) as { provider?: { id?: string } }
+    const providerId = data.provider?.id
+    if (!providerId) {
+      throw new Error(t({ en: 'Unable to create provider', fr: 'Impossible de créer le fournisseur' }))
+    }
+    setDraftProviderId(providerId)
+    return providerId
   }
 
   async function refreshProviderAuthStatus(providerId: string) {
@@ -1189,7 +1216,7 @@ export function ProviderModal({
               filteredRaw.push(m)
             }
           }
-          const combined = [...preservedMerged, ...filteredRaw]
+          const combined = collapseModeFamilies([...preservedMerged, ...filteredRaw])
           setModels(combined)
           setExpandedModelId((current) => (current && combined.some((m) => m.id === current) ? current : null))
           setModelConfigs((current) => {
@@ -1760,583 +1787,613 @@ export function ProviderModal({
 
         {/* Step 2: Test & Configure Models */}
         {formStep === 2 && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h4 className="text-sm font-medium text-text-primary">
-                {t({ en: 'Test & Configure Models', fr: 'Tester et configurer les modèles' })}
-              </h4>
-              <button
-                type="button"
-                onClick={() => setShowDefaults(true)}
-                className="p-1.5 text-text-muted hover:text-text-primary rounded transition-colors"
-                title={t({ en: 'Provider-level defaults', fr: 'Valeurs par défaut du fournisseur' })}
+          <PluginZone
+            id="provider.modal.step2"
+            context={{
+              providerId: editProvider?.id ?? draftProviderId ?? undefined,
+              backend: formBackend,
+              authAdapter: formAuthAdapter,
+              transportAdapter: formTransportAdapter,
+            }}
+          >
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-medium text-text-primary">
+                  {t({ en: 'Test & Configure Models', fr: 'Tester et configurer les modèles' })}
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => setShowDefaults(true)}
+                  className="p-1.5 text-text-muted hover:text-text-primary rounded transition-colors"
+                  title={t({ en: 'Provider-level defaults', fr: 'Valeurs par défaut du fournisseur' })}
+                >
+                  <SettingsIcon className="w-4 h-4" />
+                </button>
+              </div>
+              <PluginZone
+                id="provider.modal.auth"
+                context={{
+                  providerId: editProvider?.id ?? draftProviderId ?? undefined,
+                  backend: formBackend,
+                  authAdapter: formAuthAdapter,
+                  transportAdapter: formTransportAdapter,
+                }}
               >
-                <SettingsIcon className="w-4 h-4" />
-              </button>
-            </div>
-            {Boolean(formAuthAdapter) && (
-              <div className="rounded-lg border border-border bg-bg-primary p-4">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <h4 className="text-sm font-medium text-text-primary">
-                      {t({ en: 'Connect provider', fr: 'Connecter le fournisseur' })}
-                    </h4>
-                    <p className="mt-1 text-xs text-text-muted">
-                      {t({
-                        en: 'Connect this provider before choosing available models.',
-                        fr: 'Connectez ce fournisseur avant de choisir les modèles disponibles.',
-                      })}
-                    </p>
-                  </div>
-                  {providerAuthState === 'connected' ? (
-                    <span className="text-sm font-medium text-accent-success">
-                      {t({ en: 'Connected ✓', fr: 'Connecté ✓' })}
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => void connectProvider()}
-                      disabled={providerAuthBusy || providerAuthState === 'pending'}
-                      className="rounded-lg bg-accent-primary px-4 py-2 text-sm font-medium text-text-primary disabled:opacity-50"
-                    >
-                      {providerAuthBusy || providerAuthState === 'pending'
-                        ? t({ en: 'Connecting…', fr: 'Connexion…' })
-                        : providerAuthState === 'error'
-                          ? t({ en: 'Retry', fr: 'Réessayer' })
-                          : t({ en: 'Connect', fr: 'Connecter' })}
-                    </button>
-                  )}
-                </div>
-                {deviceChallenge && (
-                  <div className="mt-4 border-t border-border pt-4">
-                    {deviceChallenge.mode !== 'browser' ? (
-                      <>
-                        <p className="text-xs text-text-muted">
+                {Boolean(formAuthAdapter) && (
+                  <div className="rounded-lg border border-border bg-bg-primary p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <h4 className="text-sm font-medium text-text-primary">
+                          {t({ en: 'Connect provider', fr: 'Connecter le fournisseur' })}
+                        </h4>
+                        <p className="mt-1 text-xs text-text-muted">
                           {t({
-                            en: 'Use this code to complete authorization:',
-                            fr: 'Utilisez ce code pour finaliser l’autorisation :',
+                            en: 'Connect this provider before choosing available models.',
+                            fr: 'Connectez ce fournisseur avant de choisir les modèles disponibles.',
                           })}
                         </p>
+                      </div>
+                      {providerAuthState === 'connected' ? (
+                        <span className="text-sm font-medium text-accent-success">
+                          {t({ en: 'Connected ✓', fr: 'Connecté ✓' })}
+                        </span>
+                      ) : (
                         <button
                           type="button"
-                          onClick={() => void copyDeviceCode()}
-                          className="mt-3 w-full rounded-lg border border-accent-primary/40 px-4 py-4 font-mono text-2xl font-semibold tracking-[0.2em] text-accent-primary"
+                          onClick={() => void connectProvider()}
+                          disabled={providerAuthBusy || providerAuthState === 'pending'}
+                          className="rounded-lg bg-accent-primary px-4 py-2 text-sm font-medium text-text-primary disabled:opacity-50"
                         >
-                          {deviceChallenge.userCode ?? t({ en: 'Continue', fr: 'Continuer' })}
+                          {providerAuthBusy || providerAuthState === 'pending'
+                            ? t({ en: 'Connecting…', fr: 'Connexion…' })
+                            : providerAuthState === 'error'
+                              ? t({ en: 'Retry', fr: 'Réessayer' })
+                              : t({ en: 'Connect', fr: 'Connecter' })}
                         </button>
-                        <div className="mt-3 flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => void copyDeviceCode()}
-                            className="flex-1 rounded-lg border border-border px-3 py-2 text-sm text-text-primary"
-                          >
-                            {codeCopied
-                              ? t({ en: 'Copied', fr: 'Copié' })
-                              : t({ en: 'Copy code', fr: 'Copier le code' })}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={openDeviceAuthorization}
-                            className="flex-1 rounded-lg bg-accent-primary px-3 py-2 text-sm font-medium text-text-primary"
-                          >
-                            {devicePageOpened
-                              ? t({ en: 'Reopen authorization', fr: 'Rouvrir l’autorisation' })
-                              : t({ en: 'Open authorization', fr: 'Ouvrir l’autorisation' })}
-                          </button>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <p className="text-xs text-text-muted mb-3">{deviceChallenge.instructions}</p>
-                        <button
-                          type="button"
-                          onClick={openDeviceAuthorization}
-                          className="w-full rounded-lg bg-accent-primary px-3 py-2 text-sm font-medium text-text-primary"
-                        >
-                          {devicePageOpened
-                            ? t({ en: 'Reopen authorization', fr: 'Rouvrir l’autorisation' })
-                            : t({ en: 'Open authorization', fr: 'Ouvrir l’autorisation' })}
-                        </button>
-                      </>
+                      )}
+                    </div>
+                    {deviceChallenge && (
+                      <div className="mt-4 border-t border-border pt-4">
+                        {deviceChallenge.mode !== 'browser' ? (
+                          <>
+                            <p className="text-xs text-text-muted">
+                              {t({
+                                en: 'Use this code to complete authorization:',
+                                fr: 'Utilisez ce code pour finaliser l’autorisation :',
+                              })}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => void copyDeviceCode()}
+                              className="mt-3 w-full rounded-lg border border-accent-primary/40 px-4 py-4 font-mono text-2xl font-semibold tracking-[0.2em] text-accent-primary"
+                            >
+                              {deviceChallenge.userCode ?? t({ en: 'Continue', fr: 'Continuer' })}
+                            </button>
+                            <div className="mt-3 flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => void copyDeviceCode()}
+                                className="flex-1 rounded-lg border border-border px-3 py-2 text-sm text-text-primary"
+                              >
+                                {codeCopied
+                                  ? t({ en: 'Copied', fr: 'Copié' })
+                                  : t({ en: 'Copy code', fr: 'Copier le code' })}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={openDeviceAuthorization}
+                                className="flex-1 rounded-lg bg-accent-primary px-3 py-2 text-sm font-medium text-text-primary"
+                              >
+                                {devicePageOpened
+                                  ? t({ en: 'Reopen authorization', fr: 'Rouvrir l’autorisation' })
+                                  : t({ en: 'Open authorization', fr: 'Ouvrir l’autorisation' })}
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-xs text-text-muted mb-3">{deviceChallenge.instructions}</p>
+                            <button
+                              type="button"
+                              onClick={openDeviceAuthorization}
+                              className="w-full rounded-lg bg-accent-primary px-3 py-2 text-sm font-medium text-text-primary"
+                            >
+                              {devicePageOpened
+                                ? t({ en: 'Reopen authorization', fr: 'Rouvrir l’autorisation' })
+                                : t({ en: 'Open authorization', fr: 'Ouvrir l’autorisation' })}
+                            </button>
+                          </>
+                        )}
+                      </div>
                     )}
                   </div>
                 )}
-              </div>
-            )}
-            {fetchingModels && (
-              <div className="flex items-center gap-2 text-sm text-text-muted">
-                <span className="w-4 h-4 border-2 border-accent-primary border-t-transparent rounded-full animate-spin" />
-                {t({ en: 'Fetching models…', fr: 'Récupération des modèles…' })}
-              </div>
-            )}
-            {fetchError && (
-              <div className="p-3 rounded-lg text-sm bg-red-500/10 text-red-500 border border-red-500/20">
-                <p>{fetchError}</p>
-                <p className="text-xs text-text-muted mt-1">
-                  {t({ en: 'URL: {{url}}', fr: 'URL : {{url}}' }, { url: formUrl })}
-                </p>
-                <div className="flex gap-2 mt-2">
-                  <button onClick={() => fetchModels(formUrl)} className="text-xs text-accent-primary hover:underline">
-                    {t({ en: 'Retry', fr: 'Réessayer' })}
-                  </button>
-                  <button
-                    onClick={() => {
-                      resetStep2()
-                      setFormStep(1)
-                    }}
-                    className="text-xs text-accent-primary hover:underline"
-                  >
-                    {t({ en: 'Edit URL', fr: 'Modifier l’URL' })}
-                  </button>
-                  {!formAuthAdapter && (
+              </PluginZone>
+              {fetchingModels && (
+                <div className="flex items-center gap-2 text-sm text-text-muted">
+                  <span className="w-4 h-4 border-2 border-accent-primary border-t-transparent rounded-full animate-spin" />
+                  {t({ en: 'Fetching models…', fr: 'Récupération des modèles…' })}
+                </div>
+              )}
+              {fetchError && (
+                <div className="p-3 rounded-lg text-sm bg-red-500/10 text-red-500 border border-red-500/20">
+                  <p>{fetchError}</p>
+                  <p className="text-xs text-text-muted mt-1">
+                    {t({ en: 'URL: {{url}}', fr: 'URL : {{url}}' }, { url: formUrl })}
+                  </p>
+                  <div className="flex gap-2 mt-2">
                     <button
-                      onClick={() => manualModelInputRef.current?.focus()}
+                      onClick={() => fetchModels(formUrl)}
                       className="text-xs text-accent-primary hover:underline"
                     >
-                      {t({ en: 'Add model manually', fr: 'Ajouter un modèle manuellement' })}
+                      {t({ en: 'Retry', fr: 'Réessayer' })}
                     </button>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Add model manually — always available in step 2 so providers that
-                don't expose a /models endpoint (e.g. Cline) can be configured. */}
-            {formBackend && (!formAuthAdapter || providerAuthState === 'connected') && (
-              <div>
-                <h4 className="text-sm font-medium text-text-primary mb-1">
-                  {t({ en: 'Add model manually', fr: 'Ajouter un modèle manuellement' })}
-                </h4>
-                <p className="text-xs text-text-muted mb-2">
-                  {fetchError
-                    ? t({
-                        en: "Can't discover models automatically? Enter the model name to use:",
-                        fr: 'Impossible de détecter les modèles automatiquement ? Saisissez le nom du modèle à utiliser :',
-                      })
-                    : t({
-                        en: 'Enter a model name manually if it does not appear in the list above:',
-                        fr: 'Saisissez manuellement un nom de modèle s’il n’apparaît pas dans la liste ci-dessus :',
-                      })}
-                </p>
-                <div className="flex gap-2">
-                  <input
-                    ref={manualModelInputRef}
-                    type="text"
-                    value={manualModelId}
-                    onChange={(e) => {
-                      setManualModelId(e.target.value)
-                      if (manualModelError) setManualModelError(null)
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        addManualModel()
-                      }
-                    }}
-                    placeholder="model-name"
-                    data-testid="provider-modal-manual-model-input"
-                    className="flex-1 px-3 py-1.5 bg-bg-primary border border-border rounded-lg text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-primary"
-                  />
-                  <button
-                    type="button"
-                    onClick={addManualModel}
-                    data-testid="provider-modal-manual-model-add"
-                    className="px-3 py-1.5 bg-accent-primary text-text-primary rounded-lg text-sm font-medium hover:bg-accent-primary/90 transition-colors"
-                  >
-                    {t({ en: 'Add', fr: 'Ajouter' })}
-                  </button>
-                </div>
-                {manualModelError && <p className="text-xs text-red-500 mt-1">{manualModelError}</p>}
-              </div>
-            )}
-
-            {models.length > 0 && formBackend && (!formAuthAdapter || providerAuthState === 'connected') && (
-              <>
-                {/* Selected Models — full config panels */}
-                {selectedModelIds.size > 0 && (
-                  <div className="mb-4">
-                    <h4 className="text-sm font-medium text-text-primary mb-1">
-                      {t(
-                        { en: 'Selected Models ({{count}})', fr: 'Modèles sélectionnés ({{count}})' },
-                        { count: selectedModelIds.size },
-                      )}
-                    </h4>
-                    <p className="text-xs text-text-muted mb-2">
-                      {t({
-                        en: 'Only selected models will appear in the model selector.',
-                        fr: 'Seuls les modèles sélectionnés apparaîtront dans le sélecteur de modèle.',
-                      })}
-                    </p>
-                    <div className="space-y-2">
-                      {models
-                        .filter((m) => selectedModelIds.has(m.id))
-                        .map((model) => (
-                          <div key={model.id} className="bg-bg-primary border border-border rounded-lg overflow-hidden">
-                            <div
-                              onClick={() => setExpandedModelId(expandedModelId === model.id ? null : model.id)}
-                              className="w-full flex items-center justify-between px-4 py-3 hover:bg-bg-tertiary transition-colors cursor-pointer"
-                            >
-                              <div className="flex items-center gap-3">
-                                <span className="text-sm font-medium text-text-primary">
-                                  {model.name ?? model.id.split('/').pop()}
-                                </span>
-                                <span className="text-xs text-text-muted bg-bg-tertiary px-2 py-0.5 rounded flex items-center gap-1">
-                                  {(modelConfigs[model.id]?.supportsVision ?? model.supportsVision) && (
-                                    <span
-                                      data-vision
-                                      title={t({ en: 'Vision model', fr: 'Modèle vision' })}
-                                      aria-label={t({ en: 'Vision model', fr: 'Modèle vision' })}
-                                    >
-                                      <EyeIcon className="w-3.5 h-3.5" />
-                                    </span>
-                                  )}
-                                  {t(
-                                    { en: '{{n}} ctx', fr: '{{n}} ctx' },
-                                    {
-                                      n: (modelConfigs[model.id]?.contextWindow ?? model.contextWindow).toLocaleString(
-                                        getLocale(),
-                                      ),
-                                    },
-                                  )}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                {autoConfigState.progress[model.id] === 'probing' ? (
-                                  <span className="w-3 h-3 border-2 border-accent-primary border-t-transparent rounded-full animate-spin" />
-                                ) : autoConfigState.progress[model.id] === 'done' ? (
-                                  <span className="text-xs text-accent-success font-medium">
-                                    {t({ en: 'Configured ✓', fr: 'Configuré ✓' })}
-                                  </span>
-                                ) : autoConfigState.progress[model.id] === 'error' ? (
-                                  <span className="text-xs text-red-500 font-medium">
-                                    {t({ en: 'Failed ✗', fr: 'Échec ✗' })}
-                                  </span>
-                                ) : !formAuthAdapter ? (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      runAutoConfig(model.id)
-                                    }}
-                                    className="text-xs text-accent-primary hover:underline"
-                                  >
-                                    {t({ en: 'Auto-config', fr: 'Auto-configuration' })}
-                                  </button>
-                                ) : null}
-                                {models.length > 1 && (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      const next = new Set(selectedModelIds)
-                                      next.delete(model.id)
-                                      setSelectedModelIds(next)
-                                      if (expandedModelId === model.id) setExpandedModelId(null)
-                                    }}
-                                    className="text-xs text-red-500 hover:text-red-400 px-2 py-1 rounded hover:bg-red-500/10"
-                                  >
-                                    {t({ en: 'Remove', fr: 'Supprimer' })}
-                                  </button>
-                                )}
-                                <ChevronDownIcon
-                                  className={`w-4 h-4 text-text-muted transition-transform ${expandedModelId === model.id ? 'rotate-180' : ''}`}
-                                />
-                              </div>
-                            </div>
-
-                            {expandedModelId === model.id && (
-                              <ModelConfigPanel
-                                model={model}
-                                modelConfigs={modelConfigs}
-                                autoConfigState={autoConfigState}
-                                testResults={testResults}
-                                onUpdateConfig={updateModelConfig}
-                                onRunAutoConfig={runAutoConfig}
-                                onTestParams={testParams}
-                                onShowRaw={setRawModalData}
-                              />
-                            )}
-                          </div>
-                        ))}
-                    </div>
+                    <button
+                      onClick={() => {
+                        resetStep2()
+                        setFormStep(1)
+                      }}
+                      className="text-xs text-accent-primary hover:underline"
+                    >
+                      {t({ en: 'Edit URL', fr: 'Modifier l’URL' })}
+                    </button>
+                    {!formAuthAdapter && (
+                      <button
+                        onClick={() => manualModelInputRef.current?.focus()}
+                        className="text-xs text-accent-primary hover:underline"
+                      >
+                        {t({ en: 'Add model manually', fr: 'Ajouter un modèle manuellement' })}
+                      </button>
+                    )}
                   </div>
-                )}
+                </div>
+              )}
 
-                {/* Available Models — search + checkbox list (hidden when single model, already selected) */}
-                {models.length > 1 && (
-                  <div>
-                    <h4 className="text-sm font-medium text-text-primary mb-1">
-                      {t({ en: 'Available Models', fr: 'Modèles disponibles' })}
-                    </h4>
-                    {selectedModelIds.size === 0 && (
+              {/* Add model manually — always available in step 2 so providers that
+                don't expose a /models endpoint (e.g. Cline) can be configured. */}
+              {formBackend && (!formAuthAdapter || providerAuthState === 'connected') && (
+                <div>
+                  <h4 className="text-sm font-medium text-text-primary mb-1">
+                    {t({ en: 'Add model manually', fr: 'Ajouter un modèle manuellement' })}
+                  </h4>
+                  <p className="text-xs text-text-muted mb-2">
+                    {fetchError
+                      ? t({
+                          en: "Can't discover models automatically? Enter the model name to use:",
+                          fr: 'Impossible de détecter les modèles automatiquement ? Saisissez le nom du modèle à utiliser :',
+                        })
+                      : t({
+                          en: 'Enter a model name manually if it does not appear in the list above:',
+                          fr: 'Saisissez manuellement un nom de modèle s’il n’apparaît pas dans la liste ci-dessus :',
+                        })}
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      ref={manualModelInputRef}
+                      type="text"
+                      value={manualModelId}
+                      onChange={(e) => {
+                        setManualModelId(e.target.value)
+                        if (manualModelError) setManualModelError(null)
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          addManualModel()
+                        }
+                      }}
+                      placeholder="model-name"
+                      data-testid="provider-modal-manual-model-input"
+                      className="flex-1 px-3 py-1.5 bg-bg-primary border border-border rounded-lg text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-primary"
+                    />
+                    <button
+                      type="button"
+                      onClick={addManualModel}
+                      data-testid="provider-modal-manual-model-add"
+                      className="px-3 py-1.5 bg-accent-primary text-text-primary rounded-lg text-sm font-medium hover:bg-accent-primary/90 transition-colors"
+                    >
+                      {t({ en: 'Add', fr: 'Ajouter' })}
+                    </button>
+                  </div>
+                  {manualModelError && <p className="text-xs text-red-500 mt-1">{manualModelError}</p>}
+                </div>
+              )}
+
+              {models.length > 0 && formBackend && (!formAuthAdapter || providerAuthState === 'connected') && (
+                <>
+                  {/* Selected Models — full config panels */}
+                  {selectedModelIds.size > 0 && (
+                    <div className="mb-4">
+                      <h4 className="text-sm font-medium text-text-primary mb-1">
+                        {t(
+                          { en: 'Selected Models ({{count}})', fr: 'Modèles sélectionnés ({{count}})' },
+                          { count: selectedModelIds.size },
+                        )}
+                      </h4>
                       <p className="text-xs text-text-muted mb-2">
                         {t({
-                          en: 'This provider has many models available. Select the ones you want to use below.',
-                          fr: 'Ce fournisseur propose de nombreux modèles. Sélectionnez ceux que vous souhaitez utiliser ci-dessous.',
+                          en: 'Only selected models will appear in the model selector.',
+                          fr: 'Seuls les modèles sélectionnés apparaîtront dans le sélecteur de modèle.',
                         })}
                       </p>
-                    )}
-
-                    <div className="relative mb-2">
-                      <input
-                        type="text"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder={t({ en: 'Search models…', fr: 'Rechercher des modèles…' })}
-                        className="w-full px-4 py-2 bg-bg-primary border border-border rounded-lg text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-primary"
-                      />
-                      {searchQuery && (
-                        <button
-                          onClick={() => setSearchQuery('')}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary text-sm"
-                        >
-                          &times;
-                        </button>
-                      )}
-                    </div>
-
-                    {mergedModeModels.length > 0 && (
-                      <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-                        <span className="text-text-secondary">
-                          {t(
-                            {
-                              en: {
-                                one: '{{count}} model is merged into mode chips:',
-                                other: '{{count}} models are merged into mode chips:',
-                              },
-                              fr: {
-                                one: '{{count}} modèle est fusionné dans des pastilles de mode :',
-                                other: '{{count}} modèles sont fusionnés dans des pastilles de mode :',
-                              },
-                            },
-                            { count: mergedModeModels.length },
-                          )}
-                        </span>
-                        <div className="flex flex-wrap gap-2">
-                          {mergedModeModels.map((model) => (
-                            <button
+                      <div className="space-y-2">
+                        {models
+                          .filter((m) => selectedModelIds.has(m.id))
+                          .map((model) => (
+                            <div
                               key={model.id}
-                              type="button"
-                              onClick={() => unmergeModeFamily(model)}
-                              className="px-2.5 py-1 rounded border border-border text-text-secondary hover:border-accent-primary/40 hover:text-accent-primary hover:bg-accent-primary/10 transition-colors"
+                              className="bg-bg-primary border border-border rounded-lg overflow-hidden"
                             >
-                              {t(
-                                { en: 'Unmerge {{name}} ({{levels}})', fr: 'Dissocier {{name}} ({{levels}})' },
-                                {
-                                  name: model.name ?? model.id.split('/').pop() ?? '',
-                                  levels: model.modes!.map((mode) => mode.level).join(', '),
-                                },
-                              )}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                              <div
+                                onClick={() => setExpandedModelId(expandedModelId === model.id ? null : model.id)}
+                                className="w-full flex items-center justify-between px-4 py-3 hover:bg-bg-tertiary transition-colors cursor-pointer"
+                              >
+                                <div className="flex items-center gap-3">
+                                  <span className="text-sm font-medium text-text-primary">
+                                    {model.name ?? model.id.split('/').pop()}
+                                  </span>
+                                  <span className="text-xs text-text-muted bg-bg-tertiary px-2 py-0.5 rounded flex items-center gap-1">
+                                    {(modelConfigs[model.id]?.supportsVision ?? model.supportsVision) && (
+                                      <span
+                                        data-vision
+                                        title={t({ en: 'Vision model', fr: 'Modèle vision' })}
+                                        aria-label={t({ en: 'Vision model', fr: 'Modèle vision' })}
+                                      >
+                                        <EyeIcon className="w-3.5 h-3.5" />
+                                      </span>
+                                    )}
+                                    {t(
+                                      { en: '{{n}} ctx', fr: '{{n}} ctx' },
+                                      {
+                                        n: (
+                                          modelConfigs[model.id]?.contextWindow ?? model.contextWindow
+                                        ).toLocaleString(getLocale()),
+                                      },
+                                    )}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  {autoConfigState.progress[model.id] === 'probing' ? (
+                                    <span className="w-3 h-3 border-2 border-accent-primary border-t-transparent rounded-full animate-spin" />
+                                  ) : autoConfigState.progress[model.id] === 'done' ? (
+                                    <span className="text-xs text-accent-success font-medium">
+                                      {t({ en: 'Configured ✓', fr: 'Configuré ✓' })}
+                                    </span>
+                                  ) : autoConfigState.progress[model.id] === 'error' ? (
+                                    <span className="text-xs text-red-500 font-medium">
+                                      {t({ en: 'Failed ✗', fr: 'Échec ✗' })}
+                                    </span>
+                                  ) : !formAuthAdapter ? (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        runAutoConfig(model.id)
+                                      }}
+                                      className="text-xs text-accent-primary hover:underline"
+                                    >
+                                      {t({ en: 'Auto-config', fr: 'Auto-configuration' })}
+                                    </button>
+                                  ) : null}
+                                  {models.length > 1 && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        const next = new Set(selectedModelIds)
+                                        next.delete(model.id)
+                                        setSelectedModelIds(next)
+                                        if (expandedModelId === model.id) setExpandedModelId(null)
+                                      }}
+                                      className="text-xs text-red-500 hover:text-red-400 px-2 py-1 rounded hover:bg-red-500/10"
+                                    >
+                                      {t({ en: 'Remove', fr: 'Supprimer' })}
+                                    </button>
+                                  )}
+                                  <ChevronDownIcon
+                                    className={`w-4 h-4 text-text-muted transition-transform ${expandedModelId === model.id ? 'rotate-180' : ''}`}
+                                  />
+                                </div>
+                              </div>
 
-                    {mergeableGroups.length > 0 && (
-                      <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-                        <span className="text-text-secondary">
-                          {t(
-                            {
-                              en: {
-                                one: '{{count}} model group shares the same base name with different modes:',
-                                other: '{{count}} model groups share the same base name with different modes:',
-                              },
-                              fr: {
-                                one: '{{count}} groupe de modèles partage le même nom de base avec des modes différents :',
-                                other:
-                                  '{{count}} groupes de modèles partagent le même nom de base avec des modes différents :',
-                              },
-                            },
-                            { count: mergeableGroups.length },
-                          )}
-                        </span>
-                        <div className="flex flex-wrap gap-2">
-                          {mergeableGroups.map((group) => (
-                            <button
-                              key={group.baseId}
-                              type="button"
-                              onClick={() =>
-                                mergeModeFamily(
-                                  group.baseId,
-                                  group.members
-                                    .map((m) => models.find((x) => x.id === m.id))
-                                    .filter((m): m is ModelInfo => Boolean(m)),
-                                )
-                              }
-                              className="px-2.5 py-1 rounded border border-accent-primary/40 text-accent-primary hover:bg-accent-primary/10 transition-colors"
-                            >
-                              {t(
-                                { en: 'Merge {{name}}: {{levels}}', fr: 'Fusionner {{name}} : {{levels}}' },
-                                {
-                                  name: group.baseId.split('/').pop() ?? '',
-                                  levels: group.members
-                                    .map((m) => splitModeSuffix(m.id)?.level)
-                                    .filter(Boolean)
-                                    .join(', '),
-                                },
+                              {expandedModelId === model.id && (
+                                <ModelConfigPanel
+                                  model={model}
+                                  modelConfigs={modelConfigs}
+                                  autoConfigState={autoConfigState}
+                                  testResults={testResults}
+                                  onUpdateConfig={updateModelConfig}
+                                  onRunAutoConfig={runAutoConfig}
+                                  onTestParams={testParams}
+                                  onShowRaw={setRawModalData}
+                                />
                               )}
-                            </button>
+                            </div>
                           ))}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-xs text-text-muted">
-                        {t(
-                          {
-                            en: 'Showing {{shown}} of {{total}} models',
-                            fr: 'Affichage de {{shown}} sur {{total}} modèles',
-                          },
-                          { shown: filterModels(searchQuery).length, total: models.length },
-                        )}
-                      </p>
-                      <div className="flex items-center gap-3">
-                        <button
-                          type="button"
-                          onClick={() => formUrl && fetchModels(formUrl)}
-                          disabled={fetchingModels || !formUrl}
-                          className="text-xs text-accent-primary hover:underline flex items-center gap-1 disabled:opacity-50"
-                          title={t({
-                            en: 'Sync available models from provider',
-                            fr: 'Synchroniser les modèles disponibles depuis le fournisseur',
-                          })}
-                        >
-                          <ReloadIcon className={`w-3 h-3 ${fetchingModels ? 'animate-spin' : ''}`} />
-                          {t({ en: 'Sync', fr: 'Synchroniser' })}
-                        </button>
-                        <button
-                          onClick={() => {
-                            const next = new Set(selectedModelIds)
-                            const visible = filterModels(searchQuery)
-                            for (const m of visible) next.add(m.id)
-                            setSelectedModelIds(next)
-                            setModelConfigs((current) => {
-                              const updated = { ...current }
-                              for (const model of visible) {
-                                updated[model.id] = {
-                                  contextWindow: model.contextWindow,
-                                  ...updated[model.id],
-                                }
-                              }
-                              return updated
-                            })
-                            if (!formAuthAdapter) {
-                              for (const m of visible) {
-                                if (
-                                  autoConfigState.progress[m.id] !== 'probing' &&
-                                  autoConfigState.progress[m.id] !== 'done'
-                                ) {
-                                  runAutoConfig(m.id)
-                                }
-                              }
-                            }
-                          }}
-                          className="text-xs text-accent-primary hover:underline"
-                        >
-                          {t({ en: 'Select all', fr: 'Tout sélectionner' })}
-                        </button>
-                        <button
-                          onClick={() => {
-                            const next = new Set(selectedModelIds)
-                            const visible = filterModels(searchQuery)
-                            for (const m of visible) next.delete(m.id)
-                            setSelectedModelIds(next)
-                          }}
-                          className="text-xs text-text-muted hover:text-text-secondary"
-                        >
-                          {t({ en: 'Deselect all', fr: 'Tout désélectionner' })}
-                        </button>
                       </div>
                     </div>
+                  )}
 
-                    <ScrollArea className="space-y-1 max-h-48 border border-border rounded-lg bg-bg-primary">
-                      {filterModels(searchQuery).map((model) => {
-                        const isChecked = selectedModelIds.has(model.id)
-                        return (
-                          <div
-                            key={model.id}
-                            role="checkbox"
-                            aria-checked={isChecked}
-                            tabIndex={0}
-                            className={`flex items-center gap-3 px-4 py-2 hover:bg-bg-tertiary transition-colors cursor-pointer ${
-                              isChecked ? 'bg-accent-primary/5' : ''
-                            }`}
-                            onClick={() => {
-                              if (isChecked) {
-                                const next = new Set(selectedModelIds)
-                                next.delete(model.id)
-                                setSelectedModelIds(next)
-                              } else {
-                                selectModel(model)
-                                if (!formAuthAdapter) runAutoConfig(model.id)
-                              }
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault()
-                                e.currentTarget.click()
-                              }
-                            }}
+                  {/* Available Models — search + checkbox list (hidden when single model, already selected) */}
+                  {models.length > 1 && (
+                    <div>
+                      <h4 className="text-sm font-medium text-text-primary mb-1">
+                        {t({ en: 'Available Models', fr: 'Modèles disponibles' })}
+                      </h4>
+                      {selectedModelIds.size === 0 && (
+                        <p className="text-xs text-text-muted mb-2">
+                          {t({
+                            en: 'This provider has many models available. Select the ones you want to use below.',
+                            fr: 'Ce fournisseur propose de nombreux modèles. Sélectionnez ceux que vous souhaitez utiliser ci-dessous.',
+                          })}
+                        </p>
+                      )}
+
+                      <div className="relative mb-2">
+                        <input
+                          type="text"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          placeholder={t({ en: 'Search models…', fr: 'Rechercher des modèles…' })}
+                          className="w-full px-4 py-2 bg-bg-primary border border-border rounded-lg text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-primary"
+                        />
+                        {searchQuery && (
+                          <button
+                            onClick={() => setSearchQuery('')}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary text-sm"
                           >
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => {}}
-                              className="w-4 h-4 rounded border-border accent-accent-primary pointer-events-none"
-                            />
-                            <span className="text-sm text-text-primary flex-1 truncate">
-                              {model.name ?? model.id.split('/').pop()}
-                              {model.modes && model.modes.length > 0 && (
-                                <span className="text-text-muted font-normal ml-1">
-                                  ({model.modes.map((m) => m.level).join(', ')})
-                                </span>
-                              )}
-                            </span>
-                            <span className="text-xs text-text-muted flex flex-shrink-0 items-center gap-1">
-                              {(modelConfigs[model.id]?.supportsVision ?? model.supportsVision) && (
-                                <span
-                                  data-vision
-                                  title={t({ en: 'Vision model', fr: 'Modèle vision' })}
-                                  aria-label={t({ en: 'Vision model', fr: 'Modèle vision' })}
-                                >
-                                  <EyeIcon className="w-3.5 h-3.5" />
-                                </span>
-                              )}
-                              {t(
-                                { en: '{{n}} ctx', fr: '{{n}} ctx' },
-                                {
-                                  n: (modelConfigs[model.id]?.contextWindow ?? model.contextWindow).toLocaleString(
-                                    getLocale(),
-                                  ),
+                            &times;
+                          </button>
+                        )}
+                      </div>
+
+                      {mergedModeModels.length > 0 && (
+                        <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+                          <span className="text-text-secondary">
+                            {t(
+                              {
+                                en: {
+                                  one: '{{count}} model is merged into mode chips:',
+                                  other: '{{count}} models are merged into mode chips:',
                                 },
+                                fr: {
+                                  one: '{{count}} modèle est fusionné dans des pastilles de mode :',
+                                  other: '{{count}} modèles sont fusionnés dans des pastilles de mode :',
+                                },
+                              },
+                              { count: mergedModeModels.length },
+                            )}
+                          </span>
+                          <div className="flex flex-wrap gap-2">
+                            {mergedModeModels.map((model) => (
+                              <button
+                                key={model.id}
+                                type="button"
+                                onClick={() => unmergeModeFamily(model)}
+                                className="px-2.5 py-1 rounded border border-border text-text-secondary hover:border-accent-primary/40 hover:text-accent-primary hover:bg-accent-primary/10 transition-colors"
+                              >
+                                {t(
+                                  { en: 'Unmerge {{name}} ({{levels}})', fr: 'Dissocier {{name}} ({{levels}})' },
+                                  {
+                                    name: model.name ?? model.id.split('/').pop() ?? '',
+                                    levels: model.modes!.map((mode) => mode.level).join(', '),
+                                  },
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {mergeableGroups.length > 0 && (
+                        <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+                          <span className="text-text-secondary">
+                            {t(
+                              {
+                                en: {
+                                  one: '{{count}} model group shares the same base name with different modes:',
+                                  other: '{{count}} model groups share the same base name with different modes:',
+                                },
+                                fr: {
+                                  one: '{{count}} groupe de modèles partage le même nom de base avec des modes différents :',
+                                  other:
+                                    '{{count}} groupes de modèles partagent le même nom de base avec des modes différents :',
+                                },
+                              },
+                              { count: mergeableGroups.length },
+                            )}
+                          </span>
+                          <div className="flex flex-wrap gap-2">
+                            {mergeableGroups.map((group) => (
+                              <button
+                                key={group.baseId}
+                                type="button"
+                                onClick={() =>
+                                  mergeModeFamily(
+                                    group.baseId,
+                                    group.members
+                                      .map((m) => models.find((x) => x.id === m.id))
+                                      .filter((m): m is ModelInfo => Boolean(m)),
+                                  )
+                                }
+                                className="px-2.5 py-1 rounded border border-accent-primary/40 text-accent-primary hover:bg-accent-primary/10 transition-colors"
+                              >
+                                {t(
+                                  { en: 'Merge {{name}}: {{levels}}', fr: 'Fusionner {{name}} : {{levels}}' },
+                                  {
+                                    name: group.baseId.split('/').pop() ?? '',
+                                    levels: group.members
+                                      .map((m) => splitModeSuffix(m.id)?.level)
+                                      .filter(Boolean)
+                                      .join(', '),
+                                  },
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs text-text-muted">
+                          {t(
+                            {
+                              en: 'Showing {{shown}} of {{total}} models',
+                              fr: 'Affichage de {{shown}} sur {{total}} modèles',
+                            },
+                            { shown: filterModels(searchQuery).length, total: models.length },
+                          )}
+                        </p>
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => formUrl && fetchModels(formUrl)}
+                            disabled={fetchingModels || !formUrl}
+                            className="text-xs text-accent-primary hover:underline flex items-center gap-1 disabled:opacity-50"
+                            title={t({
+                              en: 'Sync available models from provider',
+                              fr: 'Synchroniser les modèles disponibles depuis le fournisseur',
+                            })}
+                          >
+                            <ReloadIcon className={`w-3 h-3 ${fetchingModels ? 'animate-spin' : ''}`} />
+                            {t({ en: 'Sync', fr: 'Synchroniser' })}
+                          </button>
+                          <button
+                            onClick={() => {
+                              const next = new Set(selectedModelIds)
+                              const visible = filterModels(searchQuery)
+                              for (const m of visible) next.add(m.id)
+                              setSelectedModelIds(next)
+                              setModelConfigs((current) => {
+                                const updated = { ...current }
+                                for (const model of visible) {
+                                  updated[model.id] = {
+                                    contextWindow: model.contextWindow,
+                                    ...updated[model.id],
+                                  }
+                                }
+                                return updated
+                              })
+                              if (!formAuthAdapter) {
+                                for (const m of visible) {
+                                  if (
+                                    autoConfigState.progress[m.id] !== 'probing' &&
+                                    autoConfigState.progress[m.id] !== 'done'
+                                  ) {
+                                    runAutoConfig(m.id)
+                                  }
+                                }
+                              }
+                            }}
+                            className="text-xs text-accent-primary hover:underline"
+                          >
+                            {t({ en: 'Select all', fr: 'Tout sélectionner' })}
+                          </button>
+                          <button
+                            onClick={() => {
+                              const next = new Set(selectedModelIds)
+                              const visible = filterModels(searchQuery)
+                              for (const m of visible) next.delete(m.id)
+                              setSelectedModelIds(next)
+                            }}
+                            className="text-xs text-text-muted hover:text-text-secondary"
+                          >
+                            {t({ en: 'Deselect all', fr: 'Tout désélectionner' })}
+                          </button>
+                        </div>
+                      </div>
+
+                      <ScrollArea className="space-y-1 max-h-48 border border-border rounded-lg bg-bg-primary">
+                        {filterModels(searchQuery).map((model) => {
+                          const isChecked = selectedModelIds.has(model.id)
+                          return (
+                            <div
+                              key={model.id}
+                              role="checkbox"
+                              aria-checked={isChecked}
+                              tabIndex={0}
+                              className={`flex items-center gap-3 px-4 py-2 hover:bg-bg-tertiary transition-colors cursor-pointer ${
+                                isChecked ? 'bg-accent-primary/5' : ''
+                              }`}
+                              onClick={() => {
+                                if (isChecked) {
+                                  const next = new Set(selectedModelIds)
+                                  next.delete(model.id)
+                                  setSelectedModelIds(next)
+                                } else {
+                                  selectModel(model)
+                                  if (!formAuthAdapter) runAutoConfig(model.id)
+                                }
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault()
+                                  e.currentTarget.click()
+                                }
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {}}
+                                className="w-4 h-4 rounded border-border accent-accent-primary pointer-events-none"
+                              />
+                              <span className="text-sm text-text-primary flex-1 truncate">
+                                {model.name ?? model.id.split('/').pop()}
+                                {model.modes && model.modes.length > 0 ? (
+                                  <span className="text-text-muted font-normal ml-1">
+                                    ({model.modes.map((m) => m.level).join(', ')})
+                                  </span>
+                                ) : model.reasoningEfforts && model.reasoningEfforts.length > 0 ? (
+                                  <span className="text-text-muted font-normal ml-1">
+                                    ({model.reasoningEfforts.join(', ')})
+                                  </span>
+                                ) : null}
+                              </span>
+                              <span className="text-xs text-text-muted flex flex-shrink-0 items-center gap-1">
+                                {(modelConfigs[model.id]?.supportsVision ?? model.supportsVision) && (
+                                  <span
+                                    data-vision
+                                    title={t({ en: 'Vision model', fr: 'Modèle vision' })}
+                                    aria-label={t({ en: 'Vision model', fr: 'Modèle vision' })}
+                                  >
+                                    <EyeIcon className="w-3.5 h-3.5" />
+                                  </span>
+                                )}
+                                {t(
+                                  { en: '{{n}} ctx', fr: '{{n}} ctx' },
+                                  {
+                                    n: (modelConfigs[model.id]?.contextWindow ?? model.contextWindow).toLocaleString(
+                                      getLocale(),
+                                    ),
+                                  },
+                                )}
+                              </span>
+                              {autoConfigState.progress[model.id] === 'probing' && (
+                                <span className="w-3 h-3 border-2 border-accent-primary border-t-transparent rounded-full animate-spin flex-shrink-0" />
                               )}
-                            </span>
-                            {autoConfigState.progress[model.id] === 'probing' && (
-                              <span className="w-3 h-3 border-2 border-accent-primary border-t-transparent rounded-full animate-spin flex-shrink-0" />
-                            )}
-                            {autoConfigState.progress[model.id] === 'done' && (
-                              <span className="text-xs text-accent-success flex-shrink-0">✓</span>
-                            )}
-                            {autoConfigState.progress[model.id] === 'error' && (
-                              <span className="text-xs text-red-500 flex-shrink-0">✗</span>
+                              {autoConfigState.progress[model.id] === 'done' && (
+                                <span className="text-xs text-accent-success flex-shrink-0">✓</span>
+                              )}
+                              {autoConfigState.progress[model.id] === 'error' && (
+                                <span className="text-xs text-red-500 flex-shrink-0">✗</span>
+                              )}
+                            </div>
+                          )
+                        })}
+                        {filterModels(searchQuery).length === 0 && (
+                          <div className="px-4 py-6 text-center text-sm text-text-muted">
+                            {t(
+                              { en: 'No models match “{{query}}”', fr: 'Aucun modèle ne correspond à « {{query}} »' },
+                              { query: searchQuery },
                             )}
                           </div>
-                        )
-                      })}
-                      {filterModels(searchQuery).length === 0 && (
-                        <div className="px-4 py-6 text-center text-sm text-text-muted">
-                          {t(
-                            { en: 'No models match “{{query}}”', fr: 'Aucun modèle ne correspond à « {{query}} »' },
-                            { query: searchQuery },
-                          )}
-                        </div>
-                      )}
-                    </ScrollArea>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
+                        )}
+                      </ScrollArea>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </PluginZone>
         )}
       </Modal>
 

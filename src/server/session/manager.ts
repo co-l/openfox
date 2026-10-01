@@ -32,6 +32,7 @@ import {
   updateSessionProviderActive,
   updateSessionPinnedEffort,
   updateSessionDangerLevel,
+  updateSessionNightMode,
   updateSessionRunning,
   updateSessionCachedPrompt,
   updateSessionWorkdir,
@@ -864,6 +865,17 @@ export class SessionManager {
     this.requireSession(sessionId)
     logger.debug('Setting danger level', { sessionId, dangerLevel })
     updateSessionDangerLevel(sessionId, dangerLevel)
+    return this.requireSession(sessionId)
+  }
+
+  /**
+   * Set night mode (unattended). Does NOT emit event - like danger level,
+   * it is re-read live from the DB by the agent loop on every iteration.
+   */
+  setNightMode(sessionId: string, enabled: boolean): Session {
+    this.requireSession(sessionId)
+    logger.debug('Setting night mode', { sessionId, enabled })
+    updateSessionNightMode(sessionId, enabled)
     return this.requireSession(sessionId)
   }
 

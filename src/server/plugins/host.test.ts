@@ -7,6 +7,7 @@ import { loadConfig } from '../config.js'
 import { PluginHost } from './host.js'
 import { emitPluginHook } from './hook-emitter.js'
 import { listPluginModelMetadataProviders } from './model-metadata.js'
+import { listPluginMessageTransforms } from './message-transforms.js'
 import { listPluginTransitionHandlers, runPluginTransitionHandler } from './transition-handlers.js'
 import { getAllSettings } from '../db/settings.js'
 
@@ -269,6 +270,20 @@ describe('PluginHost', () => {
     expect((globalThis as Record<string, unknown>)['__deactivated']).toBe(2)
   })
 
+  it('reinstalls an installed plugin and reloads its diagnostic', async () => {
+    await writePlugin(
+      configDirectory,
+      'reinstall-plugin',
+      2,
+      `registry.registerTool({ name: 'reinstall_tool', description: 'x', parameters: {}, execute: async () => ({ success: true }) });`,
+    )
+    const host = makeHost(configDirectory)
+    await host.start()
+    const diag = await host.reinstall('reinstall-plugin')
+    expect(diag.loaded).toBe(true)
+    expect(diag.packageName).toBe('reinstall-plugin')
+  })
+
   it('refuses to uninstall plugins discovered outside the plugins directory', async () => {
     const cwd = join(configDirectory, 'app')
     const externalDir = join(cwd, 'node_modules', 'external-plugin')
@@ -361,6 +376,27 @@ describe('PluginHost', () => {
     expect(host.updateSettings('settings-plugin', { limit: 10, token: '••••••••••••••••' })).toEqual({ errors: [] })
     expect(getAllSettings()['plugin.settings-plugin.global.token']).toBe('"s3cret"')
     expect(host.getSettingsView('settings-plugin').values['limit']).toBe(10)
+  })
+
+  it('never persists or exposes read-only settings fields', async () => {
+    await writePlugin(
+      configDirectory,
+      'readonly-plugin',
+      2,
+      `registry.registerSettings({ fields: [
+        { key: 'official', type: 'text', label: { en: 'Official', fr: 'Officiel' }, default: 'https://official.test', readOnly: true },
+        { key: 'extra', type: 'text', label: { en: 'Extra', fr: 'Extra' } },
+      ] });`,
+    )
+    const host = makeHost(configDirectory)
+    await host.start()
+
+    expect(host.updateSettings('readonly-plugin', { official: 'https://hacked.test', extra: 'kept' })).toEqual({
+      errors: [],
+    })
+    expect(getAllSettings()['plugin.readonly-plugin.global.official']).toBeUndefined()
+    expect(host.getSettingsView('readonly-plugin').values['official']).toBeUndefined()
+    expect(host.getSettingsView('readonly-plugin').values['extra']).toBe('kept')
   })
 
   it('scopes plugin settings per project when requested', async () => {
@@ -570,5 +606,106 @@ describe('PluginHost', () => {
         data: { providerId: 'openai-provider', model: 'mock-model' },
       })
     })
+  })
+
+  it('stops update checker on host stop', async () => {
+    const host = makeHost(configDirectory)
+    const stopSpy = vi.spyOn(host.updateChecker, 'stop')
+    await host.start()
+    host.stop()
+    expect(stopSpy).toHaveBeenCalled()
+  })
+
+  it('registers, applies, and cleans up message transforms on enable/disable', async () => {
+    await writePlugin(
+      configDirectory,
+      'transform-plugin',
+      2,
+      `registry.registerMessageTransform({
+        id: 'headroom_compressor',
+        priority: 10,
+        transform: (msgs) => msgs.map(m => ({ ...m, content: '[compressed] ' + m.content }))
+      });`,
+      { capabilities: ['transforms'] },
+    )
+
+    const host = makeHost(configDirectory)
+    await host.start()
+
+    expect(host.registry.getMessageTransforms()).toHaveLength(1)
+    expect(host.getPlugins()[0]?.contributions.messageTransforms).toBe(1)
+    expect(listPluginMessageTransforms()).toHaveLength(1)
+
+    // Disable plugin
+    await host.disable('transform-plugin')
+    expect(host.registry.getMessageTransforms()).toHaveLength(0)
+    expect(listPluginMessageTransforms()).toHaveLength(0)
+
+    // Re-enable plugin
+    await host.enable('transform-plugin')
+    expect(host.registry.getMessageTransforms()).toHaveLength(1)
+    expect(listPluginMessageTransforms()).toHaveLength(1)
+  })
+
+  it('keeps the original plugin owner when a UI component is re-registered at runtime', async () => {
+    await writePlugin(
+      configDirectory,
+      'runtime-plugin',
+      2,
+      `
+      globalThis.__runtimeRegistry = registry;
+      registry.registerUiComponent({ id: 'runtime-comp', zone: 'header.actions', component: { type: 'stack', direction: 'row', children: [] } });
+      `,
+    )
+
+    const host = makeHost(configDirectory)
+    await host.start()
+
+    const globals = globalThis as unknown as Record<string, unknown>
+    const runtimeRegistry = globals['__runtimeRegistry'] as { registerUiComponent: (component: unknown) => void }
+    delete globals['__runtimeRegistry']
+
+    runtimeRegistry.registerUiComponent({
+      id: 'runtime-comp',
+      zone: 'header.actions',
+      component: {
+        type: 'button',
+        label: { en: 'Open', fr: 'Ouvrir' },
+        onActivate: { kind: 'openPanel', panelId: 'runtime-panel' },
+      },
+    })
+
+    const component = host.getUiContributions().components.find((c) => c.id === 'runtime-comp')
+    expect(component?.pluginId).toBe('runtime-plugin')
+    expect(component?.component).toMatchObject({ type: 'button' })
+  })
+
+  it('rejects duplicate message transform IDs across plugins', async () => {
+    await writePlugin(
+      configDirectory,
+      'plugin-t1',
+      2,
+      `registry.registerMessageTransform({
+        id: 'shared_transform',
+        transform: (msgs) => msgs
+      });`,
+    )
+    await writePlugin(
+      configDirectory,
+      'plugin-t2',
+      2,
+      `registry.registerMessageTransform({
+        id: 'shared_transform',
+        transform: (msgs) => msgs
+      });`,
+    )
+
+    const host = makeHost(configDirectory)
+    const diagnostics = await host.start()
+
+    const t2 = diagnostics.find((d) => d.packageName === 'plugin-t2')!
+    expect(t2.loaded).toBe(false)
+    expect(t2.error).toContain("Plugin messageTransform 'shared_transform' is already registered by 'plugin-t1'")
+    expect(host.registry.getMessageTransforms()).toHaveLength(1)
   })
 })

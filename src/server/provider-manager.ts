@@ -14,7 +14,12 @@ import {
   getBackendCapabilities,
   type Backend,
 } from './llm/backend.js'
-import { resolveEffortForModel, resolveModeModelId } from '../shared/reasoning-effort.js'
+import {
+  resolveEffortForModel,
+  resolveModeModelId,
+  collapseModeFamilies,
+  UNKNOWN_CONTEXT_WINDOW,
+} from '../shared/reasoning-effort.js'
 
 /**
  * num_ctx is the context window we request from Ollama's native /api/chat
@@ -88,6 +93,12 @@ function enrichWithProfileDefaults(model: ModelConfig): ModelConfig {
 }
 
 /**
+ * The context window hardcoded everywhere a model's real limit is unknown.
+ * A stored value equal to it means "unset", so a catalog can still fill it in.
+ */
+const LEGACY_PLACEHOLDER_CONTEXT_WINDOW = UNKNOWN_CONTEXT_WINDOW
+
+/**
  * Add curated reasoning-effort info to models that lack it. Display-only and
  * idempotent: existing per-model config (thinkingLevel, reasoningEfforts) is
  * never overridden — the catalog only fills gaps so the UI can offer effort
@@ -104,43 +115,114 @@ function enrichWithCatalogDefaults(model: ModelConfig): ModelConfig {
   }
 }
 
+/**
+ * A merged mode-chip model stands in for concrete catalog ids, so the catalog
+ * may know its variants but not the merged id itself. Adopt a variant's
+ * context window when the merged model still carries the unknown-value
+ * placeholder.
+ */
+function fillFromModeVariants(userModel: ModelConfig, backendModels: Map<string, ModelConfig>): ModelConfig {
+  if (userModel.contextWindow !== LEGACY_PLACEHOLDER_CONTEXT_WINDOW || !userModel.modes?.length) return userModel
+  for (const mode of userModel.modes) {
+    const variant = mode.apiModelId ? backendModels.get(normalizeModelId(mode.apiModelId)) : undefined
+    const contextWindow = variant?.contextWindow
+    if (contextWindow !== undefined && contextWindow !== LEGACY_PLACEHOLDER_CONTEXT_WINDOW) {
+      return { ...userModel, contextWindow }
+    }
+  }
+  return userModel
+}
+
 function mergeModelsWithUserOverrides(
-  backendModels: ModelConfig[],
+  rawBackendModels: ModelConfig[],
   userModels: ModelConfig[],
   preserveMissingUserModels = true,
 ): ModelConfig[] {
+  const backendModels = collapseModeFamilies(rawBackendModels)
   const normalizedUserIdMap = new Map(userModels.map((m) => [normalizeModelId(m.id), m]))
 
-  // A user model with `modes` is a merged mode-chip model that represents
+  // Detect families the user explicitly unmerged: they stored ≥2 suffixed
+  // variants of a family without a merged model for that base id. When this is
+  // the case the auto-collapsed base must not reappear — the user's variants
+  // are the authoritative representation.
+  const userUnmergedBases = new Set<string>()
+  for (const backendMerged of backendModels) {
+    if (!backendMerged.modes?.length) continue
+    const baseNorm = normalizeModelId(backendMerged.id)
+    if (normalizedUserIdMap.has(baseNorm)) continue
+    const userVariantCount = backendMerged.modes.filter((mode) =>
+      normalizedUserIdMap.has(normalizeModelId(mode.apiModelId)),
+    ).length
+    if (userVariantCount >= 2) {
+      userUnmergedBases.add(baseNorm)
+    }
+  }
+
+  // A model with `modes` is a merged mode-chip model that represents
   // multiple concrete backend catalog ids (its modes' apiModelIds). Hide
   // those suffixed backend variants so they don't reappear alongside the
   // merged model on refresh.
   const claimedByMergedModes = new Set<string>()
-  for (const userModel of userModels) {
-    if (!userModel.modes?.length) continue
-    claimedByMergedModes.add(normalizeModelId(userModel.id))
-    for (const mode of userModel.modes) {
-      if (mode.apiModelId) claimedByMergedModes.add(normalizeModelId(mode.apiModelId))
+  for (const model of [...userModels, ...backendModels]) {
+    if (!model.modes?.length) continue
+    for (const mode of model.modes) {
+      if (mode.apiModelId && normalizeModelId(mode.apiModelId) !== normalizeModelId(model.id)) {
+        claimedByMergedModes.add(normalizeModelId(mode.apiModelId))
+      }
     }
   }
 
-  const filteredBackendModels = backendModels.filter((m) => !claimedByMergedModes.has(normalizeModelId(m.id)))
+  const filteredBackendModels = backendModels.filter(
+    (m) => !claimedByMergedModes.has(normalizeModelId(m.id)) && !userUnmergedBases.has(normalizeModelId(m.id)),
+  )
 
   const updatedModels = filteredBackendModels.map((backendModel) => {
     const existingUserModel = normalizedUserIdMap.get(normalizeModelId(backendModel.id))
     if (existingUserModel) {
-      return enrichWithProfileDefaults({ ...backendModel, ...existingUserModel, id: backendModel.id })
+      // Stored models are profile-enriched at load, so a stored capability equal
+      // to the profile default carries no user intent — the catalog wins.
+      const { supportsVision: storedVision, name: storedName, ...userOverrides } = existingUserModel
+      const supportsVision =
+        storedVision !== undefined && storedVision !== getModelProfile(existingUserModel.id).supportsVision
+          ? storedVision
+          : backendModel.supportsVision
+      // A stored name that is just the raw id is not a user rename — the
+      // catalog's display name wins. Any other stored name is kept verbatim.
+      const name = storedName !== undefined && storedName !== existingUserModel.id ? storedName : backendModel.name
+      // A stored context window equal to the legacy hardcoded placeholder means
+      // "unknown", not a deliberate cap — let the catalog update it.
+      const contextWindow =
+        existingUserModel.contextWindow === LEGACY_PLACEHOLDER_CONTEXT_WINDOW &&
+        backendModel.contextWindow !== undefined &&
+        backendModel.contextWindow !== LEGACY_PLACEHOLDER_CONTEXT_WINDOW
+          ? backendModel.contextWindow
+          : existingUserModel.contextWindow
+      return enrichWithProfileDefaults({
+        ...backendModel,
+        ...userOverrides,
+        // The transport catalog always knows the authoritative effort list;
+        // a stored list that differs only means stale data from a previous
+        // save — let the backend win so chips stay correct after a re-fetch.
+        ...(backendModel.reasoningEfforts?.length ? { reasoningEfforts: backendModel.reasoningEfforts } : {}),
+        contextWindow,
+        ...(name !== undefined ? { name } : {}),
+        ...(supportsVision !== undefined ? { supportsVision } : {}),
+        id: backendModel.id,
+      })
     }
     return enrichWithProfileDefaults(backendModel)
   })
 
-  if (preserveMissingUserModels) {
-    const normalizedBackendIds = new Set(filteredBackendModels.map((m) => normalizeModelId(m.id)))
-    for (const userModel of userModels) {
-      if (!normalizedBackendIds.has(normalizeModelId(userModel.id))) {
-        updatedModels.push(enrichWithProfileDefaults(userModel))
-      }
-    }
+  const normalizedBackendIds = new Set(filteredBackendModels.map((m) => normalizeModelId(m.id)))
+  // Variant lookup runs against the raw (pre-collapse) catalog so suffixed
+  // variants are still reachable when filling context windows for merged models.
+  const backendModelById = new Map(rawBackendModels.map((m) => [normalizeModelId(m.id), m]))
+  for (const userModel of userModels) {
+    if (normalizedBackendIds.has(normalizeModelId(userModel.id))) continue
+    // When preserveMissingUserModels is false (authoritative catalog / transport adapter),
+    // models dropped by the catalog are removed completely.
+    if (!preserveMissingUserModels) continue
+    updatedModels.push(enrichWithProfileDefaults(fillFromModeVariants(userModel, backendModelById)))
   }
 
   return updatedModels
@@ -794,8 +876,8 @@ export function createProviderManager(config: Config, options: ProviderManagerOp
         return provider.models
       }
 
-      // Fallback: fetch from backend if no stored models
-      return fetchProviderModels(provider)
+      // Fallback: fetch from backend if no stored models; collapse suffix variants
+      return collapseModeFamilies(await fetchProviderModels(provider))
     },
 
     async setDefaultModelSelection(providerId: string, model: string) {

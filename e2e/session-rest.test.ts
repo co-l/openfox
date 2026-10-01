@@ -401,4 +401,68 @@ describe('Session REST API', () => {
       expect(res.status).toBe(400)
     })
   })
+
+  describe('PUT /api/sessions/:id/night-mode', () => {
+    async function createSessionId(): Promise<string> {
+      const res = await fetch(`${server.url}/api/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, title: 'Night' }),
+      })
+      const data: any = await res.json()
+      return data.session.id as string
+    }
+
+    it('toggles night mode on and off, reflected in the returned session', async () => {
+      const sessionId = await createSessionId()
+
+      const on = await fetch(`${server.url}/api/sessions/${sessionId}/night-mode`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nightMode: true }),
+      })
+      expect(on.status).toBe(200)
+      const onData: any = await on.json()
+      expect(onData.session.nightMode).toBe(true)
+
+      const off = await fetch(`${server.url}/api/sessions/${sessionId}/night-mode`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nightMode: false }),
+      })
+      const offData: any = await off.json()
+      expect(offData.session.nightMode).toBe(false)
+
+      // And a fresh GET shows the persisted value
+      const get = await fetch(`${server.url}/api/sessions/${sessionId}`)
+      const getData: any = await get.json()
+      expect(getData.session.nightMode).toBe(false)
+    })
+
+    it('defaults to off for new sessions', async () => {
+      const sessionId = await createSessionId()
+      const get = await fetch(`${server.url}/api/sessions/${sessionId}`)
+      const data: any = await get.json()
+      expect(data.session.nightMode).toBe(false)
+    })
+
+    it('returns 404 for non-existent session', async () => {
+      const res = await fetch(`${server.url}/api/sessions/nope/night-mode`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nightMode: true }),
+      })
+      expect(res.status).toBe(404)
+    })
+
+    it('returns 400 when nightMode is not a boolean', async () => {
+      const sessionId = await createSessionId()
+      const res = await fetch(`${server.url}/api/sessions/${sessionId}/night-mode`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nightMode: 'yes' }),
+      })
+      expect(res.status).toBe(400)
+    })
+  })
 })

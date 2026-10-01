@@ -34,6 +34,7 @@ import { ProviderSelector } from '../settings/ProviderSelector'
 import { McpSelector } from './McpSelector'
 import { PluginSlot } from '../plugins/PluginSlot'
 import { PluginZone } from '../plugins/PluginZone'
+import { useCurrentProject } from '../../hooks/useCurrentProject'
 import { SETTINGS_KEYS } from '../../lib/resources'
 import { useSetting } from '../../hooks/useSetting'
 import {
@@ -122,6 +123,7 @@ export function ChatInput({
   const slashAutocompleteRef = useRef<SlashAutocompleteHandle>(null)
 
   const isRunning = useIsRunning(sessionId)
+  const currentProject = useCurrentProject()
   const perSessionMcpEnabled = useSetting(SETTINGS_KEYS.FEATURES_PER_SESSION_MCP, 'false').value === 'true'
   const fullscreenComposer = useSetting(SETTINGS_KEYS.DISPLAY_MOBILE_FULLSCREEN_COMPOSER, 'false').value === 'true'
   const stopGeneration = useSessionStore((state) => state.stopGeneration)
@@ -695,6 +697,20 @@ export function ChatInput({
       <div
         className={`absolute -top-8 right-2 @md:right-4 z-10 flex items-center gap-2 border${!isAutoScrollActive ? ' rounded backdrop-blur-xl saturate-150 border-border' : ' border-transparent'}`}
       >
+        {(() => {
+          const pluginCtx = {
+            ...(sessionId ? { sessionId } : {}),
+            ...(workdir ? { workdir } : {}),
+            ...(currentProject?.id ? { projectId: currentProject.id } : {}),
+            ...(currentProject?.name ? { projectName: currentProject.name } : {}),
+          }
+          return (
+            <>
+              <PluginZone id="composer.top" context={pluginCtx} className="flex items-center gap-2" />
+              <PluginSlot slot="composer.top" context={pluginCtx} />
+            </>
+          )
+        })()}
         <AutoScrollToggle
           isActive={isAutoScrollActive}
           onToggle={setAutoScroll}

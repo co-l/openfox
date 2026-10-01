@@ -5,10 +5,10 @@
  * is stored in the events table and derived via EventStore folding.
  */
 
-import type { Session, SessionSummary, SessionMode, SessionPhase } from '../../shared/types.js'
+import type { Session, SessionSummary, SessionMode, SessionPhase, DangerLevel } from '../../shared/types.js'
 import { getDatabase } from './index.js'
 import { resolveDefaultAgentId } from '../agents/registry.js'
-export type DangerLevel = 'normal' | 'dangerous'
+export type { DangerLevel } from '../../shared/types.js'
 
 function getProjectDangerLevel(projectId: string): DangerLevel {
   try {
@@ -88,6 +88,7 @@ export function createSession(
     },
     metadataEntries: {},
     dangerLevel,
+    nightMode: false,
   }
 }
 
@@ -123,6 +124,7 @@ export function getSession(id: string): Session | null {
     },
     metadataEntries: {},
     dangerLevel: (row.danger_level ?? 'normal') as DangerLevel,
+    nightMode: Boolean(row.night_mode),
   }
 }
 
@@ -193,6 +195,17 @@ export function updateSessionDangerLevel(id: string, dangerLevel: DangerLevel): 
     UPDATE sessions SET danger_level = ?, updated_at = ? WHERE id = ?
   `,
   ).run(dangerLevel, now, id)
+}
+
+export function updateSessionNightMode(id: string, enabled: boolean): void {
+  const db = getDatabase()
+  const now = new Date().toISOString()
+
+  db.prepare(
+    `
+    UPDATE sessions SET night_mode = ?, updated_at = ? WHERE id = ?
+  `,
+  ).run(enabled ? 1 : 0, now, id)
 }
 
 export function updateSessionPhase(id: string, phase: SessionPhase): void {
@@ -608,6 +621,7 @@ interface SessionRow {
   total_tool_calls: number
   iteration_count: number
   danger_level: string
+  night_mode: number
   cached_system_prompt: string | null
   cached_tools: string | null
   cached_hash: string | null

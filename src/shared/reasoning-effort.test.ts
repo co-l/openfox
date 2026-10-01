@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveEffortForModel, splitModeSuffix, groupModeFamilies } from './reasoning-effort.js'
+import { resolveEffortForModel, splitModeSuffix, collapseModeFamilies } from './reasoning-effort.js'
 
 describe('resolveEffortForModel', () => {
   it('passes an in-list candidate through unchanged', () => {
@@ -72,48 +72,68 @@ describe('splitModeSuffix', () => {
   })
 
   it('handles prefixed ids and keeps the path segment base', () => {
-    expect(splitModeSuffix('antigravity/gemini-3.6-flash-medium')).toEqual({
-      base: 'antigravity/gemini-3.6-flash',
+    expect(splitModeSuffix('custom/gemini-3.6-flash-medium')).toEqual({
+      base: 'custom/gemini-3.6-flash',
       level: 'medium',
     })
   })
 
   it('returns undefined when there is no trailing mode suffix or hyphen is at start/end', () => {
     expect(splitModeSuffix('gemini')).toBeUndefined()
-    expect(splitModeSuffix('antigravity/gemini')).toBeUndefined()
+    expect(splitModeSuffix('custom/gemini')).toBeUndefined()
     expect(splitModeSuffix('provider/-model')).toBeUndefined()
     expect(splitModeSuffix('provider/model-')).toBeUndefined()
   })
 })
 
-describe('groupModeFamilies', () => {
-  it('groups models that differ only by a trailing mode suffix', () => {
-    const groups = groupModeFamilies([
-      { id: 'gemini-3.6-flash-high', name: 'Gemini 3.6 Flash (High)' },
-      { id: 'gemini-3.6-flash-low', name: 'Gemini 3.6 Flash (Low)' },
-      { id: 'gemini-3.6-flash-medium', name: 'Gemini 3.6 Flash (Medium)' },
-    ])
-    expect(groups).toHaveLength(1)
-    expect(groups[0]?.baseId).toBe('gemini-3.6-flash')
-    expect(groups[0]?.members).toHaveLength(3)
+describe('collapseModeFamilies', () => {
+  it('collapses suffixed variants into a single merged model with modes and an id-derived name', () => {
+    const raw = [
+      { id: 'gemini-3.6-flash-high', name: 'Gemini 3.6 Flash (High)', contextWindow: 1048576, supportsVision: true },
+      { id: 'gemini-3.6-flash-low', name: 'Gemini 3.6 Flash (Low)', contextWindow: 1048576, supportsVision: true },
+      {
+        id: 'gemini-3.6-flash-medium',
+        name: 'Gemini 3.6 Flash (Medium)',
+        contextWindow: 1048576,
+        supportsVision: true,
+      },
+      { id: 'gpt-4o', name: 'GPT-4o', contextWindow: 128000 },
+    ]
+    const collapsed = collapseModeFamilies(raw)
+    expect(collapsed).toHaveLength(2)
+    const flash = collapsed.find((m) => m.id === 'gemini-3.6-flash') as any
+    expect(flash).toBeDefined()
+    // No un-suffixed base model carries a clean display name, and the core must
+    // not guess one from the members' mode-suffixed names.
+    expect(flash?.name).toBe('gemini 3.6 flash')
+    expect(flash?.reasoningEfforts).toEqual(['low', 'medium', 'high'])
+    expect(flash?.modes).toHaveLength(3)
+    expect(flash?.modes?.[0]?.level).toBe('low')
+    expect(flash?.modes?.[0]?.apiModelId).toBe('gemini-3.6-flash-low')
+    expect(flash?.supportsVision).toBe(true)
   })
 
-  it('uses the stripped base id as the stable name when no un-suffixed model exists', () => {
-    const groups = groupModeFamilies([{ id: 'claude-sonnet-4-6-low' }, { id: 'claude-sonnet-4-6-high' }])
-    expect(groups[0]?.name).toBe('claude-sonnet-4-6')
+  it('prefers the un-suffixed base model display name for the merged entry', () => {
+    const raw = [
+      { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash', contextWindow: 1048576 },
+      { id: 'gemini-3.6-flash-high', name: 'Gemini 3.6 Flash (High)', contextWindow: 1048576 },
+      { id: 'gemini-3.6-flash-low', name: 'Gemini 3.6 Flash (Low)', contextWindow: 1048576 },
+    ]
+    const collapsed = collapseModeFamilies(raw)
+    const flash = collapsed.find((m) => m.id === 'gemini-3.6-flash') as any
+    expect(flash?.name).toBe('Gemini 3.6 Flash')
+    expect(flash?.modes).toHaveLength(2)
   })
 
-  it('returns empty for a single mode (not a real duplicate family)', () => {
-    expect(groupModeFamilies([{ id: 'gemini-3.6-flash-high' }])).toHaveLength(0)
-  })
-
-  it('keeps separate families distinct', () => {
-    const groups = groupModeFamilies([
-      { id: 'gemini-3.6-flash-low' },
-      { id: 'gemini-3.6-flash-high' },
-      { id: 'claude-opus-4-6-low' },
-      { id: 'claude-opus-4-6-high' },
-    ])
-    expect(groups).toHaveLength(2)
+  it('preserves existing merged models and does not re-collapse them', () => {
+    const raw = [
+      {
+        id: 'gemini-3.6-flash',
+        name: 'Gemini 3.6 Flash',
+        modes: [{ level: 'low', apiModelId: 'gemini-3.6-flash-low' }],
+      },
+    ]
+    const collapsed = collapseModeFamilies(raw)
+    expect(collapsed).toEqual(raw)
   })
 })

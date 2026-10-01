@@ -5,6 +5,8 @@ import { load as loadResource, snapshot, subscribe } from '../lib/resourceCache'
 // Sound event types
 export type SoundEvent = 'complete' | 'waiting_for_user' | 'phase_done' | 'phase_blocked' | 'new_message'
 
+export type PluginUpdateInterval = '1h' | '6h' | '24h' | 'startup'
+
 // Agent types that can have per-agent overrides
 export type AgentType = 'planner' | 'build' | 'sub-agent'
 
@@ -22,6 +24,10 @@ export interface NotificationSettings {
   // Master toggles
   soundEnabled: boolean
   browserNotificationEnabled: boolean
+
+  // Plugin update notifications
+  pluginUpdateNotificationEnabled: boolean
+  pluginUpdateCheckInterval: PluginUpdateInterval
 
   // Per-event config (global defaults)
   events: Record<SoundEvent, EventNotificationConfig>
@@ -77,6 +83,8 @@ const DEFAULT_NEW_MESSAGE_CONFIG: EventNotificationConfig = {
 export const DEFAULT_SETTINGS: NotificationSettings = {
   soundEnabled: true,
   browserNotificationEnabled: false,
+  pluginUpdateNotificationEnabled: true,
+  pluginUpdateCheckInterval: '1h',
   events: {
     complete: { ...DEFAULT_EVENT_CONFIG },
     waiting_for_user: { ...DEFAULT_EVENT_CONFIG },
@@ -202,6 +210,9 @@ function mergeWithDefaults(partial: Partial<NotificationSettings>): Notification
   return {
     soundEnabled: partial.soundEnabled ?? DEFAULT_SETTINGS.soundEnabled,
     browserNotificationEnabled: partial.browserNotificationEnabled ?? DEFAULT_SETTINGS.browserNotificationEnabled,
+    pluginUpdateNotificationEnabled:
+      partial.pluginUpdateNotificationEnabled ?? DEFAULT_SETTINGS.pluginUpdateNotificationEnabled,
+    pluginUpdateCheckInterval: partial.pluginUpdateCheckInterval ?? DEFAULT_SETTINGS.pluginUpdateCheckInterval,
     events: {
       complete: { ...DEFAULT_EVENT_CONFIG, ...partial.events?.complete },
       waiting_for_user: { ...DEFAULT_EVENT_CONFIG, ...partial.events?.waiting_for_user },

@@ -325,6 +325,7 @@ export function StatsModal({ isOpen, onClose, summary, sessionId }: StatsModalPr
                   subValue="tok/s"
                 />
               </div>
+              <PluginZone id="stats.modal.summary" context={{ sessionId }} className="mt-3" />
             </section>
           )}
 

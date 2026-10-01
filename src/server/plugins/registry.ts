@@ -9,8 +9,10 @@ import type {
 import type {
   PluginCommand,
   PluginContext,
+  PluginDangerLevel,
   PluginHookEvent,
   PluginHookHandler,
+  PluginMessageTransform,
   PluginModelMetadataProvider,
   PluginNotificationRequest,
   PluginRegistry as PluginRegistryContract,
@@ -53,6 +55,8 @@ type Kind =
   | 'uiComponent'
   | 'uiOverride'
   | 'asset'
+  | 'messageTransform'
+  | 'dangerLevel'
 
 interface Owned<T> {
   pluginId: string
@@ -176,7 +180,8 @@ export class PluginRegistry implements ProviderPluginRegistry, PluginRegistryCon
   }
 
   registerRpc(method: string, handler: PluginRpcHandler): void {
-    this.register('rpc', method, handler)
+    const pluginId = this.currentPluginId ?? UNKNOWN_PLUGIN
+    this.register('rpc', `${pluginId}:${method}`, handler)
   }
 
   registerAsset(relativePath: string): void {
@@ -184,6 +189,14 @@ export class PluginRegistry implements ProviderPluginRegistry, PluginRegistryCon
     const set = this.assets.get(pluginId) ?? new Set<string>()
     set.add(relativePath)
     this.assets.set(pluginId, set)
+  }
+
+  registerMessageTransform(transform: PluginMessageTransform): void {
+    this.register('messageTransform', transform.id, transform)
+  }
+
+  registerDangerLevel(dangerLevel: PluginDangerLevel): void {
+    this.register('dangerLevel', dangerLevel.id, dangerLevel)
   }
 
   notify(request: PluginNotificationRequest): void {
@@ -231,6 +244,20 @@ export class PluginRegistry implements ProviderPluginRegistry, PluginRegistryCon
     return this.list<PluginSkillSource>('skillSource')
   }
 
+  getMessageTransforms(): { pluginId: string; transform: PluginMessageTransform }[] {
+    return this.listOwned<PluginMessageTransform>('messageTransform').map((entry) => ({
+      pluginId: entry.pluginId,
+      transform: entry.value,
+    }))
+  }
+
+  getDangerLevels(): { pluginId: string; dangerLevel: PluginDangerLevel }[] {
+    return this.listOwned<PluginDangerLevel>('dangerLevel').map((entry) => ({
+      pluginId: entry.pluginId,
+      dangerLevel: entry.value,
+    }))
+  }
+
   getSettingsSchema(pluginId: string): PluginSettingsSchema | undefined {
     return this.get<PluginSettingsSchema>('settings', pluginId)
   }
@@ -256,6 +283,13 @@ export class PluginRegistry implements ProviderPluginRegistry, PluginRegistryCon
         ...entry.value,
         pluginId: entry.pluginId,
       })),
+      dangerLevels: this.listOwned<PluginDangerLevel>('dangerLevel').map((entry) => ({
+        id: entry.value.id,
+        pluginId: entry.pluginId,
+        label: entry.value.label,
+        ...(entry.value.description ? { description: entry.value.description } : {}),
+        ...(entry.value.badgeTone ? { badgeTone: entry.value.badgeTone } : {}),
+      })),
     }
   }
 
@@ -264,8 +298,8 @@ export class PluginRegistry implements ProviderPluginRegistry, PluginRegistryCon
   }
 
   getRpcHandler(pluginId: string, method: string): PluginRpcHandler | undefined {
-    const entry = this.entries.get('rpc')?.get(method)
-    return entry && entry.pluginId === pluginId ? (entry.value as PluginRpcHandler) : undefined
+    const entry = this.entries.get('rpc')?.get(`${pluginId}:${method}`)
+    return entry ? (entry.value as PluginRpcHandler) : undefined
   }
 
   getAssets(pluginId: string): string[] {
@@ -280,7 +314,13 @@ export class PluginRegistry implements ProviderPluginRegistry, PluginRegistryCon
     const result: { kind: string; id: string }[] = []
     for (const [kind, map] of this.entries) {
       for (const [id, entry] of map) {
-        if (entry.pluginId === pluginId) result.push({ kind, id })
+        if (entry.pluginId === pluginId) {
+          const rawId =
+            (kind === 'rpc' || kind === 'transition') && id.startsWith(`${pluginId}:`)
+              ? id.slice(pluginId.length + 1)
+              : id
+          result.push({ kind, id: rawId })
+        }
       }
     }
     return result
@@ -307,6 +347,8 @@ export class PluginRegistry implements ProviderPluginRegistry, PluginRegistryCon
       settingsTabs: count('settingsTab'),
       uiComponents: count('uiComponent'),
       uiOverrides: count('uiOverride'),
+      messageTransforms: count('messageTransform'),
+      dangerLevels: count('dangerLevel'),
     }
   }
 
@@ -373,11 +415,11 @@ export class PluginRegistry implements ProviderPluginRegistry, PluginRegistryCon
 
   private register<T>(kind: Kind, id: string, value: T): boolean {
     if (!id.trim()) throw new Error(`Plugin ${kind} id cannot be empty`)
-    const pluginId = this.currentPluginId ?? UNKNOWN_PLUGIN
     const map = this.entries.get(kind) ?? new Map<string, Owned<unknown>>()
     this.entries.set(kind, map)
 
     const existing = map.get(id)
+    const pluginId = this.currentPluginId ?? existing?.pluginId ?? UNKNOWN_PLUGIN
     if (existing && this.currentPluginId !== undefined && existing.pluginId !== pluginId) {
       this.conflicts.push(`Plugin ${kind} '${id}' is already registered by '${existing.pluginId}'`)
       return false

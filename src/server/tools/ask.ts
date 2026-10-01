@@ -63,6 +63,18 @@ export const askUserTool: Tool = {
     const type = (args['type'] as 'text' | 'confirm' | 'choice') ?? 'text'
     const options = normalizeAskOptions(args['options'])
 
+    // Night mode: no one is home to answer. Give the agent a synthetic
+    // response so it keeps going with its own judgment instead of blocking.
+    if (context.nightMode) {
+      return {
+        success: true,
+        output:
+          'Night mode is active: the user is unavailable and will not answer. Make your best judgment and proceed without asking.',
+        durationMs: 0,
+        truncated: false,
+      }
+    }
+
     const callId = context.toolCallId ?? crypto.randomUUID()
 
     const deferred = createDeferred<string>()

@@ -92,7 +92,7 @@ export interface WorkflowExecution {
   updatedAt: number
 }
 
-export type DangerLevel = 'normal' | 'dangerous'
+export type DangerLevel = 'normal' | 'dangerous' | (string & {})
 
 export interface Session {
   id: string
@@ -121,6 +121,7 @@ export interface Session {
   metadata: SessionMetadata
   metadataEntries: Record<string, MetadataEntry[]> // Key-value store for structured session data (criteria, todos, review_findings, etc.)
   dangerLevel?: DangerLevel // Controls path confirmation bypass
+  nightMode?: boolean // Unattended mode: blocking prompts auto-resolve (ask_user answered, confirmations resolved by danger level)
   messageCount?: number // Cached message count for efficient sidebar display (optional, populated on load)
   activeWorkflowExecution?: WorkflowExecution | null // Currently active workflow execution, if any
 }

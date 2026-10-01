@@ -9,6 +9,7 @@ import { readAgents } from '../../lib/resources'
 const mockSwitchMode = vi.fn().mockResolvedValue(undefined)
 const mockPinEffort = vi.fn().mockResolvedValue({})
 const mockClearPin = vi.fn().mockResolvedValue({})
+const mockSetNightMode = vi.fn().mockResolvedValue(true)
 
 vi.mock('../../stores/session', () => ({
   useSessionStore: (selector: (s: unknown) => unknown) =>
@@ -16,17 +17,24 @@ vi.mock('../../stores/session', () => ({
       switchMode: mockSwitchMode,
       pinSessionEffort: mockPinEffort,
       clearSessionEffortPin: mockClearPin,
+      setNightMode: mockSetNightMode,
     }),
 }))
 
 let mockSessionMode = 'builder'
 let mockWarmCache = true
+let mockNightMode = false
 
 vi.mock('../../stores/session/session-scope', () => ({
   useSessionScope: () => 'session-1',
   useScopedPaneState: (_id: string, _pick: unknown, flatPick: (s: unknown) => unknown) =>
     flatPick({
-      currentSession: { id: 'session-1', mode: mockSessionMode, providerReasoningEffort: 'high' },
+      currentSession: {
+        id: 'session-1',
+        mode: mockSessionMode,
+        providerReasoningEffort: 'high',
+        nightMode: mockNightMode,
+      },
       contextState: { warmCache: mockWarmCache },
     }),
 }))
@@ -69,6 +77,7 @@ vi.mock('../settings/AgentsModal', () => ({
 vi.mock('../shared/icons', () => ({
   ChevronDownIcon: () => <svg>v</svg>,
   CheckIcon: () => <svg>✓</svg>,
+  MoonIcon: () => <svg data-testid="moon-icon">🌙</svg>,
 }))
 
 import { AgentSelector } from './AgentSelector'
@@ -199,5 +208,66 @@ describe('AgentSelector — effort-change gate (case 2a)', () => {
     )
 
     expect(mockAuthFetch).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('AgentSelector — night mode', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    clearCache()
+    mockOverrides = {}
+    mockSessionMode = 'builder'
+    mockWarmCache = true
+    mockNightMode = false
+  })
+
+  afterEach(() => {
+    cleanup()
+    document.body.innerHTML = ''
+  })
+
+  function triggerMoon(): Element | null {
+    return screen.getByTitle('Switch agent').querySelector('[data-testid="moon-icon"]')
+  }
+
+  it('shows an unchecked night mode toggle and switches it on via setNightMode', async () => {
+    await renderSelector()
+
+    const checkbox = screen.getByRole('checkbox') as HTMLInputElement
+    expect(checkbox.checked).toBe(false)
+    expect(checkbox.closest('label')?.textContent).toContain('Night mode')
+
+    await userEvent.click(checkbox)
+    expect(mockSetNightMode).toHaveBeenCalledWith('session-1', true)
+  })
+
+  it('reflects the active session state and switches night mode off', async () => {
+    mockNightMode = true
+    await renderSelector()
+
+    const checkbox = screen.getByRole('checkbox') as HTMLInputElement
+    expect(checkbox.checked).toBe(true)
+
+    await userEvent.click(checkbox)
+    expect(mockSetNightMode).toHaveBeenCalledWith('session-1', false)
+  })
+
+  it('shows a moon indicator before the agent name when night mode is active', async () => {
+    const { rerender } = await renderSelector()
+    expect(triggerMoon()).toBeNull()
+
+    mockNightMode = true
+    rerender(
+      <EffortChangeGateProvider>
+        <AgentSelector />
+      </EffortChangeGateProvider>,
+    )
+    const moon = triggerMoon()
+    expect(moon).not.toBeNull()
+    // The indicator renders inside the trigger button, before the agent name
+    const name = [...screen.getByTitle('Switch agent').querySelectorAll('span')].find(
+      (span) => span.textContent === 'Builder',
+    )!
+    expect(moon!.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })

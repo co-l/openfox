@@ -1,21 +1,23 @@
 import { useResource } from './useResource'
 import { pluginListResource } from '../lib/resources'
-import { EMPTY_PLUGIN_CONTRIBUTIONS } from '@shared/plugin.js'
+import type { PluginUiContributions } from '@shared/plugin.js'
+
+const EMPTY_UI_CONTRIBUTIONS: PluginUiContributions = {
+  actions: [],
+  badges: [],
+  panels: [],
+  sections: [],
+  settingsTabs: [],
+  components: [],
+  overrides: [],
+  dangerLevels: [],
+}
 
 export function usePlugins() {
   const { data, loading, error, refresh } = useResource(pluginListResource)
   return {
     plugins: data?.plugins ?? [],
-    contributions: data?.contributions ?? {
-      ...EMPTY_PLUGIN_CONTRIBUTIONS,
-      actions: [],
-      badges: [],
-      panels: [],
-      sections: [],
-      settingsTabs: [],
-      components: [],
-      overrides: [],
-    },
+    contributions: data?.contributions ?? EMPTY_UI_CONTRIBUTIONS,
     loading,
     error,
     refresh,

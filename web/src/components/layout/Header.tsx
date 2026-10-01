@@ -281,7 +281,10 @@ export function Header({ onMenuClick, onCriteriaToggle }: HeaderProps) {
             className="hidden md:flex items-center gap-2"
             context={{
               ...(project?.id ? { projectId: project.id } : {}),
+              ...(project?.name ? { projectName: project.name } : {}),
+              ...(project?.workdir ? { workdir: project.workdir } : {}),
               ...(session?.id ? { sessionId: session.id } : {}),
+              ...(session?.workdir ? { workdir: session.workdir } : {}),
             }}
           >
             {isSplit && (

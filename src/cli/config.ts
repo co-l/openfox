@@ -36,8 +36,8 @@ const backendSchema = z.enum([
 const modelConfigSchema = z
   .object({
     id: z.string(),
-    contextWindow: z.number(),
-    source: z.enum(['backend', 'user', 'default']),
+    contextWindow: z.number().default(128000),
+    source: z.enum(['backend', 'user', 'default']).default('backend'),
     temperature: z.number().optional(),
     topP: z.number().optional(),
     topK: z.number().optional(),

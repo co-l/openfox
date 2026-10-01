@@ -77,6 +77,25 @@ describe('ask_user tool', () => {
     expect(hasPendingQuestion(interrupt!.callId)).toBe(false)
   })
 
+  it('auto-answers when night mode is active: success result, no pending question', async () => {
+    const result = await askUserTool.execute(
+      { question: 'Which backend should I use?' },
+      {
+        workdir: '/tmp/project',
+        sessionId: 'session-night',
+        sessionManager: {} as never,
+        toolCallId: 'call-night',
+        nightMode: true,
+      },
+    )
+
+    expect(result.success).toBe(true)
+    expect(result.output).toMatch(/night mode/i)
+    expect(result.output).toMatch(/unavailable/i)
+    expect(hasPendingQuestion('call-night')).toBe(false)
+    expect(getPendingQuestionsForSession('session-night')).toEqual([])
+  })
+
   it('handles type and options in execute', async () => {
     let interrupt: AskUserInterrupt | null = null
 

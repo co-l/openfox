@@ -5,8 +5,9 @@ import { useSessionStore } from '../stores/session'
 import { useProjectStore } from '../stores/project'
 import { useProjects } from '../hooks/useProjects'
 import { useResource } from '../hooks/useResource'
+import { useSetting } from '../hooks/useSetting'
 import { useT } from '../hooks/useT'
-import { summariesResource } from '../lib/resources'
+import { SETTINGS_KEYS, summariesResource } from '../lib/resources'
 import { Button } from './shared/Button'
 import { OpenProjectModal } from './CreateSessionModal'
 import { DeleteProjectConfirmationModal } from './DeleteProjectConfirmationModal'
@@ -154,6 +155,8 @@ export function HomePage() {
   const sessions = useSessionStore((state) => state.searchSessions ?? state.sessions)
   const hasFullCorpus = useSessionStore((state) => state.searchSessions !== null)
   const sessionsWithPendingConfirmations = useSessionStore((state) => state.sessionsWithPendingConfirmations)
+  const showProjectsAboveSessions =
+    useSetting(SETTINGS_KEYS.DISPLAY_SHOW_PROJECTS_ABOVE_SESSIONS, 'false').value === 'true'
   const { projects, loading } = useProjects()
   const listHomeSessions = useSessionStore((state) => state.listHomeSessions)
   const ensureFullSessionList = useSessionStore((state) => state.ensureFullSessionList)
@@ -285,6 +288,169 @@ export function HomePage() {
   const isSearching = debouncedQuery.length > 0
   const hasNoResults = isSearching && matchCount === 0
 
+  const recentSessionsSection = (
+    <div aria-label={t({ en: 'Recent sessions', fr: 'Sessions récentes' })} className="mb-6 md:mb-8">
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-text-muted">
+        {t({ en: 'Recent sessions', fr: 'Sessions récentes' })}
+      </h2>
+      {hasNoResults ? (
+        <div className="text-center py-16 text-text-muted bg-bg-secondary border border-border rounded-lg">
+          <SearchIcon className="w-10 h-10 mx-auto mb-4 opacity-40" />
+          <p className="text-lg">
+            {t({ en: 'No sessions matching', fr: 'Aucune session correspondant à' })}{' '}
+            <span className="text-text-primary font-medium">&ldquo;{debouncedQuery}&rdquo;</span>
+          </p>
+          <p className="mt-2 text-sm">
+            {t({
+              en: 'Try a different keyword or clear the search',
+              fr: 'Essayez un autre mot-clé ou effacez la recherche',
+            })}
+          </p>
+        </div>
+      ) : visibleSessions.length > 0 ? (
+        <div className="bg-bg-secondary border border-border rounded-lg overflow-hidden divide-y divide-border">
+          {visibleSessions.map((session) => {
+            const project = projectById.get(session.projectId)
+            const displayTitle = session.title ?? session.id.slice(0, 8)
+            const matchType = matchTypes?.get(session.id)
+            const waiting = sessionsWithPendingConfirmations.includes(session.id)
+            const rowClass =
+              'flex items-center gap-3 px-3 md:px-4 py-2.5 transition-colors' +
+              (project ? ' hover:bg-bg-tertiary/50 cursor-pointer' : ' cursor-default')
+            const rowBody = (
+              <>
+                <span className="text-sm text-text-primary truncate flex-1 min-w-0">
+                  {isSearching && matchType === 'title' ? highlightMatches(displayTitle, debouncedQuery) : displayTitle}
+                </span>
+                {isSearching && matchType && matchType !== 'title' && (
+                  <span className="flex flex-wrap items-center gap-1.5 shrink-0">
+                    <span className="text-[10px] font-medium text-accent-primary border border-accent-primary/30 bg-accent-primary/8 rounded px-1 py-0.5 leading-none">
+                      {matchType === 'prompts'
+                        ? t({ en: 'prompts', fr: 'invites' })
+                        : t({ en: 'project', fr: 'projet' })}
+                    </span>
+                    {matchType === 'prompts' && promptSnippets?.get(session.id) && (
+                      <span className="text-[11px] text-text-muted truncate max-w-[250px]">
+                        {highlightMatches(promptSnippets.get(session.id)!, debouncedQuery)}
+                      </span>
+                    )}
+                  </span>
+                )}
+                <span className="text-xs text-text-muted shrink-0">{formatRelativeDate(session.updatedAt)}</span>
+                <span className="text-xs text-text-muted shrink-0">
+                  {t({ en: '{{count}} msgs', fr: '{{count}} msg' }, { count: session.messageCount })}
+                </span>
+              </>
+            )
+            const statusDot = <SessionStatusDot session={session} waiting={waiting} />
+            return project ? (
+              <div
+                key={session.id}
+                className={rowClass}
+                onClick={(e) => {
+                  if (e.button !== 0 || e.defaultPrevented) return
+                  if ((e.target as HTMLElement).closest('[data-testid="session-dropdown-menu"]')) return
+                  navigate(`/p/${project.id}/s/${session.id}`)
+                }}
+              >
+                {statusDot}
+                <SessionProjectMenu
+                  projectId={project.id}
+                  projectName={project.name}
+                  onTasks={() => setTasksProjectId(project.id)}
+                />
+                <Link href={`/p/${project.id}/s/${session.id}`} className="flex items-center gap-3 flex-1 min-w-0">
+                  {rowBody}
+                </Link>
+              </div>
+            ) : (
+              <div key={session.id} className={rowClass}>
+                {statusDot}
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-accent-primary shrink-0 max-w-[90px] truncate">
+                  {session.projectId.slice(0, 10)}
+                </span>
+                <div className="flex items-center gap-3 flex-1 min-w-0">{rowBody}</div>
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <div className="bg-bg-secondary border border-border rounded-lg p-3 md:p-4 text-text-muted text-sm">
+          {t({
+            en: 'No sessions yet. Start one from a project below.',
+            fr: 'Aucune session pour le moment. Commencez-en une depuis un projet ci-dessous.',
+          })}
+        </div>
+      )}
+    </div>
+  )
+
+  const projectsSection = (
+    <div aria-label={t({ en: 'Projects', fr: 'Projets' })} className="mb-6 md:mb-8">
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-text-muted">
+        {t({ en: 'Projects', fr: 'Projets' })}
+      </h2>
+      {sortedProjects.length > 0 ? (
+        <div className="space-y-3">
+          {sortedProjects.map((project) => (
+            <div key={project.id} className="bg-bg-secondary border border-border rounded-lg overflow-hidden">
+              <div className="p-3 md:p-4 flex items-center justify-between gap-2">
+                <Link
+                  href={`/p/${project.id}`}
+                  className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity flex-1 min-w-0"
+                >
+                  {project.isStarred ? (
+                    <StarFilledIcon className="w-5 h-5 text-yellow-500 flex-shrink-0" />
+                  ) : (
+                    <FolderIcon className="w-5 h-5 text-accent-primary flex-shrink-0" />
+                  )}
+                  <span className="text-text-primary font-semibold truncate">{project.name}</span>
+                </Link>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setTasksProjectId(project.id)}
+                    title={t({ en: 'Tasks for {{name}}', fr: 'Tâches pour {{name}}' }, { name: project.name })}
+                    aria-label={t({ en: 'Tasks for {{name}}', fr: 'Tâches pour {{name}}' }, { name: project.name })}
+                    className="flex items-center gap-1.5"
+                  >
+                    <TasksIcon className="w-4 h-4" />
+                    <span>{t({ en: 'Tasks', fr: 'Tâches' })}</span>
+                    <ProjectTaskChips projectId={project.id} />
+                  </Button>
+                  <Link
+                    href={`/p/${project.id}/new`}
+                    className="rounded font-medium transition-colors bg-accent-primary/25 text-text-primary hover:bg-accent-primary/40 px-1.5 py-1 text-xs"
+                  >
+                    {t({ en: '+ New Session', fr: '+ Nouvelle session' })}
+                  </Link>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setProjectToDelete({ id: project.id, name: project.name })}
+                  className="p-1.5 rounded text-text-muted hover:text-accent-error hover:bg-accent-error/10 transition-colors"
+                  title={t({ en: 'Delete project', fr: 'Supprimer le projet' })}
+                >
+                  <TrashIcon className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        !loading && (
+          <div className="bg-bg-secondary border border-border rounded-lg p-3 md:p-4 text-text-muted text-sm">
+            {t({
+              en: 'No projects yet. Open a project to get started.',
+              fr: 'Aucun projet pour le moment. Ouvrez un projet pour commencer.',
+            })}
+          </div>
+        )
+      )}
+    </div>
+  )
+
   return (
     <ScrollArea className="flex-1 flex flex-col bg-primary">
       <div className="max-w-5xl mx-auto w-full p-4 md:p-8">
@@ -351,166 +517,17 @@ export function HomePage() {
           )}
         </div>
 
-        <div aria-label={t({ en: 'Recent sessions', fr: 'Sessions récentes' })} className="mb-6 md:mb-8">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-text-muted">
-            {t({ en: 'Recent sessions', fr: 'Sessions récentes' })}
-          </h2>
-          {hasNoResults ? (
-            <div className="text-center py-16 text-text-muted bg-bg-secondary border border-border rounded-lg">
-              <SearchIcon className="w-10 h-10 mx-auto mb-4 opacity-40" />
-              <p className="text-lg">
-                {t({ en: 'No sessions matching', fr: 'Aucune session correspondant à' })}{' '}
-                <span className="text-text-primary font-medium">&ldquo;{debouncedQuery}&rdquo;</span>
-              </p>
-              <p className="mt-2 text-sm">
-                {t({
-                  en: 'Try a different keyword or clear the search',
-                  fr: 'Essayez un autre mot-clé ou effacez la recherche',
-                })}
-              </p>
-            </div>
-          ) : visibleSessions.length > 0 ? (
-            <div className="bg-bg-secondary border border-border rounded-lg overflow-hidden divide-y divide-border">
-              {visibleSessions.map((session) => {
-                const project = projectById.get(session.projectId)
-                const displayTitle = session.title ?? session.id.slice(0, 8)
-                const matchType = matchTypes?.get(session.id)
-                const waiting = sessionsWithPendingConfirmations.includes(session.id)
-                const rowClass =
-                  'flex items-center gap-3 px-3 md:px-4 py-2.5 transition-colors' +
-                  (project ? ' hover:bg-bg-tertiary/50 cursor-pointer' : ' cursor-default')
-                const rowBody = (
-                  <>
-                    <span className="text-sm text-text-primary truncate flex-1 min-w-0">
-                      {isSearching && matchType === 'title'
-                        ? highlightMatches(displayTitle, debouncedQuery)
-                        : displayTitle}
-                    </span>
-                    {isSearching && matchType && matchType !== 'title' && (
-                      <span className="flex flex-wrap items-center gap-1.5 shrink-0">
-                        <span className="text-[10px] font-medium text-accent-primary border border-accent-primary/30 bg-accent-primary/8 rounded px-1 py-0.5 leading-none">
-                          {matchType === 'prompts'
-                            ? t({ en: 'prompts', fr: 'invites' })
-                            : t({ en: 'project', fr: 'projet' })}
-                        </span>
-                        {matchType === 'prompts' && promptSnippets?.get(session.id) && (
-                          <span className="text-[11px] text-text-muted truncate max-w-[250px]">
-                            {highlightMatches(promptSnippets.get(session.id)!, debouncedQuery)}
-                          </span>
-                        )}
-                      </span>
-                    )}
-                    <span className="text-xs text-text-muted shrink-0">{formatRelativeDate(session.updatedAt)}</span>
-                    <span className="text-xs text-text-muted shrink-0">
-                      {t({ en: '{{count}} msgs', fr: '{{count}} msg' }, { count: session.messageCount })}
-                    </span>
-                  </>
-                )
-                const statusDot = <SessionStatusDot session={session} waiting={waiting} />
-                return project ? (
-                  <div
-                    key={session.id}
-                    className={rowClass}
-                    onClick={(e) => {
-                      if (e.button !== 0 || e.defaultPrevented) return
-                      if ((e.target as HTMLElement).closest('[data-testid="session-dropdown-menu"]')) return
-                      navigate(`/p/${project.id}/s/${session.id}`)
-                    }}
-                  >
-                    {statusDot}
-                    <SessionProjectMenu
-                      projectId={project.id}
-                      projectName={project.name}
-                      onTasks={() => setTasksProjectId(project.id)}
-                    />
-                    <Link href={`/p/${project.id}/s/${session.id}`} className="flex items-center gap-3 flex-1 min-w-0">
-                      {rowBody}
-                    </Link>
-                  </div>
-                ) : (
-                  <div key={session.id} className={rowClass}>
-                    {statusDot}
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-accent-primary shrink-0 max-w-[90px] truncate">
-                      {session.projectId.slice(0, 10)}
-                    </span>
-                    <div className="flex items-center gap-3 flex-1 min-w-0">{rowBody}</div>
-                  </div>
-                )
-              })}
-            </div>
-          ) : (
-            <div className="bg-bg-secondary border border-border rounded-lg p-3 md:p-4 text-text-muted text-sm">
-              {t({
-                en: 'No sessions yet. Start one from a project below.',
-                fr: 'Aucune session pour le moment. Commencez-en une depuis un projet ci-dessous.',
-              })}
-            </div>
-          )}
-        </div>
-
-        <div aria-label={t({ en: 'Projects', fr: 'Projets' })} className="mb-6 md:mb-8">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-text-muted">
-            {t({ en: 'Projects', fr: 'Projets' })}
-          </h2>
-          {sortedProjects.length > 0 ? (
-            <div className="space-y-3">
-              {sortedProjects.map((project) => (
-                <div key={project.id} className="bg-bg-secondary border border-border rounded-lg overflow-hidden">
-                  <div className="p-3 md:p-4 flex items-center justify-between gap-2">
-                    <Link
-                      href={`/p/${project.id}`}
-                      className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity flex-1 min-w-0"
-                    >
-                      {project.isStarred ? (
-                        <StarFilledIcon className="w-5 h-5 text-yellow-500 flex-shrink-0" />
-                      ) : (
-                        <FolderIcon className="w-5 h-5 text-accent-primary flex-shrink-0" />
-                      )}
-                      <span className="text-text-primary font-semibold truncate">{project.name}</span>
-                    </Link>
-                    <div className="flex items-center gap-1.5">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => setTasksProjectId(project.id)}
-                        title={t({ en: 'Tasks for {{name}}', fr: 'Tâches pour {{name}}' }, { name: project.name })}
-                        aria-label={t({ en: 'Tasks for {{name}}', fr: 'Tâches pour {{name}}' }, { name: project.name })}
-                        className="flex items-center gap-1.5"
-                      >
-                        <TasksIcon className="w-4 h-4" />
-                        <span>{t({ en: 'Tasks', fr: 'Tâches' })}</span>
-                        <ProjectTaskChips projectId={project.id} />
-                      </Button>
-                      <Link
-                        href={`/p/${project.id}/new`}
-                        className="rounded font-medium transition-colors bg-accent-primary/25 text-text-primary hover:bg-accent-primary/40 px-1.5 py-1 text-xs"
-                      >
-                        {t({ en: '+ New Session', fr: '+ Nouvelle session' })}
-                      </Link>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setProjectToDelete({ id: project.id, name: project.name })}
-                      className="p-1.5 rounded text-text-muted hover:text-accent-error hover:bg-accent-error/10 transition-colors"
-                      title={t({ en: 'Delete project', fr: 'Supprimer le projet' })}
-                    >
-                      <TrashIcon className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            !loading && (
-              <div className="bg-bg-secondary border border-border rounded-lg p-3 md:p-4 text-text-muted text-sm">
-                {t({
-                  en: 'No projects yet. Open a project to get started.',
-                  fr: 'Aucun projet pour le moment. Ouvrez un projet pour commencer.',
-                })}
-              </div>
-            )
-          )}
-        </div>
+        {showProjectsAboveSessions ? (
+          <>
+            {projectsSection}
+            {recentSessionsSection}
+          </>
+        ) : (
+          <>
+            {recentSessionsSection}
+            {projectsSection}
+          </>
+        )}
 
         {loading && (
           <div className="flex justify-center py-12">

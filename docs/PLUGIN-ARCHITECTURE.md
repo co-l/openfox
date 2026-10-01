@@ -163,6 +163,7 @@ host pushes the aggregated registry state into the server internals:
 | `setPluginTools(...)`                  | Plugin tools become callable agent tools (Settings → Tools)                 |
 | `setPluginCommands(...)`               | Slash commands join the command registry with `pluginId` provenance         |
 | `setPluginModelMetadataProviders(...)` | Metadata providers merge into `/api/providers` responses                    |
+| `setPluginMessageTransforms(...)`      | Message transforms are wired into the pre-LLM agent loop pipeline           |
 | `refreshSkillSources()`                | Calls each source's `load()`, skills join discovery with `source: 'plugin'` |
 
 UI contributions, badges, panels, RPC methods, hooks, transitions and assets
@@ -331,20 +332,21 @@ unchanged.
 
 ## 7. Extension points summary
 
-| Capability      | Registry method(s)                                       | Surfaces in                              |
-| --------------- | -------------------------------------------------------- | ---------------------------------------- |
-| `providers`     | `registerAuth`, `registerTransport`, `registerPreset`    | Provider setup wizard, agent loop        |
-| `models`        | `registerModelMetadataProvider`                          | Model picker, `/api/providers`           |
-| `tools`         | `registerTool`                                           | Agent tool list, Settings → Tools        |
-| `commands`      | `registerCommand`                                        | Slash commands, Commands settings        |
-| `skills`        | `registerSkillSource`                                    | Skill discovery (`source: 'plugin'`)     |
-| `settings`      | `registerSettings`                                       | Plugins tab auto-form                    |
-| `ui`            | `registerUiAction`, `registerUiBadge`, `registerUiPanel` | Header, session, message, composer slots |
-| `hooks`         | `registerHook`                                           | Background (observational)               |
-| `workflows`     | `registerTransitionHandler`                              | Workflow `when: custom` transitions      |
-| `rpc`           | `registerRpc`                                            | `POST /api/plugins/<id>/rpc/<method>`    |
-| `assets`        | `registerAsset`                                          | `/api/plugins/<id>/assets/<path>`        |
-| `notifications` | `context.notify`                                         | Toasts, bell, notification center        |
+| Capability      | Registry method(s)                                       | Surfaces in                                  |
+| --------------- | -------------------------------------------------------- | -------------------------------------------- |
+| `providers`     | `registerAuth`, `registerTransport`, `registerPreset`    | Provider setup wizard, agent loop            |
+| `models`        | `registerModelMetadataProvider`                          | Model picker, `/api/providers`               |
+| `tools`         | `registerTool`                                           | Agent tool list, Settings → Tools            |
+| `commands`      | `registerCommand`                                        | Slash commands, Commands settings            |
+| `skills`        | `registerSkillSource`                                    | Skill discovery (`source: 'plugin'`)         |
+| `settings`      | `registerSettings`                                       | Plugins tab auto-form                        |
+| `ui`            | `registerUiAction`, `registerUiBadge`, `registerUiPanel` | Header, session, message, composer slots     |
+| `hooks`         | `registerHook`                                           | Background (observational)                   |
+| `workflows`     | `registerTransitionHandler`                              | Workflow `when: custom` transitions          |
+| `rpc`           | `registerRpc`                                            | `POST /api/plugins/<id>/rpc/<method>`        |
+| `assets`        | `registerAsset`                                          | `/api/plugins/<id>/assets/<path>`            |
+| `transforms`    | `registerMessageTransform`                               | Pre-LLM stream message pipeline (agent loop) |
+| `notifications` | `context.notify`                                         | Toasts, bell, notification center            |
 
 ## 8. Where to look next
 

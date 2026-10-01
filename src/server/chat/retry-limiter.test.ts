@@ -48,4 +48,21 @@ describe('createRetryLimiter', () => {
     const limiter = createRetryLimiter(10)
     expect(limiter.maxRetries()).toBe(10)
   })
+
+  it('raises the limit mid-run via setMaxRetries', () => {
+    const limiter = createRetryLimiter(1)
+    limiter.increment()
+    expect(limiter.canRetry()).toBe(false)
+    limiter.setMaxRetries(5)
+    expect(limiter.maxRetries()).toBe(5)
+    expect(limiter.canRetry()).toBe(true)
+  })
+
+  it('lowers the limit mid-run via setMaxRetries', () => {
+    const limiter = createRetryLimiter(5)
+    limiter.increment()
+    expect(limiter.canRetry()).toBe(true)
+    limiter.setMaxRetries(1)
+    expect(limiter.canRetry()).toBe(false)
+  })
 })

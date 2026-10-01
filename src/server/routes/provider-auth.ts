@@ -3,6 +3,7 @@ import type { Config, Provider } from '../../shared/types.js'
 import type { ProviderAuthAdapter } from '../../provider/index.js'
 import type { ProviderManager } from '../provider-manager.js'
 import type { ProviderRegistry } from '../providers/plugins/registry.js'
+import { cascadeProviderDelete, type AuthAdapterWithProviderDeletion } from '../providers/adapters/provider-deletion.js'
 import { logger } from '../utils/logger.js'
 import { serverT } from '../i18n.js'
 
@@ -90,8 +91,12 @@ export function createProviderAuthRoutes(
     if (!context) return
     const { provider, adapter } = context
     if (adapter) {
-      const ref = provider.credentialRef ?? provider.id
-      await adapter.logout(ref)
+      // Disconnecting a provider also drops the credentials (accounts) it owns.
+      await cascadeProviderDelete(adapter, provider.id)
+      if (!(adapter as AuthAdapterWithProviderDeletion).deleteProvider) {
+        const ref = provider.credentialRef ?? provider.id
+        await adapter.logout(ref)
+      }
     }
 
     const { loadGlobalConfig, saveGlobalConfig } = await import('../../cli/config.js')

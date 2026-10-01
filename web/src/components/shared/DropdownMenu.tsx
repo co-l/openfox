@@ -67,6 +67,7 @@ export function DropdownMenu({
   const triggerRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const [keyboardNav, setKeyboardNav] = useState(false)
   const selectedIndexRef = useRef(0)
   const footerSelectionRef = useRef(false)
   const setIsOpenRef = useRef(setIsOpen)
@@ -167,6 +168,7 @@ export function DropdownMenu({
         case 'ArrowDown':
           e.preventDefault()
           e.stopPropagation()
+          setKeyboardNav(true)
           if (currentNavigableIndex < navigableItems.length - 1) {
             const nextIndex = findNextNavigableIndexRef(selectedIndexRef.current + 1, itemsArr)
             selectedIndexRef.current = nextIndex
@@ -177,6 +179,7 @@ export function DropdownMenu({
         case 'ArrowUp':
           e.preventDefault()
           e.stopPropagation()
+          setKeyboardNav(true)
           if (currentNavigableIndex > 0) {
             const prevIndex = findPrevNavigableIndexRef(selectedIndexRef.current - 1, itemsArr)
             selectedIndexRef.current = prevIndex
@@ -257,6 +260,7 @@ export function DropdownMenu({
     const itemsArr = allItemsRef.current
     const first = itemsArr.findIndex((item) => !isHeaderItem(item))
     setSelectedIndex(first)
+    setKeyboardNav(false)
     selectedIndexRef.current = first
     footerSelectionRef.current = first >= currentItemsCountRef.current
   }, [isOpen])
@@ -291,7 +295,7 @@ export function DropdownMenu({
 
   function renderItem(item: DropdownMenuItem, index: number, total: number, baseIndex: number) {
     const isHeader = isHeaderItem(item)
-    const isSelected = !isHeader && baseIndex === selectedIndex
+    const isSelected = !isHeader && keyboardNav && baseIndex === selectedIndex
     const content = (
       <>
         {item.icon && <span className="w-4 h-4 flex-shrink-0">{item.icon}</span>}
@@ -358,6 +362,7 @@ export function DropdownMenu({
     <div
       ref={menuRef}
       data-testid="session-dropdown-menu"
+      onMouseMove={() => setKeyboardNav(false)}
       className={`fixed bg-bg-secondary border border-border rounded shadow-lg z-50 ${
         position.alignToTop ? 'mb-1' : 'mt-1'
       }`}

@@ -1,8 +1,152 @@
-import { Component, useMemo, type ReactNode } from 'react'
+import { Component, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { usePlugins } from '../../hooks/usePlugins'
-import { isContributionVisible, type PluginActionContext } from './plugin-ui-utils'
+import { extractScopedValues, isContributionVisible, type PluginActionContext } from './plugin-ui-utils'
+import { invokePluginRpc } from '../../lib/plugin-actions'
 import { DeclarativeRenderer } from './DeclarativeRenderer'
-import type { PluginUiComponent, PluginUiOverride, PluginZoneId } from '@shared/plugin.js'
+import { usePluginUiStore } from '../../stores/pluginUi'
+import type {
+  DeclarativeNode,
+  PluginUiComponent,
+  PluginUiContentSource,
+  PluginUiOverride,
+  PluginZoneId,
+} from '@shared/plugin.js'
+
+function contextString(context: PluginActionContext, key: string): string | undefined {
+  const value = context[key]
+  return typeof value === 'string' && value ? value : undefined
+}
+
+function contentFromResult(result: unknown): DeclarativeNode | undefined {
+  if (!result || typeof result !== 'object') return undefined
+  const body = result as { content?: unknown; nodes?: unknown }
+  if (body.content && typeof body.content === 'object') return body.content as DeclarativeNode
+  if (Array.isArray(body.nodes) && body.nodes.length > 0) {
+    return { type: 'stack', direction: 'column', gap: 'sm', children: body.nodes as DeclarativeNode[] }
+  }
+  return undefined
+}
+
+/**
+ * Resolve a contribution's node from its `contentSource` RPC, passing the zone
+ * context so the plugin can render per-context (e.g. per provider) content. The
+ * RPC is re-called on `refreshMs` while the contribution stays mounted; a
+ * failing call keeps the last rendered content.
+ */
+function useContentSource(
+  source: PluginUiContentSource | undefined,
+  pluginId: string | undefined,
+  itemId: string,
+  context: PluginActionContext,
+): DeclarativeNode | undefined {
+  const [content, setContent] = useState<DeclarativeNode | undefined>(undefined)
+  const method = source?.method
+  const refreshMs = source?.refreshMs
+  const providerId = contextString(context, 'providerId')
+  const modelId = contextString(context, 'modelId')
+  const tabId = contextString(context, 'tabId')
+  const sessionId = contextString(context, 'sessionId')
+  const workdir = contextString(context, 'workdir')
+  const projectId = contextString(context, 'projectId')
+  const projectName = contextString(context, 'projectName')
+
+  useEffect(() => {
+    if (!pluginId || pluginId === 'unknown' || !method) {
+      setContent(undefined)
+      return
+    }
+    let cancelled = false
+    const params: Record<string, unknown> = { contributionId: itemId }
+    if (providerId) params['providerId'] = providerId
+    if (modelId) params['modelId'] = modelId
+    if (tabId) params['tabId'] = tabId
+    if (workdir) params['workdir'] = workdir
+    if (projectName) params['projectName'] = projectName
+
+    const load = async () => {
+      try {
+        const result = await invokePluginRpc(pluginId, method, params, {
+          ...(sessionId ? { sessionId } : {}),
+          ...(workdir ? { workdir } : {}),
+          ...(projectId ? { projectId } : {}),
+        })
+        if (cancelled) return
+        const node = contentFromResult(result)
+        if (node !== undefined) setContent(node)
+      } catch {
+        // Keep the last rendered content — a failing source must not blank the zone.
+      }
+    }
+
+    void load()
+    if (!refreshMs || refreshMs <= 0) {
+      return () => {
+        cancelled = true
+      }
+    }
+    const timer = window.setInterval(() => void load(), refreshMs)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [pluginId, method, itemId, refreshMs, providerId, modelId, tabId, sessionId, workdir, projectId, projectName])
+
+  return content
+}
+
+function extractValuesWithSession(
+  publishedValues: Record<string, unknown>,
+  pluginId: string,
+  itemId: string,
+  sessionId?: string,
+) {
+  const values = extractScopedValues(publishedValues, pluginId, itemId)
+  if (sessionId) {
+    const sessionPrefix = `${pluginId}:${itemId}:${sessionId}:`
+    for (const [k, v] of Object.entries(publishedValues)) {
+      if (k.startsWith(sessionPrefix)) values[k.slice(sessionPrefix.length)] = v
+    }
+  }
+  return values
+}
+
+function DynamicPluginComponent({ comp, context }: { comp: PluginUiComponent; context: PluginActionContext }) {
+  const publishedValues = usePluginUiStore((state) => state.values)
+  const pluginId = comp.pluginId ?? 'unknown'
+  const values = extractValuesWithSession(publishedValues, pluginId, comp.id, context.sessionId)
+  const sourced = useContentSource(comp.contentSource, comp.pluginId, comp.id, context)
+  const node: DeclarativeNode = sourced ?? (values['content'] as DeclarativeNode) ?? comp.component
+
+  return <DeclarativeRenderer node={node} values={values} context={{ ...context, pluginId: comp.pluginId }} />
+}
+
+function DynamicPluginOverride({
+  override,
+  fallback,
+  context,
+}: {
+  override: PluginUiOverride
+  fallback: ReactNode
+  context: PluginActionContext
+}) {
+  const publishedValues = usePluginUiStore((state) => state.values)
+  const pluginId = override.pluginId ?? 'unknown'
+  const values = extractValuesWithSession(publishedValues, pluginId, override.id, context.sessionId)
+  const sourced = useContentSource(override.contentSource, override.pluginId, override.id, context)
+
+  // If the active panel or tab published updated content directly into state under pluginId or override.id, prioritize it
+  const node: DeclarativeNode = sourced ?? (values['content'] as DeclarativeNode) ?? override.replacement
+
+  if (!node) return <>{fallback}</>
+
+  return (
+    <DeclarativeRenderer
+      node={node}
+      values={values}
+      context={{ ...context, pluginId: override.pluginId, tabId: override.id }}
+    />
+  )
+}
 
 interface ErrorBoundaryProps {
   fallback?: ReactNode
@@ -84,7 +228,7 @@ export function PluginZone({ id, context = {}, children, className }: PluginZone
 
   const renderComponent = (comp: PluginUiComponent) => (
     <PluginErrorBoundary key={`${comp.pluginId ?? 'unknown'}:${comp.id}`}>
-      <DeclarativeRenderer node={comp.component} context={{ ...context, pluginId: comp.pluginId }} />
+      <DynamicPluginComponent comp={comp} context={context} />
     </PluginErrorBoundary>
   )
 
@@ -94,10 +238,10 @@ export function PluginZone({ id, context = {}, children, className }: PluginZone
   if (override) {
     if (override.mode === 'hide') {
       mainContent = null
-    } else if (override.mode === 'replace' && override.replacement) {
+    } else if (override.mode === 'replace' && (override.replacement || override.contentSource)) {
       mainContent = (
         <PluginErrorBoundary fallback={children}>
-          <DeclarativeRenderer node={override.replacement} context={{ ...context, pluginId: override.pluginId }} />
+          <DynamicPluginOverride override={override} fallback={children} context={context} />
         </PluginErrorBoundary>
       )
     }

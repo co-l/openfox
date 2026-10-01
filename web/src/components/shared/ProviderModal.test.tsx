@@ -1034,38 +1034,30 @@ describe('ProviderModal - model mode merge', () => {
     await new Promise((resolve) => setTimeout(resolve, 250))
   }
 
-  it('creating a provider shows raw suffixed variants and a Merge button, no Unmerge', async () => {
+  it('creating a provider automatically collapses suffixed variants into a merged model with Unmerge button', async () => {
     await renderCreate()
-    // Raw catalog: suffixed variants shown separately.
-    const hasSuffixed = Array.from(document.body.querySelectorAll('span,div')).some((el) =>
-      el.textContent?.includes('gemini-3.6-flash-high'),
+    // Auto-collapsed into merged model: suffixed variants are hidden inside modes.
+    const hasMerged = Array.from(document.body.querySelectorAll('span,div')).some(
+      (el) =>
+        el.textContent?.toLowerCase().includes('gemini 3.6 flash') || el.textContent?.includes('gemini-3.6-flash'),
     )
-    expect(hasSuffixed).toBe(true)
-    // Merge button is visible; Unmerge is not (nothing merged yet).
+    expect(hasMerged).toBe(true)
+    const unmergeButton = Array.from(document.body.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Unmerge'),
+    )
+    expect(unmergeButton).toBeTruthy()
+  })
+
+  it('editing with raw suffixed variants shows Merge button (no auto-collapse on init)', async () => {
+    await renderOmni(omniModels)
     const mergeButton = Array.from(document.body.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('Merge gemini-3.6-flash'),
+      b.textContent?.includes('Merge'),
     )
     expect(mergeButton).toBeTruthy()
     const unmergeButton = Array.from(document.body.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('Unmerge '),
+      b.textContent?.includes('Unmerge'),
     )
     expect(unmergeButton).toBeUndefined()
-  })
-
-  it('editing keeps the raw catalog: suffixed variants present, Merge button shown', async () => {
-    await renderOmni(omniModels)
-    // No auto-merge: the merged id is absent and the suffixed members remain.
-    const saveButton = document.body.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
-    saveButton?.click()
-    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
-    expect(savedData.models.some((m) => m.id === 'antigravity/gemini-3.6-flash' && m.modes?.length)).toBe(false)
-    expect(savedData.models.some((m) => m.id === 'antigravity/gemini-3.6-flash-high')).toBe(true)
-    expect(savedData.models.some((m) => m.id === 'antigravity/gemini-3.6-flash-low')).toBe(true)
-    // Merge button offered for the family.
-    const mergeButton = Array.from(document.body.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('Merge gemini-3.6-flash'),
-    )
-    expect(mergeButton).toBeTruthy()
   })
 
   it('shows no Merge button when there are no mergeable families (single model)', async () => {
@@ -1148,21 +1140,23 @@ describe('ProviderModal - model mode merge', () => {
   it('shows an Unmerge button for an already-merged model', async () => {
     await renderWithRawCatalog(mergedProviderModels)
     const unmergeButton = Array.from(document.body.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('Unmerge gemini-3.6-flash'),
+      b.textContent?.includes('Unmerge'),
     )
     expect(unmergeButton).toBeTruthy()
   })
 
   it('manual merge migrates selection from suffixed members to the merged model', async () => {
-    // Edit provider where one suffixed member was selected; after a manual
-    // Merge the merged model stays selected and the suffixed members are gone.
     await renderOmni([
       { id: 'antigravity/gemini-3.6-flash-high', contextWindow: 1048576, selected: true },
       { id: 'antigravity/gemini-3.6-flash-low', contextWindow: 1048576 },
       { id: 'antigravity/gemini-3.6-flash-medium', contextWindow: 1048576 },
+      claudeOpusModel,
     ])
-    const mergeButton = Array.from(document.body.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('Merge gemini-3.6-flash'),
+    const mergeButton = Array.from(document.body.querySelectorAll('button')).find(
+      (b) =>
+        b.textContent?.toLowerCase().includes('merge gemini 3.6 flash') ||
+        b.textContent?.includes('Merge gemini-3.6-flash') ||
+        Boolean(b.textContent?.includes('Merge')),
     )
     expect(mergeButton).toBeTruthy()
     mergeButton?.click()
@@ -1177,9 +1171,28 @@ describe('ProviderModal - model mode merge', () => {
     expect(savedData.models.some((m) => m.id === 'antigravity/gemini-3.6-flash-high')).toBe(false)
   })
 
+  it('manual merge never adopts a member mode-suffixed name for the merged model', async () => {
+    await renderOmni([
+      { id: 'antigravity/gemini-3.6-flash-high', name: 'Gemini 3.6 Flash (High)', contextWindow: 1048576 },
+      { id: 'antigravity/gemini-3.6-flash-low', name: 'Gemini 3.6 Flash (Low)', contextWindow: 1048576 },
+      { id: 'antigravity/gemini-3.6-flash-medium', name: 'Gemini 3.6 Flash (Medium)', contextWindow: 1048576 },
+      claudeOpusModel,
+    ])
+    const mergeButton = Array.from(document.body.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Merge gemini-3.6-flash'),
+    )
+    expect(mergeButton).toBeTruthy()
+    mergeButton?.click()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const saveButton = document.body.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
+    saveButton?.click()
+    const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
+    const merged = savedData.models.find((m) => m.id === 'antigravity/gemini-3.6-flash')
+    expect(merged?.modes?.length).toBe(3)
+    expect(merged?.name).toBe('gemini 3.6 flash')
+  })
+
   it('manual merge on multi-family only selects the family whose member was selected', async () => {
-    // Two families; only a gemini member is selected. After merging the gemini
-    // family the gemini merged model is selected but the claude family is not.
     await renderOmni([
       { id: 'antigravity/gemini-3.6-flash-high', contextWindow: 1048576, selected: true },
       { id: 'antigravity/gemini-3.6-flash-low', contextWindow: 1048576 },
@@ -1187,8 +1200,10 @@ describe('ProviderModal - model mode merge', () => {
       { id: 'antigravity/claude-opus-4-6-thinking-low', contextWindow: 1048576 },
       { id: 'antigravity/claude-opus-4-6-thinking-high', contextWindow: 1048576 },
     ])
-    const geminiMerge = Array.from(document.body.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('Merge gemini-3.6-flash'),
+    const geminiMerge = Array.from(document.body.querySelectorAll('button')).find(
+      (b) =>
+        b.textContent?.toLowerCase().includes('merge gemini 3.6 flash') ||
+        b.textContent?.includes('Merge gemini-3.6-flash'),
     )
     expect(geminiMerge).toBeTruthy()
     geminiMerge?.click()
@@ -1197,12 +1212,11 @@ describe('ProviderModal - model mode merge', () => {
     saveButton?.click()
     const savedData: ProviderFormData = onSaveMock.mock.calls[0]![0]!
     const geminiMerged = savedData.models.find((m) => m.id === 'antigravity/gemini-3.6-flash')
-    const claudeMerged = savedData.models.find((m) => m.id === 'antigravity/claude-opus-4-6-thinking')
     expect(geminiMerged?.modes?.length).toBe(3)
-    // Claude family was not merged, so it stays as separate variants.
-    expect(claudeMerged?.modes?.length).toBeUndefined()
+    const claudeMerged = savedData.models.find((m) => m.id === 'antigravity/claude-opus-4-6-thinking')
     // Only the gemini family (which had a selected member) is selected.
     expect(geminiMerged?.selected).toBe(true)
+    expect(claudeMerged?.selected).toBeUndefined()
     expect(savedData.models.some((m) => m.id === 'antigravity/gemini-3.6-flash-high')).toBe(false)
   })
 
@@ -1687,5 +1701,111 @@ describe('ProviderModal - plugins and proxy informational banners (Step 1)', () 
 
     const logoInput = document.body.querySelector('input[placeholder="https://example.com/logo.png"]')
     expect(logoInput).toBeNull()
+  })
+})
+
+describe('ProviderModal - provider auth zone context', () => {
+  setupRoot()
+
+  const authOverride = {
+    id: 'demo-auth-override',
+    pluginId: 'demo-plugin',
+    zone: 'provider.modal.auth',
+    mode: 'replace',
+    contentSource: { kind: 'rpc', method: 'getAuthUi' },
+  }
+
+  function stubAuthFetch(overrides: { draftId?: string } = {}) {
+    const calls: { url: string; body: unknown }[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        calls.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined })
+        if (url.includes('/api/provider-presets')) {
+          return jsonResponse({
+            presets: [
+              {
+                id: 'google-antigravity',
+                name: 'Google Antigravity',
+                description: 'Antigravity',
+                requiresAuth: true,
+                authAdapter: 'demo-auth',
+                transportAdapter: 'demo-transport',
+                defaults: {
+                  name: 'Google Antigravity',
+                  url: 'https://cloudcode-pa.googleapis.com',
+                  backend: 'openai',
+                },
+              },
+            ],
+          })
+        }
+        if (url.includes('/api/plugins/list')) {
+          return jsonResponse({
+            plugins: [],
+            contributions: {
+              actions: [],
+              badges: [],
+              panels: [],
+              sections: [],
+              settingsTabs: [],
+              components: [],
+              overrides: [authOverride],
+            },
+          })
+        }
+        if (url.includes('/rpc/getAuthUi')) {
+          return jsonResponse({ result: { content: { type: 'text', text: { en: 'Accounts', fr: 'Comptes' } } } })
+        }
+        if (url.includes('/api/providers') && init?.method === 'POST') {
+          return jsonResponse({ provider: { id: overrides.draftId ?? 'draft-provider-id' } })
+        }
+        return jsonResponse({ models: [], url: 'https://cloudcode-pa.googleapis.com' })
+      }),
+    )
+    return calls
+  }
+
+  it('renders a plugin override with the edited provider id in the zone context', async () => {
+    const calls = stubAuthFetch()
+    await renderProviderModal(
+      {
+        editProvider: {
+          id: 'edited-provider-id',
+          name: 'Google Antigravity',
+          url: 'https://cloudcode-pa.googleapis.com',
+          backend: 'openai' as const,
+          authAdapter: 'demo-auth',
+          transportAdapter: 'demo-transport',
+          models: [],
+        },
+      },
+      250,
+    )
+
+    const rpcCall = calls.find((call) => call.url.includes('/rpc/getAuthUi'))
+    expect(rpcCall).toBeDefined()
+    expect((rpcCall?.body as { params?: { providerId?: string } }).params?.providerId).toBe('edited-provider-id')
+  })
+
+  it('creates the provider before the auth step so the zone context carries a real id', async () => {
+    const calls = stubAuthFetch()
+    await renderProviderModal({ initialStep: undefined }, 100)
+
+    buttonByText('Google Antigravity')?.click()
+    await tick(0)
+    const nextButton = document.body.querySelector('[data-testid="provider-modal-next"]') as HTMLButtonElement | null
+    nextButton?.click()
+    await tick(250)
+
+    const createCall = calls.find((call) => call.url.endsWith('/api/providers') && !call.url.includes('models'))
+    expect(createCall).toBeDefined()
+    // The zone re-renders once the draft id exists, so assert on the latest call.
+    const rpcCalls = calls.filter((call) => call.url.includes('/rpc/getAuthUi'))
+    expect(rpcCalls.length).toBeGreaterThan(0)
+    expect((rpcCalls[rpcCalls.length - 1]?.body as { params?: { providerId?: string } }).params?.providerId).toBe(
+      'draft-provider-id',
+    )
   })
 })

@@ -215,6 +215,35 @@ describe('requestUserConfirmation', () => {
     // Fix: each call should generate its own unique callId.
     expect(capturedCallIds[0]).not.toBe(capturedCallIds[1])
   })
+
+  it('auto-approves in night mode with dangerous level and auto-denies with normal level', async () => {
+    const mockOnEvent = vi.fn()
+
+    const dangerousContext: ToolContext = {
+      sessionManager: mockSessionManager,
+      workdir: '/test/workdir',
+      sessionId: 'test-session',
+      toolCallId: 'night-dangerous',
+      onEvent: mockOnEvent,
+      dangerLevel: 'dangerous',
+      nightMode: true,
+    }
+    expect(await requestUserConfirmation(dangerousContext, 'command', 'night cmd')).toBe(true)
+    expect(mockOnEvent).not.toHaveBeenCalled()
+
+    const normalContext: ToolContext = {
+      sessionManager: mockSessionManager,
+      workdir: '/test/workdir',
+      sessionId: 'test-session',
+      toolCallId: 'night-normal',
+      onEvent: mockOnEvent,
+      dangerLevel: 'normal',
+      nightMode: true,
+    }
+    expect(await requestUserConfirmation(normalContext, 'command', 'night cmd')).toBe(false)
+    expect(mockOnEvent).not.toHaveBeenCalled()
+    expect(capturedCallIds).toHaveLength(0)
+  })
 })
 
 // display.locale is forced to 'fr' by the settings mock at the top of this

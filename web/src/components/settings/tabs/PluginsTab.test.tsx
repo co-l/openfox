@@ -63,6 +63,7 @@ vi.mock('../../../hooks/useResource', () => ({
 }))
 
 const installPlugin = vi.fn()
+const reinstallPlugin = vi.fn()
 const setPluginEnabled = vi.fn()
 const uninstallPlugin = vi.fn()
 
@@ -71,6 +72,7 @@ vi.mock('../../../lib/plugin-actions', async (importOriginal) => {
   return {
     ...actual,
     installPlugin: (...args: unknown[]) => installPlugin(...args),
+    reinstallPlugin: (...args: unknown[]) => reinstallPlugin(...args),
     setPluginEnabled: (...args: unknown[]) => setPluginEnabled(...args),
     uninstallPlugin: (...args: unknown[]) => uninstallPlugin(...args),
   }
@@ -114,6 +116,8 @@ function makePlugin(overrides: Partial<PluginInfo> = {}): PluginInfo {
       settingsTabs: 0,
       uiComponents: 0,
       uiOverrides: 0,
+      messageTransforms: 0,
+      dangerLevels: 0,
     },
     ...overrides,
   }
@@ -150,13 +154,18 @@ describe('PluginsTab', () => {
   })
 
   it('renders installed plugins with status, capabilities and contribution summary', () => {
+    pluginsRef.current = [makePlugin({ author: 'Alice Developer' })]
     render(<PluginsTab />)
     expect(screen.getByText('Demo plugin')).toBeDefined()
     expect(screen.getByText('v1.2.3')).toBeDefined()
     expect(screen.getByText('Loaded')).toBeDefined()
     expect(screen.getByText('tools')).toBeDefined()
+    const authorEl = screen.getByText('by Alice Developer')
+    const summaryEl = screen.getByText('2 tools · 1 actions · 1 hooks · 1 rpc · 2 settings')
+    expect(authorEl).toBeDefined()
+    expect(summaryEl).toBeDefined()
+    expect(authorEl.parentElement).toBe(summaryEl.parentElement)
     expect(screen.getByText('ui')).toBeDefined()
-    expect(screen.getByText('2 tools · 1 actions · 1 hooks · 1 rpc · 2 settings')).toBeDefined()
   })
 
   it('disables a plugin from the toggle', async () => {
@@ -237,13 +246,18 @@ describe('PluginsTab', () => {
     expect(screen.getByText('Managed outside OpenFox')).toBeDefined()
   })
 
-  it('reinstalls a registry-listed plugin', async () => {
-    installPlugin.mockResolvedValue({ ok: true })
+  it('reinstalls an installed plugin via reinstallPlugin', async () => {
+    reinstallPlugin.mockResolvedValue({ ok: true })
     render(<PluginsTab />)
     await userEvent.setup().click(screen.getByRole('button', { name: 'Reinstall' }))
-    await waitFor(() =>
-      expect(installPlugin).toHaveBeenCalledWith({ githubUrl: 'https://github.com/user/openfox-demo' }),
-    )
+    await waitFor(() => expect(reinstallPlugin).toHaveBeenCalledWith('openfox-demo'))
+  })
+
+  it('omits developer line in installed card when author is not available and not in registry', () => {
+    pluginsRef.current = [makePlugin({ id: 'standalone-custom', author: undefined })]
+    render(<PluginsTab />)
+    const installedSection = screen.getByText('Installed plugins').closest('section')!
+    expect(installedSection.textContent).not.toContain('by ')
   })
 
   it('surfaces a registry load error', () => {

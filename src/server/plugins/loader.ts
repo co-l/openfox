@@ -15,6 +15,7 @@ export interface PluginDiagnostic {
   apiVersion: number
   displayName: string
   description?: string
+  author?: string
   icon?: string
   logo?: string
   capabilities: PluginCapability[]
@@ -45,21 +46,69 @@ export function resolvePluginEntry(manifest: PluginManifest): string | undefined
   return manifest.openfox.entry ?? manifest.openfox.plugin
 }
 
+function parseAuthorString(rawPkg: Record<string, unknown>): string | undefined {
+  const author = rawPkg['author']
+  if (typeof author === 'string') {
+    const cleaned = author
+      .replace(/<[^>]*>/g, '')
+      .replace(/\([^)]*\)/g, '')
+      .trim()
+    if (cleaned) return cleaned
+  }
+  if (
+    typeof author === 'object' &&
+    author !== null &&
+    'name' in author &&
+    typeof (author as { name?: unknown }).name === 'string'
+  ) {
+    const name = ((author as { name: string }).name || '').trim()
+    if (name) return name
+  }
+
+  const repo = rawPkg['repository']
+  const repoUrl =
+    typeof repo === 'string'
+      ? repo
+      : typeof repo === 'object' &&
+          repo !== null &&
+          'url' in repo &&
+          typeof (repo as { url?: unknown }).url === 'string'
+        ? (repo as { url: string }).url
+        : undefined
+  if (repoUrl) {
+    const m = repoUrl.match(/github\.com[/:]([^/]+)/)
+    if (m?.[1]) return m[1]
+  }
+
+  const homepage = typeof rawPkg['homepage'] === 'string' ? rawPkg['homepage'] : undefined
+  if (homepage) {
+    const m = homepage.match(/github\.com[/:]([^/]+)/)
+    if (m?.[1]) return m[1]
+  }
+
+  return undefined
+}
+
 export async function readPluginManifest(packageDir: string): Promise<PluginManifest | undefined> {
   try {
     const raw = JSON.parse(await readFile(join(packageDir, 'package.json'), 'utf8')) as unknown
     const parsed = pluginManifestSchema.safeParse(raw)
     if (!parsed.success) return undefined
     const data = parsed.data
+    const author =
+      data.openfox.author ??
+      (raw && typeof raw === 'object' ? parseAuthorString(raw as Record<string, unknown>) : undefined)
     return {
       name: data.name,
       version: data.version,
+      ...(author ? { author } : {}),
       openfox: {
         apiVersion: data.openfox.apiVersion,
         ...(data.openfox.entry ? { entry: data.openfox.entry } : {}),
         ...(data.openfox.plugin ? { plugin: data.openfox.plugin } : {}),
         ...(data.openfox.displayName ? { displayName: data.openfox.displayName } : {}),
         ...(data.openfox.description ? { description: data.openfox.description } : {}),
+        ...(author ? { author } : {}),
         ...(data.openfox.icon ? { icon: data.openfox.icon } : {}),
         ...(data.openfox.logo ? { logo: data.openfox.logo } : {}),
         ...(data.openfox.capabilities ? { capabilities: data.openfox.capabilities as PluginCapability[] } : {}),
@@ -80,6 +129,7 @@ function baseDiagnostic(manifest: PluginManifest, source: string): PluginDiagnos
     apiVersion: manifest.openfox.apiVersion,
     displayName: manifest.openfox.displayName ?? manifest.name,
     ...(manifest.openfox.description ? { description: manifest.openfox.description } : {}),
+    ...(manifest.author || manifest.openfox.author ? { author: manifest.author ?? manifest.openfox.author } : {}),
     ...(manifest.openfox.icon ? { icon: manifest.openfox.icon } : {}),
     ...(manifest.openfox.logo ? { logo: manifest.openfox.logo } : {}),
     capabilities: manifest.openfox.capabilities ?? [],

@@ -16,6 +16,8 @@ export interface Entry<Data> {
   fetchedAt: number | null
   promise: Promise<Data | undefined> | null
   refs: number
+  /** Last fetcher handed to `load`/`refresh`, so a prefix refresh can replay it. */
+  fetcher: (() => Promise<Data>) | null
 }
 
 export interface Snapshot<Data> {
@@ -59,7 +61,7 @@ function emit(): void {
 function entry<Data>(key: string): Entry<Data> {
   let e = entries.get(key) as Entry<Data> | undefined
   if (!e) {
-    e = { data: undefined, loading: false, error: undefined, fetchedAt: null, promise: null, refs: 0 }
+    e = { data: undefined, loading: false, error: undefined, fetchedAt: null, promise: null, refs: 0, fetcher: null }
     entries.set(key, e as Entry<unknown>)
   }
   return e
@@ -84,6 +86,7 @@ function startFetch<Data>(key: string, fetcher: () => Promise<Data>): Promise<Da
   const e = entry<Data>(key)
   e.loading = true
   e.error = undefined
+  e.fetcher = fetcher
   emit()
   const p = Promise.resolve()
     .then(fetcher)
@@ -179,6 +182,23 @@ function scheduleEviction(): void {
 export function invalidate(key: string): void {
   entries.delete(key)
   emit()
+}
+
+/**
+ * Refetch every cached key under `prefix` through its own last fetcher — the
+ * mutation broadcast for data owned by another layer (a plugin install writing
+ * agents/commands/skills to disk, say). Unlike `invalidate` it never blanks an
+ * entry, so mounted lists update in place instead of flashing empty. Keys that
+ * were never loaded are untouched (no speculative request) and an in-flight
+ * entry is left alone rather than double-fetched.
+ */
+export function refreshPrefix(prefix: string): void {
+  for (const [key, e] of entries) {
+    if (!key.startsWith(prefix)) continue
+    const fetcher = e.fetcher
+    if (!fetcher || e.promise) continue
+    void startFetch(key, fetcher)
+  }
 }
 
 /**

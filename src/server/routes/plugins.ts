@@ -106,6 +106,16 @@ export function createPluginRoutes(options: PluginRoutesOptions): Router {
     res.json({ tools: host.getPluginTools() })
   })
 
+  router.post('/check-updates', async (_req, res) => {
+    try {
+      const updates = await host.checkUpdates()
+      res.json({ success: true, updates })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      res.status(500).json({ success: false, error: message })
+    }
+  })
+
   router.post('/install', async (req, res) => {
     const body = req.body as { githubUrl?: unknown; npm?: unknown; path?: unknown }
     try {
@@ -172,6 +182,13 @@ export function createPluginRoutes(options: PluginRoutesOptions): Router {
     })
   })
 
+  router.post('/:id/reinstall', (req, res) => {
+    void runForPluginId(req, res, async (id) => {
+      const diagnostic = await host.reinstall(id)
+      return { success: true, plugin: diagnostic, plugins: host.getPlugins() }
+    })
+  })
+
   router.get('/:id/settings', (req, res) => {
     const id = pluginId(req)
     if (!requireValidId(id, res)) return
@@ -223,6 +240,116 @@ export function createPluginRoutes(options: PluginRoutesOptions): Router {
       res.json({ result })
     } catch (error) {
       res.status(400).json({ error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  router.all('/:id/proxy', async (req, res) => {
+    const id = pluginId(req)
+    if (!requireValidId(id, res)) return
+
+    let targetUrl: string | undefined = req.query['url'] as string | undefined
+    const rawUrlIdx = req.originalUrl.indexOf('url=')
+    if (rawUrlIdx !== -1) {
+      const rawParam = req.originalUrl.slice(rawUrlIdx + 4)
+      try {
+        targetUrl = decodeURIComponent(rawParam)
+      } catch {
+        targetUrl = req.query['url'] as string | undefined
+      }
+    }
+
+    if (!targetUrl || (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://'))) {
+      return res.status(400).json({ error: serverT({ en: 'Invalid target URL', fr: 'URL cible invalide' }) })
+    }
+
+    try {
+      const parsed = new URL(targetUrl)
+      if (
+        parsed.hostname !== 'localhost' &&
+        parsed.hostname !== '127.0.0.1' &&
+        parsed.hostname !== '::1' &&
+        !parsed.hostname.endsWith('.localhost')
+      ) {
+        return res.status(403).json({
+          error: serverT({
+            en: 'Only loopback URLs can be proxied',
+            fr: 'Seules les URLs locales peuvent être relayées',
+          }),
+        })
+      }
+
+      const forwardHeaders: Record<string, string> = {
+        Accept: req.headers['accept'] ?? '*/*',
+      }
+      if (req.headers['content-type']) {
+        forwardHeaders['Content-Type'] = req.headers['content-type']
+      }
+
+      const hasBody = req.method !== 'GET' && req.method !== 'HEAD' && req.body
+      const response = await fetch(targetUrl, {
+        method: req.method,
+        headers: forwardHeaders,
+        ...(hasBody ? { body: typeof req.body === 'string' ? req.body : JSON.stringify(req.body) } : {}),
+      })
+
+      const contentType = response.headers.get('content-type') ?? 'text/html'
+      res.status(response.status)
+      res.setHeader('Content-Type', contentType)
+      res.removeHeader('X-Frame-Options')
+      res.removeHeader('Content-Security-Policy')
+
+      if (contentType.includes('text/html')) {
+        let html = await response.text()
+        const origin = `${parsed.protocol}//${parsed.host}`
+        const interceptScript = `<script>
+(function() {
+  const origin = ${JSON.stringify(origin)};
+  const pluginId = ${JSON.stringify(id)};
+  const proxyPrefix = window.location.origin + '/api/plugins/' + encodeURIComponent(pluginId) + '/proxy?url=';
+  function toProxy(u) {
+    if (!u || typeof u !== 'string') return u;
+    if (u.startsWith(window.location.origin + '/api/')) return u;
+    if (u.startsWith('/api/')) return u;
+    if (u.startsWith('/')) return proxyPrefix + encodeURIComponent(origin + u);
+    if (u.startsWith(origin)) return proxyPrefix + encodeURIComponent(u);
+    return u;
+  }
+  const _fetch = window.fetch;
+  window.fetch = function(input, init) {
+    if (typeof input === 'string') {
+      input = toProxy(input);
+    } else if (input && typeof input.url === 'string') {
+      input = new Request(toProxy(input.url), input);
+    }
+    return _fetch.call(this, input, init);
+  };
+  const _open = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function(m, url, ...args) {
+    return _open.call(this, m, typeof url === 'string' ? toProxy(url) : url, ...args);
+  };
+})();
+</script>`
+
+        // Rewrite relative script and link src/href to proxy
+        html = html.replace(/(src|href)=["']\/([^"']+)["']/g, (match, attr, path) => {
+          if (path.startsWith('api/')) return match
+          return `${attr}="/api/plugins/${encodeURIComponent(id)}/proxy?url=${encodeURIComponent(origin + '/' + path)}"`
+        })
+
+        if (html.includes('<head')) {
+          html = html.replace(/<head[^>]*>/i, `$&${interceptScript}`)
+        } else {
+          html = interceptScript + html
+        }
+        res.send(html)
+      } else {
+        const buffer = await response.arrayBuffer()
+        res.send(Buffer.from(buffer))
+      }
+    } catch (error) {
+      res.status(502).json({
+        error: `Failed to connect to ${targetUrl}: ${error instanceof Error ? error.message : String(error)}`,
+      })
     }
   })
 

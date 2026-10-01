@@ -31,6 +31,7 @@ import {
   updateSessionMessageCount,
   updateSessionCachedPrompt,
   getSessionCachedPrompt,
+  updateSessionNightMode,
 } from './sessions.js'
 import { getDatabase } from './index.js'
 
@@ -564,6 +565,22 @@ describe('db sessions', () => {
       expect(cached).not.toBeNull()
       // No promptHash persisted → omitted from the result (optional field).
       expect(cached?.promptHash).toBeUndefined()
+    })
+  })
+
+  describe('night mode', () => {
+    it('defaults to off for new sessions', () => {
+      const session = createSession(projectAId, rootA)
+      expect(session.nightMode).toBe(false)
+      expect(getSession(session.id)?.nightMode).toBe(false)
+    })
+
+    it('persists night mode toggles', () => {
+      const session = createSession(projectAId, rootA, 'Night')
+      updateSessionNightMode(session.id, true)
+      expect(getSession(session.id)?.nightMode).toBe(true)
+      updateSessionNightMode(session.id, false)
+      expect(getSession(session.id)?.nightMode).toBe(false)
     })
   })
 })

@@ -75,6 +75,24 @@ describe('executeTools', () => {
     })
   })
 
+  it('threads nightMode from the batch context into the tool context', async () => {
+    const append = vi.fn()
+    let seenToolContext: unknown
+    const executeMock = vi.fn(async (_name: string, _args: unknown, toolContext: unknown) => {
+      seenToolContext = toolContext
+      return { success: true, output: 'done', durationMs: 10, truncated: false }
+    })
+    mockToolRegistry.execute = executeMock
+
+    const toolCalls: ToolCall[] = [{ id: 'call-1', name: 'run_command', arguments: { command: 'echo hi' } }]
+
+    await executeTools('msg-1', toolCalls, makeCtx({ nightMode: true }), append)
+    expect((seenToolContext as { nightMode?: boolean }).nightMode).toBe(true)
+
+    await executeTools('msg-1', toolCalls, makeCtx({ nightMode: false }), append)
+    expect((seenToolContext as { nightMode?: boolean }).nightMode).toBeUndefined()
+  })
+
   it('appends tool.result events via append callback', async () => {
     const append = vi.fn()
     mockToolRegistry.execute = vi.fn().mockResolvedValue({

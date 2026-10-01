@@ -34,7 +34,7 @@ describe('provider auth routes', () => {
     Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve())))),
   )
 
-  async function start(withAdapter = true) {
+  async function start(withAdapter: boolean | Record<string, unknown> = true) {
     const registry = new ProviderRegistry({ mode: 'production', configDirectory: '/tmp/openfox-test' })
     if (withAdapter)
       registry.registerAuth({
@@ -51,7 +51,8 @@ describe('provider auth routes', () => {
         getStatus: async () => ({ state: 'disconnected' }),
         getAccessContext: async () => ({}),
         logout: async () => undefined,
-      })
+        ...(typeof withAdapter === 'object' ? withAdapter : {}),
+      } as never)
     const app = express()
     app.use(express.json())
     app.use('/api/provider-auth', createProviderAuthRoutes(config, manager(), registry))
@@ -75,5 +76,25 @@ describe('provider auth routes', () => {
     const response = await fetch(`${await start(false)}/api/provider-auth/provider-1/login`, { method: 'POST' })
     expect(response.status).toBe(424)
     expect(await response.json()).toEqual({ error: 'Missing provider auth plugin: external-auth' })
+  })
+
+  it('deletes the accounts owned by the provider when it is disconnected', async () => {
+    const deleteProvider = vi.fn(async () => undefined)
+    const url = await start({ getStatus: async () => ({ state: 'connected' }), deleteProvider })
+
+    const response = await fetch(`${url}/api/provider-auth/provider-1/logout`, { method: 'POST' })
+
+    expect(response.status).toBe(200)
+    expect(deleteProvider).toHaveBeenCalledWith('provider-1')
+  })
+
+  it('falls back to a single-credential logout when the adapter owns no per-provider accounts', async () => {
+    const logout = vi.fn(async () => undefined)
+    const url = await start({ logout })
+
+    const response = await fetch(`${url}/api/provider-auth/provider-1/logout`, { method: 'POST' })
+
+    expect(response.status).toBe(200)
+    expect(logout).toHaveBeenCalledWith('provider-1')
   })
 })

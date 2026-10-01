@@ -32,7 +32,7 @@ export function NotificationToasts() {
   if (toasts.length === 0) return null
 
   return (
-    <div className="fixed top-14 right-4 z-50 flex flex-col gap-2 w-80" role="status" aria-live="polite">
+    <div className="fixed top-14 right-4 z-[9998] flex flex-col gap-2 w-80" role="status" aria-live="polite">
       {toasts.map(({ notification }) => (
         <div
           key={notification.id}

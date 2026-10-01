@@ -90,6 +90,14 @@ describe('NotificationToasts', () => {
     expect(screen.getByText('Build terminé')).toBeDefined()
   })
 
+  it('stays in the foreground above modals and menus', () => {
+    usePluginToastStore.getState().push(NOTIFICATION)
+    render(<NotificationToasts />)
+    const container = screen.getByRole('status')
+    const zIndex = Number(/z-\[(\d+)\]/.exec(container.className)?.[1] ?? 0)
+    expect(zIndex).toBeGreaterThan(100)
+  })
+
   it('renders notification actions and dispatches their activation', async () => {
     invokePluginRpc.mockResolvedValue('ok')
     usePluginToastStore.getState().push(NOTIFICATION_WITH_ACTION)

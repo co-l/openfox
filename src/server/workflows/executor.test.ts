@@ -438,11 +438,12 @@ describe('formatModifiedFiles', () => {
   it('returns (none) when no files are modified', async () => {
     const tmp = mkdtempSync(join(tmpdir(), 'openfox-test-'))
     try {
-      execSync('git init', { cwd: tmp, stdio: 'pipe' })
-      execSync('git config user.email test@test.com', { cwd: tmp, stdio: 'pipe' })
-      execSync('git config user.name test', { cwd: tmp, stdio: 'pipe' })
+      const gitEnv = { ...process.env, GIT_INDEX_FILE: undefined, GIT_DIR: undefined, GIT_WORK_TREE: undefined }
+      execSync('git init', { cwd: tmp, stdio: 'pipe', env: gitEnv })
+      execSync('git config user.email test@test.com', { cwd: tmp, stdio: 'pipe', env: gitEnv })
+      execSync('git config user.name test', { cwd: tmp, stdio: 'pipe', env: gitEnv })
       writeFileSync(join(tmp, 'README.md'), '# hello')
-      execSync('git add . && git commit -m init', { cwd: tmp, stdio: 'pipe' })
+      execSync('git add . && git commit -m init', { cwd: tmp, stdio: 'pipe', env: gitEnv })
       expect(await formatModifiedFiles(tmp)).toBe('(none)')
     } finally {
       rmSync(tmp, { recursive: true, force: true })
@@ -452,11 +453,12 @@ describe('formatModifiedFiles', () => {
   it('lists modified and untracked files', async () => {
     const tmp = mkdtempSync(join(tmpdir(), 'openfox-test-'))
     try {
-      execSync('git init', { cwd: tmp, stdio: 'pipe' })
-      execSync('git config user.email test@test.com', { cwd: tmp, stdio: 'pipe' })
-      execSync('git config user.name test', { cwd: tmp, stdio: 'pipe' })
+      const gitEnv = { ...process.env, GIT_INDEX_FILE: undefined, GIT_DIR: undefined, GIT_WORK_TREE: undefined }
+      execSync('git init', { cwd: tmp, stdio: 'pipe', env: gitEnv })
+      execSync('git config user.email test@test.com', { cwd: tmp, stdio: 'pipe', env: gitEnv })
+      execSync('git config user.name test', { cwd: tmp, stdio: 'pipe', env: gitEnv })
       writeFileSync(join(tmp, 'existing.ts'), 'original')
-      execSync('git add . && git commit -m init', { cwd: tmp, stdio: 'pipe' })
+      execSync('git add . && git commit -m init', { cwd: tmp, stdio: 'pipe', env: gitEnv })
       writeFileSync(join(tmp, 'existing.ts'), 'modified')
       writeFileSync(join(tmp, 'new.ts'), 'untracked')
       const result = await formatModifiedFiles(tmp)

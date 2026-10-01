@@ -445,7 +445,7 @@ export async function runAgentTurn(
     {
       mode: agentId,
       append,
-      ...(await buildRetryPatterns()),
+      retryPatternsProvider: buildRetryPatterns,
       sessionManager: options.sessionManager,
       sessionId: options.sessionId,
       llmClient: agentLlmClient,

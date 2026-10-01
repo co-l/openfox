@@ -126,6 +126,12 @@ function runMigrations(db: Database.Database): void {
     db.exec(`ALTER TABLE sessions ADD COLUMN danger_level TEXT NOT NULL DEFAULT 'normal'`)
   }
 
+  // Migration: Add night_mode column for unattended (fully autonomous) sessions
+  if (!columnNames.includes('night_mode')) {
+    logger.info('Migrating sessions table: adding night_mode column')
+    db.exec(`ALTER TABLE sessions ADD COLUMN night_mode INTEGER NOT NULL DEFAULT 0`)
+  }
+
   // Create settings table for global configuration (e.g., global instructions)
   db.exec(`
     CREATE TABLE IF NOT EXISTS settings (

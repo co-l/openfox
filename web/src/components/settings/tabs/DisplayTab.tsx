@@ -27,6 +27,18 @@ interface ToggleDefinition {
 
 const FEED_TOGGLES: ToggleDefinition[] = [
   {
+    key: SETTINGS_KEYS.DISPLAY_SHOW_PROJECTS_ABOVE_SESSIONS,
+    label: {
+      en: 'Show projects above sessions on home page',
+      fr: 'Afficher les projets au-dessus des conversations',
+    },
+    description: {
+      en: 'Display the projects list before recent sessions on the home screen',
+      fr: 'Affiche la liste des projets avant les sessions récentes sur l’écran d’accueil',
+    },
+    defaultValue: 'false',
+  },
+  {
     key: SETTINGS_KEYS.DISPLAY_SHOW_TOOL_CALL_STREAMING,
     label: {
       en: 'Show live tool call previews',
@@ -177,6 +189,7 @@ export function DisplayTab() {
   const showStats = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_STATS, 'true')
   const showAgentDefinitions = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_AGENT_DEFINITIONS, 'true')
   const showWorkflowBars = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_WORKFLOW_BARS, 'true')
+  const showProjectsAboveSessions = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_PROJECTS_ABOVE_SESSIONS, 'false')
   const showToolCallStreaming = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_TOOL_CALL_STREAMING, 'false')
   const fullscreenSlashCommand = useSetting(SETTINGS_KEYS.DISPLAY_FULLSCREEN_SLASH_COMMAND, 'false')
   const nativeScrollbars = useSetting(SETTINGS_KEYS.DISPLAY_USE_NATIVE_SCROLLBARS, 'false')
@@ -209,6 +222,7 @@ export function DisplayTab() {
   const allToggles = [...FEED_TOGGLES, ...PERF_TOGGLES, ...COMPOSER_TOGGLES]
 
   const localValues: Record<string, string> = {
+    [SETTINGS_KEYS.DISPLAY_SHOW_PROJECTS_ABOVE_SESSIONS]: showProjectsAboveSessions.value,
     [SETTINGS_KEYS.DISPLAY_SHOW_TOOL_CALL_STREAMING]: showToolCallStreaming.value,
     [SETTINGS_KEYS.DISPLAY_SHOW_THINKING]: showThinking.value,
     [SETTINGS_KEYS.DISPLAY_SHOW_VERBOSE_TOOL_OUTPUT]: showVerboseToolOutput.value,
@@ -285,6 +299,13 @@ export function DisplayTab() {
       <div className="border-t border-border pt-4">
         <h3 className="text-sm font-medium text-text-primary mb-4">{t({ en: 'Composer', fr: 'Zone de saisie' })}</h3>
         <ToggleList toggles={COMPOSER_TOGGLES} local={local} onToggle={handleToggle} />
+      </div>
+
+      <div className="border-t border-border pt-4">
+        <h3 className="text-sm font-medium text-text-primary mb-4">
+          {t({ en: 'Danger Level Selector', fr: 'Sélecteur de niveau de danger' })}
+        </h3>
+        <DangerLevelDisplaySettings />
       </div>
 
       <div className="border-t border-border pt-4">
@@ -414,6 +435,107 @@ function ModelSelectorEditor() {
           className="mt-1 h-4 w-4 rounded border-border text-accent-primary focus:ring-accent-primary"
         />
       </label>
+    </div>
+  )
+}
+
+function DangerLevelDisplaySettings() {
+  const t = useT()
+  const displayMode = useSetting(SETTINGS_KEYS.DISPLAY_DANGER_LEVEL_DISPLAY_MODE, 'default')
+  const autoList = useSetting(SETTINGS_KEYS.DISPLAY_DANGER_LEVEL_AUTO_LIST, 'false')
+  const autoListThreshold = useSetting(SETTINGS_KEYS.DISPLAY_DANGER_LEVEL_AUTO_LIST_THRESHOLD, '3')
+  const [localThreshold, setLocalThreshold] = useState(autoListThreshold.value || '3')
+
+  useEffect(() => {
+    setLocalThreshold(autoListThreshold.value || '3')
+  }, [autoListThreshold.value])
+
+  const handleModeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    void setSetting(SETTINGS_KEYS.DISPLAY_DANGER_LEVEL_DISPLAY_MODE, e.target.value)
+  }
+
+  const handleAutoListChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    void setSetting(SETTINGS_KEYS.DISPLAY_DANGER_LEVEL_AUTO_LIST, String(e.target.checked))
+  }
+
+  const handleThresholdBlur = () => {
+    const parsed = parseInt(localThreshold, 10)
+    const clamped = isNaN(parsed) || parsed < 1 ? 3 : parsed
+    setLocalThreshold(String(clamped))
+    void setSetting(SETTINGS_KEYS.DISPLAY_DANGER_LEVEL_AUTO_LIST_THRESHOLD, String(clamped))
+  }
+
+  return (
+    <div className="space-y-4">
+      <label className="flex items-center justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="text-sm text-text-primary font-medium">
+            {t({ en: 'Display style', fr: 'Style d’affichage' })}
+          </div>
+          <div className="text-xs text-text-muted mt-0.5">
+            {t({
+              en: 'Choose between segmented buttons (default) or a compact dropdown list under the chat composer.',
+              fr: 'Choisissez entre des boutons segmentés (par défaut) ou une liste déroulante compacte sous le chat.',
+            })}
+          </div>
+        </div>
+        <select
+          value={displayMode.value || 'default'}
+          onChange={handleModeChange}
+          className="px-2 py-1 text-sm text-text-primary bg-bg-tertiary border border-border rounded focus:outline-none focus:ring-2 focus:ring-accent-primary/50 focus:border-accent-primary"
+        >
+          <option value="default">{t({ en: 'Default (Buttons)', fr: 'Boutons (Défaut)' })}</option>
+          <option value="list">{t({ en: 'Dropdown List', fr: 'Liste déroulante' })}</option>
+        </select>
+      </label>
+
+      <label className="flex items-start justify-between gap-3 cursor-pointer">
+        <div className="flex-1 min-w-0">
+          <div className="text-sm text-text-primary font-medium">
+            {t({
+              en: 'Auto-switch to list if more than threshold',
+              fr: 'Basculer automatiquement en liste au-delà d’un seuil',
+            })}
+          </div>
+          <div className="text-xs text-text-muted mt-0.5">
+            {t({
+              en: 'Automatically render as a dropdown list when the number of available danger levels exceeds the threshold.',
+              fr: 'Affiche automatiquement une liste déroulante lorsque le nombre de niveaux de danger disponibles dépasse le seuil.',
+            })}
+          </div>
+        </div>
+        <input
+          type="checkbox"
+          checked={autoList.value === 'true'}
+          onChange={handleAutoListChange}
+          className="mt-1 h-4 w-4 rounded border-border text-accent-primary focus:ring-accent-primary"
+        />
+      </label>
+
+      {autoList.value === 'true' && (
+        <label className="flex items-center justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="text-sm text-text-primary font-medium">
+              {t({ en: 'Auto-switch threshold', fr: 'Seuil de bascule automatique' })}
+            </div>
+            <div className="text-xs text-text-muted mt-0.5">
+              {t({
+                en: 'Maximum number of danger levels before automatically switching to dropdown list (default: 3).',
+                fr: 'Nombre maximum de niveaux de danger avant de passer automatiquement en liste déroulante (défaut : 3).',
+              })}
+            </div>
+          </div>
+          <input
+            type="number"
+            min="1"
+            max="20"
+            value={localThreshold}
+            onChange={(e) => setLocalThreshold(e.target.value)}
+            onBlur={handleThresholdBlur}
+            className="w-20 px-2 py-1 text-sm text-text-primary bg-bg-tertiary border border-border rounded focus:outline-none focus:ring-2 focus:ring-accent-primary/50 focus:border-accent-primary text-center font-mono"
+          />
+        </label>
+      )}
     </div>
   )
 }

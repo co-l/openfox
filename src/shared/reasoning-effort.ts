@@ -72,13 +72,32 @@ export function resolveEffortForModel({
 }
 
 // ============================================================================
-// Mode-suffix model merging (e.g. OmniRoute, which exposes one model as
-// "gemini-3.6-flash-low" / "gemini-3.6-flash-medium" / "gemini-3.6-flash-high").
+// Mode-suffix model merging (providers that expose one model as several ids
+// differing only by a trailing mode suffix, e.g. "gemini-3.6-flash-low" /
+// "gemini-3.6-flash-medium" / "gemini-3.6-flash-high").
 // ============================================================================
 
 /** Suffixes OmniRoute-style providers use to qualify a mode on model IDs/names. */
 export const MODE_SUFFIXES = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 export type ModeSuffix = (typeof MODE_SUFFIXES)[number]
+
+/**
+ * Sentinel context window used when a model's real limit is unknown.
+ * A stored value equal to this means "unset" and can be overwritten by catalog data.
+ */
+export const UNKNOWN_CONTEXT_WINDOW = 200000
+
+/** Sort a list of models by semantic mode level (low → medium → high → xhigh → max). */
+export function sortByModeLevel<T extends { id: string }>(models: T[]): T[] {
+  const levelOrder = new Map<string, number>(MODE_SUFFIXES.map((s, i) => [s, i]))
+  return [...models].sort((a, b) => {
+    const la = splitModeSuffix(a.id)?.level
+    const lb = splitModeSuffix(b.id)?.level
+    const ia = la !== undefined ? (levelOrder.get(la) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER
+    const ib = lb !== undefined ? (levelOrder.get(lb) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER
+    return ia - ib || a.id.localeCompare(b.id)
+  })
+}
 
 export interface ModeModelSeed {
   id: string
@@ -135,6 +154,65 @@ export function groupModeFamilies(
     const name = baseModel?.name ?? family.name ?? baseId
     result.push({ baseId, name, members: family.members })
   }
+  return result
+}
+
+export interface ModeModelEntry {
+  id: string
+  name?: string
+  apiModelId?: string
+  contextWindow?: number
+  supportsVision?: boolean
+  modes?: Array<{ level: string; apiModelId: string; name?: string }>
+  reasoningEfforts?: string[]
+  source?: 'backend' | 'user' | 'default'
+}
+
+/**
+ * Automatically collapse a list of models containing suffixed mode variants
+ * (-low, -medium, -high) into merged models with `modes` and `reasoningEfforts`.
+ */
+export function collapseModeFamilies<T extends ModeModelEntry>(models: T[]): T[] {
+  const unmerged = models.filter((m) => !m.modes?.length)
+  const families = groupModeFamilies(unmerged)
+  if (families.length === 0) return models
+
+  let result = [...models]
+  for (const family of families) {
+    const baseModel = result.find((m) => m.id === family.baseId)
+    const members = result.filter((m) => family.members.some((mem) => mem.id === m.id))
+    if (members.length < 2) continue
+
+    const sorted = sortByModeLevel(members)
+
+    // The merged model is named after the un-suffixed base model when the
+    // catalog exposes one; otherwise the base id is all we can derive a display
+    // name from (member names carry the mode suffix and must not leak into the
+    // merged entry). Providers that care about the display name advertise the
+    // clean base name themselves.
+    const baseName = baseModel?.name ?? family.baseId.split('/').pop()?.replace(/-/g, ' ') ?? family.baseId
+
+    const merged = {
+      ...sorted[0],
+      ...(baseModel ?? {}),
+      id: family.baseId,
+      name: baseName,
+      apiModelId: baseModel?.apiModelId ?? (baseModel ? family.baseId : undefined),
+      contextWindow: baseModel?.contextWindow ?? sorted[0]?.contextWindow ?? UNKNOWN_CONTEXT_WINDOW,
+      supportsVision: baseModel?.supportsVision ?? sorted.some((m) => m.supportsVision),
+      reasoningEfforts: sorted.map((m) => splitModeSuffix(m.id)?.level).filter((l): l is string => Boolean(l)),
+      modes: sorted.map((m) => ({
+        level: splitModeSuffix(m.id)!.level,
+        apiModelId: m.apiModelId ?? m.id,
+        ...(m.name !== undefined ? { name: m.name.split('/').pop() ?? m.name } : {}),
+      })),
+      source: baseModel?.source ?? sorted[0]?.source ?? ('backend' as const),
+    } as T
+
+    const removedIds = new Set(members.map((m) => m.id))
+    result = [merged, ...result.filter((m) => !removedIds.has(m.id) && m.id !== family.baseId)]
+  }
+
   return result
 }
 

@@ -24,8 +24,16 @@ vi.mock('../lib/api', () => ({
 }))
 
 import { authFetch } from '../lib/api'
-import { summariesResource } from '../lib/resources'
+import { summariesResource, SETTINGS_KEYS } from '../lib/resources'
 import { clearCache } from '../lib/resourceCache'
+
+const { mockSettings } = vi.hoisted(() => ({
+  mockSettings: {} as Record<string, string>,
+}))
+
+vi.mock('../hooks/useSetting', () => ({
+  useSetting: (key: string, fallback = '') => ({ value: mockSettings[key] ?? fallback, loading: false }),
+}))
 
 const { listHomeSessionsMock, listSessionsMock, ensureFullSessionListMock, navigateMock } = vi.hoisted(() => ({
   listHomeSessionsMock: vi.fn(),
@@ -138,6 +146,7 @@ afterEach(() => {
 beforeEach(() => {
   sessionStore.sessions = []
   sessionStore.sessionsWithPendingConfirmations = []
+  Object.keys(mockSettings).forEach((k) => delete mockSettings[k])
   document.body.innerHTML = ''
   navigateMock.mockClear()
   listHomeSessionsMock.mockClear()
@@ -717,5 +726,28 @@ describe('HomePage', () => {
     await vi.waitFor(() => {
       expect(deleteProjectMock).toHaveBeenCalledWith('p1')
     })
+  })
+
+  it('renders recent sessions above projects by default', async () => {
+    sessionStore.sessions = [makeSession('s1', { projectId: 'p1' })]
+    const { HomePage } = await import('./HomePage')
+    const container = render(<HomePage />)
+
+    const sections = Array.from(container.querySelectorAll('[aria-label="Recent sessions"], [aria-label="Projects"]'))
+    expect(sections.length).toBe(2)
+    expect(sections[0]?.getAttribute('aria-label')).toBe('Recent sessions')
+    expect(sections[1]?.getAttribute('aria-label')).toBe('Projects')
+  })
+
+  it('renders projects above recent sessions when DISPLAY_SHOW_PROJECTS_ABOVE_SESSIONS is true', async () => {
+    mockSettings[SETTINGS_KEYS.DISPLAY_SHOW_PROJECTS_ABOVE_SESSIONS] = 'true'
+    sessionStore.sessions = [makeSession('s1', { projectId: 'p1' })]
+    const { HomePage } = await import('./HomePage')
+    const container = render(<HomePage />)
+
+    const sections = Array.from(container.querySelectorAll('[aria-label="Recent sessions"], [aria-label="Projects"]'))
+    expect(sections.length).toBe(2)
+    expect(sections[0]?.getAttribute('aria-label')).toBe('Projects')
+    expect(sections[1]?.getAttribute('aria-label')).toBe('Recent sessions')
   })
 })

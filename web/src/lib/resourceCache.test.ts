@@ -5,6 +5,7 @@ import {
   invalidate,
   load,
   refresh,
+  refreshPrefix,
   release,
   retain,
   resource,
@@ -155,6 +156,54 @@ describe('resourceCache', () => {
     invalidate('agents:/a')
     expect(snapshot('agents:/a').data).toBeUndefined()
     expect(snapshot('agents:/b').data).toBe('B')
+  })
+
+  it('refreshPrefix refetches every cached key under the prefix and leaves the others alone', async () => {
+    const agentsA = vi.fn(async () => 'A')
+    const agentsB = vi.fn(async () => 'B')
+    const commandsA = vi.fn(async () => 'C')
+    load('agents:/a', agentsA)
+    load('agents:/b', agentsB)
+    load('commands:/a', commandsA)
+    await vi.runAllTimersAsync()
+
+    agentsA.mockResolvedValueOnce('A2')
+    agentsB.mockResolvedValueOnce('B2')
+    refreshPrefix('agents:')
+    await vi.runAllTimersAsync()
+
+    expect(agentsA).toHaveBeenCalledTimes(2)
+    expect(agentsB).toHaveBeenCalledTimes(2)
+    expect(commandsA).toHaveBeenCalledTimes(1)
+    expect(snapshot('agents:/a').data).toBe('A2')
+    expect(snapshot('agents:/b').data).toBe('B2')
+    expect(snapshot('commands:/a').data).toBe('C')
+  })
+
+  it('refreshPrefix keeps the cached data visible while refetching', async () => {
+    const fetcher = vi.fn(async () => 'v1')
+    load('skills:/w', fetcher)
+    await vi.runAllTimersAsync()
+
+    fetcher.mockResolvedValueOnce('v2')
+    refreshPrefix('skills:')
+    expect(snapshot('skills:/w').loading).toBe(true)
+    expect(snapshot('skills:/w').data).toBe('v1')
+    await vi.runAllTimersAsync()
+    expect(snapshot('skills:/w').data).toBe('v2')
+    expect(snapshot('skills:/w').loading).toBe(false)
+  })
+
+  it('refreshPrefix ignores keys that were never loaded and entries already in flight', async () => {
+    const fetcher = vi.fn(async () => 'v1')
+    refreshPrefix('agents:')
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(snapshot('agents:/never').data).toBeUndefined()
+
+    load('agents:/w', fetcher)
+    refreshPrefix('agents:')
+    await vi.runAllTimersAsync()
+    expect(fetcher).toHaveBeenCalledTimes(1)
   })
 
   it('resource factory colocates keyOf/refresh/invalidate and honors maxAgeMs', async () => {
