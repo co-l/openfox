@@ -242,6 +242,16 @@ function siblingReadsSamePath(
 // ============================================================================
 
 /**
+ * Minimum delay between two argument-carrying `tool.preparing` events for the
+ * same tool call. Each such event re-sends the whole accumulated argument JSON,
+ * so emitting one per streamed chunk is quadratic in the argument size: the
+ * incident session logged 146k events (up to 30 KB each) for 691 real calls.
+ * The first argument chunk always goes out, so the live view starts instantly;
+ * the final arguments always arrive with `tool.call`.
+ */
+const PREPARING_ARG_EMIT_INTERVAL_MS = 250
+
+/**
  * Pure generator that streams a SINGLE LLM request and yields TurnEvents live.
  *
  * Does NOT:
@@ -331,7 +341,10 @@ export async function* streamLLMPure(options: PureStreamOptions): AsyncGenerator
   const returnValueArgs = new Map<number, string>()
   // Track accumulated tool arguments by index (for streaming partial args)
   const toolArgs = new Map<number, string>()
-
+  // Last time an argument-carrying preparing event went out per index. Streamed
+  // arguments re-emit the accumulated JSON on every chunk (quadratic in the
+  // argument size), so chunks inside the interval are coalesced.
+  const lastPreparingArgEmitAt = new Map<number, number>()
   let result: Awaited<ReturnType<typeof stream.next>>['value'] = null
   let aborted = false
   let streamError: string | undefined
@@ -425,11 +438,18 @@ export async function* streamLLMPure(options: PureStreamOptions): AsyncGenerator
               name === 'write_file' ||
               name === 'edit_file'
             ) {
-              const accumulatedArgs = toolArgs.get(value.index)
-              if (accumulatedArgs) {
-                yield {
-                  type: 'tool.preparing',
-                  data: { messageId, index: value.index, name, arguments: accumulatedArgs },
+              // Coalesce: one event per interval per tool call. The first chunk
+              // carrying arguments always goes out (lastEmitAt undefined).
+              const now = Date.now()
+              const lastEmitAt = lastPreparingArgEmitAt.get(value.index)
+              if (lastEmitAt === undefined || now - lastEmitAt >= PREPARING_ARG_EMIT_INTERVAL_MS) {
+                lastPreparingArgEmitAt.set(value.index, now)
+                const accumulatedArgs = toolArgs.get(value.index)
+                if (accumulatedArgs) {
+                  yield {
+                    type: 'tool.preparing',
+                    data: { messageId, index: value.index, name, arguments: accumulatedArgs },
+                  }
                 }
               }
             }

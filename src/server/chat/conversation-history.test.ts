@@ -242,6 +242,73 @@ describe('buildContextMessages', () => {
       expect(result[1]!.toolCallId).toBe('call-1')
     })
 
+    it('keeps a tool result that completes a tool call the snapshot left unresolved', () => {
+      // A sub-agent's cadence can snapshot mid-parent-turn: the parent's tool
+      // call is still awaiting its result, so the snapshot embeds it without
+      // one, and cleanupOldEvents() then deletes the parent's raw `tool.call`.
+      // Dropping the parent's later `tool.result` would leave the call
+      // unfulfilled, and stripOrphanedToolCalls would remove the call from the
+      // message entirely — losing the sub-agent's return value from context.
+      const snapshotSeq = 10
+      const events: StoredEvent[] = [
+        makeEvent({
+          seq: 1,
+          type: 'session.initialized',
+          data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
+        }),
+        makeEvent({
+          seq: snapshotSeq,
+          type: 'turn.snapshot',
+          data: {
+            mode: 'planner',
+            phase: 'plan',
+            isRunning: true,
+            messages: [
+              {
+                id: 'm1',
+                role: 'assistant',
+                content: 'delegating to a sub-agent',
+                timestamp: 5,
+                contextWindowId: 'window-1',
+                toolCalls: [{ id: 'call-1', name: 'task', arguments: { prompt: 'do it' } }],
+              },
+            ],
+            criteria: [],
+            metadataEntries: {},
+            contextState: {
+              currentTokens: 0,
+              maxTokens: 200000,
+              compactionCount: 0,
+              dangerZone: false,
+              canCompact: false,
+              dynamicContextChanged: false,
+            },
+            currentContextWindowId: 'window-1',
+            todos: [],
+            snapshotSeq,
+            snapshotAt: 5,
+          },
+        }),
+        makeEvent({
+          seq: snapshotSeq + 1,
+          type: 'tool.result',
+          data: {
+            messageId: 'm1',
+            toolCallId: 'call-1',
+            result: { success: true, output: 'sub-agent done', durationMs: 10, truncated: false },
+          },
+        }),
+      ]
+
+      const result = buildContextMessagesFromEventHistory(events, 'window-1', { includeVerifier: false })
+
+      const assistant = result.find((message) => message.role === 'assistant' && message.toolCalls?.length)
+      expect(assistant?.toolCalls?.[0]?.id).toBe('call-1')
+      const toolMessage = result.find((message) => message.role === 'tool')
+      expect(toolMessage?.toolCallId).toBe('call-1')
+      expect(toolMessage?.content).toContain('sub-agent done')
+    })
+
     it('produces the same output as buildContextMessagesFromEventHistory for top-level scope', () => {
       const events: StoredEvent[] = [
         makeEvent({

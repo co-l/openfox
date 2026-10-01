@@ -24,7 +24,7 @@ import {
 import type { RequestContextMessage } from './request-context.js'
 import { minimalMessagesToRequestContextMessages } from './request-context.js'
 import { buildContextMessagesFromEventHistory, foldContextState } from '../events/folding.js'
-import { getEventStore } from '../events/index.js'
+import { getEventStore, combineEventsWithSnapshot } from '../events/index.js'
 import { processContextImages, loadResolvedVisionModel } from '../context/image-processor.js'
 import { modelSupportsVision } from '../llm/profiles.js'
 import type { Attachment } from '../../shared/types.js'
@@ -237,7 +237,18 @@ export async function processEventsForConversation(
   onEvent: (event: TurnEvent) => void,
 ): Promise<StoredEvent[]> {
   const eventStore = getEventStore()
-  const rawEvents = eventStore.getEvents(sessionId)
+  // Bounded read: the latest snapshot already carries the folded history, so
+  // replaying it plus the events emitted after it reconstructs the session.
+  // Reading the raw log here re-read and re-parsed every event of a long
+  // session on each LLM round (~5 s of main-thread work on the incident
+  // session). Passing the snapshot's real seq lets attachment enrichment
+  // persist back into its row instead of no-oping against a synthetic seq.
+  const snapshotEvent = eventStore.getLatestSnapshot(sessionId)
+  const rawEvents = snapshotEvent
+    ? combineEventsWithSnapshot(sessionId, snapshotEvent.data, eventStore.getEvents(sessionId, snapshotEvent.seq + 1), {
+        snapshotSeq: snapshotEvent.seq,
+      })
+    : eventStore.getEvents(sessionId)
   const modelVision = modelSupportsVision(llmClient.getModel())
   const visionModel = await loadResolvedVisionModel()
   const { events: processedEvents } = await processContextImages(rawEvents, {

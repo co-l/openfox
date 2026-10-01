@@ -10,16 +10,16 @@
  * This is the ONE place where events get appended to the store.
  */
 
-import type { MessageStats, StatsIdentity, ToolCall, ToolResult } from '../../shared/types.js'
+import type { StatsIdentity, ToolCall, ToolResult } from '../../shared/types.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import type { LLMClientWithModel } from '../llm/client.js'
-import type { SessionSnapshot } from '../events/types.js'
+import type { TurnEvent } from '../events/types.js'
 import type { AgentDefinition } from '../agents/types.js'
 import { getEventStore, getCurrentContextWindowId, getCurrentWindowMessageOptions } from '../events/index.js'
-import { buildSnapshotFromSessionState } from '../events/folding.js'
 import type { SessionManager } from '../session/index.js'
 import { getToolRegistryForAgent, PathAccessDeniedError } from '../tools/index.js'
 import { buildAgentReminder, buildAgentSmallReminder, buildTopLevelSystemPrompt } from './prompts.js'
+import { createSnapshotCadence } from './snapshot-cadence.js'
 import { serverT } from '../i18n.js'
 import {
   TurnMetrics,
@@ -178,7 +178,6 @@ function resolveStatsIdentity(options: OrchestratorOptions): StatsIdentity {
 export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
   const { sessionManager, sessionId } = options
   const eventStore = getEventStore()
-  const statsIdentity = resolveStatsIdentity(options)
 
   const session = sessionManager.requireSession(sessionId)
   const mode = session.mode
@@ -189,13 +188,20 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
   sessionManager.setRunning(sessionId, true)
 
   // Create append closure — the only write path to EventStore from the loop
-  const append = (event: import('../events/types.js').TurnEvent) => {
+  const append = (event: TurnEvent) => {
     try {
       eventStore.append(sessionId, event)
     } catch {
       // Session may have been deleted (e.g. during abort) — skip
     }
   }
+
+  // Snapshot on a cadence *during* the turn. A turn can run for hours, and the
+  // end-of-turn snapshot below only runs once it finally resolves — the
+  // incident left 909 MB of payload behind a stale 95 KB snapshot, so every
+  // state load re-read the log (~12 s of synchronous work, several times a
+  // minute) and starved the event loop.
+  const cadence = createSnapshotCadence({ sessionManager, sessionId, append })
 
   // Track metrics across the turn
   const turnMetrics = new TurnMetrics()
@@ -204,16 +210,10 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
     // Generic: use session mode as the agent ID. Workflow-specific callbacks
     // (kickoff injection, step_done tracking) are handled by the workflow executor
     // which calls runAgentTurn directly — not through runChatTurn.
-    await runAgentTurn(options, turnMetrics, mode, append)
+    await runAgentTurn(options, turnMetrics, mode, cadence.append)
 
-    // Create end-of-turn snapshot
-    const snapshot = buildSnapshot(sessionManager, sessionId, turnMetrics.buildStats(statsIdentity, mode))
-    const snapshotEvent = eventStore.append(sessionId, { type: 'turn.snapshot', data: snapshot })
-
-    const deletedCount = eventStore.cleanupOldEvents(sessionId)
-    if (deletedCount > 0) {
-      logger.debug('Cleaned up old events after snapshot', { sessionId, deletedCount, snapshotSeq: snapshotEvent.seq })
-    }
+    // End-of-turn snapshot + prune.
+    cadence.flush()
   } catch (error) {
     if (error instanceof PathAccessDeniedError) {
       const errorMsgId = crypto.randomUUID()
@@ -263,12 +263,9 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
     }
 
     if (error instanceof Error && error.message === 'Aborted') {
-      try {
-        const snapshot = buildSnapshot(sessionManager, sessionId, turnMetrics.buildStats(statsIdentity, mode))
-        eventStore.append(sessionId, { type: 'turn.snapshot', data: snapshot })
-      } catch {
-        // Session may have been deleted during abort — skip cleanup
-      }
+      // A snapshot without the prune left the log unbounded on aborts; the
+      // cadence does both, and swallows the "session deleted" case itself.
+      cadence.flush()
       return
     }
 
@@ -518,26 +515,4 @@ export async function runAgentTurn(
     },
     turnMetrics,
   )
-}
-
-// ============================================================================
-// Shared Helpers
-// ============================================================================
-
-/**
- * Build a snapshot of current session state.
- */
-function buildSnapshot(sessionManager: SessionManager, sessionId: string, _lastStats?: MessageStats): SessionSnapshot {
-  const eventStore = getEventStore()
-  const session = sessionManager.requireSession(sessionId)
-  const events = eventStore.getEvents(sessionId)
-  const latestSeq = eventStore.getLatestSeq(sessionId) ?? 0
-  const cachedPrompt = sessionManager.getCachedPrompt(sessionId)
-
-  return buildSnapshotFromSessionState({
-    session,
-    events,
-    latestSeq,
-    ...(cachedPrompt ? { cachedSystemPrompt: cachedPrompt.systemPrompt, dynamicContextHash: cachedPrompt.hash } : {}),
-  })
 }

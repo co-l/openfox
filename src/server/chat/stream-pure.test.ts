@@ -105,6 +105,43 @@ describe('stream-pure', () => {
     })
   })
 
+  it('throttles streamed tool.preparing events while keeping the latest arguments', async () => {
+    // Streaming arguments re-emit the *accumulated* JSON on every chunk, which
+    // is quadratic in the argument size. Unthrottled, the incident session
+    // logged 146k tool.preparing events (up to 30 KB each) for 691 real calls.
+    const fragments = Array.from({ length: 200 }, (_, i) => `{"path":"src/a.ts","chunk":${i}}`)
+    const client = createMockClient([
+      { type: 'tool_call_delta', index: 0, name: 'write_file' },
+      ...fragments.map((argumentsJson) => ({ type: 'tool_call_delta' as const, index: 0, arguments: argumentsJson })),
+      {
+        type: 'done',
+        response: {
+          ...mockResponse,
+          toolCalls: [{ id: 'call-1', name: 'write_file', arguments: { path: 'src/a.ts' } }],
+        },
+      },
+    ])
+
+    const gen = streamLLMPure({
+      messageId: 'msg-throttle',
+      systemPrompt: 'system',
+      llmClient: client,
+      messages: [{ role: 'user', content: 'hello' }],
+      tools: [{ type: 'function', function: { name: 'write_file', description: 'Write', parameters: {} } }],
+    })
+
+    const preparing: Array<{ type: string; data: { arguments?: string } }> = []
+    await consumeStreamGenerator(gen, (event) => {
+      if (event.type === 'tool.preparing') preparing.push(event as never)
+    })
+
+    // The name-only event, then the first chunk carrying arguments: every later
+    // chunk inside the interval is coalesced.
+    expect(preparing).toHaveLength(2)
+    expect(preparing[0]!.data.arguments).toBeUndefined()
+    expect(preparing[1]!.data.arguments).toBe(fragments[0])
+  })
+
   it('excludes omitted params from result.modelParams so stats reflect the wire request', async () => {
     const client = createMockClient([
       { type: 'text_delta', content: 'hi' },
@@ -179,15 +216,18 @@ describe('stream-pure', () => {
     })
 
     const events: Array<{ type: string; data: unknown }> = []
-    await consumeStreamGenerator(gen, (event) => {
+    const result = await consumeStreamGenerator(gen, (event) => {
       events.push(event)
     })
 
     const preparingEvents = events.filter((e) => e.type === 'tool.preparing')
-    expect(preparingEvents).toHaveLength(3)
+    // Name-only event, then the first chunk carrying arguments. Remaining chunks
+    // fall inside the coalescing interval (PREPARING_ARG_EMIT_INTERVAL_MS).
+    expect(preparingEvents).toHaveLength(2)
     expect(preparingEvents[0]!).toMatchObject({ data: { name: 'run_command' } })
     expect(preparingEvents[1]!).toMatchObject({ data: { name: 'run_command', arguments: '{"command":"echo' } })
-    expect(preparingEvents[2]!).toMatchObject({ data: { name: 'run_command', arguments: '{"command":"echo hello"}' } })
+    // Coalescing never loses arguments: the complete set arrives with tool.call.
+    expect(result.toolCalls[0]!.arguments).toEqual({ command: 'echo hello' })
   })
 
   it('streams partial arguments for session_metadata', async () => {
@@ -226,12 +266,12 @@ describe('stream-pure', () => {
     })
 
     const events: Array<{ type: string; data: unknown }> = []
-    await consumeStreamGenerator(gen, (event) => {
+    const result = await consumeStreamGenerator(gen, (event) => {
       events.push(event)
     })
 
     const preparingEvents = events.filter((e) => e.type === 'tool.preparing')
-    expect(preparingEvents).toHaveLength(3)
+    expect(preparingEvents).toHaveLength(2)
     expect(preparingEvents[0]!).toMatchObject({ data: { name: 'session_metadata' } })
     expect(preparingEvents[1]!).toMatchObject({
       data: {
@@ -239,11 +279,11 @@ describe('stream-pure', () => {
         arguments: '{"action":"add","key":"criteria","id":"criterion-1","description":"Implement',
       },
     })
-    expect(preparingEvents[2]!).toMatchObject({
-      data: {
-        name: 'session_metadata',
-        arguments: '{"action":"add","key":"criteria","id":"criterion-1","description":"Implement the thing"}',
-      },
+    expect(result.toolCalls[0]!.arguments).toEqual({
+      action: 'add',
+      key: 'criteria',
+      id: 'criterion-1',
+      description: 'Implement the thing',
     })
   })
 
@@ -280,22 +320,17 @@ describe('stream-pure', () => {
     })
 
     const events: Array<{ type: string; data: unknown }> = []
-    await consumeStreamGenerator(gen, (event) => {
+    const result = await consumeStreamGenerator(gen, (event) => {
       events.push(event)
     })
 
     const preparingEvents = events.filter((e) => e.type === 'tool.preparing')
-    expect(preparingEvents).toHaveLength(4)
+    expect(preparingEvents).toHaveLength(2)
     expect(preparingEvents[0]!).toMatchObject({ data: { name: 'write_file' } })
     expect(preparingEvents[1]!).toMatchObject({
       data: { name: 'write_file', arguments: '{"path":"src/app.ts","content":"const x = 1' },
     })
-    expect(preparingEvents[2]!).toMatchObject({
-      data: { name: 'write_file', arguments: '{"path":"src/app.ts","content":"const x = 1;\\n' },
-    })
-    expect(preparingEvents[3]!).toMatchObject({
-      data: { name: 'write_file', arguments: '{"path":"src/app.ts","content":"const x = 1;\\nexport default x"}' },
-    })
+    expect(result.toolCalls[0]!.arguments).toEqual({ path: 'src/app.ts', content: 'const x = 1;\nexport default x' })
   })
 
   it('streams partial arguments for edit_file', async () => {
@@ -334,12 +369,12 @@ describe('stream-pure', () => {
     })
 
     const events: Array<{ type: string; data: unknown }> = []
-    await consumeStreamGenerator(gen, (event) => {
+    const result = await consumeStreamGenerator(gen, (event) => {
       events.push(event)
     })
 
     const preparingEvents = events.filter((e) => e.type === 'tool.preparing')
-    expect(preparingEvents).toHaveLength(3)
+    expect(preparingEvents).toHaveLength(2)
     expect(preparingEvents[0]!).toMatchObject({ data: { name: 'edit_file' } })
     expect(preparingEvents[1]!).toMatchObject({
       data: {
@@ -347,11 +382,10 @@ describe('stream-pure', () => {
         arguments: '{"path":"src/app.ts","old_string":"const x = 1","new_string":"const x',
       },
     })
-    expect(preparingEvents[2]!).toMatchObject({
-      data: {
-        name: 'edit_file',
-        arguments: '{"path":"src/app.ts","old_string":"const x = 1","new_string":"const x = 2"}',
-      },
+    expect(result.toolCalls[0]!.arguments).toEqual({
+      path: 'src/app.ts',
+      old_string: 'const x = 1',
+      new_string: 'const x = 2',
     })
   })
 
