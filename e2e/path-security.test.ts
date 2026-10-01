@@ -27,11 +27,12 @@ import {
   setSessionMode,
   setSessionDangerLevel,
   answerPathConfirmation,
+  stopSessionChat,
   type TestClient,
   type TestProject,
   type TestServerHandle,
 } from './utils/index.js'
-import type { ServerMessage } from '@openfox/shared/protocol'
+import type { ServerMessage, SessionStatePayload } from '@openfox/shared/protocol'
 // Type for path confirmation payload
 interface PathConfirmationPayload {
   callId: string
@@ -497,6 +498,70 @@ describe('Path Security', () => {
       await client.waitFor('chat.done', undefined, 5000).catch(() => null)
       const confirmations = client.allEvents().filter((e) => e.type === 'chat.path_confirmation')
       expect(confirmations.length).toBe(0)
+    })
+  })
+
+  describe('Stopping While Waiting for a Path Confirmation', () => {
+    it('closes out the pending confirmation and clears the waiting state (no resurrection on reload)', async () => {
+      client.clearEvents()
+
+      // /home/test is outside the workdir (and outside /tmp) → confirmation.
+      // The write never completes: the query is stopped while it waits.
+      await client.send('chat.send', {
+        content: 'Write to /home/test/denied.txt with content "denied"',
+      })
+
+      const confirmation = await client.waitFor('chat.path_confirmation', undefined, 10000)
+      const callId = (confirmation.payload as PathConfirmationPayload).callId
+      const session = client.getSession()!
+
+      client.clearEvents()
+      await stopSessionChat(server.url, session.id)
+
+      // The final session.state broadcast must carry the clean state: not
+      // running and no pending confirmations. The client derives
+      // "Waiting for input" and the Allow/Deny buttons from exactly these
+      // fields, so both must clear.
+      const finalState = await client.waitFor(
+        'session.state',
+        (p) => {
+          const payload = p as SessionStatePayload
+          return payload.session.isRunning === false && payload.pendingConfirmations.length === 0
+        },
+        15000,
+      )
+      const state = finalState.payload as SessionStatePayload
+      expect(state.session.isRunning).toBe(false)
+      expect(state.pendingConfirmations).toEqual([])
+      expect(state.pendingQuestions ?? []).toEqual([])
+
+      // The resolution is also announced so other same-project clients clear
+      // their home-page waiting dot for this session.
+      const resolved = await client.waitFor(
+        'session.confirmation_resolved',
+        (p) => (p as { callId: string }).callId === callId,
+        10000,
+      )
+      expect((resolved.payload as { callId: string }).callId).toBe(callId)
+
+      // The REST status projection behind the "Waiting for input" tooltip
+      // must no longer report waiting for user input.
+      const status = (await fetch(`${server.url}/api/sessions/${session.id}/status`).then((r) => r.json())) as {
+        state: string
+        waitingForUser: boolean
+      }
+      expect(status.waitingForUser).toBe(false)
+      expect(status.state).not.toBe('waiting')
+
+      // Reload parity: a full session refetch must not resurrect the
+      // cancelled confirmation either.
+      const reloaded = (await fetch(`${server.url}/api/sessions/${session.id}`).then((r) => r.json())) as {
+        session: { isRunning: boolean }
+        pendingConfirmations?: Array<{ callId: string }>
+      }
+      expect(reloaded.session.isRunning).toBe(false)
+      expect(reloaded.pendingConfirmations ?? []).toEqual([])
+      expect(callId).not.toBe('')
     })
   })
 })
