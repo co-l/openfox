@@ -23,6 +23,7 @@ import {
   formatVisionFallbackDescription,
 } from './resolve-attachments.js'
 import { sanitizeToolSchema } from './schema-sanitizer.js'
+import { downscalePngDataUrl } from './image-resize.js'
 
 import type { ContentPart } from './resolve-attachments.js'
 export { resolveAttachmentsInMessages } from './resolve-attachments.js'
@@ -180,7 +181,7 @@ async function convertAttachment(attachment: Attachment, modelSupportsVision: bo
   }
 
   if (modelSupportsVision) {
-    return [{ type: 'image_url', image_url: { url: attachment.data } }]
+    return [{ type: 'image_url', image_url: { url: downscalePngDataUrl(attachment.data) } }]
   }
 
   if (attachment.description) {
