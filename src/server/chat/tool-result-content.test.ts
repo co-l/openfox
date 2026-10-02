@@ -36,4 +36,24 @@ describe('renderToolResultContent', () => {
     const b = renderToolResultContent({ success: false, output: 'x', error: 'y' })
     expect(a).toBe(b)
   })
+
+  it('does not truncate output within the limit', () => {
+    const output = 'a'.repeat(99_999)
+    expect(renderToolResultContent({ success: true, output })).toBe(output)
+  })
+
+  it('truncates output exceeding the limit and annotates the total size', () => {
+    const output = 'a'.repeat(150_000)
+    const result = renderToolResultContent({ success: true, output })
+    expect(result.startsWith('a'.repeat(100_000))).toBe(true)
+    expect(result).toContain('[Output truncated: 150000 characters total, showing first 100000]')
+    expect(result.length).toBe(100_000 + '\n\n[Output truncated: 150000 characters total, showing first 100000]'.length)
+  })
+
+  it('truncates deterministically (byte-stable — KV-cache prefix)', () => {
+    const output = 'b'.repeat(150_000)
+    const a = renderToolResultContent({ success: true, output })
+    const b = renderToolResultContent({ success: true, output })
+    expect(a).toBe(b)
+  })
 })
