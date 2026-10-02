@@ -164,27 +164,27 @@ export function combineEventsWithSnapshot(
 /**
  * Inspect a snapshot and return the legacy compaction baseline.
  *
- * A snapshot is "legacy count-only" when its `contextWindows` array is
- * missing or empty AND `contextState.compactionCount > 0`. In that case
- * the per-compaction records have been pruned; we surface the count so
- * the rollup reports the correct `compactionCount` while flagging that
- * `compactions[]` is intentionally empty (no fake records are made up).
+ * Snapshots keep only a bounded tail of the compaction history
+ * (`contextWindows`); any records beyond that cap — as well as records in
+ * legacy snapshots where the array is missing entirely — are surfaced here
+ * as a count-only baseline so the rollup reports the correct
+ * `compactionCount` while flagging that `compactions[]` is partial (no fake
+ * records are made up).
  *
- * Returns `null` when the snapshot carries modern `contextWindows[]`
- * records (the rollup should derive `compactionCount` from those) or when
- * the count is zero / unknown.
+ * Returns `null` when every compaction has a surviving record or when the
+ * count is zero / unknown.
  */
 export function getLegacyCompactionBaseline(
   snapshot: import('./types.js').SessionSnapshot | undefined,
 ): { legacyCompactionCount: number; compactionsDetailsAvailable: boolean } | null {
   if (!snapshot) return null
-  const cw = snapshot.contextWindows
-  const hasDetails = Array.isArray(cw) && cw.length > 0
-  if (hasDetails) return null
   const ctx = snapshot.contextState
   const count = ctx && typeof ctx.compactionCount === 'number' && ctx.compactionCount > 0 ? ctx.compactionCount : 0
   if (count === 0) return null
-  return { legacyCompactionCount: count, compactionsDetailsAvailable: false }
+  const detailed = Array.isArray(snapshot.contextWindows) ? snapshot.contextWindows.length : 0
+  const pruned = count - detailed
+  if (pruned <= 0) return null
+  return { legacyCompactionCount: pruned, compactionsDetailsAvailable: false }
 }
 
 function toSnapshotMessage(message: import('../../shared/types.js').Message): SnapshotMessage {

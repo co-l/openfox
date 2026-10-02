@@ -15,6 +15,7 @@ import type {
 } from './types.js'
 import type { FormatRetry } from './apply-events.js'
 import type { WorkflowWaitingPayload } from '../../shared/protocol.js'
+import { asSessionSnapshot } from './fold-types.js'
 import type { EventLike, FoldedSessionState } from './fold-types.js'
 import type { MessageStats, MetadataEntry } from '../../shared/types.js'
 import {
@@ -23,6 +24,11 @@ import {
   applyTurnEventsToSnapshotMessages,
 } from './fold-messages.js'
 import { normalizeAskOptions } from '../../shared/ask-options.js'
+
+// Max compaction records kept in a snapshot. The full count lives in
+// `contextState.compactionCount`; records beyond this cap are reported as a
+// legacy baseline by the stats rollup.
+const MAX_CONTEXT_WINDOW_RECORDS = 200
 
 function getTimestamp(event: EventLike): number {
   return event.timestamp ?? Date.now()
@@ -90,10 +96,11 @@ export function foldContextState(events: EventLike[], initialWindowId: string): 
         break
       }
       case 'turn.snapshot': {
-        const data = event.data as SessionSnapshot
+        const data = asSessionSnapshot(event.data)
+        if (!data) break
         currentContextWindowId = data.currentContextWindowId
-        compactionCount = data.contextState.compactionCount
-        latestContextState = data.contextState
+        compactionCount = data.contextState?.compactionCount ?? 0
+        latestContextState = data.contextState ?? null
         readFilesMap.clear()
         if (data.readFiles) {
           for (const entry of data.readFiles) {
@@ -148,8 +155,8 @@ export function foldMode(events: EventLike[], defaultMode?: SessionMode): Sessio
       const data = event.data as Extract<TurnEvent, { type: 'mode.changed' }>['data']
       mode = data.mode
     } else if (event.type === 'turn.snapshot') {
-      const snapshot = event.data as SessionSnapshot
-      mode = snapshot.mode
+      const snapshot = asSessionSnapshot(event.data)
+      if (snapshot && typeof snapshot.mode === 'string') mode = snapshot.mode
     }
   }
   return mode
@@ -249,7 +256,8 @@ export function foldSessionState(
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i]!
     if (event.type === 'turn.snapshot') {
-      const snapshotData = event.data as SessionSnapshot
+      const snapshotData = asSessionSnapshot(event.data)
+      if (!snapshotData) continue
       if (snapshotData.cachedSystemPrompt && !cachedSystemPrompt) cachedSystemPrompt = snapshotData.cachedSystemPrompt
       if (snapshotData.dynamicContextHash && !dynamicContextHash) dynamicContextHash = snapshotData.dynamicContextHash
       if (snapshotData.metadataEntries && !metadataEntriesMerged) {
@@ -268,6 +276,16 @@ export function foldSessionState(
   let taskStats: TaskStats | undefined
   const messageStats: MessageStatsEntry[] = []
   let contextWindows: CompactionRecord[] = []
+
+  // The snapshot carries a bounded tail of the compaction history. Records
+  // are stored without their `summary` (never read from snapshots) and the
+  // full count is preserved via `contextState.compactionCount`, so old
+  // records beyond the cap surface as a legacy baseline in the stats rollup.
+  const trimContextWindows = (): void => {
+    if (contextWindows.length > MAX_CONTEXT_WINDOW_RECORDS) {
+      contextWindows.splice(0, contextWindows.length - MAX_CONTEXT_WINDOW_RECORDS)
+    }
+  }
 
   for (const event of events) {
     switch (event.type) {
@@ -310,9 +328,14 @@ export function foldSessionState(
         // the raw store) still count when the snapshot is the only
         // surviving artifact. The post-snapshot events following this
         // snapshot continue to accumulate on top.
-        const snapData = event.data as SessionSnapshot
+        const snapData = asSessionSnapshot(event.data)
+        if (!snapData) break
         if (Array.isArray(snapData.contextWindows) && snapData.contextWindows.length > 0) {
-          contextWindows = [...snapData.contextWindows, ...contextWindows]
+          contextWindows = [
+            ...snapData.contextWindows.map(({ summary: _summary, ...rest }) => rest),
+            ...contextWindows,
+          ]
+          trimContextWindows()
         }
         if (Array.isArray(snapData.formatRetries) && snapData.formatRetries.length > 0) {
           formatRetries = [...snapData.formatRetries, ...formatRetries]
@@ -369,9 +392,13 @@ export function foldSessionState(
           newWindowId: string
           beforeTokens: number
           afterTokens: number
-          summary: string
+          summary?: string
+          subAgentId?: string
+          subAgentType?: string
         }
-        contextWindows.push({ ...data, timestamp: getTimestamp(event) })
+        const { summary: _summary, ...rest } = data
+        contextWindows.push({ ...rest, timestamp: getTimestamp(event) })
+        trimContextWindows()
         break
       }
     }
@@ -590,12 +617,14 @@ export function buildSnapshotFromSessionState(input: {
   const foldedState = foldSessionState(events, initialWindowId, maxTokens)
   const latestSnapshotIndex = events.map((event) => event.type).lastIndexOf('turn.snapshot')
   const latestSnapshotEvent = latestSnapshotIndex >= 0 ? events[latestSnapshotIndex] : undefined
-  const messages = latestSnapshotEvent
-    ? applyTurnEventsToSnapshotMessages(
-        (latestSnapshotEvent.data as SessionSnapshot).messages,
-        events.slice(latestSnapshotIndex + 1),
-      )
-    : foldedState.messages
+  const latestSnapshot = latestSnapshotEvent ? asSessionSnapshot(latestSnapshotEvent.data) : null
+  const messages =
+    latestSnapshot && Array.isArray(latestSnapshot.messages)
+      ? applyTurnEventsToSnapshotMessages(
+          latestSnapshot.messages,
+          events.slice(latestSnapshotIndex + 1),
+        )
+      : foldedState.messages
   // The snapshot is the hot path loaded on every session open — de-duplicate
   // the never-displayed streaming output before persisting it. The function
   // returns new objects for modified messages so the source arrays are not mutated.

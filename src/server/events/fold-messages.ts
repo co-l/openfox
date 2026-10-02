@@ -1,8 +1,9 @@
 import type { Message, Attachment, StatsSource } from '../../shared/types.js'
-import type { StoredEvent, TurnEvent, SessionSnapshot, SnapshotMessage } from './types.js'
+import type { StoredEvent, TurnEvent, SnapshotMessage } from './types.js'
 import { applyEvents } from './apply-events.js'
 import { renderToolResultContent } from '../chat/tool-result-content.js'
 import type { ContextMessage, ContextMessageBuildOptions, EventLike, MessageWithId } from './fold-types.js'
+import { asSessionSnapshot } from './fold-types.js'
 
 function cloneMessage(message: Message): Message {
   return {
@@ -168,14 +169,16 @@ export function buildSessionStatsMessages(events: StoredEvent[]): StatsSource[] 
   const snapshotSeq = snapshotEvent?.seq ?? 0
 
   if (snapshotEvent) {
-    const snapshot = snapshotEvent.data as SessionSnapshot
-    for (const msg of snapshot.messages) {
-      if (msg.stats) {
-        statsById.set(msg.id, {
-          id: msg.id,
-          timestamp: new Date(msg.timestamp).toISOString(),
-          stats: msg.stats,
-        })
+    const snapshot = asSessionSnapshot(snapshotEvent.data)
+    if (snapshot) {
+      for (const msg of snapshot.messages ?? []) {
+        if (msg.stats) {
+          statsById.set(msg.id, {
+            id: msg.id,
+            timestamp: new Date(msg.timestamp).toISOString(),
+            stats: msg.stats,
+          })
+        }
       }
     }
   }
@@ -217,8 +220,8 @@ export function buildMessagesFromStoredEvents(
   // truncation that removes a message also removes its children without
   // inflating the hidden count.
   const snapshotEvent = [...events].reverse().find((event) => event.type === 'turn.snapshot')
-  if (snapshotEvent) {
-    const snapshot = snapshotEvent.data as SessionSnapshot
+  const snapshot = snapshotEvent ? asSessionSnapshot(snapshotEvent.data) : null
+  if (snapshotEvent && snapshot && Array.isArray(snapshot.messages)) {
     const laterEvents = events.filter((event) => event.seq > snapshotEvent.seq)
 
     // Count distinct messages from later events (message.start events, not all event types)
@@ -469,10 +472,10 @@ export function buildContextMessagesFromEventHistory(
   options?: ContextMessageBuildOptions,
 ): ContextMessage[] {
   const snapshotEvent = [...events].reverse().find((event) => event.type === 'turn.snapshot')
-  if (!snapshotEvent) {
+  const snapshot = snapshotEvent ? asSessionSnapshot(snapshotEvent.data) : null
+  if (!snapshotEvent || !snapshot || !Array.isArray(snapshot.messages)) {
     return buildContextMessagesFromStoredEvents(events, windowId, options)
   }
-  const snapshot = snapshotEvent.data as SessionSnapshot
 
   // The snapshot is a point-in-time capture of complete messages. Later events
   // belong to subsequent turns and carry their own messageIds. Events targeting

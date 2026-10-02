@@ -1565,6 +1565,128 @@ describe('EventStore - Event Cleanup', () => {
       expect(initAfter).toBeDefined()
       expect((initAfter!.data as { contextWindowId: string }).contextWindowId).toBe('window-1')
     })
+
+    it('consolidates successfully when an existing snapshot payload is corrupted (legacy numeric)', () => {
+      const sessionId = 'session-corrupt-snapshot'
+
+      store.append(sessionId, {
+        type: 'session.initialized',
+        data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
+      })
+      store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hello' } })
+      // Legacy corruption: a turn.snapshot row whose payload column holds a bare number.
+      db.prepare(`INSERT INTO events (session_id, seq, timestamp, event_type, payload) VALUES (?, ?, ?, ?, ?)`).run(
+        sessionId,
+        3,
+        Date.now(),
+        'turn.snapshot',
+        '6867259.0',
+      )
+      store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-2', role: 'assistant' } })
+      store.append(sessionId, { type: 'message.delta', data: { messageId: 'msg-2', content: 'Hi there' } })
+
+      const result = store.consolidateSession(sessionId)
+
+      expect(result).not.toBeNull()
+      const eventsAfter = store.getEvents(sessionId)
+      const snapshotEvent = eventsAfter.find((e) => e.type === 'turn.snapshot')!
+      const snapshotData = snapshotEvent!.data as { messages: { id: string }[]; contextState: unknown }
+      expect(snapshotData.messages).toHaveLength(2)
+      expect(snapshotData.contextState).toBeDefined()
+    })
+  })
+
+  describe('repairCorruptedSnapshots', () => {
+    it('rewrites a non-object snapshot payload into a folded snapshot', () => {
+      const sessionId = 'session-repair-1'
+
+      store.append(sessionId, {
+        type: 'session.initialized',
+        data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
+      })
+      store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-1', role: 'user', content: 'Hello' } })
+      store.append(sessionId, { type: 'message.done', data: { messageId: 'msg-1' } })
+      // seq 4: legacy corrupted snapshot (bare number in payload)
+      db.prepare(`INSERT INTO events (session_id, seq, timestamp, event_type, payload) VALUES (?, ?, ?, ?, ?)`).run(
+        sessionId,
+        4,
+        Date.now(),
+        'turn.snapshot',
+        '2828058.0',
+      )
+      store.append(sessionId, { type: 'message.start', data: { messageId: 'msg-2', role: 'assistant' } })
+      store.append(sessionId, { type: 'message.delta', data: { messageId: 'msg-2', content: 'Hi' } })
+
+      const report = store.repairCorruptedSnapshots()
+
+      expect(report.repaired).toHaveLength(1)
+      expect(report.repaired[0]!.sessionId).toBe(sessionId)
+
+      const snapshot = store.getLatestSnapshot(sessionId)!
+      const data = snapshot.data as { messages: { id: string }[]; contextState: { compactionCount: number } }
+      expect(Array.isArray(data.messages)).toBe(true)
+      expect(data.messages.map((m) => m.id)).toEqual(['msg-1'])
+      expect(data.contextState.compactionCount).toBe(0)
+      // The snapshot represents state at its seq: events after seq 3 are not in it.
+      const later = store.getEventsSinceSnapshot(sessionId)
+      expect(later.events.map((e) => e.type)).toEqual(['message.start', 'message.delta'])
+    })
+
+    it('is a no-op when all snapshot payloads are valid objects', () => {
+      const sessionId = 'session-repair-2'
+      store.append(sessionId, {
+        type: 'session.initialized',
+        data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
+      })
+      store.append(sessionId, {
+        type: 'turn.snapshot',
+        data: {
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          messages: [],
+          criteria: [],
+          metadataEntries: {},
+          contextState: {
+            currentTokens: 0,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+            dynamicContextChanged: false,
+          },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          snapshotSeq: 2,
+          snapshotAt: Date.now(),
+        },
+      })
+
+      const report = store.repairCorruptedSnapshots()
+
+      expect(report.repaired).toHaveLength(0)
+    })
+
+    it('repairs an unparseable snapshot payload', () => {
+      const sessionId = 'session-repair-3'
+      store.append(sessionId, {
+        type: 'session.initialized',
+        data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
+      })
+      db.prepare(`INSERT INTO events (session_id, seq, timestamp, event_type, payload) VALUES (?, ?, ?, ?, ?)`).run(
+        sessionId,
+        2,
+        Date.now(),
+        'turn.snapshot',
+        'not-json',
+      )
+
+      const report = store.repairCorruptedSnapshots()
+
+      expect(report.repaired).toHaveLength(1)
+      const snapshot = store.getLatestSnapshot(sessionId)!
+      expect(typeof (snapshot.data as unknown as Record<string, unknown>)['messages']).toBe('object')
+    })
   })
 
   describe('findOrphanedSessions', () => {

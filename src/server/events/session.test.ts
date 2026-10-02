@@ -33,6 +33,7 @@ import {
   getContextMessages,
   getReadFilesCache,
   isFileInCache,
+  getLegacyCompactionBaseline,
 } from './session.js'
 
 let db: Database.Database
@@ -738,5 +739,65 @@ describe('getContextMessages — snapshot-optimized (getEventsSinceSnapshot)', (
 
   it('should return empty array for non-existent session', () => {
     expect(getContextMessages('nonexistent')).toEqual([])
+  })
+})
+
+describe('compaction snapshot slimming', () => {
+  it('stores compaction records without their summary in the snapshot', () => {
+    const sessionId = 'compaction-slim-a'
+    initSession(sessionId, 'win-1')
+
+    emitContextState(sessionId, 50000, 200000, 0, false, false)
+    emitContextCompacted(sessionId, 'win-1', 'win-2', 50000, 0, 'A long compaction summary that should not be stored')
+
+    const snapshot = buildSnapshot(getSessionState(sessionId)!, 5)
+    expect(snapshot.contextWindows).toHaveLength(1)
+    expect(snapshot.contextWindows![0]).toMatchObject({
+      closedWindowId: 'win-1',
+      newWindowId: 'win-2',
+      beforeTokens: 50000,
+      afterTokens: 0,
+    })
+    expect(snapshot.contextWindows![0]).not.toHaveProperty('summary')
+  })
+
+  it('caps the snapshot compaction history at 200 records, keeping the most recent', () => {
+    const sessionId = 'compaction-slim-b'
+    initSession(sessionId, 'win-0')
+
+    for (let i = 0; i < 210; i++) {
+      emitContextCompacted(sessionId, `win-${i}`, `win-${i + 1}`, 50000, 0, `Summary ${i}`)
+    }
+
+    const snapshot = buildSnapshot(getSessionState(sessionId)!, 300)
+    expect(snapshot.contextWindows).toHaveLength(200)
+    // The oldest records are dropped, the most recent survive.
+    expect(snapshot.contextWindows![0]?.closedWindowId).toBe('win-10')
+    expect(snapshot.contextWindows![199]?.closedWindowId).toBe('win-209')
+    // The full count is preserved in contextState.
+    expect(snapshot.contextState.compactionCount).toBe(210)
+  })
+
+  it('reports the pruned compaction count as a legacy baseline', () => {
+    const sessionId = 'compaction-slim-c'
+    initSession(sessionId, 'win-0')
+
+    for (let i = 0; i < 250; i++) {
+      emitContextCompacted(sessionId, `win-${i}`, `win-${i + 1}`, 50000, 0, `Summary ${i}`)
+    }
+
+    const snapshot = buildSnapshot(getSessionState(sessionId)!, 350)
+    const baseline = getLegacyCompactionBaseline(snapshot)
+    expect(baseline).toEqual({ legacyCompactionCount: 50, compactionsDetailsAvailable: false })
+  })
+
+  it('returns no legacy baseline when every compaction has a record', () => {
+    const sessionId = 'compaction-slim-d'
+    initSession(sessionId, 'win-1')
+
+    emitContextCompacted(sessionId, 'win-1', 'win-2', 50000, 0, 'Summary')
+
+    const snapshot = buildSnapshot(getSessionState(sessionId)!, 5)
+    expect(getLegacyCompactionBaseline(snapshot)).toBeNull()
   })
 })

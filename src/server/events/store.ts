@@ -971,6 +971,90 @@ export class EventStore {
   }
 
   /**
+   * Repair legacy corrupted snapshot rows: events whose `turn.snapshot` payload
+   * is not a JSON object (e.g. a bare number such as "6867259.0") break the
+   * state folds (compactionCount, messages, ...). Each corrupted row is
+   * rewritten in place with a snapshot folded from the session's events up to
+   * that seq, so the snapshot keeps its seq semantics (events after it still
+   * replay on top). Idempotent: a no-op when every snapshot payload is valid.
+   */
+  repairCorruptedSnapshots(): { scanned: number; repaired: Array<{ sessionId: string; seq: number }> } {
+    const rows = this.db
+      .prepare(`SELECT id, session_id, seq, payload FROM events WHERE event_type = 'turn.snapshot'`)
+      .all() as Array<{ id: number; session_id: string; seq: number; payload: string }>
+
+    const repaired: Array<{ sessionId: string; seq: number }> = []
+    const update = this.db.prepare(`UPDATE events SET payload = ? WHERE id = ?`)
+
+    this.db.transaction(() => {
+      for (const row of rows) {
+        let valid = false
+        try {
+          const parsed: unknown = JSON.parse(row.payload)
+          valid = parsed !== null && typeof parsed === 'object'
+        } catch {
+          // Unparseable payload - corrupted
+        }
+        if (valid) continue
+
+        // Read the session's events up to this seq directly from the store,
+        // tolerating payloads that do not parse (the corrupted row itself is
+        // skipped - it is about to be rewritten).
+        const eventRows = this.db
+          .prepare(
+            `SELECT e.seq, e.timestamp, e.event_type, e.payload
+             FROM events e
+             LEFT JOIN tombstones t ON e.session_id = t.session_id AND e.seq = t.seq
+             WHERE e.session_id = ? AND e.seq <= ? AND t.seq IS NULL
+             ORDER BY e.seq`,
+          )
+          .all(row.session_id, row.seq) as Array<{ seq: number; timestamp: number; event_type: string; payload: string }>
+        const events: StoredEvent[] = []
+        for (const eventRow of eventRows) {
+          if (eventRow.seq === row.seq) continue
+          let data: unknown
+          try {
+            data = JSON.parse(eventRow.payload)
+          } catch {
+            continue
+          }
+          events.push({
+            seq: eventRow.seq,
+            timestamp: eventRow.timestamp,
+            sessionId: row.session_id,
+            type: eventRow.event_type as StoredEvent['type'],
+            data: data as StoredEvent['data'],
+          })
+        }
+        const initEvent = events.find((e) => e.type === 'session.initialized')
+        const initialWindowId =
+          initEvent && typeof initEvent.data === 'object' && 'contextWindowId' in initEvent.data
+            ? (initEvent.data as { contextWindowId: string }).contextWindowId
+            : 'legacy-window-1'
+        const priorSnapshot = [...events]
+          .reverse()
+          .find((e) => e.type === 'turn.snapshot' && e.seq < row.seq && typeof e.data === 'object')
+        const snapshotMessages =
+          priorSnapshot && 'messages' in (priorSnapshot.data as object) &&
+          Array.isArray((priorSnapshot.data as { messages?: unknown }).messages)
+            ? ((priorSnapshot.data as { messages: SnapshotMessage[] }).messages)
+            : []
+
+        const foldedState = foldSessionState(events, initialWindowId, 200000, snapshotMessages)
+        const snapshot = buildSnapshot(foldedState, row.seq)
+        update.run(JSON.stringify(snapshot), row.id)
+        repaired.push({ sessionId: row.session_id, seq: row.seq })
+        this.invalidateSessionCache(row.session_id)
+      }
+    })()
+
+    if (repaired.length > 0) {
+      logger.info('Repaired corrupted snapshot payloads', { count: repaired.length, repaired })
+    }
+    return { scanned: rows.length, repaired }
+  }
+
+  /**
    * Find session IDs that have orphaned events (events after latest snapshot)
    * and are not currently running.
    */
@@ -1311,6 +1395,19 @@ export function initEventStore(db: Database.Database): EventStore {
       }
     })()
   })
+
+  // Repair legacy corrupted snapshot payloads (non-object data) before any
+  // fold runs against them - idempotent, a fast no-op on clean databases.
+  try {
+    const report = eventStoreInstance!.repairCorruptedSnapshots()
+    if (report.repaired.length > 0) {
+      logger.info('Corrupted snapshots repaired at startup', report)
+    }
+  } catch (error) {
+    logger.warn('Snapshot payload repair failed at startup', {
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
 
   // Consolidate orphaned sessions asynchronously (don't block startup)
   setImmediate(() => {

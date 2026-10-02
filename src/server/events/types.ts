@@ -518,7 +518,9 @@ export interface CompactionRecord {
   newWindowId: string
   beforeTokens: number
   afterTokens: number
-  summary: string
+  // Optional: kept only in the raw `context.compacted` event; pruned from
+  // snapshot records to keep snapshots small (never read from snapshots).
+  summary?: string
   timestamp: number
 }
 

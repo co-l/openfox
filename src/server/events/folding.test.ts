@@ -10,6 +10,7 @@ import {
   buildSnapshotFromSessionState,
   buildSessionStatsMessages,
   foldContextState,
+  foldMode,
   foldSessionState,
   foldTurnEventsToSnapshotMessages,
   foldWaitingWorkflow,
@@ -3393,5 +3394,159 @@ describe('buildSessionStatsMessages', () => {
 
     expect(result).toHaveLength(1)
     expect(result[0]!.stats!.totalTime).toBe(99)
+  })
+})
+
+describe('legacy/corrupted turn.snapshot payloads (non-object data)', () => {
+  // Legacy databases contain turn.snapshot rows whose payload is a bare number
+  // (e.g. "6867259.0") instead of a snapshot object. Folds must skip them
+  // instead of throwing.
+  const numericSnapshot: StoredEvent = {
+    ...baseEvent,
+    seq: 2,
+    type: 'turn.snapshot',
+    data: 6867259 as unknown as StoredEvent['data'],
+  }
+
+  it('foldContextState skips a numeric snapshot payload without throwing', () => {
+    const events: StoredEvent[] = [
+      {
+        ...baseEvent,
+        seq: 1,
+        type: 'session.initialized',
+        data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
+      },
+      numericSnapshot,
+      {
+        ...baseEvent,
+        seq: 3,
+        type: 'context.compacted',
+        data: {
+          closedWindowId: 'window-1',
+          newWindowId: 'window-2',
+          beforeTokens: 50000,
+          afterTokens: 0,
+          summary: 's',
+        },
+      },
+    ]
+
+    const result = foldContextState(events, '')
+
+    expect(result.currentContextWindowId).toBe('window-2')
+    expect(result.compactionCount).toBe(1)
+  })
+
+  it('foldContextState tolerates a snapshot payload missing contextState', () => {
+    const events: StoredEvent[] = [
+      {
+        ...baseEvent,
+        seq: 1,
+        type: 'session.initialized',
+        data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
+      },
+      {
+        ...baseEvent,
+        seq: 2,
+        type: 'turn.snapshot',
+        data: { mode: 'planner', phase: 'plan', isRunning: false, messages: [], currentContextWindowId: 'window-9' },
+      },
+    ]
+
+    const result = foldContextState(events, 'window-1')
+
+    expect(result.currentContextWindowId).toBe('window-9')
+    expect(result.compactionCount).toBe(0)
+    expect(result.latestContextState).toBeNull()
+  })
+
+  it('foldMode keeps the default mode when the only snapshot payload is numeric', () => {
+    const events: StoredEvent[] = [numericSnapshot]
+
+    expect(foldMode(events, 'planner')).toBe('planner')
+  })
+
+  it('foldSessionState does not throw on a numeric snapshot payload', () => {
+    const events: StoredEvent[] = [
+      {
+        ...baseEvent,
+        seq: 1,
+        type: 'session.initialized',
+        data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
+      },
+      numericSnapshot,
+      { ...baseEvent, seq: 3, type: 'message.start', data: { messageId: 'm1', role: 'user', content: 'Hello' } },
+      { ...baseEvent, seq: 4, type: 'message.done', data: { messageId: 'm1' } },
+    ]
+
+    const result = foldSessionState(events, 'window-1', 200000)
+
+    expect(result.messages).toHaveLength(1)
+    expect(result.messages[0]!.content).toBe('Hello')
+    expect(result.currentContextWindowId).toBe('window-1')
+    expect(result.contextState.compactionCount).toBe(0)
+  })
+
+  it('buildMessagesFromStoredEvents falls back to raw events when the latest snapshot is corrupted', () => {
+    const events: StoredEvent[] = [
+      {
+        ...baseEvent,
+        seq: 1,
+        type: 'session.initialized',
+        data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
+      },
+      numericSnapshot,
+      { ...baseEvent, seq: 3, type: 'message.start', data: { messageId: 'm1', role: 'user', content: 'Hello' } },
+      { ...baseEvent, seq: 4, type: 'message.done', data: { messageId: 'm1' } },
+    ]
+
+    const { messages } = buildMessagesFromStoredEvents(events)
+
+    expect(messages).toHaveLength(1)
+    expect(messages[0]!.content).toBe('Hello')
+  })
+
+  it('buildContextMessagesFromEventHistory falls back to raw events when the latest snapshot is corrupted', () => {
+    const events: StoredEvent[] = [
+      {
+        ...baseEvent,
+        seq: 1,
+        type: 'session.initialized',
+        data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
+      },
+      numericSnapshot,
+      { ...baseEvent, seq: 3, type: 'message.start', data: { messageId: 'm1', role: 'user', content: 'Hello' } },
+      { ...baseEvent, seq: 4, type: 'message.done', data: { messageId: 'm1' } },
+    ]
+
+    const context = buildContextMessagesFromEventHistory(events)
+
+    expect(context).toHaveLength(1)
+    expect(context[0]!.role).toBe('user')
+    expect(context[0]!.content).toBe('Hello')
+  })
+
+  it('buildSessionStatsMessages ignores a corrupted snapshot and walks raw events', () => {
+    const events: StoredEvent[] = [
+      {
+        ...baseEvent,
+        seq: 1,
+        type: 'session.initialized',
+        data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
+      },
+      numericSnapshot,
+      { ...baseEvent, seq: 3, type: 'message.start', data: { messageId: 'm1', role: 'assistant' } },
+      {
+        ...baseEvent,
+        seq: 4,
+        type: 'message.done',
+        data: { messageId: 'm1', stats: { totalTime: 1000 } as unknown as MessageStats },
+      },
+    ]
+
+    const result = buildSessionStatsMessages(events)
+
+    expect(result).toHaveLength(1)
+    expect(result[0]!.id).toBe('m1')
   })
 })
