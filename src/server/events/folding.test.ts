@@ -492,6 +492,113 @@ describe('event folding', () => {
     ])
   })
 
+  describe('a compaction interrupted before its summary', () => {
+    // Stopped, or the server killed, while the summary was being written: the
+    // compaction prompt stayed in the context, and the next user message got
+    // a summary for an answer instead of the work (seen live after a crash:
+    // the agent replied with a summary and stopped, 1 step of 10 done).
+    const prompt = {
+      messageId: 'compact',
+      role: 'user' as const,
+      content: 'Summarize the conversation history concisely',
+      contextWindowId: 'window-1',
+      isSystemGenerated: true,
+      messageKind: 'auto-prompt' as const,
+      metadata: { type: 'compaction', name: 'Compaction', color: '#64748b' },
+    }
+    const start = (seq: number, data: Record<string, unknown>): StoredEvent => ({
+      ...baseEvent,
+      seq,
+      type: 'message.start',
+      data: { contextWindowId: 'window-1', ...data } as never,
+    })
+
+    it('drops the prompt and the cut attempt once the user has written since', () => {
+      const events: StoredEvent[] = [
+        start(1, { messageId: 'task', role: 'user', content: 'Run the ten commands' }),
+        start(2, { messageId: 'work', role: 'assistant', content: 'Ran 1 and 2.' }),
+        start(3, prompt),
+        start(4, { messageId: 'attempt', role: 'assistant', content: '## Summ' }),
+        start(5, { messageId: 'again', role: 'user', content: 'The server restarted, go on' }),
+      ]
+
+      expect(buildContextMessagesFromEventHistory(events, 'window-1').map((m) => m.content)).toEqual([
+        'Run the ten commands',
+        'Ran 1 and 2.',
+        'The server restarted, go on',
+      ])
+    })
+
+    it('keeps a compaction prompt still being answered', () => {
+      const events: StoredEvent[] = [
+        start(1, { messageId: 'task', role: 'user', content: 'Run the ten commands' }),
+        start(2, prompt),
+        start(3, { messageId: 'attempt', role: 'assistant', content: 'thinking only' }),
+        start(4, {
+          messageId: 'retry',
+          role: 'user',
+          content: 'Your previous reply contained no summary.',
+          isSystemGenerated: true,
+          messageKind: 'correction',
+        }),
+      ]
+
+      expect(buildContextMessagesFromEventHistory(events, 'window-1').map((m) => m.content)).toEqual([
+        'Run the ten commands',
+        'Summarize the conversation history concisely',
+        'thinking only',
+        'Your previous reply contained no summary.',
+      ])
+    })
+
+    it('also drops it when it comes back from a snapshot', () => {
+      const snapshot: StoredEvent = {
+        ...baseEvent,
+        seq: 1,
+        type: 'turn.snapshot',
+        data: {
+          mode: 'builder',
+          phase: 'build',
+          isRunning: false,
+          messages: [
+            { id: 'task', role: 'user', content: 'Run the ten commands', timestamp: 1, contextWindowId: 'window-1' },
+            {
+              id: 'compact',
+              role: 'user',
+              content: 'Summarize the conversation history concisely',
+              timestamp: 2,
+              contextWindowId: 'window-1',
+              isSystemGenerated: true,
+              messageKind: 'auto-prompt',
+              metadata: { type: 'compaction', name: 'Compaction', color: '#64748b' },
+            },
+          ],
+          criteria: [],
+          metadataEntries: {},
+          contextState: {
+            currentTokens: 50,
+            maxTokens: 200000,
+            compactionCount: 0,
+            dangerZone: false,
+            canCompact: false,
+            dynamicContextChanged: false,
+          },
+          currentContextWindowId: 'window-1',
+          todos: [],
+          readFiles: [],
+          snapshotSeq: 1,
+          snapshotAt: 1,
+        } as never,
+      }
+      const events = [snapshot, start(2, { messageId: 'again', role: 'user', content: 'Go on' })]
+
+      expect(buildContextMessagesFromEventHistory(events, 'window-1').map((m) => m.content)).toEqual([
+        'Run the ten commands',
+        'Go on',
+      ])
+    })
+  })
+
   it('keeps snapshot content authoritative when later events target a snapshot-covered message', () => {
     const snapshotEvent: StoredEvent = {
       ...baseEvent,

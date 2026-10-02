@@ -87,6 +87,9 @@ export function snapshotMessagesToEvents(messages: SnapshotMessage[], sessionId 
         ...(message.subAgentId !== undefined && { subAgentId: message.subAgentId }),
         ...(message.subAgentType !== undefined && { subAgentType: message.subAgentType }),
         ...(message.attachments !== undefined && { attachments: message.attachments }),
+        // Needed to recognize an interrupted compaction prompt (see below).
+        ...(message.isSystemGenerated !== undefined && { isSystemGenerated: message.isSystemGenerated }),
+        ...(message.metadata !== undefined && { metadata: message.metadata }),
       },
     })
 
@@ -268,6 +271,10 @@ export function buildContextMessagesFromStoredEvents(
   const messages: Array<ContextMessage & { id: string }> = []
   const messageMap = new Map<string, ContextMessage & { id: string }>()
   const fulfilledToolCallIds = new Set<string>()
+  // Messages that start an interrupted compaction: its prompt, followed by a
+  // message the user wrote (see dropInterruptedCompactions).
+  const compactionPromptIds = new Set<string>()
+  const userWrittenIds = new Set<string>()
 
   for (const event of events) {
     switch (event.type) {
@@ -287,6 +294,8 @@ export function buildContextMessagesFromStoredEvents(
           }
           messageMap.set(data.messageId, message)
           messages.push(message)
+          if (data.role === 'user' && data.metadata?.type === 'compaction') compactionPromptIds.add(data.messageId)
+          else if (data.role === 'user' && !data.isSystemGenerated) userWrittenIds.add(data.messageId)
         }
         break
       }
@@ -314,9 +323,31 @@ export function buildContextMessagesFromStoredEvents(
     }
   }
 
+  dropInterruptedCompactions(messages, compactionPromptIds, userWrittenIds)
   stripOrphanedToolCalls(messages, fulfilledToolCallIds)
   reorderToolMessages(messages)
   return messages.map(({ id: _id, ...message }) => message)
+}
+
+/**
+ * A compaction stopped or cut by a crash before its summary leaves its prompt
+ * (and any cut attempt) in the window. Once the user has written since, it is
+ * no longer being answered: left in, the model answers the user with a
+ * summary instead of the work. Drop it, and what follows it, up to that user
+ * message. A prompt still being answered is followed only by system messages
+ * (retries, reminders) and is kept.
+ */
+function dropInterruptedCompactions(
+  messages: MessageWithId[],
+  compactionPromptIds: Set<string>,
+  userWrittenIds: Set<string>,
+): void {
+  if (compactionPromptIds.size === 0) return
+  for (let index = messages.length - 1; index >= 0; index--) {
+    if (!compactionPromptIds.has(messages[index]!.id)) continue
+    const resumedAt = messages.findIndex((message, later) => later > index && userWrittenIds.has(message.id))
+    if (resumedAt !== -1) messages.splice(index, resumedAt - index)
+  }
 }
 
 export function handleMessageThinking(
