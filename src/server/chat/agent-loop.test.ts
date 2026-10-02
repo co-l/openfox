@@ -792,6 +792,51 @@ describe('runTopLevelAgentLoop compaction', () => {
       expect(chars(sent[3]!) / charsPerToken).toBeLessThanOrEqual(80_000 - 4_096 - 2_048)
     })
 
+    it('runs the tool calls of a response that crosses the threshold before compacting', async () => {
+      // The threshold check after a response used to start the compaction at
+      // once, dropping that response's tool calls. Seen live with a 40k
+      // window: the model wrote the value it had just read, the write was
+      // dropped by the compaction, and it ran the same command again.
+      mockSessionManager = sessionManagerAt(70_000)
+      // The context drops once compacted, like the real context state.
+      let currentTokens = 70_000
+      ;(mockSessionManager.getContextState as any).mockImplementation(() => ({
+        currentTokens,
+        maxTokens: 80_000,
+        compactionCount: 0,
+        dangerZone: false,
+        canCompact: true,
+        dynamicContextChanged: false,
+      }))
+      const toolRegistry = {
+        tools: [],
+        definitions: [],
+        execute: vi.fn().mockResolvedValue({ success: true, output: 'written', durationMs: 0, truncated: false }),
+      } as any
+      ;(consumeStreamGenerator as any)
+        .mockResolvedValueOnce(
+          ok('', [{ id: 'call-w', name: 'write_file', arguments: { path: 'secrets.md', content: 'SECRET-1' } }]),
+        )
+        .mockResolvedValueOnce(ok('Summary.'))
+        .mockResolvedValue(ok('done'))
+      const appendMock = vi.fn((event: any) => {
+        if (event?.type === 'context.compacted') currentTokens = 8_000
+      })
+
+      await runTopLevelAgentLoop(
+        makeConfig({ append: appendMock, getToolRegistry: () => toolRegistry }),
+        mockTurnMetrics,
+      )
+
+      expect(toolRegistry.execute).toHaveBeenCalledTimes(1)
+      const events = appendMock.mock.calls.map(([event]) => event)
+      const resultIndex = events.findIndex((event: any) => event?.type === 'tool.result')
+      const promptIndex = events.findIndex(isCompactionPrompt)
+      expect(resultIndex).toBeGreaterThan(-1)
+      expect(promptIndex).toBeGreaterThan(resultIndex)
+      expect(events.filter((event: any) => event?.type === 'context.compacted')).toHaveLength(1)
+    })
+
     it('gives every compaction of a turn its own overflow retries', async () => {
       // The retry budget was per turn: after three overflows anywhere in a
       // long turn, the next one fell back to the old retry-with-backoff loop.

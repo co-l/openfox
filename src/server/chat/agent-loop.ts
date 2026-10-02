@@ -767,7 +767,11 @@ export async function runTopLevelAgentLoop(
     // Check compaction threshold with fresh promptTokens from LLM.
     // When exceeded, append compaction prompt and let the next iteration
     // handle summarization — same agent, same loop, no nested call.
-    if (!compacting) {
+    // A response with tool calls is not interrupted: its calls run first and
+    // the pre-send check compacts before the next request (their results are
+    // pending then). Compacting here dropped those calls: the model's work
+    // (a write of what it had just read) was lost and redone after the summary.
+    if (!compacting && result.toolCalls.length === 0) {
       const measure = compactionMeasure()
       if (shouldCompact(measure.tokens, measure.window, measure.threshold)) {
         appendCompactionPrompt(sessionId, append, config.subAgentMetadata)
