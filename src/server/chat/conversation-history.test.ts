@@ -541,6 +541,95 @@ describe('buildContextMessages', () => {
       expect(result.some((m) => m.content === 'Continue checking')).toBe(true)
     })
 
+    it("keeps the sub-agent's task in its context after a compaction", () => {
+      // The context restarted at the compaction summary, dropping the task
+      // prompt: once the sub-agent went on with tool calls, the request had no
+      // user message at all, and Qwen3-style chat templates reject that
+      // ("No user query found in messages"); seen live with llama.cpp.
+      const sub = { subAgentId: 'sub-1', subAgentType: 'explorer' }
+      const events: StoredEvent[] = [
+        makeEvent({
+          seq: nextSeq(),
+          type: 'session.initialized',
+          data: { projectId: 'p1', workdir: '/tmp', contextWindowId: 'window-1' },
+        }),
+        makeEvent({
+          seq: nextSeq(),
+          type: 'message.start',
+          data: {
+            messageId: 'task',
+            role: 'user',
+            content: 'Run ./gen.sh 1 to 8',
+            contextWindowId: 'window-1',
+            ...sub,
+          },
+        }),
+        makeEvent({ seq: nextSeq(), type: 'message.done', data: { messageId: 'task' } }),
+        makeEvent({
+          seq: nextSeq(),
+          type: 'message.start',
+          data: { messageId: 'a1', role: 'assistant', contextWindowId: 'window-1', ...sub },
+        }),
+        makeEvent({ seq: nextSeq(), type: 'message.done', data: { messageId: 'a1' } }),
+        makeEvent({
+          seq: nextSeq(),
+          type: 'context.compacted',
+          data: {
+            closedWindowId: 'window-1',
+            newWindowId: 'window-1',
+            beforeTokens: 70000,
+            afterTokens: 0,
+            summary: 'Ran 1-3',
+            ...sub,
+          },
+        }),
+        makeEvent({
+          seq: nextSeq(),
+          type: 'message.start',
+          data: {
+            messageId: 'summary',
+            role: 'assistant',
+            content: 'Ran 1-3',
+            contextWindowId: 'window-1',
+            isCompactionSummary: true,
+            ...sub,
+          },
+        }),
+        makeEvent({ seq: nextSeq(), type: 'message.done', data: { messageId: 'summary' } }),
+        makeEvent({
+          seq: nextSeq(),
+          type: 'message.start',
+          data: { messageId: 'a2', role: 'assistant', contextWindowId: 'window-1', ...sub },
+        }),
+        makeEvent({
+          seq: nextSeq(),
+          type: 'tool.call',
+          data: {
+            messageId: 'a2',
+            toolCall: { id: 'call-4', name: 'run_command', arguments: { command: './gen.sh 4' } },
+          },
+        }),
+        makeEvent({
+          seq: nextSeq(),
+          type: 'tool.result',
+          data: {
+            messageId: 'a2',
+            toolCallId: 'call-4',
+            result: { success: true, output: 'SECRET-4', durationMs: 5, truncated: false },
+          },
+        }),
+        makeEvent({ seq: nextSeq(), type: 'message.done', data: { messageId: 'a2' } }),
+      ]
+
+      const result = buildContextMessages(events, { type: 'subagent', sessionId: 'session-1', ...sub })
+
+      expect(result[0]).toMatchObject({ role: 'user', content: 'Run ./gen.sh 1 to 8' })
+      expect(result[1]).toMatchObject({ role: 'assistant', content: 'Ran 1-3' })
+      // The pre-compaction exchanges stay out; what follows the summary stays in.
+      expect(result.some((m) => m.toolCalls?.some((c) => c.id === 'call-4'))).toBe(true)
+      expect(result.filter((m) => m.role === 'user')).toHaveLength(1)
+    })
+
     it('does not include top-level compaction as sub-agent compaction', () => {
       const events: StoredEvent[] = [
         makeEvent({

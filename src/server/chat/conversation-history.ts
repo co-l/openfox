@@ -110,6 +110,31 @@ function buildSubAgentContextMessages(events: StoredEvent[], scope: SubAgentScop
 
   const startIdx = compactionSummaryIndex >= 0 ? compactionSummaryIndex : 0
 
+  // After a compaction the context restarts at the summary, which would drop
+  // the sub-agent's task (its first user message). Keep it first: the summary
+  // is the model's paraphrase, the task is what was asked, and without any
+  // user message Qwen3-style chat templates reject the request ("No user
+  // query found in messages") once the sub-agent goes on with tool calls.
+  if (compactionSummaryIndex > 0) {
+    for (let i = 0; i < compactionSummaryIndex; i++) {
+      const event = events[i]!
+      if (event.type !== 'message.start') continue
+      const data = event.data as Extract<TurnEvent, { type: 'message.start' }>['data']
+      if (data.subAgentId !== subAgentId || data.role !== 'user' || data.messageKind === 'context-reset') continue
+      const task: InternalMessage = {
+        id: data.messageId,
+        role: 'user',
+        content: data.content ?? '',
+        subAgentId,
+        ...(data.subAgentType ? { subAgentType: data.subAgentType } : {}),
+        ...(data.attachments !== undefined ? { attachments: data.attachments as Attachment[] } : {}),
+      }
+      messageMap.set(task.id, task)
+      messages.push(task)
+      break
+    }
+  }
+
   for (let i = startIdx; i < events.length; i++) {
     const event = events[i]!
     switch (event.type) {
