@@ -750,6 +750,35 @@ describe('runTopLevelAgentLoop compaction', () => {
       expect(chars(second!) / charsPerToken).toBeLessThanOrEqual(80_000 - 4_096 - 2_048)
     })
 
+    it('counts the system prompt and tools when sizing the summary request', async () => {
+      // The measured density used to be message characters per prompt token,
+      // while the prompt also holds the system prompt and the tool definitions:
+      // on the smaller summary request that fixed part weighs more, and the
+      // request came out larger than its target (live, 37-38k for a ~34k
+      // target with a 40k window).
+      mockSessionManager = sessionManagerAt(70_000)
+      const systemPrompt = 's'.repeat(60_000)
+      assembleRequestMock.mockReturnValue({ systemPrompt, messages: [] })
+      const getConversationMessages = vi.fn().mockResolvedValue([
+        { role: 'user', content: 'Read the files.', source: 'history' },
+        { role: 'tool', content: 'y'.repeat(240_000), source: 'history', toolCallId: 'call-1' },
+      ])
+      // Everything is 3 characters per token: 300,015 characters, 100,005 tokens.
+      ;(consumeStreamGenerator as any)
+        .mockResolvedValueOnce(
+          failed(
+            'HTTP 400: {"error":{"message":"request (100005 tokens) exceeds the available context size (81920 tokens)","type":"exceed_context_size_error"}}',
+          ),
+        )
+        .mockResolvedValue(ok('Summary.'))
+
+      await runTopLevelAgentLoop(makeConfig({ initialCompacting: true, getConversationMessages }), mockTurnMetrics)
+
+      const second = assembleRequestMock.mock.calls[1]![0].messages as Array<{ content: string }>
+      const messageChars = second.reduce((n, m) => n + m.content.length, 0)
+      expect((messageChars + systemPrompt.length) / 3).toBeLessThanOrEqual(80_000 - 4_096 - 2_048)
+    })
+
     it('remembers the measured density for the next compaction of the turn', async () => {
       // Seen live: three compactions in a turn each started with an overflow.
       // Later ones were started by the pre-send check (no fresh measurement)
@@ -876,6 +905,43 @@ describe('runTopLevelAgentLoop compaction', () => {
       )
       expect(doneIndex).toBeGreaterThan(-1)
       expect(doneIndex).toBeLessThan(promptIndex)
+    })
+
+    it('learns the density from every response, not only from overflows', async () => {
+      // With the configured window smaller than the backend's (40k vs
+      // llama.cpp's 81,920), nothing overflowed, so the ~4 characters per
+      // token estimate was never corrected: dense tool output (~3) went past
+      // the threshold unseen and a compaction request reached 64k tokens.
+      mockSessionManager = sessionManagerAt(20_000, 40_000)
+      const getConversationMessages = vi
+        .fn()
+        .mockResolvedValue([{ role: 'user', content: 'u'.repeat(120_000), source: 'history' }])
+      const toolRegistry = {
+        tools: [],
+        definitions: [],
+        execute: vi
+          .fn()
+          .mockResolvedValue({ success: true, output: 'x'.repeat(48_000), durationMs: 0, truncated: false }),
+      } as any
+      ;(consumeStreamGenerator as any)
+        // 120,000 characters measured at 40,000 tokens: 3 characters per token.
+        .mockResolvedValueOnce({
+          ...ok('', [{ id: 'call-1', name: 'run_command', arguments: { command: './gen.sh 1' } }]),
+          usage: { promptTokens: 40_000, completionTokens: 50 },
+        })
+        .mockResolvedValueOnce(ok('Summary.'))
+        .mockResolvedValue(ok('done'))
+      const appendMock = vi.fn()
+
+      await runTopLevelAgentLoop(
+        makeConfig({ append: appendMock, getConversationMessages, getToolRegistry: () => toolRegistry }),
+        mockTurnMetrics,
+      )
+
+      // 20,000 measured + 48,000 characters: 12,000 tokens at 4 per token
+      // (32,000, under the 34,000 threshold), 16,000 at the measured 3 (36,000).
+      const events = appendMock.mock.calls.map(([event]) => event)
+      expect(events.some(isCompactionPrompt)).toBe(true)
     })
 
     it('gives every compaction of a turn its own overflow retries', async () => {

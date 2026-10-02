@@ -226,6 +226,12 @@ const MAX_CONTEXT_LENGTH_RETRIES = 3
 const OUTPUT_RESERVE_TOKENS = 2048
 /** Output room a compaction request keeps for the summary (see fitToolResults). */
 const COMPACTION_SUMMARY_TOKENS = 4096
+/**
+ * Message characters a request needs before its measured prompt tokens are
+ * used as the density: below, the system prompt and tool definitions (counted
+ * in the tokens, not in the characters) skew it too much.
+ */
+const DENSITY_MIN_CHARS = 40_000
 
 export async function runTopLevelAgentLoop(
   config: TopLevelLoopConfig,
@@ -256,14 +262,21 @@ export async function runTopLevelAgentLoop(
   // Set after a compaction attempt that produced no usable summary: the
   // single retry runs without thinking (see the compacting branch below).
   let compactionRetryWithoutThinking = false
-  // Characters per prompt token, measured on the last request the backend
-  // rejected as too large (its message characters / its measured tokens). Our
-  // ~4 characters per token estimate is far off for code (llama.cpp counted
-  // ~3): once measured, this density sizes the compaction requests and the
-  // pre-send estimate for the rest of the turn.
+  // Characters per prompt token, measured on the last large enough request
+  // (its characters, system prompt and tool definitions included / the prompt
+  // tokens the backend counted or, on an overflow, reported). Our ~4 characters per token estimate is far off
+  // for code and logs (llama.cpp counted ~3): once measured, this density
+  // sizes the compaction requests and the pre-send estimate for the rest of
+  // the turn. Measured on every response, not only on overflows: when the
+  // configured window is smaller than the backend's, nothing ever overflows.
   let measuredCharsPerToken: number | undefined
-  // Characters of the messages of the request last sent.
+  // Characters of the request last sent: messages, system prompt and tools.
   let lastRequestChars: number | undefined
+  // Characters of the last assembled system prompt and tool definitions. The
+  // summary request is sized before it is assembled: this fixed part weighs
+  // more on it than on the larger request the density was measured on, and
+  // leaving it out made it come out larger than its target.
+  let lastOverheadChars = 0
   let returnValueNudgeCount = 0
 
   /** Context size the auto-compaction is decided on, its window and threshold. */
@@ -387,21 +400,19 @@ export async function runTopLevelAgentLoop(
       let requestMessages = await config.getConversationMessages()
 
       // A compaction request runs on a nearly full context: when it would not
-      // leave room for the summary, shorten the largest tool results (start and
-      // end kept) rather than let it overflow too.
-      let sentChars = messageChars(requestMessages)
+      // leave room for the summary, shorten tool results (start and end kept,
+      // see fitToolResults for the order), rather than let it overflow too.
       if (compacting) {
         const window = sessionManager.getCurrentModelContext(sessionId, config.mode)
         const charsPerToken = measuredCharsPerToken ?? CHARS_PER_TOKEN
         const estimate = measuredCharsPerToken
-          ? Math.ceil(sentChars / charsPerToken)
+          ? Math.ceil((messageChars(requestMessages) + lastOverheadChars) / charsPerToken)
           : compactionMeasure().tokens + pendingToolResultTokens
         const excess = estimate - (window - COMPACTION_SUMMARY_TOKENS - OUTPUT_RESERVE_TOKENS)
         if (excess > 0) {
           // fitToolResults counts CHARS_PER_TOKEN characters per token.
           const fitted = fitToolResults(requestMessages, Math.ceil((excess * charsPerToken) / CHARS_PER_TOKEN))
           requestMessages = fitted.messages
-          sentChars = messageChars(requestMessages)
           logger.info('Shortened tool results to fit the compaction request', {
             sessionId,
             excessTokens: excess,
@@ -409,7 +420,6 @@ export async function runTopLevelAgentLoop(
           })
         }
       }
-      lastRequestChars = sentChars
 
       // The format-retry continuation is appended once per round (not on
       // LLM-error retries) — its persisted copy feeds later context rebuilds.
@@ -442,6 +452,8 @@ export async function runTopLevelAgentLoop(
         ...(instructionContent ? { customInstructions: instructionContent } : {}),
         ...(skills.length > 0 ? { skills } : {}),
       })
+      lastOverheadChars = assembledRequest.systemPrompt.length + JSON.stringify(assembledRequest.tools ?? []).length
+      lastRequestChars = messageChars(requestMessages) + lastOverheadChars
 
       assistantMsgId = crypto.randomUUID()
       // The assistant message.start is DEFERRED until the first streamed event:
@@ -560,6 +572,12 @@ export async function runTopLevelAgentLoop(
       if (!attemptResult.error) {
         ensureAssistantMessage()
         result = attemptResult
+        // A density above the estimate means fewer tokens than characters / 4
+        // were reported (e.g. only the uncached part): not a measure, ignored.
+        if (lastRequestChars !== undefined && lastRequestChars >= DENSITY_MIN_CHARS) {
+          const charsPerToken = lastRequestChars / Math.max(1, attemptResult.usage.promptTokens)
+          if (charsPerToken >= 1 && charsPerToken <= CHARS_PER_TOKEN) measuredCharsPerToken = charsPerToken
+        }
         // The overflow retries are a budget per run of failures, not per turn:
         // a long turn can compact several times.
         contextRetryCount = 0
