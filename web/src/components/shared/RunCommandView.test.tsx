@@ -4,18 +4,36 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { RunCommandView } from './RunCommandView'
 
-const wsSendMock = vi.fn()
+const wsSendMock = vi.fn().mockReturnValue('mock-msg-id')
+let wsConnected = true
+const wsSubscribers = new Set<(m: { id?: string; type: string; payload: unknown }) => void>()
 vi.mock('../../lib/ws', () => ({
   wsClient: {
-    send: (...args: unknown[]) => wsSendMock(...args),
+    send: (...args: unknown[]) => {
+      if (!wsConnected) throw new Error('WebSocket not connected')
+      return wsSendMock(...args)
+    },
+    subscribe: (handler: (m: { id?: string; type: string; payload: unknown }) => void) => {
+      wsSubscribers.add(handler)
+      return () => wsSubscribers.delete(handler)
+    },
+    get isConnected() {
+      return wsConnected
+    },
   },
 }))
+
+function dispatchWsMessage(message: { id?: string; type: string; payload: unknown }) {
+  for (const handler of wsSubscribers) handler(message)
+}
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 afterEach(() => {
   cleanup()
   wsSendMock.mockClear()
+  wsConnected = true
+  wsSubscribers.clear()
 })
 
 interface ScrollMetrics {
@@ -301,6 +319,91 @@ describe('RunCommandView fast-forward button', () => {
       })
       expect(counter()).toBe('600.0s / 600s')
       expect(wsSendMock).toHaveBeenCalledWith('command.fastForward', { toolCallId: 'call-123' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('retries the fast-forward send while the socket is down, then sends once it is back', () => {
+    vi.useFakeTimers()
+    try {
+      wsConnected = false
+      const startedAt = Date.now()
+      const { container } = render(
+        <RunCommandView
+          command="echo hello"
+          timeout={60_000}
+          status="pending"
+          startedAt={startedAt}
+          callId="call-123"
+          streamingOutput={[{ stream: 'stdout', content: 'out\n' }]}
+        />,
+      )
+
+      const button = container.querySelector('button')
+      // Crossing the threshold while the socket is down: the send throws and
+      // is swallowed.
+      act(() => {
+        button?.click()
+      })
+      expect(wsSendMock).not.toHaveBeenCalled()
+
+      // The delivery retry picks it up once the socket is back.
+      wsConnected = true
+      act(() => {
+        vi.advanceTimersByTime(1000)
+      })
+      expect(wsSendMock).toHaveBeenCalledWith('command.fastForward', { toolCallId: 'call-123' })
+      // No duplicate send on further retries.
+      act(() => {
+        vi.advanceTimersByTime(3000)
+      })
+      expect(wsSendMock).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('blocks further fast-forward when the server answers with an error (no active command)', () => {
+    vi.useFakeTimers()
+    try {
+      const startedAt = Date.now()
+      const { container } = render(
+        <RunCommandView
+          command="echo hello"
+          timeout={60_000}
+          status="pending"
+          startedAt={startedAt}
+          callId="call-123"
+          streamingOutput={[{ stream: 'stdout', content: 'out\n' }]}
+        />,
+      )
+
+      const counter = () => container.textContent?.match(/(\d+\.\d)s \/ (\d+)s/)?.[0]
+      const button = () => container.querySelector('button')
+
+      act(() => {
+        button()?.click()
+      })
+      expect(wsSendMock).toHaveBeenCalledTimes(1)
+
+      // The server reports no active command for this call id.
+      act(() => {
+        dispatchWsMessage({
+          id: 'mock-msg-id',
+          type: 'error',
+          payload: { code: 'NO_ACTIVE_COMMAND', message: 'Aucune commande active à avancer' },
+        })
+      })
+      expect(button()?.textContent).toBe('⚠')
+      expect(counter()).toBe('60.0s / 60s')
+
+      // Further clicks no longer grow the offset.
+      act(() => {
+        button()?.click()
+      })
+      expect(counter()).toBe('60.0s / 60s')
+      expect(wsSendMock).toHaveBeenCalledTimes(1)
     } finally {
       vi.useRealTimers()
     }

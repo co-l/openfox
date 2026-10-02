@@ -47,6 +47,12 @@ export const RunCommandView = memo(function RunCommandView({
   // one fixed step; the total (timeout) is never extended. When the displayed
   // elapsed reaches the total, the command is terminated on the server.
   const [elapsedOffset, setElapsedOffset] = useState(0)
+  // Set when the server answers that no active command matches the callId —
+  // further clicks would only grow the offset without any effect.
+  const [ffBlocked, setFfBlocked] = useState(false)
+  const elapsedRef = useRef(0)
+  const ffSentIdRef = useRef<string | null>(null)
+  const ffBlockedRef = useRef(false)
 
   const getViewport = useViewport(scrollRef)
   const { setAutoScroll, force_scroll_to_bottom, handleScrollbarGesture } = useAutoScroll(scrollRef, null, getViewport)
@@ -68,11 +74,51 @@ export const RunCommandView = memo(function RunCommandView({
     if (status !== 'pending' || !startedAt) return
 
     const interval = setInterval(() => {
-      setElapsed(Date.now() - startedAt)
+      const now = Date.now() - startedAt
+      elapsedRef.current = now
+      setElapsed(now)
     }, 100)
 
     return () => clearInterval(interval)
   }, [status, startedAt])
+
+  // Fast-forward delivery: when the displayed elapsed has reached the total,
+  // ensure the `command.fastForward` WS message is sent — retrying while the
+  // socket is down (e.g. right after a server restart) and giving up with a
+  // warning when the server reports no active command for this call id.
+  useEffect(() => {
+    if (status !== 'pending') return
+
+    const interval = setInterval(() => {
+      if (ffBlockedRef.current) return
+      if (ffSentIdRef.current && !wsClient.isConnected) ffSentIdRef.current = null
+      if (ffSentIdRef.current) return
+      if (elapsedRef.current + elapsedOffset < timeout) return
+      try {
+        ffSentIdRef.current = wsClient.send('command.fastForward', { toolCallId: callId })
+      } catch {
+        ffSentIdRef.current = null
+      }
+    }, 1000)
+
+    return () => clearInterval(interval)
+  }, [status, elapsedOffset, timeout, callId])
+
+  // Track the fast-forward ack: success means the command is being
+  // terminated; an error means no active command matched (stop the offset
+  // from growing past the total without any effect).
+  useEffect(() => {
+    const unsubscribe = wsClient.subscribe((message) => {
+      const sentId = ffSentIdRef.current
+      if (!sentId || message.id !== sentId) return
+      ffSentIdRef.current = null
+      if (message.type === 'error') {
+        ffBlockedRef.current = true
+        setFfBlocked(true)
+      }
+    })
+    return unsubscribe
+  }, [])
 
   // Format timeout display. The total is the fixed timeout; the displayed
   // elapsed is the real elapsed plus the fast-forward offset.
@@ -101,27 +147,41 @@ export const RunCommandView = memo(function RunCommandView({
           {status === 'pending' && (
             <button
               onClick={() => {
-                const newOffset = elapsedOffset + FAST_FORWARD_STEP_MS
-                setElapsedOffset(newOffset)
-                // Once the fast-forwarded elapsed reaches the total, terminate
-                // the command on the server so the call settles as completed.
-                if (elapsed + newOffset >= timeout) {
-                  try {
-                    wsClient.send('command.fastForward', { toolCallId: callId })
-                  } catch {
-                    // Socket not connected — nothing to do
+                if (!ffBlocked) {
+                  const newOffset = elapsedOffset + FAST_FORWARD_STEP_MS
+                  setElapsedOffset(newOffset)
+                  // Once the fast-forwarded elapsed reaches the total, request
+                  // termination on the server (retried by the delivery effect
+                  // until the socket is up and the ack arrives).
+                  if (elapsed + newOffset >= timeout && !ffSentIdRef.current) {
+                    try {
+                      ffSentIdRef.current = wsClient.send('command.fastForward', { toolCallId: callId })
+                    } catch {
+                      ffSentIdRef.current = null
+                    }
                   }
                 }
                 setSkipFeedback(true)
                 setTimeout(() => setSkipFeedback(false), 2500)
               }}
-              title={t({
-                en: 'Fast-forward +60 s (terminates at the total)',
-                fr: 'Avancer de 60 s (termine au total)',
-              })}
+              title={
+                ffBlocked
+                  ? t({
+                      en: 'No active command on the server — fast-forward unavailable',
+                      fr: 'Aucune commande active côté serveur — fast-forward indisponible',
+                    })
+                  : t({
+                      en: 'Fast-forward +60 s (terminates at the total)',
+                      fr: 'Avancer de 60 s (termine au total)',
+                    })
+              }
               className="px-1.5 py-0.5 rounded border border-accent-warning/40 text-accent-warning hover:bg-accent-warning/10 transition-colors text-[10px] flex-shrink-0"
             >
-              {skipFeedback ? t({ en: '✓ +60 s', fr: '✓ +60 s' }) : t({ en: 'Skip timeout', fr: 'Passer le timeout' })}
+              {ffBlocked
+                ? t({ en: '⚠', fr: '⚠' })
+                : skipFeedback
+                  ? t({ en: '✓ +60 s', fr: '✓ +60 s' })
+                  : t({ en: 'Skip timeout', fr: 'Passer le timeout' })}
             </button>
           )}
           {status === 'interrupted' && (
