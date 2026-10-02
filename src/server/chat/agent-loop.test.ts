@@ -627,6 +627,225 @@ describe('runTopLevelAgentLoop compaction', () => {
     })
   })
 
+  describe('a context that no longer fits', () => {
+    // Seen live with llama.cpp (n_ctx 81920): a big tool result pushed the next
+    // request to 88,901 tokens. The overflow error was not recognized, so the
+    // same request was retried with backoff until the turn gave up; and a
+    // compaction request would not have fit either.
+    const LLAMA_CPP_OVERFLOW =
+      'LLMError: HTTP 400: {"error":{"code":400,"message":"request (88901 tokens) exceeds the available context size (81920 tokens), try increasing it","type":"exceed_context_size_error"}}'
+    const ok = (content: string, toolCalls: unknown[] = []) => ({
+      content,
+      toolCalls,
+      segments: [],
+      usage: { promptTokens: 10, completionTokens: 5 },
+      timing: { ttft: 0.1, completionTime: 0.5, tps: 10, prefillTps: 100 },
+      aborted: false,
+      finishReason: toolCalls.length > 0 ? 'tool_calls' : 'stop',
+      modelParams: {},
+    })
+    const failed = (error: string) => ({ ...ok(''), usage: { promptTokens: 0, completionTokens: 0 }, error })
+
+    function sessionManagerAt(currentTokens: number, window = 80_000) {
+      return {
+        enterPauseGate: vi.fn().mockResolvedValue('released'),
+        requireSession: vi.fn().mockReturnValue({
+          workdir: '/test',
+          projectId: 'test-project',
+          executionState: null,
+          criteria: [],
+          isRunning: false,
+        }),
+        getEffectiveWorkdir: vi.fn().mockReturnValue('/test'),
+        getProjectWorkdir: vi.fn().mockReturnValue('/test'),
+        getContextState: vi.fn().mockReturnValue({
+          currentTokens,
+          maxTokens: window,
+          compactionCount: 0,
+          dangerZone: false,
+          canCompact: true,
+          dynamicContextChanged: false,
+        }),
+        getCurrentModelContext: vi.fn().mockReturnValue(window),
+        getCurrentModelSettings: vi.fn().mockReturnValue({}),
+        getModelCompactionThreshold: vi.fn().mockReturnValue(0.85),
+        setCurrentContextSize: vi.fn(),
+        getDynamicContextChanged: vi.fn().mockReturnValue(false),
+        setDynamicContextChanged: vi.fn(),
+        getCachedPrompt: vi.fn().mockReturnValue(undefined),
+        setCachedPrompt: vi.fn(),
+        getLspManager: vi.fn(),
+        drainAsapMessages: vi.fn().mockReturnValue([]),
+        getCurrentWindowMessages: vi.fn().mockReturnValue([]),
+        updateMessage: vi.fn(),
+      } as any
+    }
+    const isCompactionPrompt = (event: any) =>
+      event?.type === 'message.start' && event.data?.metadata?.type === 'compaction'
+
+    it('compacts when the backend says the prompt alone exceeds the window', async () => {
+      mockSessionManager = sessionManagerAt(60_000)
+      ;(consumeStreamGenerator as any)
+        .mockResolvedValueOnce(failed(LLAMA_CPP_OVERFLOW))
+        .mockResolvedValueOnce(ok('Summary of the work so far.'))
+        .mockResolvedValue(ok('done'))
+      const appendMock = vi.fn()
+
+      await runTopLevelAgentLoop(makeConfig({ append: appendMock }), mockTurnMetrics)
+
+      const events = appendMock.mock.calls.map(([event]) => event)
+      expect(events.some(isCompactionPrompt)).toBe(true)
+      const compacted = events.filter((event: any) => event?.type === 'context.compacted')
+      expect(compacted).toHaveLength(1)
+      expect(compacted[0].data.summary).toBe('Summary of the work so far.')
+    })
+
+    it('shortens the largest tool results so the summary request fits', async () => {
+      mockSessionManager = sessionManagerAt(78_000)
+      const huge = `start${'x'.repeat(120_000)}end`
+      const getConversationMessages = vi.fn().mockResolvedValue([
+        { role: 'user', content: 'Translate the PDF.', source: 'history' },
+        { role: 'tool', content: huge, source: 'history', toolCallId: 'call-1' },
+        { role: 'tool', content: 'short result', source: 'history', toolCallId: 'call-2' },
+      ])
+      ;(consumeStreamGenerator as any).mockResolvedValue(ok('Summary.'))
+
+      await runTopLevelAgentLoop(makeConfig({ initialCompacting: true, getConversationMessages }), mockTurnMetrics)
+
+      const sent = assembleRequestMock.mock.calls[0]![0].messages as Array<{ role: string; content: string }>
+      expect(sent[0]!.content).toBe('Translate the PDF.')
+      expect(sent[1]!.content.length).toBeLessThan(huge.length)
+      expect(sent[1]!.content.startsWith('start')).toBe(true)
+      expect(sent[1]!.content.endsWith('end')).toBe(true)
+      expect(sent[2]!.content).toBe('short result')
+    })
+
+    it('sizes the shortened summary request from what the backend measured', async () => {
+      // Our ~4 characters per token is far off for code: llama.cpp measured
+      // ~3, so a request cut on the estimate still overflowed. After an
+      // overflow, the next request is sized from the measured tokens per character.
+      mockSessionManager = sessionManagerAt(70_000)
+      const huge = 'y'.repeat(240_000)
+      const getConversationMessages = vi.fn().mockResolvedValue([
+        { role: 'user', content: 'Read the files.', source: 'history' },
+        { role: 'tool', content: huge, source: 'history', toolCallId: 'call-1' },
+      ])
+      ;(consumeStreamGenerator as any)
+        .mockResolvedValueOnce(
+          failed(
+            'HTTP 400: {"error":{"message":"request (95000 tokens) exceeds the available context size (81920 tokens)","type":"exceed_context_size_error"}}',
+          ),
+        )
+        .mockResolvedValue(ok('Summary.'))
+
+      await runTopLevelAgentLoop(makeConfig({ initialCompacting: true, getConversationMessages }), mockTurnMetrics)
+
+      const [first, second] = assembleRequestMock.mock.calls.map(
+        ([request]) => request.messages as Array<{ content: string }>,
+      )
+      const chars = (messages: Array<{ content: string }>) => messages.reduce((n, m) => n + m.content.length, 0)
+      // 95,000 tokens measured for the first request's characters: the retry
+      // must fit 80,000 - 4,096 - 2,048 tokens at that same density.
+      const charsPerToken = chars(first!) / 95_000
+      expect(chars(second!) / charsPerToken).toBeLessThanOrEqual(80_000 - 4_096 - 2_048)
+    })
+
+    it('remembers the measured density for the next compaction of the turn', async () => {
+      // Seen live: three compactions in a turn each started with an overflow.
+      // Later ones were started by the pre-send check (no fresh measurement)
+      // and sized on the ~4 characters per token estimate again, because the
+      // density learned from the first overflow was dropped.
+      mockSessionManager = sessionManagerAt(60_000)
+      const getConversationMessages = vi.fn().mockResolvedValue([
+        { role: 'user', content: 'Run the commands.', source: 'history' },
+        { role: 'tool', content: 'z'.repeat(240_000), source: 'history', toolCallId: 'call-1' },
+      ])
+      const toolRegistry = {
+        tools: [],
+        definitions: [],
+        execute: vi
+          .fn()
+          .mockResolvedValue({ success: true, output: 'x'.repeat(48_000), durationMs: 0, truncated: false }),
+      } as any
+      ;(consumeStreamGenerator as any)
+        .mockResolvedValueOnce(
+          failed(
+            'HTTP 400: {"error":{"message":"request (95000 tokens) exceeds the available context size (81920 tokens)","type":"exceed_context_size_error"}}',
+          ),
+        ) // normal request: starts the first compaction
+        .mockResolvedValueOnce(ok('First summary.'))
+        .mockResolvedValueOnce(ok('', [{ id: 'call-2', name: 'run_command', arguments: { command: './gen.sh 2' } }]))
+        .mockResolvedValueOnce(ok('Second summary.')) // started by the pre-send check
+        .mockResolvedValue(ok('done'))
+
+      await runTopLevelAgentLoop(
+        makeConfig({ getConversationMessages, getToolRegistry: () => toolRegistry }),
+        mockTurnMetrics,
+      )
+
+      const sent = assembleRequestMock.mock.calls.map(([request]) => request.messages as Array<{ content: string }>)
+      const chars = (messages: Array<{ content: string }>) => messages.reduce((n, m) => n + m.content.length, 0)
+      const charsPerToken = chars(sent[0]!) / 95_000
+      // The second compaction's first request is sized from the density
+      // measured on the first overflow, so it does not overflow in turn.
+      expect(sent).toHaveLength(5)
+      expect(chars(sent[3]!) / charsPerToken).toBeLessThanOrEqual(80_000 - 4_096 - 2_048)
+    })
+
+    it('gives every compaction of a turn its own overflow retries', async () => {
+      // The retry budget was per turn: after three overflows anywhere in a
+      // long turn, the next one fell back to the old retry-with-backoff loop.
+      mockSessionManager = sessionManagerAt(60_000)
+      const overflow = failed(LLAMA_CPP_OVERFLOW)
+      ;(consumeStreamGenerator as any)
+        .mockResolvedValueOnce(overflow)
+        .mockResolvedValueOnce(overflow)
+        .mockResolvedValueOnce(ok('First summary.'))
+        .mockResolvedValueOnce(overflow)
+        .mockResolvedValueOnce(overflow)
+        .mockResolvedValueOnce(ok('Second summary.'))
+        .mockResolvedValue(ok('done'))
+      const appendMock = vi.fn()
+
+      await runTopLevelAgentLoop(makeConfig({ append: appendMock }), mockTurnMetrics)
+
+      const compacted = appendMock.mock.calls
+        .map(([event]) => event)
+        .filter((event: any) => event?.type === 'context.compacted')
+      expect(compacted.map((event: any) => event.data.summary)).toEqual(['First summary.', 'Second summary.'])
+    })
+
+    it('compacts before sending when new tool results push the context over the threshold', async () => {
+      // 60,000 tokens measured, threshold 85 % of 80,000 = 68,000: fine after
+      // the response, but the tool result (~12,000 tokens) crosses it.
+      mockSessionManager = sessionManagerAt(60_000)
+      const toolRegistry = {
+        tools: [],
+        definitions: [],
+        execute: vi
+          .fn()
+          .mockResolvedValue({ success: true, output: 'x'.repeat(48_000), durationMs: 0, truncated: false }),
+      } as any
+      ;(consumeStreamGenerator as any)
+        .mockResolvedValueOnce(ok('', [{ id: 'call-1', name: 'read_file', arguments: { path: 'a.pdf' } }]))
+        .mockResolvedValueOnce(ok('Summary after the big read.'))
+        .mockResolvedValue(ok('done'))
+      const appendMock = vi.fn()
+
+      await runTopLevelAgentLoop(
+        makeConfig({ append: appendMock, getToolRegistry: () => toolRegistry }),
+        mockTurnMetrics,
+      )
+
+      const events = appendMock.mock.calls.map(([event]) => event)
+      const promptIndex = events.findIndex(isCompactionPrompt)
+      expect(promptIndex).toBeGreaterThan(-1)
+      const compacted = events.filter((event: any) => event?.type === 'context.compacted')
+      expect(compacted).toHaveLength(1)
+      expect(compacted[0].data.summary).toBe('Summary after the big read.')
+    })
+  })
+
   it('tags compaction events with sub-agent metadata and does not rebuild cached context', async () => {
     let subTokens = 180_000
     mockSessionManager = {

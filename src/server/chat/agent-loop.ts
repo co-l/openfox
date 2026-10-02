@@ -46,7 +46,15 @@ import {
   createChatStatsMessage,
 } from '../ws/protocol.js'
 import { executeTools, type ToolBatchContext } from './execute-tools.js'
-import { estimateToolResultTokens, isContextLengthError } from './token-budget.js'
+import {
+  CHARS_PER_TOKEN,
+  estimateToolResultTokens,
+  fitToolResults,
+  isContextLengthError,
+  messageChars,
+  promptOverflow,
+} from './token-budget.js'
+import { appendCompactionPrompt, shouldCompact } from '../context/compactor.js'
 import { loadAllAgentsDefault, getSubAgents } from '../agents/registry.js'
 import { createRetryLimiter, type RetryLimiter } from './retry-limiter.js'
 import { drainQueue } from './drain-queue.js'
@@ -216,6 +224,8 @@ export interface TopLevelLoopConfig {
 const MAX_TRUNCATION_RETRIES = 3
 const MAX_CONTEXT_LENGTH_RETRIES = 3
 const OUTPUT_RESERVE_TOKENS = 2048
+/** Output room a compaction request keeps for the summary (see fitToolResults). */
+const COMPACTION_SUMMARY_TOKENS = 4096
 
 export async function runTopLevelAgentLoop(
   config: TopLevelLoopConfig,
@@ -246,7 +256,31 @@ export async function runTopLevelAgentLoop(
   // Set after a compaction attempt that produced no usable summary: the
   // single retry runs without thinking (see the compacting branch below).
   let compactionRetryWithoutThinking = false
+  // Characters per prompt token, measured on the last request the backend
+  // rejected as too large (its message characters / its measured tokens). Our
+  // ~4 characters per token estimate is far off for code (llama.cpp counted
+  // ~3): once measured, this density sizes the compaction requests and the
+  // pre-send estimate for the rest of the turn.
+  let measuredCharsPerToken: number | undefined
+  // Characters of the messages of the request last sent.
+  let lastRequestChars: number | undefined
   let returnValueNudgeCount = 0
+
+  /** Context size the auto-compaction is decided on, its window and threshold. */
+  const compactionMeasure = () => {
+    const contextState = sessionManager.getContextState(sessionId)
+    return {
+      tokens: config.subAgentMetadata
+        ? (sessionManager.getSubAgentContextTokens?.(config.subAgentMetadata.subAgentId) ?? 0)
+        : contextState.currentTokens,
+      window: config.subAgentMetadata
+        ? sessionManager.getCurrentModelContext(sessionId, config.mode)
+        : contextState.maxTokens,
+      threshold:
+        sessionManager.getModelCompactionThreshold(sessionId, config.mode) ??
+        getRuntimeConfig().context.compactionThreshold,
+    }
+  }
 
   for (;;) {
     if (signal?.aborted) throw new Error('Aborted')
@@ -312,6 +346,20 @@ export async function runTopLevelAgentLoop(
     const toolRegistry = config.getToolRegistry()
     const currentWindowMessageOptions = getCurrentWindowMessageOptions(sessionId)
 
+    // The threshold is checked after each response, on the measured prompt.
+    // Tool results added since can push the next request over it (or over the
+    // window: a big read_file): check again before sending.
+    if (!compacting && pendingToolResultTokens > 0) {
+      const measure = compactionMeasure()
+      const pendingTokens = measuredCharsPerToken
+        ? Math.ceil((pendingToolResultTokens * CHARS_PER_TOKEN) / measuredCharsPerToken)
+        : pendingToolResultTokens
+      if (shouldCompact(measure.tokens + pendingTokens, measure.window, measure.threshold)) {
+        appendCompactionPrompt(sessionId, append, config.subAgentMetadata)
+        compacting = true
+      }
+    }
+
     // ---- LLM round with automatic failure retry ----
     // Case 1: a request fails before any content → retry the same request with
     // exponential backoff; nothing is written (message.start deferred).
@@ -336,7 +384,32 @@ export async function runTopLevelAgentLoop(
       const attemptClient = resolveClient()
       const profileDefaultMaxTokens = getModelProfile(attemptClient.getModel()).defaultMaxTokens
 
-      const requestMessages = await config.getConversationMessages()
+      let requestMessages = await config.getConversationMessages()
+
+      // A compaction request runs on a nearly full context: when it would not
+      // leave room for the summary, shorten the largest tool results (start and
+      // end kept) rather than let it overflow too.
+      let sentChars = messageChars(requestMessages)
+      if (compacting) {
+        const window = sessionManager.getCurrentModelContext(sessionId, config.mode)
+        const charsPerToken = measuredCharsPerToken ?? CHARS_PER_TOKEN
+        const estimate = measuredCharsPerToken
+          ? Math.ceil(sentChars / charsPerToken)
+          : compactionMeasure().tokens + pendingToolResultTokens
+        const excess = estimate - (window - COMPACTION_SUMMARY_TOKENS - OUTPUT_RESERVE_TOKENS)
+        if (excess > 0) {
+          // fitToolResults counts CHARS_PER_TOKEN characters per token.
+          const fitted = fitToolResults(requestMessages, Math.ceil((excess * charsPerToken) / CHARS_PER_TOKEN))
+          requestMessages = fitted.messages
+          sentChars = messageChars(requestMessages)
+          logger.info('Shortened tool results to fit the compaction request', {
+            sessionId,
+            excessTokens: excess,
+            savedTokens: fitted.savedTokens,
+          })
+        }
+      }
+      lastRequestChars = sentChars
 
       // The format-retry continuation is appended once per round (not on
       // LLM-error retries) — its persisted copy feeds later context rebuilds.
@@ -487,6 +560,9 @@ export async function runTopLevelAgentLoop(
       if (!attemptResult.error) {
         ensureAssistantMessage()
         result = attemptResult
+        // The overflow retries are a budget per run of failures, not per turn:
+        // a long turn can compact several times.
+        contextRetryCount = 0
         const usage = attemptResult.usage
         emitPluginHook('llm.completed', {
           sessionId,
@@ -531,6 +607,32 @@ export async function runTopLevelAgentLoop(
       }
 
       if (signal?.aborted) throw new Error('Aborted')
+
+      // The prompt alone exceeds the window: a smaller maxTokens cannot help.
+      // Compact (the summary request is shortened to fit, see above); if the
+      // summary request itself overflowed, shorten it by what was measured.
+      const overflow = promptOverflow(attemptResult.error)
+      const measure = compactionMeasure()
+      if (overflow && measure.threshold > 0 && contextRetryCount < MAX_CONTEXT_LENGTH_RETRIES) {
+        contextRetryCount += 1
+        // Always set: every attempt records its size before it is sent.
+        if (lastRequestChars !== undefined) {
+          // Messages lighter than our estimate (a heavy system prompt) keep the
+          // estimate; an implausible value (nearly empty request) is ignored.
+          const charsPerToken = lastRequestChars / overflow.promptTokens
+          if (charsPerToken >= 1) measuredCharsPerToken = Math.min(charsPerToken, CHARS_PER_TOKEN)
+        }
+        if (!compacting) {
+          appendCompactionPrompt(sessionId, append, config.subAgentMetadata)
+          compacting = true
+        }
+        logger.warn('Request exceeds the context window, compacting', {
+          sessionId,
+          promptTokens: overflow.promptTokens,
+          windowTokens: overflow.windowTokens,
+        })
+        continue
+      }
 
       // Context overflow: the prompt (including tool results) plus the requested
       // maxTokens exceeds the model's window. The error is deterministic, so
@@ -666,22 +768,8 @@ export async function runTopLevelAgentLoop(
     // When exceeded, append compaction prompt and let the next iteration
     // handle summarization — same agent, same loop, no nested call.
     if (!compacting) {
-      const contextState = sessionManager.getContextState(sessionId)
-      const { shouldCompact, appendCompactionPrompt } = await import('../context/compactor.js')
-      const compactionTokens = config.subAgentMetadata
-        ? (sessionManager.getSubAgentContextTokens?.(config.subAgentMetadata.subAgentId) ?? 0)
-        : contextState.currentTokens
-      const compactionWindow = config.subAgentMetadata
-        ? sessionManager.getCurrentModelContext(sessionId, config.mode)
-        : contextState.maxTokens
-      if (
-        shouldCompact(
-          compactionTokens,
-          compactionWindow,
-          sessionManager.getModelCompactionThreshold(sessionId, config.mode) ??
-            runtimeConfig.context.compactionThreshold,
-        )
-      ) {
+      const measure = compactionMeasure()
+      if (shouldCompact(measure.tokens, measure.window, measure.threshold)) {
         appendCompactionPrompt(sessionId, append, config.subAgentMetadata)
         compacting = true
         continue
