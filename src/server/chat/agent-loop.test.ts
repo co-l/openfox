@@ -837,6 +837,47 @@ describe('runTopLevelAgentLoop compaction', () => {
       expect(events.filter((event: any) => event?.type === 'context.compacted')).toHaveLength(1)
     })
 
+    it('closes the response a threshold compaction follows', async () => {
+      // The response that crossed the threshold was never closed: its message
+      // stayed "streaming" for good, live and after a reload (seen live: one
+      // per compaction).
+      mockSessionManager = sessionManagerAt(70_000)
+      let currentTokens = 70_000
+      ;(mockSessionManager.getContextState as any).mockImplementation(() => ({
+        currentTokens,
+        maxTokens: 80_000,
+        compactionCount: 0,
+        dangerZone: false,
+        canCompact: true,
+        dynamicContextChanged: false,
+      }))
+      // The first answer streams some text: its assistant message is started.
+      ;(consumeStreamGenerator as any)
+        .mockImplementationOnce(async (_gen: unknown, onEvent: (event: unknown) => Promise<void>) => {
+          await onEvent({ type: 'message.delta', data: { messageId: 'answer', content: 'Partial answer.' } })
+          return { ...ok('Partial answer.'), segments: [{ type: 'text', content: 'Partial answer.' }] }
+        })
+        .mockResolvedValueOnce(ok('Summary.'))
+        .mockResolvedValue(ok('done'))
+      const appendMock = vi.fn((event: any) => {
+        if (event?.type === 'context.compacted') currentTokens = 8_000
+      })
+
+      await runTopLevelAgentLoop(makeConfig({ append: appendMock }), mockTurnMetrics)
+
+      const events = appendMock.mock.calls.map(([event]) => event)
+      const promptIndex = events.findIndex(isCompactionPrompt)
+      const firstAnswer = events.find(
+        (event: any) => event?.type === 'message.start' && event.data.role === 'assistant',
+      )
+      expect(promptIndex).toBeGreaterThan(-1)
+      const doneIndex = events.findIndex(
+        (event: any) => event?.type === 'message.done' && event.data.messageId === firstAnswer?.data.messageId,
+      )
+      expect(doneIndex).toBeGreaterThan(-1)
+      expect(doneIndex).toBeLessThan(promptIndex)
+    })
+
     it('gives every compaction of a turn its own overflow retries', async () => {
       // The retry budget was per turn: after three overflows anywhere in a
       // long turn, the next one fell back to the old retry-with-backoff loop.

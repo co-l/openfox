@@ -774,6 +774,17 @@ export async function runTopLevelAgentLoop(
     if (!compacting && result.toolCalls.length === 0) {
       const measure = compactionMeasure()
       if (shouldCompact(measure.tokens, measure.window, measure.threshold)) {
+        // Close the response first: it stayed "streaming" for good otherwise,
+        // live and after a reload.
+        if (assistantMessageStarted) {
+          append(
+            createMessageDoneEvent(assistantMsgId, {
+              segments: result.segments,
+              stats: turnMetrics.buildStats(statsIdentity, mode),
+            }),
+          )
+          onMessage?.(createChatMessageUpdatedMessage(assistantMsgId, { isStreaming: false }))
+        }
         appendCompactionPrompt(sessionId, append, config.subAgentMetadata)
         compacting = true
         continue
