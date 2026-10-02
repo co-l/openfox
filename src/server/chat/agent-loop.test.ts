@@ -615,6 +615,31 @@ describe('runTopLevelAgentLoop compaction', () => {
       expect(errors[0].data.recoverable).toBe(true)
     })
 
+    it('closes every discarded attempt when no summary comes', async () => {
+      // The empty-summary path reported the error without closing the attempt:
+      // a reasoning-only attempt stayed "streaming" for good.
+      mockSessionManager = sessionManagerForCompaction()
+      const thinkingAttempt = async (_gen: unknown, onEvent: (event: unknown) => Promise<void>) => {
+        await onEvent({ type: 'message.thinking', data: { messageId: 'x', content: 'Let me look at' } })
+        return attempt({ thinkingContent: 'Let me look at', finishReason: 'length' })
+      }
+      ;(consumeStreamGenerator as any).mockImplementationOnce(thinkingAttempt).mockImplementationOnce(thinkingAttempt)
+      const appendMock = vi.fn()
+
+      await runTopLevelAgentLoop(makeConfig({ append: appendMock, initialCompacting: true }), mockTurnMetrics)
+
+      const events = appendMock.mock.calls.map(([event]) => event)
+      const started = events
+        .filter((event: any) => event?.type === 'message.start' && event.data.role === 'assistant')
+        .map((event: any) => event.data.messageId)
+      const done = new Set(
+        events.filter((event: any) => event?.type === 'message.done').map((event: any) => event.data.messageId),
+      )
+      expect(started).toHaveLength(2)
+      expect(started.every((id: string) => done.has(id))).toBe(true)
+      expect(events.filter((event: any) => event?.type === 'chat.error')).toHaveLength(1)
+    })
+
     it('still accepts a complete reasoning-only answer on the retry', async () => {
       // Some setups route the whole answer through the reasoning field.
       const { compacted } = await compactWith(
@@ -942,6 +967,35 @@ describe('runTopLevelAgentLoop compaction', () => {
       // (32,000, under the 34,000 threshold), 16,000 at the measured 3 (36,000).
       const events = appendMock.mock.calls.map(([event]) => event)
       expect(events.some(isCompactionPrompt)).toBe(true)
+    })
+
+    it('closes a summary attempt that called a tool before asking again', async () => {
+      // The "tool calls are not possible" path left the attempt "streaming"
+      // for good (seen live: one stuck message per such attempt).
+      mockSessionManager = sessionManagerAt(10_000)
+      ;(consumeStreamGenerator as any)
+        .mockImplementationOnce(async (_gen: unknown, onEvent: (event: unknown) => Promise<void>) => {
+          await onEvent({ type: 'message.delta', data: { messageId: 'attempt', content: 'Let me check first.' } })
+          return ok('Let me check first.', [{ id: 'call-r', name: 'read_file', arguments: { path: 'secrets.md' } }])
+        })
+        .mockResolvedValue(ok('Summary.'))
+      const appendMock = vi.fn()
+
+      await runTopLevelAgentLoop(makeConfig({ append: appendMock, initialCompacting: true }), mockTurnMetrics)
+
+      const events = appendMock.mock.calls.map(([event]) => event)
+      const attempt = events.find((event: any) => event?.type === 'message.start' && event.data.role === 'assistant')
+      const rejection = events.findIndex(
+        (event: any) =>
+          event?.type === 'message.start' && String(event.data.content).startsWith('Tool calls are not possible'),
+      )
+      const closed = events.findIndex(
+        (event: any) => event?.type === 'message.done' && event.data.messageId === attempt?.data.messageId,
+      )
+      expect(rejection).toBeGreaterThan(-1)
+      expect(closed).toBeGreaterThan(-1)
+      expect(closed).toBeLessThan(rejection)
+      expect(events.filter((event: any) => event?.type === 'context.compacted')).toHaveLength(1)
     })
 
     it('gives every compaction of a turn its own overflow retries', async () => {

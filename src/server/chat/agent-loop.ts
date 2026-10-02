@@ -864,6 +864,11 @@ export async function runTopLevelAgentLoop(
 
     if (result.toolCalls.length > 0) {
       if (compacting) {
+        // Close the attempt first: it stayed "streaming" for good otherwise.
+        if (assistantMessageStarted) {
+          append(createMessageDoneEvent(assistantMsgId, { segments: result.segments, partial: true }))
+          onMessage?.(createChatMessageUpdatedMessage(assistantMsgId, { isStreaming: false, partial: true }))
+        }
         const rejectionMsgId = crypto.randomUUID()
         append(
           createMessageStartEvent(
@@ -1022,6 +1027,11 @@ ${COMPACTION_PROMPT}`,
       }
       compactionRetryWithoutThinking = false
       if (!summary) {
+        // Close the attempt first: it stayed "streaming" for good otherwise.
+        if (assistantMessageStarted) {
+          append(createMessageDoneEvent(assistantMsgId, { partial: true }))
+          onMessage?.(createChatMessageUpdatedMessage(assistantMsgId, { isStreaming: false, partial: true }))
+        }
         append({
           type: 'chat.error',
           data: {
