@@ -243,6 +243,9 @@ export async function runTopLevelAgentLoop(
   let currentMaxTokensOverride: number | undefined
   let lastPatternMatch: { pattern: string; field: string; matchedContent: string } | undefined
   let compacting = config.initialCompacting ?? false
+  // Set after a compaction attempt that produced no usable summary: the
+  // single retry runs without thinking (see the compacting branch below).
+  let compactionRetryWithoutThinking = false
   let returnValueNudgeCount = 0
 
   for (;;) {
@@ -398,7 +401,11 @@ export async function runTopLevelAgentLoop(
         contextWindow - previousContextTokens - pendingToolResultTokens - OUTPUT_RESERVE_TOKENS,
       )
 
-      let modelSettings = config.modelSettings ?? sessionManager.getCurrentModelSettings(sessionId, config.mode)
+      let modelSettings =
+        config.modelSettings ??
+        (compacting && compactionRetryWithoutThinking
+          ? sessionManager.getCurrentModelSettings(sessionId, config.mode, { thinking: false })
+          : sessionManager.getCurrentModelSettings(sessionId, config.mode))
       if (modelSettings && currentMaxTokensOverride !== undefined) {
         modelSettings = { ...modelSettings, maxTokens: currentMaxTokensOverride }
       }
@@ -851,7 +858,48 @@ ${COMPACTION_PROMPT}`,
     }
 
     if (compacting) {
-      const summary = result.content?.trim() || result.thinkingContent?.trim() || ''
+      // The summary request runs with the context nearly full, so its output
+      // budget can be tiny: a thinking model may spend all of it reasoning and
+      // return no answer, or a cut one. That reasoning must not become the
+      // summary (the next window would start from it, and the next compaction
+      // copy it). Retry once without thinking; on that retry, a complete
+      // reasoning-only answer is accepted (setups that route the whole answer
+      // through the reasoning field), a cut one is not.
+      const answer = result.content?.trim() ?? ''
+      const reasoning = result.thinkingContent?.trim() ?? ''
+      const cut = result.finishReason === 'length'
+      const isRetry = compactionRetryWithoutThinking
+      const summary = answer && !(cut && !isRetry) ? answer : isRetry && !cut ? reasoning : ''
+      if (!summary && !isRetry && (answer || reasoning)) {
+        logger.warn('Compaction produced no usable summary, retrying without thinking', {
+          sessionId,
+          finishReason: result.finishReason,
+          answerChars: answer.length,
+          reasoningChars: reasoning.length,
+        })
+        if (assistantMessageStarted) {
+          append(createMessageDoneEvent(assistantMsgId, { partial: true }))
+          onMessage?.(createChatMessageUpdatedMessage(assistantMsgId, { isStreaming: false, partial: true }))
+        }
+        const retryMsgId = crypto.randomUUID()
+        append(
+          createMessageStartEvent(
+            retryMsgId,
+            'user',
+            'Your previous reply contained no summary. Reply now with the summary only, as instructed above, without deliberating first.',
+            {
+              ...(currentWindowMessageOptions ?? {}),
+              isSystemGenerated: true,
+              messageKind: 'correction',
+              ...subAgentTags(),
+            },
+          ),
+        )
+        append({ type: 'message.done', data: { messageId: retryMsgId } })
+        compactionRetryWithoutThinking = true
+        continue
+      }
+      compactionRetryWithoutThinking = false
       if (!summary) {
         append({
           type: 'chat.error',

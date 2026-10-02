@@ -526,6 +526,107 @@ describe('runTopLevelAgentLoop compaction', () => {
     expect(freshContextEvents).toHaveLength(0)
   })
 
+  describe('a summary attempt that only reasoned', () => {
+    // A compaction request runs with the context nearly full, so its output
+    // budget can be tiny. A thinking model then spends it all on reasoning and
+    // returns no answer: the truncated reasoning used to become the summary,
+    // and the next window started from it (seen live: 700 characters cut
+    // mid-sentence, then copied verbatim by the next compaction).
+    const attempt = (fields: { content?: string; thinkingContent?: string; finishReason?: string }) => ({
+      content: fields.content ?? '',
+      ...(fields.thinkingContent !== undefined && { thinkingContent: fields.thinkingContent }),
+      toolCalls: [],
+      segments: [],
+      usage: { promptTokens: 10, completionTokens: 5 },
+      timing: { ttft: 0.1, completionTime: 0.5, tps: 10, prefillTps: 100 },
+      aborted: false,
+      finishReason: fields.finishReason ?? 'stop',
+      modelParams: {},
+    })
+
+    function sessionManagerForCompaction() {
+      return {
+        enterPauseGate: vi.fn().mockResolvedValue('released'),
+        requireSession: vi.fn().mockReturnValue({
+          workdir: '/test',
+          projectId: 'test-project',
+          executionState: null,
+          criteria: [],
+          isRunning: false,
+        }),
+        getEffectiveWorkdir: vi.fn().mockReturnValue('/test'),
+        getProjectWorkdir: vi.fn().mockReturnValue('/test'),
+        getContextState: vi.fn().mockReturnValue({
+          currentTokens: 0,
+          maxTokens: 200000,
+          compactionCount: 0,
+          dangerZone: false,
+          canCompact: false,
+          dynamicContextChanged: false,
+        }),
+        getCurrentModelContext: vi.fn().mockReturnValue(200000),
+        getCurrentModelSettings: vi.fn().mockReturnValue({}),
+        getModelCompactionThreshold: vi.fn().mockReturnValue(undefined),
+        setCurrentContextSize: vi.fn(),
+        getDynamicContextChanged: vi.fn().mockReturnValue(false),
+        setDynamicContextChanged: vi.fn(),
+        getCachedPrompt: vi.fn().mockReturnValue(undefined),
+        setCachedPrompt: vi.fn(),
+        getLspManager: vi.fn(),
+        drainAsapMessages: vi.fn().mockReturnValue([]),
+        getCurrentWindowMessages: vi.fn().mockReturnValue([]),
+        updateMessage: vi.fn(),
+      } as any
+    }
+
+    async function compactWith(...attempts: ReturnType<typeof attempt>[]) {
+      mockSessionManager = sessionManagerForCompaction()
+      for (const result of attempts) (consumeStreamGenerator as any).mockResolvedValueOnce(result)
+      const appendMock = vi.fn()
+      await runTopLevelAgentLoop(makeConfig({ append: appendMock, initialCompacting: true }), mockTurnMetrics)
+      const events = appendMock.mock.calls.map(([event]) => event)
+      return {
+        compacted: events.filter((event: any) => event?.type === 'context.compacted'),
+        errors: events.filter((event: any) => event?.type === 'chat.error'),
+        settingsCalls: (mockSessionManager.getCurrentModelSettings as any).mock.calls as unknown[][],
+      }
+    }
+
+    it('retries once without thinking, then keeps the real summary', async () => {
+      const { compacted, settingsCalls } = await compactWith(
+        attempt({ thinkingContent: 'The user wants me to summarize. Let me look at', finishReason: 'length' }),
+        attempt({ content: 'Real summary of the work.' }),
+      )
+
+      expect(compacted).toHaveLength(1)
+      expect(compacted[0].data.summary).toBe('Real summary of the work.')
+      // The retry asks for the non-thinking mode: the small budget goes to the answer.
+      expect(settingsCalls.at(-1)?.[2]).toEqual({ thinking: false })
+    })
+
+    it('keeps the full context when the retry has no summary either', async () => {
+      const { compacted, errors } = await compactWith(
+        attempt({ thinkingContent: 'Let me look at what happened', finishReason: 'length' }),
+        attempt({ thinkingContent: 'Let me look at what happened', finishReason: 'length' }),
+      )
+
+      expect(compacted).toHaveLength(0)
+      expect(errors).toHaveLength(1)
+      expect(errors[0].data.recoverable).toBe(true)
+    })
+
+    it('still accepts a complete reasoning-only answer on the retry', async () => {
+      // Some setups route the whole answer through the reasoning field.
+      const { compacted } = await compactWith(
+        attempt({ thinkingContent: 'partial', finishReason: 'length' }),
+        attempt({ thinkingContent: 'Complete summary, in the reasoning field.', finishReason: 'stop' }),
+      )
+
+      expect(compacted).toHaveLength(1)
+      expect(compacted[0].data.summary).toBe('Complete summary, in the reasoning field.')
+    })
+  })
+
   it('tags compaction events with sub-agent metadata and does not rebuild cached context', async () => {
     let subTokens = 180_000
     mockSessionManager = {
