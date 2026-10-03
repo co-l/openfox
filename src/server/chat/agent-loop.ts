@@ -277,6 +277,12 @@ export async function runTopLevelAgentLoop(
   // more on it than on the larger request the density was measured on, and
   // leaving it out made it come out larger than its target.
   let lastOverheadChars = 0
+  // The tool round run since the last request (its assistant message and the
+  // calls it made): its results are not in the backend's prompt cache yet.
+  let pendingRound: { messageId: string; toolCallIds: Set<string> } | undefined
+  // The round the compaction in progress leaves out of the summary request and
+  // carries into the next window, after the summary (see the compacting branch).
+  let carriedRound: typeof pendingRound
   let returnValueNudgeCount = 0
 
   /** Context size the auto-compaction is decided on, its window and threshold. */
@@ -293,6 +299,25 @@ export async function runTopLevelAgentLoop(
         sessionManager.getModelCompactionThreshold(sessionId, config.mode) ??
         getRuntimeConfig().context.compactionThreshold,
     }
+  }
+
+  /**
+   * Start a compaction. The tool round run since the last request is left out
+   * of the summary request when the next window can hold it: the summary
+   * request is then the previous request plus the compaction prompt, all of it
+   * in the backend's prompt cache, and the round follows the summary in the
+   * next window. A round too big for that (more than half of what the window
+   * leaves after the summary) is summarized with the rest instead.
+   */
+  const startCompaction = () => {
+    appendCompactionPrompt(sessionId, append, config.subAgentMetadata)
+    compacting = true
+    const window = sessionManager.getCurrentModelContext(sessionId, config.mode)
+    const roundTokens = measuredCharsPerToken
+      ? Math.ceil((pendingToolResultTokens * CHARS_PER_TOKEN) / measuredCharsPerToken)
+      : pendingToolResultTokens
+    const carryable = roundTokens <= (window - COMPACTION_SUMMARY_TOKENS - OUTPUT_RESERVE_TOKENS) / 2
+    carriedRound = carryable ? pendingRound : undefined
   }
 
   for (;;) {
@@ -367,10 +392,7 @@ export async function runTopLevelAgentLoop(
       const pendingTokens = measuredCharsPerToken
         ? Math.ceil((pendingToolResultTokens * CHARS_PER_TOKEN) / measuredCharsPerToken)
         : pendingToolResultTokens
-      if (shouldCompact(measure.tokens + pendingTokens, measure.window, measure.threshold)) {
-        appendCompactionPrompt(sessionId, append, config.subAgentMetadata)
-        compacting = true
-      }
+      if (shouldCompact(measure.tokens + pendingTokens, measure.window, measure.threshold)) startCompaction()
     }
 
     // ---- LLM round with automatic failure retry ----
@@ -403,11 +425,20 @@ export async function runTopLevelAgentLoop(
       // leave room for the summary, shorten tool results (start and end kept,
       // see fitToolResults for the order), rather than let it overflow too.
       if (compacting) {
+        // The carried round goes to the next window, not to the summary.
+        const carried = carriedRound
+        if (carried) {
+          requestMessages = requestMessages.filter((message) =>
+            message.role === 'tool'
+              ? !(message.toolCallId !== undefined && carried.toolCallIds.has(message.toolCallId))
+              : !(message.role === 'assistant' && message.toolCalls?.some((call) => carried.toolCallIds.has(call.id))),
+          )
+        }
         const window = sessionManager.getCurrentModelContext(sessionId, config.mode)
         const charsPerToken = measuredCharsPerToken ?? CHARS_PER_TOKEN
         const estimate = measuredCharsPerToken
           ? Math.ceil((messageChars(requestMessages) + lastOverheadChars) / charsPerToken)
-          : compactionMeasure().tokens + pendingToolResultTokens
+          : compactionMeasure().tokens + (carried ? 0 : pendingToolResultTokens)
         const excess = estimate - (window - COMPACTION_SUMMARY_TOKENS - OUTPUT_RESERVE_TOKENS)
         if (excess > 0) {
           // fitToolResults counts CHARS_PER_TOKEN characters per token.
@@ -640,10 +671,7 @@ export async function runTopLevelAgentLoop(
           const charsPerToken = lastRequestChars / overflow.promptTokens
           if (charsPerToken >= 1) measuredCharsPerToken = Math.min(charsPerToken, CHARS_PER_TOKEN)
         }
-        if (!compacting) {
-          appendCompactionPrompt(sessionId, append, config.subAgentMetadata)
-          compacting = true
-        }
+        if (!compacting) startCompaction()
         logger.warn('Request exceeds the context window, compacting', {
           sessionId,
           promptTokens: overflow.promptTokens,
@@ -780,6 +808,7 @@ export async function runTopLevelAgentLoop(
       config.subAgentMetadata?.subAgentId,
     )
     pendingToolResultTokens = 0
+    pendingRound = undefined
     currentMaxTokensOverride = undefined
 
     // Check compaction threshold with fresh promptTokens from LLM.
@@ -803,8 +832,7 @@ export async function runTopLevelAgentLoop(
           )
           onMessage?.(createChatMessageUpdatedMessage(assistantMsgId, { isStreaming: false }))
         }
-        appendCompactionPrompt(sessionId, append, config.subAgentMetadata)
-        compacting = true
+        startCompaction()
         continue
       }
     }
@@ -927,6 +955,7 @@ ${COMPACTION_PROMPT}`,
         batchContext.allowParallelSubAgents = getSetting(SETTINGS_KEYS.AGENT_ALLOW_PARALLEL_SUB_AGENTS) === 'true'
         const batchResult = await executeTools(assistantMsgId, result.toolCalls, batchContext, append)
         pendingToolResultTokens = estimateToolResultTokens(batchResult.toolMessages)
+        pendingRound = { messageId: assistantMsgId, toolCallIds: new Set(result.toolCalls.map((call) => call.id)) }
         if (batchResult.stepDoneCalled) {
           emitDoneAndBreak(
             assistantMsgId,
@@ -1027,6 +1056,8 @@ ${COMPACTION_PROMPT}`,
       }
       compactionRetryWithoutThinking = false
       if (!summary) {
+        // The window is kept as is, round included.
+        carriedRound = undefined
         // Close the attempt first: it stayed "streaming" for good otherwise.
         if (assistantMessageStarted) {
           append(createMessageDoneEvent(assistantMsgId, { partial: true }))
@@ -1090,9 +1121,12 @@ ${COMPACTION_PROMPT}`,
           content: summary,
           contextWindowId: newWindowId,
           isCompactionSummary: true,
+          // The context builds the next window with this round after the summary.
+          ...(carriedRound && { carriedMessageIds: [carriedRound.messageId] }),
           ...subAgentTags(),
         },
       })
+      carriedRound = undefined
       append(createMessageDoneEvent(assistantMsgId, { stats: turnMetrics.buildStats(statsIdentity, mode) }))
       append(createChatDoneEvent(assistantMsgId, 'complete', undefined, agentType))
 

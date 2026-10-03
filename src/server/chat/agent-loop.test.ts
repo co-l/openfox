@@ -1050,6 +1050,78 @@ describe('runTopLevelAgentLoop compaction', () => {
       expect(compacted).toHaveLength(1)
       expect(compacted[0].data.summary).toBe('Summary after the big read.')
     })
+
+    describe('the round that pushed the context over the threshold', () => {
+      // The request before the compaction is in the backend's prompt cache.
+      // The summary request added the new round's tool results to it, then
+      // shortened results to fit: the prefix changed and the backend prefilled
+      // the whole conversation again (seen with llama.cpp and Cache Hunter:
+      // 28-69k tokens per compaction). The round is carried into the next
+      // window instead, after the summary.
+      function recordingHistory() {
+        const history: Array<Record<string, unknown>> = [{ role: 'user', content: 'task', source: 'history' }]
+        const append = vi.fn((event: any) => {
+          if (event?.type === 'tool.call') {
+            history.push({ role: 'assistant', content: '', toolCalls: [event.data.toolCall], source: 'history' })
+          } else if (event?.type === 'tool.result') {
+            history.push({
+              role: 'tool',
+              content: event.data.result.output ?? '',
+              toolCallId: event.data.toolCallId,
+              source: 'history',
+            })
+          } else if (isCompactionPrompt(event)) {
+            history.push({ role: 'user', content: event.data.content, source: 'history' })
+          }
+        })
+        const getConversationMessages = vi.fn(async () => history.map((message) => ({ ...message })))
+        return { append, getConversationMessages }
+      }
+
+      async function compactAfterRead(output: string) {
+        mockSessionManager = sessionManagerAt(60_000)
+        const toolRegistry = {
+          tools: [],
+          definitions: [],
+          execute: vi.fn().mockResolvedValue({ success: true, output, durationMs: 0, truncated: false }),
+        } as any
+        ;(consumeStreamGenerator as any)
+          .mockResolvedValueOnce(ok('', [{ id: 'call-1', name: 'read_file', arguments: { path: 'a.log' } }]))
+          .mockResolvedValueOnce(ok('Summary.'))
+          .mockResolvedValue(ok('done'))
+        const { append, getConversationMessages } = recordingHistory()
+
+        await runTopLevelAgentLoop(
+          makeConfig({ append, getConversationMessages, getToolRegistry: () => toolRegistry } as any),
+          mockTurnMetrics,
+        )
+
+        const events = append.mock.calls.map(([event]) => event)
+        const requests = assembleRequestMock.mock.calls.map(([input]: any) => input.messages)
+        const summary = events.find((event: any) => event?.type === 'message.start' && event.data.isCompactionSummary)
+        const roundId = events.find((event: any) => event?.type === 'tool.call')?.data.messageId
+        return { requests, summary, roundId }
+      }
+
+      it('asks for the summary with the previous request unchanged', async () => {
+        // ~12,000 tokens: crosses the threshold, fits the next window easily.
+        const { requests, summary, roundId } = await compactAfterRead('x'.repeat(48_000))
+
+        const [previous, summaryRequest] = requests
+        expect(summaryRequest).toHaveLength(previous.length + 1)
+        expect(summaryRequest.slice(0, previous.length)).toEqual(previous)
+        expect(summaryRequest.at(-1).content).toMatch(/summar/i)
+        expect(summary.data.carriedMessageIds).toEqual([roundId])
+      })
+
+      it('summarizes the round when it is too big to carry', async () => {
+        // ~40,000 tokens: more than half of what the next window can hold.
+        const { requests, summary } = await compactAfterRead('x'.repeat(160_000))
+
+        expect(requests[1].some((message: any) => message.role === 'tool')).toBe(true)
+        expect(summary.data.carriedMessageIds).toBeUndefined()
+      })
+    })
   })
 
   it('tags compaction events with sub-agent metadata and does not rebuild cached context', async () => {

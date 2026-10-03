@@ -75,6 +75,8 @@ export type TurnEvent =
         isSystemGenerated?: boolean
         messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed' | 'workflow-started' | 'command'
         isCompactionSummary?: boolean // True if this is the summary message after compaction
+        /** On a compaction summary: messages of the previous window that follow it in the new one (the round that was not summarized). */
+        carriedMessageIds?: string[]
         tokenCount?: number // Known upfront for user messages
         attachments?: Attachment[] // Optional image attachments
         metadata?: { type: string; name: string; color: string; kind?: 'definition' | 'reminder' } // For auto-prompt messages
@@ -548,6 +550,7 @@ export interface SnapshotMessage {
   messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed' | 'workflow-started' | 'command'
   contextWindowId?: string
   isCompactionSummary?: boolean
+  carriedMessageIds?: string[]
   attachments?: Attachment[] // Optional image attachments
   metadata?: { type: string; name: string; color: string; kind?: 'definition' | 'reminder' } // For auto-prompt messages
 }

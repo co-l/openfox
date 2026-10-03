@@ -630,6 +630,65 @@ describe('buildContextMessages', () => {
       expect(result.filter((m) => m.role === 'user')).toHaveLength(1)
     })
 
+    it('puts the round a sub-agent compaction carried right after the summary', () => {
+      // The round that pushed the context over the threshold is left out of
+      // the summary request (so that request stays in the prompt cache) and
+      // follows the summary instead.
+      const sub = { subAgentId: 'sub-1', subAgentType: 'explorer' }
+      const start = (messageId: string, role: 'user' | 'assistant', extra: Record<string, unknown> = {}) =>
+        makeEvent({
+          seq: nextSeq(),
+          type: 'message.start',
+          data: { messageId, role, contextWindowId: 'window-1', ...sub, ...extra },
+        })
+      const call = (messageId: string, id: string) => [
+        makeEvent({
+          seq: nextSeq(),
+          type: 'tool.call',
+          data: { messageId, toolCall: { id, name: 'run_command', arguments: { command: id } } },
+        }),
+        makeEvent({
+          seq: nextSeq(),
+          type: 'tool.result',
+          data: {
+            messageId,
+            toolCallId: id,
+            result: { success: true, output: `out ${id}`, durationMs: 1, truncated: false },
+          },
+        }),
+      ]
+      const events: StoredEvent[] = [
+        start('task', 'user', { content: 'Run them all' }),
+        start('a1', 'assistant'),
+        ...call('a1', 'c1'),
+        start('a2', 'assistant', { content: 'Next.' }),
+        ...call('a2', 'c2'),
+        start('compact', 'user', { content: 'Summarize', isSystemGenerated: true, metadata: { type: 'compaction' } }),
+        makeEvent({
+          seq: nextSeq(),
+          type: 'context.compacted',
+          data: {
+            closedWindowId: 'window-1',
+            newWindowId: 'window-1',
+            beforeTokens: 1,
+            afterTokens: 0,
+            summary: 'Ran 1.',
+            ...sub,
+          },
+        }),
+        start('summary', 'assistant', { content: 'Ran 1.', isCompactionSummary: true, carriedMessageIds: ['a2'] }),
+      ]
+
+      const result = buildContextMessages(events, { type: 'subagent', sessionId: 'session-1', ...sub })
+
+      expect(result.map((m) => [m.role, m.content])).toEqual([
+        ['user', 'Run them all'],
+        ['assistant', 'Ran 1.'],
+        ['assistant', 'Next.'],
+        ['tool', 'out c2'],
+      ])
+    })
+
     it('does not include top-level compaction as sub-agent compaction', () => {
       const events: StoredEvent[] = [
         makeEvent({
