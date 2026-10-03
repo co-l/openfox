@@ -467,6 +467,29 @@ describe('Theme System', () => {
         expect(useThemeStore.getState().followSystemTheme).toBe(true)
       })
 
+      describe('applyServerFollowSystemTheme', () => {
+        // The server value comes from the settings resource. Writing it back
+        // (PUT) made the reconciliation effect ping-pong with in-flight GETs
+        // that return the server default: two PUTs in flight forever.
+        it('applies the saved server value to the store without writing it back', () => {
+          const fetchSpy = vi.spyOn(globalThis, 'fetch')
+          useThemeStore.getState().applyServerFollowSystemTheme('false')
+          expect(useThemeStore.getState().followSystemTheme).toBe(false)
+          useThemeStore.getState().applyServerFollowSystemTheme('true')
+          expect(useThemeStore.getState().followSystemTheme).toBe(true)
+          expect(fetchSpy).not.toHaveBeenCalled()
+          fetchSpy.mockRestore()
+        })
+
+        it('ignores an empty value (setting not loaded yet)', () => {
+          const fetchSpy = vi.spyOn(globalThis, 'fetch')
+          useThemeStore.getState().applyServerFollowSystemTheme('')
+          expect(useThemeStore.getState().followSystemTheme).toBe(true)
+          expect(fetchSpy).not.toHaveBeenCalled()
+          fetchSpy.mockRestore()
+        })
+      })
+
       it('setFollowSystemTheme toggles the state', () => {
         useThemeStore.getState().setFollowSystemTheme(false)
         expect(useThemeStore.getState().followSystemTheme).toBe(false)
