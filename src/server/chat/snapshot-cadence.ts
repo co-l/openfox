@@ -28,6 +28,12 @@ const DEFAULT_MAX_MS = 10 * 60 * 1000
 const MIN_BYTES_FOR_TIME_TRIGGER = 4 * 1024 * 1024
 /** Minimum delay between two tail measurements. */
 const DEFAULT_CHECK_INTERVAL_MS = 30_000
+/**
+ * Minimum delay between two checks while a snapshot is deferred. Each check
+ * scans the tail (~0.1 s at 46 MB), and parallel tools or sub-agents can keep
+ * the turn busy across many quiet points in a row.
+ */
+const DEFAULT_DEFERRED_CHECK_INTERVAL_MS = 5_000
 
 export interface SnapshotCadence {
   /** Append an event; a snapshot is taken when the tail budget is exceeded. */
@@ -44,6 +50,7 @@ export interface SnapshotCadenceOptions {
   maxBytes?: number
   maxMs?: number
   checkIntervalMs?: number
+  deferredCheckIntervalMs?: number
 }
 
 /**
@@ -62,6 +69,14 @@ interface CadenceState {
    */
   openMessagesAtRest: number
   pendingToolCallsAtRest: number
+  /**
+   * A check found the tail over budget but the turn busy. The periodic check
+   * nearly always lands on a busy moment in a sub-agent run (streaming or a
+   * tool round), so the next quiet point (a message or tool round ending)
+   * checks again, at most every DEFAULT_DEFERRED_CHECK_INTERVAL_MS, instead
+   * of waiting for the next period.
+   */
+  deferred: boolean
 }
 
 const cadenceStates = new Map<string, CadenceState>()
@@ -83,6 +98,7 @@ export function createSnapshotCadence(options: SnapshotCadenceOptions): Snapshot
   const maxMs =
     options.maxMs ?? (readPositiveIntEnv('OPENFOX_SNAPSHOT_MAX_MINUTES') ?? DEFAULT_MAX_MS / 60_000) * 60_000
   const checkIntervalMs = options.checkIntervalMs ?? DEFAULT_CHECK_INTERVAL_MS
+  const deferredCheckIntervalMs = options.deferredCheckIntervalMs ?? DEFAULT_DEFERRED_CHECK_INTERVAL_MS
 
   let state = cadenceStates.get(sessionId)
   if (!state) {
@@ -92,6 +108,7 @@ export function createSnapshotCadence(options: SnapshotCadenceOptions): Snapshot
       lastCheckAt: 0,
       openMessagesAtRest: 0,
       pendingToolCallsAtRest: 0,
+      deferred: false,
     }
     cadenceStates.set(sessionId, state)
     if (cadenceStates.size > MAX_TRACKED_SESSIONS) {
@@ -169,7 +186,10 @@ export function createSnapshotCadence(options: SnapshotCadenceOptions): Snapshot
       append(event)
 
       const now = Date.now()
-      if (now - state.lastCheckAt < checkIntervalMs) return
+      const quietPoint = event.type === 'message.done' || event.type === 'tool.result'
+      const interval =
+        state.deferred && quietPoint ? Math.min(deferredCheckIntervalMs, checkIntervalMs) : checkIntervalMs
+      if (now - state.lastCheckAt < interval) return
       state.lastCheckAt = now
 
       const { events, bytes, openMessages, pendingToolCalls } = eventStore.getEventLogTail(
@@ -178,21 +198,26 @@ export function createSnapshotCadence(options: SnapshotCadenceOptions): Snapshot
       )
       if (events === 0) return
 
+      const overBytes = bytes >= maxBytes
+      const overTime = now - state.lastSnapshotAt >= maxMs && bytes >= MIN_BYTES_FOR_TIME_TRIGGER
+      if (!overBytes && !overTime) {
+        state.deferred = false
+        return
+      }
+
       // Snapshot only at a quiescent boundary. A snapshot taken while a message
       // streams (or a tool round is in flight) freezes a partial message, and
       // the context fold then drops every later event carrying that messageId —
       // the rest of the answer, or the tool results of the round.
       if (openMessages > state.openMessagesAtRest || pendingToolCalls > state.pendingToolCallsAtRest) {
         logger.debug('Snapshot cadence deferred, turn in flight', { sessionId, openMessages, pendingToolCalls })
+        state.deferred = true
         return
       }
 
-      const overBytes = bytes >= maxBytes
-      const overTime = now - state.lastSnapshotAt >= maxMs && bytes >= MIN_BYTES_FOR_TIME_TRIGGER
-      if (overBytes || overTime) {
-        logger.info('Snapshot cadence triggered', { sessionId, bytes, events, overBytes, overTime })
-        takeSnapshot()
-      }
+      state.deferred = false
+      logger.info('Snapshot cadence triggered', { sessionId, bytes, events, overBytes, overTime })
+      takeSnapshot()
     },
     flush: () => takeSnapshot(),
   }

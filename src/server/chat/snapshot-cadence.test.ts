@@ -7,7 +7,7 @@
  * the tail — the only part a state load replays — bounded during the turn.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import Database from 'better-sqlite3'
 import { initEventStore, getEventStore } from '../events/store.js'
 import { emitSessionInitialized, emitUserMessage } from '../events/session.js'
@@ -30,6 +30,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.useRealTimers()
   db.close()
 })
 
@@ -143,6 +144,76 @@ describe('createSnapshotCadence', () => {
       },
     })
 
+    expect(store.getLatestSnapshotSeq('s1')).toBeGreaterThan(0)
+  })
+
+  it('snapshots at the next quiet point when the periodic check found the turn busy', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    // The check runs at most every checkIntervalMs, on whatever event comes
+    // in. A sub-agent is nearly always streaming or running a tool, so the
+    // check kept landing on a busy moment and the snapshot was put off to the
+    // end of the turn (seen live: a 7-12 minute sub-agent run, tail over
+    // budget, no mid-turn snapshot). Once deferred, the next message or tool
+    // round end checks again.
+    emitSessionInitialized('s1', 'p', '/tmp', 'win-1')
+    const store = getEventStore()
+    // Already over budget when the cadence starts.
+    for (let i = 0; i < 10; i++)
+      store.append('s1', {
+        type: 'tool.output',
+        data: { messageId: 'm0', toolCallId: 't0', stream: 'stdout', content: 'x'.repeat(200) },
+      } as never)
+
+    const cadence = createSnapshotCadence({
+      sessionManager: fakeSessionManager(),
+      sessionId: 's1',
+      append: rawAppend('s1'),
+      maxBytes: 500,
+      checkIntervalMs: 60 * 60_000,
+    })
+
+    // The periodic check lands mid-message: deferred.
+    cadence.append({ type: 'message.start', data: { messageId: 'a1', role: 'assistant' } })
+    for (let i = 0; i < 10; i++) cadence.append(delta('x'.repeat(200)))
+    expect(store.getLatestSnapshotSeq('s1')).toBe(0)
+
+    // Far from the next periodic check, but a message ends: quiet point.
+    vi.setSystemTime(Date.now() + 5_000)
+    cadence.append({ type: 'message.done', data: { messageId: 'a1' } })
+
+    expect(store.getLatestSnapshotSeq('s1')).toBeGreaterThan(0)
+  })
+
+  it('checks a deferred snapshot again at most every 5 s', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    // Each check scans the tail; parallel tools or sub-agents can keep the
+    // turn busy over many quiet points in a row.
+    emitSessionInitialized('s1', 'p', '/tmp', 'win-1')
+    const store = getEventStore()
+    for (let i = 0; i < 10; i++)
+      store.append('s1', {
+        type: 'tool.output',
+        data: { messageId: 'm0', toolCallId: 't0', stream: 'stdout', content: 'x'.repeat(200) },
+      } as never)
+
+    const cadence = createSnapshotCadence({
+      sessionManager: fakeSessionManager(),
+      sessionId: 's1',
+      append: rawAppend('s1'),
+      maxBytes: 500,
+      checkIntervalMs: 60 * 60_000,
+    })
+    cadence.append({ type: 'message.start', data: { messageId: 'a1', role: 'assistant' } })
+    const tail = vi.spyOn(store, 'getEventLogTail')
+
+    vi.setSystemTime(Date.now() + 4_000)
+    cadence.append({ type: 'message.done', data: { messageId: 'a1' } })
+    expect(tail).not.toHaveBeenCalled()
+    expect(store.getLatestSnapshotSeq('s1')).toBe(0)
+
+    vi.setSystemTime(Date.now() + 1_000)
+    cadence.append({ type: 'message.start', data: { messageId: 'a2', role: 'assistant' } })
+    cadence.append({ type: 'message.done', data: { messageId: 'a2' } })
     expect(store.getLatestSnapshotSeq('s1')).toBeGreaterThan(0)
   })
 
