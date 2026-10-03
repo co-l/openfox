@@ -48,6 +48,7 @@ export function resolveSlashParamIds(
   suggestion: { type: string; id: string; scope?: unknown },
   workdir?: string,
 ): string[] {
+  if (suggestion.type === 'builtin') return []
   if (suggestion.type === 'workflow') {
     const wf = readAllWorkflows(workdir).find((w) => w.id === suggestion.id && w.scope === suggestion.scope)
     return (wf?.parameters ?? []).map((p) => p.id)

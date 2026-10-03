@@ -259,3 +259,40 @@ describe('SlashAutocomplete', () => {
     }
   })
 })
+
+describe('SlashAutocomplete built-ins', () => {
+  afterEach(() => cleanup())
+
+  it('lists built-ins first with a badge and selects them', () => {
+    const onSelect = vi.fn()
+    render(
+      <SlashAutocomplete
+        text="/"
+        cursorPos={1}
+        workflows={workflows}
+        commands={commands}
+        builtins={[{ id: 'rename', name: 'Rename this session' }]}
+        onSelect={onSelect}
+      />,
+    )
+    const options = screen.getAllByRole('option')
+    expect(options[0]!.textContent).toContain('/rename')
+    expect(options[0]!.textContent).toContain('Built-in')
+    fireEvent.click(options[0]!)
+    expect(onSelect).toHaveBeenCalledWith({ type: 'builtin', id: 'rename', name: 'Rename this session' }, 0)
+  })
+
+  it('filters built-ins by query', () => {
+    render(
+      <SlashAutocomplete
+        text="/deploy"
+        cursorPos={7}
+        workflows={workflows}
+        commands={commands}
+        builtins={[{ id: 'rename', name: 'Rename this session' }]}
+        onSelect={vi.fn()}
+      />,
+    )
+    expect(screen.queryByText('/rename')).toBeNull()
+  })
+})

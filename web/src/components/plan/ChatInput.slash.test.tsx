@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest'
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
-import { parseSlashCommand, extractTemplateParams } from '../../lib/parse-slash-command'
+import { render, screen, cleanup, fireEvent, waitFor, act } from '@testing-library/react'
+import { parseSlashCommand, parseBuiltinSlashCommand, extractTemplateParams } from '../../lib/parse-slash-command'
 import { ChatInput } from './ChatInput'
 import { clearCache } from '../../lib/resourceCache'
 import { commandsResource, workflowsResource } from '../../lib/resources'
@@ -108,12 +108,37 @@ describe('parseSlashCommand with commands', () => {
   })
 })
 
+describe('parseBuiltinSlashCommand', () => {
+  it('parses /rename with a multi-word title, trimmed', () => {
+    expect(parseBuiltinSlashCommand('  /rename   My new   title  ', [])).toEqual({
+      builtin: 'rename',
+      title: 'My new   title',
+    })
+  })
+
+  it('returns an empty title when no argument is given', () => {
+    expect(parseBuiltinSlashCommand('/rename', [])).toEqual({ builtin: 'rename', title: '' })
+    expect(parseBuiltinSlashCommand('/rename   ', [])).toEqual({ builtin: 'rename', title: '' })
+  })
+
+  it('ignores other ids and prefixes', () => {
+    expect(parseBuiltinSlashCommand('/renamed foo', [])).toBeNull()
+    expect(parseBuiltinSlashCommand('rename foo', [])).toBeNull()
+  })
+
+  it('yields to a user workflow or command with the same id', () => {
+    expect(parseBuiltinSlashCommand('/rename x', [{ id: 'rename', name: 'R', scope: 'user' }])).toBeNull()
+    expect(parseBuiltinSlashCommand('/rename x', [], [{ id: 'rename', name: 'R' }])).toBeNull()
+  })
+})
+
 // ============================================================================
 // Integration tests: ChatInput slash command handling
 // ============================================================================
 
 const mockSendMessage = vi.fn()
 const mockLaunchWorkflow = vi.fn()
+const mockRenameSession = vi.fn()
 
 const defaultWorkflows = {
   defaults: [
@@ -177,6 +202,7 @@ vi.mock('../../stores/session', () => ({
       queuedMessages: [],
       restoredInput: null,
       clearRestoredInput: vi.fn(),
+      renameSession: mockRenameSession,
     }),
   useIsRunning: () => false,
   useQueuedMessages: () => [],
@@ -396,5 +422,81 @@ describe('ChatInput slash command integration', () => {
     // The project definition's required param is enforced, not the user one's.
     expect(setErrorMessage).toHaveBeenCalledWith(expect.stringContaining('PR Number'))
     expect(mockLaunchWorkflow).not.toHaveBeenCalled()
+  })
+})
+
+describe('ChatInput /rename built-in', () => {
+  beforeEach(async () => {
+    await commandsResource.refresh('/tmp')
+    await workflowsResource.refresh('/tmp')
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.clearAllMocks()
+    clearCache()
+  })
+
+  it('renames the current session without sending anything to the LLM', async () => {
+    mockRenameSession.mockResolvedValue(true)
+    const clearInput = vi.fn()
+    const onSendCommand = vi.fn()
+    renderChatInput({ input: '/rename  Mon nouveau titre ', clearInput, onSendCommand })
+
+    fireEvent.click(screen.getByTestId('chat-send-button'))
+
+    expect(mockRenameSession).toHaveBeenCalledWith('s1', 'Mon nouveau titre')
+    await waitFor(() => expect(clearInput).toHaveBeenCalled())
+    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(mockLaunchWorkflow).not.toHaveBeenCalled()
+    expect(onSendCommand).not.toHaveBeenCalled()
+  })
+
+  it('shows an error and keeps the input when the title is missing', () => {
+    const clearInput = vi.fn()
+    const setErrorMessage = vi.fn()
+    renderChatInput({ input: '/rename', clearInput, setErrorMessage })
+
+    fireEvent.click(screen.getByTestId('chat-send-button'))
+
+    expect(setErrorMessage).toHaveBeenCalledWith(expect.stringContaining('/rename'))
+    expect(mockRenameSession).not.toHaveBeenCalled()
+    expect(clearInput).not.toHaveBeenCalled()
+    expect(mockSendMessage).not.toHaveBeenCalled()
+  })
+
+  it('shows an error and keeps the input when there is no session', () => {
+    const clearInput = vi.fn()
+    const setErrorMessage = vi.fn()
+    renderChatInput({ input: '/rename Foo', sessionId: null, clearInput, setErrorMessage })
+
+    fireEvent.click(screen.getByTestId('chat-send-button'))
+
+    expect(setErrorMessage).toHaveBeenCalledWith(expect.stringContaining('session'))
+    expect(mockRenameSession).not.toHaveBeenCalled()
+    expect(clearInput).not.toHaveBeenCalled()
+    expect(mockSendMessage).not.toHaveBeenCalled()
+  })
+
+  it('shows an error and keeps the input when the API refuses', async () => {
+    mockRenameSession.mockResolvedValue(false)
+    const clearInput = vi.fn()
+    const setErrorMessage = vi.fn()
+    renderChatInput({ input: '/rename Foo', clearInput, setErrorMessage })
+
+    fireEvent.click(screen.getByTestId('chat-send-button'))
+
+    await waitFor(() => expect(setErrorMessage).toHaveBeenCalledWith(expect.stringContaining('rename')))
+    expect(clearInput).not.toHaveBeenCalled()
+    expect(mockSendMessage).not.toHaveBeenCalled()
+  })
+
+  it('lists /rename in the slash autocomplete', async () => {
+    renderChatInput({ input: '/ren' })
+    const textarea = screen.getByTestId('chat-input-textarea') as HTMLTextAreaElement
+    textarea.setSelectionRange(4, 4)
+    fireEvent.keyUp(textarea)
+    act(() => textarea.focus())
+    expect(await screen.findByText('/rename')).toBeTruthy()
   })
 })
