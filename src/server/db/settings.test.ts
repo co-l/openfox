@@ -102,5 +102,11 @@ describe('db settings', () => {
       deleteSetting(SETTINGS_KEYS.SEARCH_ENGINE)
       expect(getSetting(SETTINGS_KEYS.SEARCH_ENGINE)).toBeNull()
     })
+
+    it('sets and gets DISPLAY_HIDE_SIDEBAR_VERSION', () => {
+      expect(getSetting(SETTINGS_KEYS.DISPLAY_HIDE_SIDEBAR_VERSION)).toBeNull()
+      setSetting(SETTINGS_KEYS.DISPLAY_HIDE_SIDEBAR_VERSION, 'true')
+      expect(getSetting(SETTINGS_KEYS.DISPLAY_HIDE_SIDEBAR_VERSION)).toBe('true')
+    })
   })
 })
