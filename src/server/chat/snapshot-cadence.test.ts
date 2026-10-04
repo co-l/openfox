@@ -212,6 +212,67 @@ describe('createSnapshotCadence', () => {
     expect(store.getLatestSnapshotSeq('s1')).toBeGreaterThan(0)
   })
 
+  it('keeps one history entry per compaction and retry across snapshots', () => {
+    // A snapshot was built from the previous one plus the events since, and
+    // that stream also replays the previous snapshot's compactions and retries
+    // as synthetic events: the fold counted them twice, so every snapshot
+    // doubled them. Seen live: 7 compactions stored as 2.3 million entries,
+    // a 433 MB snapshot rewritten at every turn end, and the disk full.
+    emitSessionInitialized('s1', 'p', '/tmp', 'win-1')
+    const store = getEventStore()
+    store.append('s1', {
+      type: 'context.compacted',
+      data: { closedWindowId: 'win-1', newWindowId: 'win-2', beforeTokens: 70_000, afterTokens: 0, summary: 'sum' },
+    })
+    store.append('s1', {
+      type: 'pattern.retry',
+      data: { attempt: 1, maxAttempts: 3, messageId: 'm1', pattern: 'p', field: 'content', matchedContent: 'x' },
+    } as never)
+    const cadence = createSnapshotCadence({
+      sessionManager: fakeSessionManager(),
+      sessionId: 's1',
+      append: rawAppend('s1'),
+    })
+
+    for (let i = 0; i < 4; i++) {
+      cadence.append(delta('more'))
+      cadence.flush()
+    }
+
+    const snapshot = store.getLatestSnapshot('s1')!.data
+    expect(snapshot.contextWindows).toHaveLength(1)
+    expect(snapshot.formatRetries).toHaveLength(1)
+  })
+
+  it('shrinks a snapshot whose history was already inflated', () => {
+    emitSessionInitialized('s1', 'p', '/tmp', 'win-1')
+    const store = getEventStore()
+    const cadence = createSnapshotCadence({
+      sessionManager: fakeSessionManager(),
+      sessionId: 's1',
+      append: rawAppend('s1'),
+    })
+    cadence.flush()
+    const inflated = store.getLatestSnapshot('s1')!.data
+    const compaction = {
+      closedWindowId: 'win-1',
+      newWindowId: 'win-2',
+      beforeTokens: 1,
+      afterTokens: 0,
+      summary: 's',
+      timestamp: 1,
+    }
+    store.append('s1', {
+      type: 'turn.snapshot',
+      data: { ...inflated, contextWindows: [compaction, compaction, compaction, compaction] },
+    })
+
+    cadence.append(delta('more'))
+    cadence.flush()
+
+    expect(store.getLatestSnapshot('s1')!.data.contextWindows).toHaveLength(1)
+  })
+
   it('flush always snapshots and prunes, even with an empty tail', () => {
     emitSessionInitialized('s1', 'p', '/tmp', 'win-1')
     emitUserMessage('s1', 'go')

@@ -310,12 +310,24 @@ export function foldSessionState(
         // the raw store) still count when the snapshot is the only
         // surviving artifact. The post-snapshot events following this
         // snapshot continue to accumulate on top.
+        // The stream may also replay the snapshot's own history as synthetic
+        // events (combineEventsWithSnapshot), just before it: keep one entry
+        // per compaction or retry. Counted twice, a snapshot built from such a
+        // stream doubled them, and so did every snapshot after it (seen: 7
+        // compactions stored as 2.3 million entries, a 433 MB snapshot);
+        // deduplicating here also shrinks a snapshot already inflated that way.
         const snapData = event.data as SessionSnapshot
         if (Array.isArray(snapData.contextWindows) && snapData.contextWindows.length > 0) {
-          contextWindows = [...snapData.contextWindows, ...contextWindows]
+          contextWindows = uniqueBy(
+            [...snapData.contextWindows, ...contextWindows],
+            (c) => `${c.closedWindowId}>${c.newWindowId}@${c.timestamp}`,
+          )
         }
         if (Array.isArray(snapData.formatRetries) && snapData.formatRetries.length > 0) {
-          formatRetries = [...snapData.formatRetries, ...formatRetries]
+          formatRetries = uniqueBy(
+            [...snapData.formatRetries, ...formatRetries],
+            (r) => `${r.attempt}/${r.maxAttempts}@${r.timestamp}`,
+          )
         }
         break
       }
@@ -608,4 +620,15 @@ export function buildSnapshotFromSessionState(input: {
         : {}),
     ...(foldedState.waitingWorkflow !== undefined && { waitingWorkflow: foldedState.waitingWorkflow }),
   }
+}
+
+/** Keeps the first item of each key, in order. */
+function uniqueBy<T>(items: T[], key: (item: T) => string): T[] {
+  const seen = new Set<string>()
+  return items.filter((item) => {
+    const k = key(item)
+    if (seen.has(k)) return false
+    seen.add(k)
+    return true
+  })
 }
