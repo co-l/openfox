@@ -76,6 +76,31 @@ const buttonByText = (text: string) =>
   Array.from(document.body.querySelectorAll('button')).find((button) => button.textContent?.trim() === text) as
     HTMLButtonElement | undefined
 
+/**
+ * Retries `assertion` until it passes. The modal renders asynchronously (fetches,
+ * effects): a fixed delay before asserting raced it when the machine was loaded.
+ */
+const eventually = (assertion: () => void) => vi.waitFor(assertion, { timeout: 5000, interval: 10 })
+
+/** Waits for the button with exactly this text to be rendered, then clicks it. */
+async function clickButton(text: string) {
+  let button: HTMLButtonElement | undefined
+  await eventually(() => {
+    button = buttonByText(text)
+    expect(button, `button "${text}"`).toBeTruthy()
+  })
+  button!.click()
+}
+
+/** Clicks Save until the saved payload satisfies `assertion` (state updates land asynchronously). */
+async function saveUntil(assertion: () => void) {
+  await eventually(() => {
+    onSaveMock.mockClear()
+    clickSave()
+    assertion()
+  })
+}
+
 /** React controlled inputs only react to the native value setter followed by an 'input' event. */
 function setInputValue(input: HTMLInputElement, value: string) {
   Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set?.call(input, value)
@@ -292,24 +317,26 @@ describe('ProviderModal - thinkingLevel persistence', () => {
       },
     })
 
-    const availableRows = Array.from(document.body.querySelectorAll('[role="checkbox"]'))
-    const catalogRow = availableRows.find((row) => row.textContent?.includes('Catalog model')) as
-      HTMLElement | undefined
-    expect(catalogRow).toBeTruthy()
-    catalogRow?.click()
-    await tick()
+    let catalogRow: HTMLElement | undefined
+    await eventually(() => {
+      catalogRow = Array.from(document.body.querySelectorAll<HTMLElement>('[role="checkbox"]')).find((row) =>
+        row.textContent?.includes('Catalog model'),
+      )
+      expect(catalogRow).toBeTruthy()
+    })
+    catalogRow!.click()
 
-    clickSave()
-
-    expect(savedProvider().models.find((model) => model.id === 'catalog-model')).toEqual(
-      expect.objectContaining({
-        name: 'Catalog model',
-        apiModelId: 'catalog-model',
-        requestBody: { service_tier: 'priority' },
-        reasoningEfforts: ['low', 'high'],
-        contextWindow: 400000,
-        selected: true,
-      }),
+    await saveUntil(() =>
+      expect(savedProvider().models.find((model) => model.id === 'catalog-model')).toEqual(
+        expect.objectContaining({
+          name: 'Catalog model',
+          apiModelId: 'catalog-model',
+          requestBody: { service_tier: 'priority' },
+          reasoningEfforts: ['low', 'high'],
+          contextWindow: 400000,
+          selected: true,
+        }),
+      ),
     )
   })
 
@@ -433,23 +460,20 @@ describe('ProviderModal - thinkingLevel persistence', () => {
     // Starts on step 1: the engine picker is only reachable from there.
     await renderProviderModal({ initialStep: undefined }, 100)
 
-    buttonByText('Account Provider')?.click()
-    await tick(0)
-    buttonByText(engineName)?.click()
-    await tick(0)
+    await clickButton('Account Provider')
+    await clickButton(engineName)
 
-    const nextButton = document.body.querySelector('[data-testid="provider-modal-next"]') as HTMLButtonElement | null
-    expect(nextButton?.disabled).toBe(false)
-    nextButton?.click()
-    await tick()
+    const nextButton = await waitForElement<HTMLButtonElement>('[data-testid="provider-modal-next"]')
+    await eventually(() => expect(nextButton.disabled).toBe(false))
+    nextButton.click()
 
-    clickSave()
-
-    expect(onSaveMock).toHaveBeenCalledTimes(1)
-    const savedData = savedProvider()
-    expect(savedData.backend).toBe(expectedBackend)
-    expect(savedData.authAdapter).toBeUndefined()
-    expect(savedData.transportAdapter).toBeUndefined()
+    await saveUntil(() => {
+      expect(onSaveMock).toHaveBeenCalledTimes(1)
+      const savedData = savedProvider()
+      expect(savedData.backend).toBe(expectedBackend)
+      expect(savedData.authAdapter).toBeUndefined()
+      expect(savedData.transportAdapter).toBeUndefined()
+    })
   })
 
   it('re-applies URL and name when switching between engine cards', async () => {
@@ -465,20 +489,22 @@ describe('ProviderModal - thinkingLevel persistence', () => {
     // Step 1 only: the engine picker lives there.
     await renderProviderModal({ initialStep: undefined }, 100)
 
-    buttonByText('Ollama')?.click()
-    await tick(0)
+    await clickButton('Ollama')
 
-    const urlInput = document.body.querySelector('[data-testid="provider-modal-url"]') as HTMLInputElement
-    const nameInput = document.body.querySelector('input[placeholder="My LLM Server"]') as HTMLInputElement
-    expect(urlInput.value).toBe('http://localhost:11434')
-    expect(nameInput.value).toBe('Ollama')
+    const urlInput = () => document.body.querySelector('[data-testid="provider-modal-url"]') as HTMLInputElement
+    const nameInput = () => document.body.querySelector('input[placeholder="My LLM Server"]') as HTMLInputElement
+    await eventually(() => {
+      expect(urlInput().value).toBe('http://localhost:11434')
+      expect(nameInput().value).toBe('Ollama')
+    })
 
     // Regression: clicking a second card must overwrite the pre-filled values.
-    buttonByText('LM Studio')?.click()
-    await tick(0)
+    await clickButton('LM Studio')
 
-    expect(urlInput.value).toBe('http://localhost:1234')
-    expect(nameInput.value).toBe('LM Studio')
+    await eventually(() => {
+      expect(urlInput().value).toBe('http://localhost:1234')
+      expect(nameInput().value).toBe('LM Studio')
+    })
   })
 
   it('prefills Unsloth URL and name when its card is clicked', async () => {
@@ -493,13 +519,14 @@ describe('ProviderModal - thinkingLevel persistence', () => {
 
     await renderProviderModal({ initialStep: undefined }, 100)
 
-    buttonByText('Unsloth')?.click()
-    await tick(0)
+    await clickButton('Unsloth')
 
-    const urlInput = document.body.querySelector('[data-testid="provider-modal-url"]') as HTMLInputElement
-    const nameInput = document.body.querySelector('input[placeholder="My LLM Server"]') as HTMLInputElement
-    expect(urlInput.value).toBe('http://localhost:8888')
-    expect(nameInput.value).toBe('Unsloth')
+    await eventually(() => {
+      const urlInput = document.body.querySelector('[data-testid="provider-modal-url"]') as HTMLInputElement
+      const nameInput = document.body.querySelector('input[placeholder="My LLM Server"]') as HTMLInputElement
+      expect(urlInput.value).toBe('http://localhost:8888')
+      expect(nameInput.value).toBe('Unsloth')
+    })
   })
 
   it('disables reasoning messages when auto-config detects a rejected history field', async () => {
@@ -594,13 +621,14 @@ describe('ProviderModal - sampling param Send checkboxes', () => {
   it('preserves pre-existing omitParams entries (e.g. reasoning_effort) when toggling Temperature', async () => {
     await renderModal([{ id: 'test-model', contextWindow: 200000, omitParams: ['reasoning_effort'] }], 'test-model')
 
-    const tempCb = getSendCheckbox('temperature')!
+    const tempCb = await waitForElement<HTMLInputElement>('input[data-testid="send-temperature"]')
     expect(tempCb.checked).toBe(true)
     tempCb.click()
 
-    clickSave()
-    expect(savedTestModel()?.omitParams).toEqual(expect.arrayContaining(['reasoning_effort', 'temperature']))
-    expect(savedTestModel()?.omitParams).toHaveLength(2)
+    await saveUntil(() => {
+      expect(savedTestModel()?.omitParams).toEqual(expect.arrayContaining(['reasoning_effort', 'temperature']))
+      expect(savedTestModel()?.omitParams).toHaveLength(2)
+    })
   })
 
   it('reflects auto-config omitParams as unchecked boxes on modal open', async () => {
@@ -1038,28 +1066,29 @@ describe('ProviderModal - model mode merge', () => {
       )
       setTimeout(resolve, 200)
     })
-    const urlInput = document.body.querySelector('[data-testid="provider-modal-url"]') as HTMLInputElement | null
-    expect(urlInput).toBeTruthy()
+    const urlInput = await waitForElement<HTMLInputElement>('[data-testid="provider-modal-url"]')
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
     setter.call(urlInput, 'https://omniroute.example/v1')
-    urlInput!.dispatchEvent(new Event('input', { bubbles: true }))
-    await new Promise((resolve) => setTimeout(resolve, 50))
-    ;(document.body.querySelector('[data-testid="provider-modal-next"]') as HTMLButtonElement | null)?.click()
-    await new Promise((resolve) => setTimeout(resolve, 250))
+    urlInput.dispatchEvent(new Event('input', { bubbles: true }))
+    const nextButton = await waitForElement<HTMLButtonElement>('[data-testid="provider-modal-next"]')
+    await eventually(() => expect(nextButton.disabled).toBe(false))
+    nextButton.click()
   }
 
   it('creating a provider automatically collapses suffixed variants into a merged model with Unmerge button', async () => {
     await renderCreate()
     // Auto-collapsed into merged model: suffixed variants are hidden inside modes.
-    const hasMerged = Array.from(document.body.querySelectorAll('span,div')).some(
-      (el) =>
-        el.textContent?.toLowerCase().includes('gemini 3.6 flash') || el.textContent?.includes('gemini-3.6-flash'),
-    )
-    expect(hasMerged).toBe(true)
-    const unmergeButton = Array.from(document.body.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('Unmerge'),
-    )
-    expect(unmergeButton).toBeTruthy()
+    await eventually(() => {
+      const hasMerged = Array.from(document.body.querySelectorAll('span,div')).some(
+        (el) =>
+          el.textContent?.toLowerCase().includes('gemini 3.6 flash') || el.textContent?.includes('gemini-3.6-flash'),
+      )
+      expect(hasMerged).toBe(true)
+      const unmergeButton = Array.from(document.body.querySelectorAll('button')).find((b) =>
+        b.textContent?.includes('Unmerge'),
+      )
+      expect(unmergeButton).toBeTruthy()
+    })
   })
 
   it('editing with raw suffixed variants shows Merge button (no auto-collapse on init)', async () => {
@@ -1687,18 +1716,17 @@ describe('ProviderModal - plugins and proxy informational banners (Step 1)', () 
   it('hides Logo URL input when provider has an inherent logo and displays it for custom providers', async () => {
     // By default with initialStep=1 and default unknown backend, Logo URL is displayed
     await renderProviderModal({ initialStep: 1 }, 100)
-    const logoInput = document.body.querySelector('input[placeholder="https://example.com/logo.png"]')
-    expect(logoInput).toBeTruthy()
+    await waitForElement('input[placeholder="https://example.com/logo.png"]')
 
     // When selecting a built-in provider with an inherent logo (e.g. Ollama)
     const ollamaBtn = Array.from(document.body.querySelectorAll('button')).find((b) =>
       b.textContent?.includes('Ollama'),
     )
     ollamaBtn?.click()
-    await tick(50)
 
-    const hiddenLogoInput = document.body.querySelector('input[placeholder="https://example.com/logo.png"]')
-    expect(hiddenLogoInput).toBeNull()
+    await eventually(() =>
+      expect(document.body.querySelector('input[placeholder="https://example.com/logo.png"]')).toBeNull(),
+    )
   })
 
   it('hides Logo URL input when editProvider has a saved logo', async () => {
@@ -1811,10 +1839,10 @@ describe('ProviderModal - provider auth zone context', () => {
     const calls = stubAuthFetch()
     await renderProviderModal({ initialStep: undefined }, 100)
 
-    buttonByText('Google Antigravity')?.click()
-    await tick(0)
-    const nextButton = document.body.querySelector('[data-testid="provider-modal-next"]') as HTMLButtonElement | null
-    nextButton?.click()
+    await clickButton('Google Antigravity')
+    const nextButton = await waitForElement<HTMLButtonElement>('[data-testid="provider-modal-next"]')
+    await eventually(() => expect(nextButton.disabled).toBe(false))
+    nextButton.click()
 
     // A fixed delay raced the async create on a loaded machine: wait for the calls.
     await vi.waitFor(() => {
