@@ -626,13 +626,25 @@ export class EventStore {
                 -- bytes, so a non-ASCII payload (accents, CJK, emoji) would
                 -- understate the tail by up to 3x and overshoot the byte budget.
                 COALESCE(SUM(LENGTH(CAST(payload AS BLOB))), 0) AS bytes,
-                COALESCE(SUM(CASE WHEN event_type = 'message.start' THEN 1 ELSE 0 END), 0)
-                  - COALESCE(SUM(CASE WHEN event_type = 'message.done' THEN 1 ELSE 0 END), 0) AS openMessages,
-                COALESCE(SUM(CASE WHEN event_type = 'tool.call' THEN 1 ELSE 0 END), 0)
-                  - COALESCE(SUM(CASE WHEN event_type = 'tool.result' THEN 1 ELSE 0 END), 0) AS pendingToolCalls
-         FROM events WHERE session_id = ? AND seq > ?`,
+                -- Ids started and not done in the tail. A set, not a count:
+                -- a successful compaction starts its summary attempt's
+                -- message a second time, then closes it once, and a done
+                -- whose start is before the tail must not hide another open
+                -- message. Subqueries so they only read their own event
+                -- types (session/type/seq index), not every tail row.
+                (SELECT COUNT(DISTINCT json_extract(payload, '$.messageId')) FROM events
+                  WHERE session_id = @sessionId AND event_type = 'message.start' AND seq > @fromSeq
+                    AND json_extract(payload, '$.messageId') NOT IN (
+                      SELECT json_extract(payload, '$.messageId') FROM events
+                      WHERE session_id = @sessionId AND event_type = 'message.done' AND seq > @fromSeq)) AS openMessages,
+                (SELECT COUNT(DISTINCT json_extract(payload, '$.toolCall.id')) FROM events
+                  WHERE session_id = @sessionId AND event_type = 'tool.call' AND seq > @fromSeq
+                    AND json_extract(payload, '$.toolCall.id') NOT IN (
+                      SELECT json_extract(payload, '$.toolCallId') FROM events
+                      WHERE session_id = @sessionId AND event_type = 'tool.result' AND seq > @fromSeq)) AS pendingToolCalls
+         FROM events WHERE session_id = @sessionId AND seq > @fromSeq`,
       )
-      .get(sessionId, fromSeq) as {
+      .get({ sessionId, fromSeq }) as {
       events: number
       bytes: number
       openMessages: number

@@ -1444,6 +1444,50 @@ describe('EventStore - Event Cleanup', () => {
       expect(tail.bytes).toBeGreaterThan(content.length)
       expect(tail.bytes).toBeGreaterThanOrEqual(Buffer.byteLength(content, 'utf8'))
     })
+
+    it('counts a message started twice as one open message', () => {
+      // A successful compaction starts its summary attempt's message again,
+      // with the summary as content, then closes it once.
+      store.append('session-1', { type: 'message.start', data: { messageId: 'a1', role: 'assistant', content: '' } })
+      store.append('session-1', {
+        type: 'message.start',
+        data: { messageId: 'a1', role: 'assistant', content: 'summary', isCompactionSummary: true },
+      })
+      store.append('session-1', { type: 'message.done', data: { messageId: 'a1' } })
+
+      expect(store.getEventLogTail('session-1', 0).openMessages).toBe(0)
+    })
+
+    it('does not let a done whose start is before the tail hide an open message', () => {
+      store.append('session-1', { type: 'message.start', data: { messageId: 'old', role: 'assistant', content: '' } })
+      const fromSeq = store.getLatestSeq('session-1')!
+      store.append('session-1', { type: 'message.done', data: { messageId: 'old' } })
+      store.append('session-1', { type: 'message.start', data: { messageId: 'new', role: 'assistant', content: '' } })
+
+      expect(store.getEventLogTail('session-1', fromSeq).openMessages).toBe(1)
+    })
+
+    it('does not let a tool result whose call is before the tail hide a pending call', () => {
+      store.append('session-1', {
+        type: 'tool.call',
+        data: { messageId: 'a1', toolCall: { id: 'old', name: 'read_file', arguments: {} } },
+      })
+      const fromSeq = store.getLatestSeq('session-1')!
+      store.append('session-1', {
+        type: 'tool.result',
+        data: {
+          messageId: 'a1',
+          toolCallId: 'old',
+          result: { success: true, output: '', durationMs: 1, truncated: false },
+        },
+      })
+      store.append('session-1', {
+        type: 'tool.call',
+        data: { messageId: 'a1', toolCall: { id: 'new', name: 'read_file', arguments: {} } },
+      })
+
+      expect(store.getEventLogTail('session-1', fromSeq).pendingToolCalls).toBe(1)
+    })
   })
 
   describe('getContextWindowEvents', () => {
