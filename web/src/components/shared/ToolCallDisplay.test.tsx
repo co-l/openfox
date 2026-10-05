@@ -623,6 +623,9 @@ describe('ToolCallDisplay — end timestamp', () => {
     expect(foldedHeader!.textContent).toContain('14:30')
     expect(foldedHeader!.textContent).toMatch(/14:30▶$/)
     expect(container.querySelector('[data-testid="markdown"]')).toBeNull()
+    // Same size as the end timestamp under the answer text
+    const clock = foldedHeader!.querySelector('span.shrink-0')
+    expect(clock?.className).toContain('text-[10px]')
   })
 
   it('shows the end time exactly once when expanded (bottom bar only, not in the header)', () => {

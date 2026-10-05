@@ -104,6 +104,29 @@ describe('ThinkingSummary', () => {
     expect(container.textContent).toContain(formatClockTime(160_000))
   })
 
+  it('right-aligns the latched end time at the answer-timestamp size', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(100_000)
+    latchThinkingStart('m-align')
+
+    vi.setSystemTime(160_000)
+    const { container, rerender } = render(<ThinkingSummary messageId="m-align" isStreaming={false} thinkingFinished />)
+
+    // The end latches on the first non-streaming render
+    expect(container.textContent).toContain(formatClockTime(160_000))
+
+    // The authoritative duration arrives with the message stats
+    rerender(<ThinkingSummary messageId="m-align" isStreaming={false} thinkingFinished thinkingDuration={60} />)
+
+    const chip = container.querySelector('.feed-item')
+    expect(chip).not.toBeNull()
+    expect(chip!.className).toContain('flex')
+    const clock = chip!.lastElementChild as HTMLElement
+    expect(clock.className).toContain('ml-auto')
+    expect(clock.className).toContain('text-[10px]')
+    expect(clock.textContent).toBe(formatClockTime(160_000))
+  })
+
   it('renders no end time when nothing was latched (e.g. after a page reload)', () => {
     const { container } = render(
       <ThinkingSummary messageId="m-fresh" isStreaming={false} thinkingFinished thinkingDuration={5} />,

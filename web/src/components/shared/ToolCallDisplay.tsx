@@ -234,7 +234,7 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
         <span className="font-mono text-accent-primary text-sm">{tool}</span>
         <TruncatedTooltip text={argsLabel} className="flex-1 text-text-muted text-xs" />
         {!expanded && endedAt !== undefined && status !== 'pending' && (
-          <span className="shrink-0 text-text-muted text-xs">{formatClockTime(endedAt)}</span>
+          <span className="shrink-0 text-[10px] text-text-muted">{formatClockTime(endedAt)}</span>
         )}
         <span className="text-text-muted text-xs">{expanded ? '▼' : '▶'}</span>
       </button>

@@ -56,14 +56,14 @@ export const ThinkingSummary = memo(function ThinkingSummary({
   const endClock = endAt !== undefined ? formatClockTime(endAt) : undefined
   const label =
     durationSec !== undefined
-      ? endClock !== undefined
-        ? t(
-            { en: 'Thought for {{time}} · {{end}}', fr: 'A réfléchi pendant {{time}} · {{end}}' },
-            { time: formatTime(durationSec), end: endClock },
-          )
-        : t({ en: 'Thought for {{time}}', fr: 'A réfléchi pendant {{time}}' }, { time: formatTime(durationSec) })
-      : endClock !== undefined
-        ? t({ en: 'Thought · {{end}}', fr: 'A réfléchi · {{end}}' }, { end: endClock })
-        : t({ en: 'Thought', fr: 'A réfléchi' })
-  return <div className="text-text-muted text-sm italic bg-secondary rounded p-1.5 feed-item">{label}</div>
+      ? t({ en: 'Thought for {{time}}', fr: 'A réfléchi pendant {{time}}' }, { time: formatTime(durationSec) })
+      : t({ en: 'Thought', fr: 'A réfléchi' })
+  // The end time sits on the right at the same size as the end timestamp
+  // under answer text, so it stays visible without dominating the chip.
+  return (
+    <div className="flex items-center bg-secondary rounded p-1.5 feed-item">
+      <span className="text-text-muted text-sm italic">{label}</span>
+      {endClock !== undefined && <span className="ml-auto text-[10px] text-text-muted">{endClock}</span>}
+    </div>
+  )
 })
