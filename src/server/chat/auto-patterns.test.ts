@@ -1,10 +1,22 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   matchRetryPatterns,
   sanitizeRetryPatterns,
   validateRetryPatterns,
+  buildRetryPatterns,
   type RetryPatternConfig,
 } from './auto-patterns.js'
+
+const { getSettingMock, setSettingMock } = vi.hoisted(() => ({
+  getSettingMock: vi.fn(),
+  setSettingMock: vi.fn(),
+}))
+
+vi.mock('../db/settings.js', () => ({
+  getSetting: getSettingMock,
+  setSetting: setSettingMock,
+  SETTINGS_KEYS: { RETRY_PATTERNS: 'agent.retryPatterns' },
+}))
 
 describe('matchRetryPatterns', () => {
   const patterns: RetryPatternConfig[] = [
@@ -173,5 +185,107 @@ describe('sanitizeRetryPatterns', () => {
     const patterns: RetryPatternConfig[] = [{ field: 'content', pattern: 'error', action: 'retry', active: true }]
     const result = sanitizeRetryPatterns(patterns)
     expect(result).toEqual(patterns)
+  })
+})
+
+describe('buildRetryPatterns', () => {
+  beforeEach(() => {
+    getSettingMock.mockReset().mockReturnValue(null)
+    setSettingMock.mockReset()
+  })
+
+  it('drops a stored empty pattern when loading', async () => {
+    getSettingMock.mockReturnValue(
+      JSON.stringify({
+        patterns: [
+          { field: 'content', pattern: '', action: 'retry', active: true },
+          { field: 'content', pattern: 'error', action: 'retry', active: true },
+        ],
+        maxRetriesPerTurn: 10,
+      }),
+    )
+    const { retryPatterns } = await buildRetryPatterns()
+    expect(retryPatterns).toHaveLength(1)
+    expect(retryPatterns[0]!.pattern).toBe('error')
+  })
+
+  it('drops invalid regex patterns when loading', async () => {
+    getSettingMock.mockReturnValue(
+      JSON.stringify({
+        patterns: [
+          { field: 'content', pattern: '[invalid', action: 'retry', active: true },
+          { field: 'content', pattern: 'error', action: 'retry', active: true },
+        ],
+        maxRetriesPerTurn: 10,
+      }),
+    )
+    const { retryPatterns } = await buildRetryPatterns()
+    expect(retryPatterns).toHaveLength(1)
+    expect(retryPatterns[0]!.pattern).toBe('error')
+  })
+
+  it('returns empty patterns for a non-JSON stored value', async () => {
+    getSettingMock.mockReturnValue('false')
+    const { retryPatterns } = await buildRetryPatterns()
+    expect(retryPatterns).toEqual([])
+  })
+
+  it('honors the stored maxRetriesPerTurn', async () => {
+    getSettingMock.mockReturnValue(
+      JSON.stringify({
+        patterns: [{ field: 'content', pattern: 'error', action: 'retry', active: true }],
+        maxRetriesPerTurn: 3,
+      }),
+    )
+    const { maxRetriesPerTurn } = await buildRetryPatterns()
+    expect(maxRetriesPerTurn).toBe(3)
+  })
+
+  it('falls back to the XML protection pattern when only the legacy setting exists', async () => {
+    getSettingMock.mockImplementation((key: string) =>
+      key === 'agent.retryPatterns' ? null : key === 'llm.disableXmlProtection' ? 'false' : null,
+    )
+    const { retryPatterns, maxRetriesPerTurn } = await buildRetryPatterns()
+    expect(retryPatterns).toHaveLength(1)
+    expect(retryPatterns[0]!.pattern).toBe('<(tool_call|function=|/tool_call|parameter=)')
+    expect(retryPatterns[0]!.field).toBe('both')
+    expect(maxRetriesPerTurn).toBe(10)
+    // The migrated value is persisted once so the settings UI agrees with the server
+    expect(setSettingMock).toHaveBeenCalledTimes(1)
+    expect(setSettingMock).toHaveBeenCalledWith(
+      'agent.retryPatterns',
+      JSON.stringify({
+        patterns: [
+          {
+            field: 'both',
+            pattern: '<(tool_call|function=|/tool_call|parameter=)',
+            action: 'retry',
+            active: true,
+          },
+        ],
+        maxRetriesPerTurn: 10,
+      }),
+    )
+  })
+
+  it('persists an empty pattern list when the legacy protection was explicitly disabled', async () => {
+    getSettingMock.mockImplementation((key: string) =>
+      key === 'agent.retryPatterns' ? null : key === 'llm.disableXmlProtection' ? 'true' : null,
+    )
+    const { retryPatterns } = await buildRetryPatterns()
+    expect(retryPatterns).toEqual([])
+    expect(setSettingMock).toHaveBeenCalledTimes(1)
+    expect(setSettingMock).toHaveBeenCalledWith(
+      'agent.retryPatterns',
+      JSON.stringify({ patterns: [], maxRetriesPerTurn: 10 }),
+    )
+  })
+
+  it('never persists when a stored row already exists', async () => {
+    getSettingMock.mockReturnValue(
+      JSON.stringify({ patterns: [{ field: 'content', pattern: 'error', action: 'retry', active: true }] }),
+    )
+    await buildRetryPatterns()
+    expect(setSettingMock).not.toHaveBeenCalled()
   })
 })

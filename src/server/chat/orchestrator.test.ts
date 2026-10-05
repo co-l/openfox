@@ -41,6 +41,7 @@ vi.mock('./conversation-history.js', () => ({
 
 vi.mock('../db/settings.js', () => ({
   getSetting: getSettingMock,
+  setSetting: vi.fn(),
   SETTINGS_KEYS: { LLM_DYNAMIC_SYSTEM_PROMPT: 'llm.dynamicSystemPrompt' },
 }))
 
@@ -170,7 +171,7 @@ vi.mock('../agents/registry.js', () => {
 
 import { PathAccessDeniedError } from '../tools/path-security.js'
 import { getEnabledSkillMetadata } from '../skills/registry.js'
-import { TurnMetrics, buildRetryPatterns, runAgentTurn, runChatTurn } from './orchestrator.js'
+import { TurnMetrics, runAgentTurn, runChatTurn } from './orchestrator.js'
 
 function createEventStore() {
   const eventsBySession = new Map<
@@ -1922,43 +1923,5 @@ describe('chat orchestrator', () => {
 
     expect(getEnabledSkillMetadata).toHaveBeenCalledWith('/tmp/openfox-test', '/original/project')
     expect(getEnabledSkillMetadata).not.toHaveBeenCalledWith('/tmp/openfox-test', '/workspaces/openfox/review-branch')
-  })
-})
-
-describe('buildRetryPatterns', () => {
-  it('drops a stored empty pattern when loading', async () => {
-    getSettingMock.mockReturnValue(
-      JSON.stringify({
-        patterns: [
-          { field: 'content', pattern: '', action: 'retry', active: true },
-          { field: 'content', pattern: 'error', action: 'retry', active: true },
-        ],
-        maxRetriesPerTurn: 10,
-      }),
-    )
-    const { retryPatterns } = await buildRetryPatterns()
-    expect(retryPatterns).toHaveLength(1)
-    expect(retryPatterns[0]!.pattern).toBe('error')
-  })
-
-  it('drops invalid regex patterns when loading', async () => {
-    getSettingMock.mockReturnValue(
-      JSON.stringify({
-        patterns: [
-          { field: 'content', pattern: '[invalid', action: 'retry', active: true },
-          { field: 'content', pattern: 'error', action: 'retry', active: true },
-        ],
-        maxRetriesPerTurn: 10,
-      }),
-    )
-    const { retryPatterns } = await buildRetryPatterns()
-    expect(retryPatterns).toHaveLength(1)
-    expect(retryPatterns[0]!.pattern).toBe('error')
-  })
-
-  it('returns empty patterns for a non-JSON stored value', async () => {
-    getSettingMock.mockReturnValue('false')
-    const { retryPatterns } = await buildRetryPatterns()
-    expect(retryPatterns).toEqual([])
   })
 })

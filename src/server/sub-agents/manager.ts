@@ -2,7 +2,8 @@
  * Sub-Agent Manager
  *
  * Thin wrapper around runTopLevelAgentLoop. Sub-agents get compaction,
- * truncation retry, pattern retry — everything — for free.
+ * truncation retry, and the user-configured auto-retry patterns (the same
+ * retryPatternsProvider as top-level turns).
  *
  * Sets up sub-agent scope isolation, return_value detection, and a
  * single nudge if the sub-agent forgets to call return_value.
@@ -20,6 +21,7 @@ import { join, dirname, isAbsolute } from 'node:path'
 import { loadAllAgentsDefault, findAgentById } from '../agents/registry.js'
 import { resolveLLMClientForAgent, buildAgentOverrideStatsIdentity } from '../agents/model-overrides.js'
 import { buildBasePrompt } from '../chat/prompts.js'
+import { buildRetryPatterns } from '../chat/auto-patterns.js'
 import { TurnMetrics, createMessageStartEvent } from '../chat/stream-pure.js'
 import { runTopLevelAgentLoop } from '../chat/agent-loop.js'
 import { createAssemblyResult } from '../chat/request-context.js'
@@ -323,6 +325,9 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
     loopResult = await runTopLevelAgentLoop(
       {
         mode: subAgentType,
+        // Same user-configured auto-retry patterns as top-level turns (re-
+        // resolved each round so a mid-run settings edit applies next round).
+        retryPatternsProvider: buildRetryPatterns,
         append: (event) => eventStore.append(sessionId, event),
         sessionManager,
         sessionId,

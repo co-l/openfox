@@ -80,3 +80,61 @@ function isValidPattern(pattern: string): boolean {
     return false
   }
 }
+
+/**
+ * Resolve the user-configured auto-retry patterns (and the per-turn retry cap)
+ * from the settings DB. Used as the loop's retryPatternsProvider so a mid-turn
+ * edit in the settings UI takes effect on the next LLM round.
+ *
+ * When no setting is stored, falls back to the legacy llm.disableXmlProtection
+ * setting (migrated to the default XML tool-call protection pattern).
+ */
+export async function buildRetryPatterns(): Promise<{
+  retryPatterns: RetryPatternConfig[]
+  maxRetriesPerTurn: number
+}> {
+  const { getSetting, setSetting, SETTINGS_KEYS } = await import('../db/settings.js')
+  const raw = getSetting(SETTINGS_KEYS.RETRY_PATTERNS)
+  if (!raw) {
+    // Migration: check old llm.disableXmlProtection setting
+    const oldXmlProtection = getSetting('llm.disableXmlProtection')
+    if (oldXmlProtection !== null) {
+      // User had the old setting — migrate to retry patterns
+      const disabled = oldXmlProtection === 'true'
+      const migrated = sanitizeRetryPatterns(
+        disabled
+          ? []
+          : [
+              {
+                field: 'both',
+                pattern: '<(tool_call|function=|/tool_call|parameter=)',
+                action: 'retry',
+                active: true,
+              },
+            ],
+      )
+      // Persist the migrated value once (best-effort) so the settings UI —
+      // which reads the stored row, not this fallback — agrees with the
+      // server, and a later editor save can't silently drop the pattern.
+      try {
+        setSetting(SETTINGS_KEYS.RETRY_PATTERNS, JSON.stringify({ patterns: migrated, maxRetriesPerTurn: 10 }))
+      } catch {
+        // Settings unavailable — the in-memory fallback still applies
+      }
+      return {
+        retryPatterns: migrated,
+        maxRetriesPerTurn: 10,
+      }
+    }
+    return { retryPatterns: [], maxRetriesPerTurn: 10 }
+  }
+  try {
+    const parsed = JSON.parse(raw)
+    return {
+      retryPatterns: sanitizeRetryPatterns(Array.isArray(parsed.patterns) ? parsed.patterns : []),
+      maxRetriesPerTurn: typeof parsed.maxRetriesPerTurn === 'number' ? parsed.maxRetriesPerTurn : 10,
+    }
+  } catch {
+    return { retryPatterns: [], maxRetriesPerTurn: 10 }
+  }
+}

@@ -152,6 +152,7 @@ vi.mock('../../cli/paths.js', () => ({
 
 vi.mock('../db/settings.js', () => ({
   getSetting: vi.fn(() => null),
+  setSetting: vi.fn(),
   SETTINGS_KEYS: {
     RETRY_PATTERNS: 'agent.retryPatterns',
     CONFIRM_ON_WORKSPACE_ACTIONS: 'tools.confirmOnWorkspaceActions',

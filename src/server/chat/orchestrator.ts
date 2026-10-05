@@ -44,8 +44,7 @@ import { getEnabledSkillMetadata } from '../skills/registry.js'
 import { getRuntimeConfig } from '../runtime-config.js'
 import { getGlobalConfigDir } from '../../cli/paths.js'
 import { logger } from '../utils/logger.js'
-import type { RetryPatternConfig } from './auto-patterns.js'
-import { sanitizeRetryPatterns } from './auto-patterns.js'
+import { buildRetryPatterns } from './auto-patterns.js'
 import { getConversationMessages, processEventsForConversation } from './conversation-history.js'
 
 // Re-export for runner orchestrator
@@ -56,47 +55,6 @@ export {
   createToolCallEvent,
   createToolResultEvent,
   createChatDoneEvent,
-}
-
-export async function buildRetryPatterns(): Promise<{
-  retryPatterns: RetryPatternConfig[]
-  maxRetriesPerTurn: number
-}> {
-  const { getSetting, SETTINGS_KEYS } = await import('../db/settings.js')
-  const raw = getSetting(SETTINGS_KEYS.RETRY_PATTERNS)
-  if (!raw) {
-    // Migration: check old llm.disableXmlProtection setting
-    const oldXmlProtection = getSetting('llm.disableXmlProtection')
-    if (oldXmlProtection !== null) {
-      // User had the old setting — migrate to retry patterns
-      const disabled = oldXmlProtection === 'true'
-      return {
-        retryPatterns: sanitizeRetryPatterns(
-          disabled
-            ? []
-            : [
-                {
-                  field: 'both',
-                  pattern: '<(tool_call|function=|/tool_call|parameter=)',
-                  action: 'retry',
-                  active: true,
-                },
-              ],
-        ),
-        maxRetriesPerTurn: 10,
-      }
-    }
-    return { retryPatterns: [], maxRetriesPerTurn: 10 }
-  }
-  try {
-    const parsed = JSON.parse(raw)
-    return {
-      retryPatterns: sanitizeRetryPatterns(Array.isArray(parsed.patterns) ? parsed.patterns : []),
-      maxRetriesPerTurn: typeof parsed.maxRetriesPerTurn === 'number' ? parsed.maxRetriesPerTurn : 10,
-    }
-  } catch {
-    return { retryPatterns: [], maxRetriesPerTurn: 10 }
-  }
 }
 
 function buildGetConversationMessages(

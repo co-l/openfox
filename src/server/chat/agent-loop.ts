@@ -347,6 +347,7 @@ export async function runTopLevelAgentLoop(
             ...(currentWindowMessageOptions ?? {}),
             isSystemGenerated: true,
             messageKind: 'correction',
+            ...subAgentTags(),
           }),
         )
         append({ type: 'message.done', data: { messageId: continueMsgId } })
@@ -564,21 +565,32 @@ export async function runTopLevelAgentLoop(
     // Check if a retry pattern matched mid-stream
     if (result.patternMatch) {
       if (!retryLimiter.canRetry()) {
-        append({
-          type: 'chat.error',
-          data: {
-            error: serverT(
-              {
-                en: 'Auto-retry limit exceeded after {{count}} retries',
-                fr: 'Limite de relance automatique dépassée après {{count}} tentatives',
-              },
-              { count: retryLimiter.maxRetries() },
-            ),
-            recoverable: false,
-          },
-        })
+        // Session-level chat.error only for top-level turns: a sub-agent
+        // exhausting its cap must not raise the parent pane's error banner —
+        // the failure is delivered via the tool result instead (the sub-agent's
+        // own chat.done still marks its partial message as error).
+        if (!config.subAgentMetadata) {
+          append({
+            type: 'chat.error',
+            data: {
+              error: serverT(
+                {
+                  en: 'Auto-retry limit exceeded after {{count}} retries',
+                  fr: 'Limite de relance automatique dépassée après {{count}} tentatives',
+                },
+                { count: retryLimiter.maxRetries() },
+              ),
+              recoverable: false,
+            },
+          })
+        }
         append(createChatDoneEvent(assistantMsgId, 'error', undefined, agentType))
-        throw new Error('Auto-retry limit exceeded')
+        // LLM-facing (reaches the parent via the tool result / workflow
+        // failure): keep it plain English and carry the pattern + count so the
+        // parent can adapt (e.g. reword the sub-agent prompt).
+        throw new Error(
+          `Auto-retry limit exceeded after ${retryLimiter.maxRetries()} retries (pattern "${result.patternMatch.pattern}")`,
+        )
       }
       retryLimiter.increment()
       lastPatternMatch = {
@@ -600,7 +612,8 @@ export async function runTopLevelAgentLoop(
         },
       })
 
-      // Emit system message showing what matched
+      // Emit system message showing what matched. Scoped to the sub-agent so
+      // it lands in the sub-agent's own context (never the parent's).
       const matchMsgId = crypto.randomUUID()
       const matchMessage = `Pattern "${result.patternMatch.pattern}" matched — auto-retry #${retryLimiter.count()}`
       append(
@@ -608,6 +621,7 @@ export async function runTopLevelAgentLoop(
           ...(currentWindowMessageOptions ?? {}),
           isSystemGenerated: true,
           messageKind: 'correction',
+          ...subAgentTags(),
         }),
       )
       append({ type: 'message.done', data: { messageId: matchMsgId } })
