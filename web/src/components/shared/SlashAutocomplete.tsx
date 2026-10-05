@@ -82,7 +82,9 @@ const SlashAutocomplete = forwardRef<SlashAutocompleteHandle, SlashAutocompleteP
         name: c.name,
         paramCount: 0,
       }))
+    const shadowed = new Set([...workflows.map((w) => w.id), ...commands.map((c) => c.id)])
     const skl: SlashSuggestion[] = skills
+      .filter((s) => !shadowed.has(s.id))
       .filter(
         (s) =>
           s.id.toLowerCase().includes(q) ||

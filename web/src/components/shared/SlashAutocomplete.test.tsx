@@ -137,6 +137,19 @@ describe('SlashAutocomplete', () => {
     expect(screen.getByText('/caveman')).toBeDefined()
   })
 
+  it('hides a skill shadowed by a command with the same id', () => {
+    renderAutocomplete('/cave', 5, { commands: [{ id: 'caveman', name: 'Caveman Command' }] })
+    expect(screen.getAllByText('/caveman')).toHaveLength(1)
+    expect(screen.getByText('Caveman Command')).toBeDefined()
+    expect(screen.queryByText('Skill')).toBeNull()
+  })
+
+  it('hides a skill shadowed by a workflow with the same id', () => {
+    renderAutocomplete('/brow', 5, { workflows: [{ id: 'browser', name: 'Browser Flow', scope: 'user' }] })
+    expect(screen.getAllByText('/browser')).toHaveLength(1)
+    expect(screen.queryByText('Skill')).toBeNull()
+  })
+
   it('carries the scope on selected workflow suggestions', () => {
     const onSelect = vi.fn()
     const { container } = render(
