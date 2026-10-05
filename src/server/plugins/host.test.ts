@@ -743,3 +743,86 @@ describe('PluginHost', () => {
     expect(listPluginVcsProviders()).toHaveLength(1)
   })
 })
+
+
+describe('PluginHost.setHost (minimal PluginHost orchestration API)', () => {
+  let configDirectory: string
+
+  beforeEach(async () => {
+    closeDatabase()
+    const config = loadConfig()
+    config.database.path = ':memory:'
+    initDatabase(config)
+    configDirectory = await mkdtemp(join(tmpdir(), 'openfox-plugin-host-'))
+    vi.clearAllMocks()
+  })
+
+  afterEach(async () => {
+    await rm(configDirectory, { recursive: true, force: true })
+    closeDatabase()
+  })
+
+  // Plugin template returns 'present' when context.host is defined, 'absent' otherwise.
+  const probePluginSource = `
+    registry.registerRpc('probe', async (_params, context) => context.host ? 'present' : 'absent')
+  `
+
+  async function callProbe(host: ReturnType<typeof makeHost>): Promise<string> {
+    const result = (await host.invokeRpc(
+      'probe',
+      'probe',
+      {},
+      { sessionId: 'test', workdir: '/' },
+    )) as { result?: string }
+    return (typeof result === 'string') ? result : ((result as { result?: string }).result ?? '')
+  }
+
+  it('context.host is absent when setHost was never called', async () => {
+    await writePlugin(configDirectory, 'probe', 2, probePluginSource)
+    const host = makeHost(configDirectory)
+    await host.start()
+    expect(await callProbe(host)).toBe('absent')
+  })
+
+  it('context.host is present when setHost was called before plugin load', async () => {
+    await writePlugin(configDirectory, 'probe', 2, probePluginSource)
+    const host = makeHost(configDirectory)
+    const fakeHost = {
+      sessions: {
+        async create() {
+          return { sessionId: 's1', workdir: '/tmp/x' }
+        },
+        stop() {},
+      },
+      workflows: { launch() {} },
+    }
+    host.setHost(fakeHost)
+    await host.start()
+    expect(await callProbe(host)).toBe('present')
+  })
+
+  it('setHost propagates to contexts that were already created (lazy getter)', async () => {
+    await writePlugin(configDirectory, 'probe', 2, probePluginSource)
+    const host = makeHost(configDirectory)
+    await host.start()
+    expect(await callProbe(host)).toBe('absent')
+    host.setHost({
+      sessions: { async create() { return { sessionId: 's2' } }, stop() {} },
+      workflows: { launch() {} },
+    })
+    expect(await callProbe(host)).toBe('present')
+  })
+
+  it('setHost(undefined) removes the host from existing contexts', async () => {
+    await writePlugin(configDirectory, 'probe', 2, probePluginSource)
+    const host = makeHost(configDirectory)
+    host.setHost({
+      sessions: { async create() { return { sessionId: 's' } }, stop() {} },
+      workflows: { launch() {} },
+    })
+    await host.start()
+    expect(await callProbe(host)).toBe('present')
+    host.setHost(undefined)
+    expect(await callProbe(host)).toBe('absent')
+  })
+})

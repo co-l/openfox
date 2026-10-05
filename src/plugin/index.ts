@@ -121,6 +121,8 @@ export interface PluginToolContext {
   workdir: string
   projectId?: string
   signal?: AbortSignal
+  /** PluginHost facade when the host exposes orchestration (otherwise undefined). */
+  host?: import('./index.js').PluginHost | undefined
 }
 
 export interface PluginToolResult {
@@ -250,12 +252,51 @@ export interface PluginLogger {
   error(message: string, context?: Record<string, unknown>): void
 }
 
+
+/**
+ * Minimal in-process API for plugins that need to orchestrate OpenFox
+ * sessions and workflows. Provided by hosts that support plugin orchestration;
+ * absent (`undefined`) on hosts that do not.
+ */
+export interface PluginSessions {
+  /** Create a new session in the given project. */
+  create(input: { projectId: string; title?: string }): Promise<{
+    sessionId: string
+    workdir?: string
+  }>
+
+  /** Full session stop: drain queue, abort active run, cancel pending interactions. */
+  stop(sessionId: string): void
+}
+
+export interface PluginWorkflows {
+  /** Launch (or resume) a workflow run inside an existing session. */
+  launch(input: {
+    sessionId: string
+    workflowId: string
+    params?: Record<string, string>
+    content?: string
+    subGroup?: string
+  }): void
+}
+
+/**
+ * Bundles the two orchestration surfaces available to in-process plugins.
+ * Provided by the host via PluginContext.host when the plugin's manifest
+ * declares the appropriate capability.
+ */
+export interface PluginHost {
+  readonly sessions: PluginSessions
+  readonly workflows: PluginWorkflows
+}
+
 export interface PluginContext {
   readonly id: string
   readonly version: string
   readonly runtime: PluginRuntime
   readonly logger: PluginLogger
   readonly storage: PluginStorage
+  readonly host?: PluginHost | undefined
   settings(scope?: 'global' | 'project', projectId?: string): Record<string, PluginSettingValue>
   notify(request: PluginNotificationRequest): void
   publish(panelId: string | undefined, key: string, value: unknown): void

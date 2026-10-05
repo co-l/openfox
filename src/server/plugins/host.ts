@@ -83,6 +83,7 @@ export class PluginHost {
   private readonly pendingDeactivates = new Map<string, () => void | Promise<void>>()
   private readonly logger: HookLogger
   private readonly rpcTimeoutMs: number
+  private currentHost: import('../../plugin/index.js').PluginHost | undefined
 
   constructor(private readonly options: PluginHostOptions) {
     this.logger = options.logger
@@ -199,6 +200,7 @@ export class PluginHost {
     params: Record<string, unknown>,
     context: PluginToolContext,
   ): Promise<unknown> {
+    ;(context as PluginToolContext & { host?: unknown }).host = this.currentHost
     const record = this.records.get(pluginId)
     if (!record || !record.enabled) throw new Error(`Plugin '${pluginId}' is not enabled`)
     if (record.diagnostic.capabilities.length > 0 && !record.diagnostic.capabilities.includes('rpc')) {
@@ -350,7 +352,18 @@ export class PluginHost {
     this.notifications.emit(pluginId, request)
   }
 
-  attachEventStore(eventStore: EventStore): void {
+  /**
+   * Provide a minimal host facade (sessions + workflows) that plugins can
+   * call from inside their PluginContext. Plugins loaded after this call
+   * see the new value via the `host` field on PluginContext. Use when the
+   * host facade is constructed after the PluginHost (e.g. once the session
+   * manager and runner are wired).
+   */
+  setHost(host: import('../../plugin/index.js').PluginHost | undefined): void {
+    this.currentHost = host
+  }
+
+    attachEventStore(eventStore: EventStore): void {
     const { iterator } = eventStore.subscribeAll()
     void (async () => {
       for await (const event of iterator) {
@@ -444,6 +457,8 @@ export class PluginHost {
 
   private createContext(manifest: PluginManifest, _source: string): PluginContext {
     const pluginId = manifest.name
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const host = this
     return {
       id: pluginId,
       version: manifest.version,
@@ -475,6 +490,9 @@ export class PluginHost {
             value,
           }),
         )
+      },
+      get host(): PluginContext['host'] {
+        return host.currentHost
       },
     }
   }
