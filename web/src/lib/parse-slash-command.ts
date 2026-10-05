@@ -45,6 +45,32 @@ export function extractTemplateParams(template: string): string[] {
  */
 export const extractPositionalParams = extractTemplateParams
 
+export const BUILTIN_RENAME_ID = 'rename'
+
+export interface BuiltinRenameResult {
+  builtin: typeof BUILTIN_RENAME_ID
+  title: string
+}
+
+export type BuiltinSlashResult = BuiltinRenameResult
+
+/**
+ * Parse a client-side built-in slash command (currently only `/rename <title>`).
+ * The whole remainder of the input is the argument, spaces included. A user
+ * workflow or command with the same id keeps precedence, so this returns null.
+ */
+export function parseBuiltinSlashCommand(
+  input: string,
+  workflows: WorkflowInfo[],
+  commands?: CommandInfo[],
+): BuiltinSlashResult | null {
+  const match = input.trim().match(/^\/(\S+)(?:\s+([\s\S]*))?$/)
+  if (!match || match[1] !== BUILTIN_RENAME_ID) return null
+  if (workflows.some((w) => w.id === BUILTIN_RENAME_ID)) return null
+  if (commands?.some((c) => c.id === BUILTIN_RENAME_ID)) return null
+  return { builtin: BUILTIN_RENAME_ID, title: (match[2] ?? '').trim() }
+}
+
 /**
  * Parse a slash command from chat input.
  * Returns null if the input is not a recognized slash command.

@@ -6,7 +6,12 @@ import { useResource } from '../../hooks/useResource'
 import { useWorkflows } from '../../hooks/useWorkflows'
 import { commandsResource, commandResource, skillsResource, selectActiveSkills } from '../../lib/resources'
 import { authFetch } from '../../lib/api'
-import { parseSlashCommand, extractTemplateParams } from '../../lib/parse-slash-command'
+import {
+  parseSlashCommand,
+  parseBuiltinSlashCommand,
+  extractTemplateParams,
+  BUILTIN_RENAME_ID,
+} from '../../lib/parse-slash-command'
 import { insertSuggestionAtCursor, focusTextareaAt, resolveSlashParamIds } from '../../lib/composer-utils'
 import { resolveWorkflowForLaunch } from '../../lib/workflow-scope'
 import { dedupById } from '../../lib/modal-utils'
@@ -129,6 +134,7 @@ export function ChatInput({
   const stopGeneration = useSessionStore((state) => state.stopGeneration)
   const pauseGeneration = useSessionStore((state) => state.pauseGeneration)
   const resumeGeneration = useSessionStore((state) => state.resumeGeneration)
+  const renameSession = useSessionStore((state) => state.renameSession)
   const pauseState = useScopedPaneState(
     sessionId,
     (pane) => pane.session?.pauseState ?? 'none',
@@ -189,6 +195,12 @@ export function ChatInput({
   const { workflows } = useWorkflows(workdir)
   const { data: skillsData } = useResource(skillsResource, workdir)
   const activeSkills = selectActiveSkills(skillsData)
+  const builtinShadowed =
+    workflows.some((w) => w.id === BUILTIN_RENAME_ID) || commands.some((c) => c.id === BUILTIN_RENAME_ID)
+  const builtins =
+    sessionId && !builtinShadowed
+      ? [{ id: BUILTIN_RENAME_ID, name: t({ en: 'Rename this session', fr: 'Renommer cette session' }) }]
+      : []
 
   // Clear inline param hints when input is emptied (after send, escape, etc.)
   useEffect(() => {
@@ -471,6 +483,29 @@ export function ChatInput({
     // Detect slash commands: /workflow-id arg1 arg2 or /command-name arg1 arg2
     const trimmed = input.trim()
     if (trimmed.startsWith('/')) {
+      const builtin = parseBuiltinSlashCommand(input, workflows, commands)
+      if (builtin) {
+        if (!sessionId) {
+          setErrorMessage(t({ en: 'No active session to rename', fr: 'Aucune session active à renommer' }))
+          sendingRef.current = false
+          return
+        }
+        if (!builtin.title) {
+          setErrorMessage(t({ en: 'Usage: /rename <new title>', fr: 'Usage : /rename <nouveau titre>' }))
+          sendingRef.current = false
+          return
+        }
+        renameSession(sessionId, builtin.title).then((ok) => {
+          if (ok) {
+            setErrorMessage(null)
+            clearInput()
+          } else {
+            setErrorMessage(t({ en: 'Failed to rename the session', fr: 'Échec du renommage de la session' }))
+          }
+          sendingRef.current = false
+        })
+        return
+      }
       const slashResult = parseSlashCommand(input, workflows, commands)
       if (slashResult?.workflowId) {
         const pending = selectedSlashScopeRef.current
@@ -832,6 +867,7 @@ export function ChatInput({
                 workflows={workflows}
                 commands={commands}
                 skills={activeSkills}
+                builtins={builtins}
                 onSelect={handleSelectSlash}
               />
               {activeSlashParams.length > 0 &&

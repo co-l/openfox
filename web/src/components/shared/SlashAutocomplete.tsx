@@ -17,7 +17,13 @@ export interface SkillSlashInfo {
   description?: string
 }
 
+export interface BuiltinSlashInfo {
+  id: string
+  name: string
+}
+
 export type SlashSuggestion =
+  | { type: 'builtin'; id: string; name: string }
   | { type: 'workflow'; id: string; name: string; scope: WorkflowScope; paramCount: number }
   | { type: 'command'; id: string; name: string; paramCount: number }
   | { type: 'skill'; id: string; name: string; description?: string }
@@ -28,6 +34,8 @@ interface SlashAutocompleteProps {
   workflows: WorkflowInfo[]
   commands: CommandInfo[]
   skills?: SkillSlashInfo[]
+  /** Client-side built-in commands (e.g. `/rename`), listed before the others. */
+  builtins?: BuiltinSlashInfo[]
   onSelect: (suggestion: SlashSuggestion, startIndex: number) => void
   /**
    * When provided, the dropdown renders into a portal fixed to this anchor
@@ -42,7 +50,7 @@ export interface SlashAutocompleteHandle {
 }
 
 const SlashAutocomplete = forwardRef<SlashAutocompleteHandle, SlashAutocompleteProps>(function SlashAutocomplete(
-  { text, cursorPos, workflows, commands, skills = [], onSelect, anchorRef },
+  { text, cursorPos, workflows, commands, skills = [], builtins = [], onSelect, anchorRef },
   ref,
 ) {
   const t = useT()
@@ -95,7 +103,10 @@ const SlashAutocomplete = forwardRef<SlashAutocompleteHandle, SlashAutocompleteP
         name: s.name,
         description: s.description,
       }))
-    return [...wf, ...cmd, ...skl]
+    const bi: SlashSuggestion[] = builtins
+      .filter((b) => b.id.toLowerCase().includes(q) || b.name.toLowerCase().includes(q))
+      .map((b) => ({ type: 'builtin' as const, id: b.id, name: b.name }))
+    return [...bi, ...wf, ...cmd, ...skl]
   })()
 
   // Reset selection when suggestions change
@@ -175,7 +186,9 @@ const SlashAutocomplete = forwardRef<SlashAutocompleteHandle, SlashAutocompleteP
                 ? 'text-accent-primary'
                 : item.type === 'skill'
                   ? 'text-accent-success'
-                  : 'text-accent-warning'
+                  : item.type === 'builtin'
+                    ? 'text-text-primary'
+                    : 'text-accent-warning'
             }`}
           >
             /{item.id}
@@ -191,7 +204,12 @@ const SlashAutocomplete = forwardRef<SlashAutocompleteHandle, SlashAutocompleteP
               {t({ en: 'Skill', fr: 'Compétence' })}
             </span>
           )}
-          {item.type !== 'skill' && item.paramCount > 0 && (
+          {item.type === 'builtin' && (
+            <span className="text-[10px] text-text-muted bg-bg-tertiary px-1.5 py-0.5 rounded whitespace-nowrap">
+              {t({ en: 'Built-in', fr: 'Intégrée' })}
+            </span>
+          )}
+          {(item.type === 'workflow' || item.type === 'command') && item.paramCount > 0 && (
             <span className="text-[10px] text-text-muted bg-bg-tertiary px-1.5 py-0.5 rounded">
               {item.paramCount}{' '}
               {t(
