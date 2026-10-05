@@ -331,3 +331,60 @@ describe('DisplayTab Fonts', () => {
     expect(mockSetSetting).toHaveBeenCalledWith(SETTINGS_KEYS.DISPLAY_TERMINAL_FONT, DEFAULT_TERMINAL_FONT)
   })
 })
+
+describe('DisplayTab Font size', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    Object.keys(mockSettings).forEach((k) => delete mockSettings[k])
+    setLocale('en')
+  })
+
+  it('renders the Font size slider at the default 100%', () => {
+    render(<DisplayTab />)
+    expect(screen.getByText('Font size')).toBeTruthy()
+    const slider = screen.getByLabelText('Font size') as HTMLInputElement
+    expect(slider.type).toBe('range')
+    expect(slider.min).toBe('14')
+    expect(slider.max).toBe('20')
+    expect(slider.step).toBe('1')
+    expect(slider.value).toBe('16')
+  })
+
+  it('saving a non-default size stores it in px', () => {
+    render(<DisplayTab />)
+    const slider = screen.getByLabelText('Font size') as HTMLInputElement
+    fireEvent.change(slider, { target: { value: '18' } })
+    fireEvent.pointerUp(slider)
+    expect(mockSetSetting).toHaveBeenCalledWith(SETTINGS_KEYS.DISPLAY_UI_FONT_SIZE, '18')
+  })
+
+  it('saving the default size stores empty (clears the override)', () => {
+    mockSettings[SETTINGS_KEYS.DISPLAY_UI_FONT_SIZE] = '18'
+    render(<DisplayTab />)
+    const slider = screen.getByLabelText('Font size') as HTMLInputElement
+    fireEvent.change(slider, { target: { value: '16' } })
+    fireEvent.pointerUp(slider)
+    expect(mockSetSetting).toHaveBeenCalledWith(SETTINGS_KEYS.DISPLAY_UI_FONT_SIZE, '')
+  })
+
+  it('the Default button resets the slider and clears the override', async () => {
+    const user = userEvent.setup()
+    mockSettings[SETTINGS_KEYS.DISPLAY_UI_FONT_SIZE] = '18'
+    render(<DisplayTab />)
+    await user.click(screen.getByRole('button', { name: 'Default' }))
+    expect(mockSetSetting).toHaveBeenCalledWith(SETTINGS_KEYS.DISPLAY_UI_FONT_SIZE, '')
+    expect((screen.getByLabelText('Font size') as HTMLInputElement).value).toBe('16')
+  })
+
+  it('shows the current percentage label', () => {
+    mockSettings[SETTINGS_KEYS.DISPLAY_UI_FONT_SIZE] = '18'
+    render(<DisplayTab />)
+    expect(screen.getByText('112.5%')).toBeTruthy()
+  })
+
+  it('announces the percentage as the slider value for screen readers', () => {
+    mockSettings[SETTINGS_KEYS.DISPLAY_UI_FONT_SIZE] = '18'
+    render(<DisplayTab />)
+    expect((screen.getByLabelText('Font size') as HTMLInputElement).getAttribute('aria-valuetext')).toBe('112.5%')
+  })
+})

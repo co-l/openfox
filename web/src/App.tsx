@@ -18,18 +18,20 @@ import { useCurrentProject } from './hooks/useCurrentProject'
 import { useProviders } from './hooks/useProviders'
 import { useThemeStore } from './stores/theme'
 import { applyUiFont, applyStoredUiFont, storeUiFont } from './lib/uiFont'
+import { applyUiFontSize, applyStoredUiFontSize, storeUiFontSize } from './lib/uiFontSize'
 import { useProjectLoader } from './hooks/useProjectLoader'
 import { useSessionLoader } from './hooks/useSessionLoader'
 import { computeSidebarVisibility, FEED_MIN_WIDTH } from './lib/sidebar-visibility'
 import { useSidebarStore } from './stores/sidebar'
 import { hasStoredToken } from './lib/api'
 
-// Apply theme and UI font synchronously from localStorage before React renders
-// to prevent a flash of the default theme/font
+// Apply theme, UI font and UI font size synchronously from localStorage before
+// React renders to prevent a flash of the default theme/font/size
 if (typeof window !== 'undefined') {
   useThemeStore.getState().loadUserPresets()
   useThemeStore.getState().applySavedTheme()
   applyStoredUiFont()
+  applyStoredUiFontSize()
 }
 
 import { Header } from './components/layout/Header'
@@ -231,7 +233,8 @@ function App() {
   const userPresetsSetting = useSetting(SETTINGS_KEYS.DISPLAY_USER_PRESETS, '', configFetched).value
   const followSystemSetting = useSetting(SETTINGS_KEYS.DISPLAY_FOLLOW_SYSTEM_THEME, '', configFetched).value
   const customCssSetting = useSetting(SETTINGS_KEYS.DISPLAY_CUSTOM_CSS, '', configFetched).value
-  const uiFontSetting = useSetting(SETTINGS_KEYS.DISPLAY_UI_FONT, '', configFetched).value
+  const uiFontSetting = useSetting(SETTINGS_KEYS.DISPLAY_UI_FONT, '', configFetched)
+  const uiFontSizeSetting = useSetting(SETTINGS_KEYS.DISPLAY_UI_FONT_SIZE, '', configFetched)
   const showChangelogSetting = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_CHANGELOG_ON_UPDATE, '', configFetched).value
 
   useEffect(() => {
@@ -302,12 +305,27 @@ function App() {
   // The server-stored UI font is the source of truth: apply it to the root
   // element and refresh the localStorage mirror so the next pre-auth paint is
   // already correct. An empty value clears the override, restoring the default
-  // (monospace) font from the :root variable.
+  // (monospace) font from the :root variable. The effect waits for the setting
+  // to actually have data: the resource snapshot is read before the fetch
+  // starts, so one render always shows the '' fallback with loading=false —
+  // acting on that frame would dip the page back to the default mid-load.
   useEffect(() => {
-    if (!configFetched) return
-    applyUiFont(uiFontSetting)
-    storeUiFont(uiFontSetting)
-  }, [configFetched, uiFontSetting])
+    if (!configFetched || !uiFontSetting.hasData) return
+    applyUiFont(uiFontSetting.value)
+    storeUiFont(uiFontSetting.value)
+  }, [configFetched, uiFontSetting.value, uiFontSetting.hasData])
+
+  // The server-stored font size is the source of truth: apply it as the root
+  // font-size (scaling all rem-based surfaces) and refresh the localStorage
+  // mirror so the next pre-auth paint is already correct. An empty value
+  // clears the override, restoring the browser default (16px). Same
+  // hasData gating as the UI font: the '' fallback frame must never dip the
+  // page back to the default size.
+  useEffect(() => {
+    if (!configFetched || !uiFontSizeSetting.hasData) return
+    applyUiFontSize(uiFontSizeSetting.value)
+    storeUiFontSize(uiFontSizeSetting.value)
+  }, [configFetched, uiFontSizeSetting.value, uiFontSizeSetting.hasData])
 
   const [showChangelog, setShowChangelog] = useState(false)
 

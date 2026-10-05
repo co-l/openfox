@@ -3,6 +3,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 import { createRoot } from 'react-dom/client'
 import { act } from 'react'
+import { clearCache } from './lib/resourceCache'
 
 // Mock ws module to avoid window reference
 vi.mock('./lib/ws', () => ({
@@ -345,5 +346,35 @@ describe('App - responsive sidebar visibility', () => {
     expect(layoutProps.sidebar.overlay).toBe(true)
     expect(layoutProps.rightSidebar.open).toBe(false)
     expect(layoutProps.rightSidebar.overlay).toBe(true)
+  })
+})
+
+describe('App - UI font size (no dip to default on load)', () => {
+  it('keeps the pre-rendered size while the setting is still loading', async () => {
+    // Wipe per-key entries from earlier tests so the settings fetch starts fresh.
+    await act(async () => {
+      clearCache()
+    })
+    // Simulate the pre-auth mirror: the module body applies it before the
+    // first paint, so the page starts at the stored size, not the default.
+    localStorage.setItem('openfox:uiFontSize', '18')
+    document.documentElement.style.setProperty('font-size', '18px')
+
+    // Config resolves; every settings request hangs, leaving the per-key
+    // entries in the loading window that used to dip back to the default.
+    mockAuthFetch.mockImplementation((url: string) => {
+      if (String(url).includes('/api/settings')) {
+        return new Promise(() => {}) as unknown as Response
+      }
+      return { ok: true, json: async () => ({}) } as unknown as Response
+    })
+
+    await renderAppAsync()
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 100))
+    })
+
+    expect(document.documentElement.style.fontSize).toBe('18px')
+    expect(localStorage.getItem('openfox:uiFontSize')).toBe('18')
   })
 })

@@ -23,6 +23,7 @@ export const SETTINGS_KEYS = {
   DISPLAY_CUSTOM_CSS: 'display.customCss',
   DISPLAY_TERMINAL_FONT: 'display.terminalFont',
   DISPLAY_UI_FONT: 'display.uiFont',
+  DISPLAY_UI_FONT_SIZE: 'display.uiFontSize',
   DISPLAY_USE_NATIVE_SCROLLBARS: 'display.useNativeScrollbars',
   DISPLAY_USE_NATIVE_SCROLLBARS_CODE_BLOCKS: 'display.useNativeScrollbarsCodeBlocks',
   DISPLAY_COLLAPSE_LARGE_TOOL_CALLS: 'display.collapseLargeToolCalls',
@@ -79,6 +80,7 @@ export const SETTINGS_DEFAULTS: Record<string, string> = {
   [SETTINGS_KEYS.DISPLAY_TERMINAL_FONT]:
     '"JetBrains Mono", "Cascadia Mono", "Menlo", "Consolas", "DejaVu Sans Mono", "Liberation Mono", monospace',
   [SETTINGS_KEYS.DISPLAY_UI_FONT]: '',
+  [SETTINGS_KEYS.DISPLAY_UI_FONT_SIZE]: '',
   [SETTINGS_KEYS.DISPLAY_USE_NATIVE_SCROLLBARS]: 'false',
   [SETTINGS_KEYS.DISPLAY_USE_NATIVE_SCROLLBARS_CODE_BLOCKS]: 'false',
   [SETTINGS_KEYS.DISPLAY_COLLAPSE_LARGE_TOOL_CALLS]: 'false',

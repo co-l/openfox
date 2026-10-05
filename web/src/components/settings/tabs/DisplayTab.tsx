@@ -14,6 +14,12 @@ import {
   MONOSPACE_FONT_CANDIDATES,
   SANS_FONT_CANDIDATES,
 } from '../../../lib/fonts'
+import {
+  parseUiFontSize,
+  UI_FONT_SIZE_DEFAULT_PX,
+  UI_FONT_SIZE_MAX_PX,
+  UI_FONT_SIZE_MIN_PX,
+} from '../../../lib/uiFontSize'
 
 function ThemePicker() {
   return <ThemeEditor />
@@ -349,6 +355,11 @@ export function DisplayTab() {
         <h3 className="text-sm font-medium text-text-primary mb-4">{t({ en: 'Fonts', fr: 'Polices' })}</h3>
 
         <div className="space-y-2">
+          <h4 className="text-sm font-medium text-text-primary">{t({ en: 'Font size', fr: 'Taille de la police' })}</h4>
+          <FontSizeEditor />
+        </div>
+
+        <div className="mt-4 space-y-2">
           <h4 className="text-sm font-medium text-text-primary">
             {t({ en: 'Interface font', fr: 'Police d’interface' })}
           </h4>
@@ -776,6 +787,76 @@ function UiFontEditor() {
       }}
       previewText={UI_FONT_PREVIEW_TEXT}
     />
+  )
+}
+
+function FontSizeEditor() {
+  const t = useT()
+  const saved = useSetting(SETTINGS_KEYS.DISPLAY_UI_FONT_SIZE, '').value
+  const savedPx = parseUiFontSize(saved) ?? UI_FONT_SIZE_DEFAULT_PX
+  const clampedSavedPx = Math.min(UI_FONT_SIZE_MAX_PX, Math.max(UI_FONT_SIZE_MIN_PX, savedPx))
+  const [localPx, setLocalPx] = useState(clampedSavedPx)
+
+  useEffect(() => {
+    setLocalPx(clampedSavedPx)
+  }, [clampedSavedPx])
+
+  const commit = () => {
+    void setSetting(SETTINGS_KEYS.DISPLAY_UI_FONT_SIZE, localPx === UI_FONT_SIZE_DEFAULT_PX ? '' : String(localPx))
+  }
+
+  const resetToDefault = () => {
+    setLocalPx(UI_FONT_SIZE_DEFAULT_PX)
+    void setSetting(SETTINGS_KEYS.DISPLAY_UI_FONT_SIZE, '')
+  }
+
+  const pct = Number(((localPx / UI_FONT_SIZE_DEFAULT_PX) * 100).toFixed(2))
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-text-muted">
+        {t({
+          en: 'Scales the whole interface — text, code blocks, diffs and terminal. 100% is the default.',
+          fr: 'Met à l’échelle toute l’interface — texte, blocs de code, diffs et terminal. 100 % est la valeur par défaut.',
+        })}
+      </p>
+
+      <div className="flex items-center gap-3">
+        <input
+          type="range"
+          min={UI_FONT_SIZE_MIN_PX}
+          max={UI_FONT_SIZE_MAX_PX}
+          step={1}
+          value={localPx}
+          onChange={(e) => setLocalPx(Number(e.target.value))}
+          onPointerUp={commit}
+          onKeyUp={commit}
+          onBlur={commit}
+          aria-label={t({ en: 'Font size', fr: 'Taille de la police' })}
+          aria-valuetext={t({ en: '{{pct}}%', fr: '{{pct}} %' }, { pct })}
+          className="flex-1 accent-accent-primary"
+        />
+        <span className="w-16 text-right text-sm text-text-primary">
+          {t({ en: '{{pct}}%', fr: '{{pct}} %' }, { pct })}
+        </span>
+      </div>
+
+      <button
+        type="button"
+        onClick={resetToDefault}
+        className="px-2 py-1 text-xs text-text-primary bg-bg-tertiary border border-border rounded hover:border-accent-primary/50 focus:outline-none focus:ring-2 focus:ring-accent-primary/50"
+      >
+        {t({ en: 'Default', fr: 'Par défaut' })}
+      </button>
+
+      <ScrollArea
+        horizontal
+        className="px-3 py-2 text-sm text-text-primary bg-bg-tertiary border border-border rounded whitespace-nowrap"
+        style={{ fontSize: `${localPx}px` }}
+      >
+        {UI_FONT_PREVIEW_TEXT}
+      </ScrollArea>
+    </div>
   )
 }
 
