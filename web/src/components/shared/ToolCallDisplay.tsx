@@ -16,6 +16,7 @@ import { ProjectTasksView } from './ProjectTasksView'
 import { PathConfirmationButtons } from './PathConfirmationButtons'
 import { TruncatedTooltip } from './TruncatedTooltip'
 import { formatToolArgsFull, formatToolArgsWithMetadata } from '../../lib/formatToolArgs'
+import { formatClockTime } from '../../lib/format-date'
 import { type PendingPathConfirmation } from '../../stores/session'
 import { useSessionScope, useScopedPaneState } from '../../stores/session/session-scope'
 import { SETTINGS_KEYS } from '../../lib/resources'
@@ -48,6 +49,8 @@ interface ToolCallDisplayProps {
   editContext?: { regions: EditContextRegion[] } // Edit context with line numbers
   // For run_command streaming
   startedAt?: number // Timestamp when tool started
+  /** End of the call (unix ms): bottom bar when expanded, right of the header when folded. */
+  endedAt?: number
   streamingOutput?: StreamingChunk[] // Real-time output chunks
   // For enhanced display with metadata
   metadata?: Record<string, unknown> // Tool-specific metadata
@@ -118,6 +121,7 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
   diagnostics,
   editContext,
   startedAt,
+  endedAt,
   streamingOutput,
   metadata,
   truncated,
@@ -173,6 +177,14 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
   const remoteProtocol = detectRemoteExecution(tool, args)
   const showEditorLink = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_OPEN_IN_EDITOR).value === 'true'
   const vscodeRemotePrefix = useSetting(SETTINGS_KEYS.VSCODE_REMOTE_PREFIX).value
+  const showDuration =
+    status === 'success' &&
+    durationMs !== undefined &&
+    (tool === 'run_command' ||
+      tool === 'edit_file' ||
+      tool === 'write_file' ||
+      tool === 'read_file' ||
+      tool === 'describe_image')
   const argsLabel = formatToolArgsWithMetadata(tool, args, metadata)
 
   const editorLine =
@@ -221,6 +233,9 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
         <span className={`${config.color} ${config.animate ? 'animate-pulse' : ''}`}>{config.icon}</span>
         <span className="font-mono text-accent-primary text-sm">{tool}</span>
         <TruncatedTooltip text={argsLabel} className="flex-1 text-text-muted text-xs" />
+        {!expanded && endedAt !== undefined && status !== 'pending' && (
+          <span className="shrink-0 text-text-muted text-xs">{formatClockTime(endedAt)}</span>
+        )}
         <span className="text-text-muted text-xs">{expanded ? '▼' : '▶'}</span>
       </button>
 
@@ -431,28 +446,16 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
               </>
             )}
 
-          {/* Bottom metadata bar: duration + remote badge */}
-          {(remoteProtocol ||
-            (status === 'success' &&
-              durationMs !== undefined &&
-              (tool === 'run_command' ||
-                tool === 'edit_file' ||
-                tool === 'write_file' ||
-                tool === 'read_file' ||
-                tool === 'describe_image'))) && (
+          {/* Bottom metadata bar: duration + end time + remote badge */}
+          {(remoteProtocol || showDuration || (endedAt !== undefined && status !== 'pending')) && (
             <div className="text-[10px] text-text-muted flex items-center gap-2">
-              {status === 'success' &&
-                durationMs !== undefined &&
-                (tool === 'run_command' ||
-                  tool === 'edit_file' ||
-                  tool === 'write_file' ||
-                  tool === 'read_file' ||
-                  tool === 'describe_image') && (
-                  <span>
-                    {t({ en: 'Completed in {{s}}s', fr: 'Terminé en {{s}} s' }, { s: (durationMs / 1000).toFixed(2) })}
-                  </span>
-                )}
+              {showDuration && (
+                <span>
+                  {t({ en: 'Completed in {{s}}s', fr: 'Terminé en {{s}} s' }, { s: (durationMs / 1000).toFixed(2) })}
+                </span>
+              )}
               <span className="flex-1" />
+              {endedAt !== undefined && status !== 'pending' && <span>{formatClockTime(endedAt)}</span>}
               {showEditorLink &&
                 (tool === 'read_file' || tool === 'write_file' || tool === 'edit_file') &&
                 String(metadata?.path ?? args.path ?? '') && (

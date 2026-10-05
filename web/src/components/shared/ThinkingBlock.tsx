@@ -2,13 +2,20 @@ import { OptionalScrollArea } from './OptionalScrollArea'
 import { memo } from 'react'
 import { Markdown } from './Markdown'
 import { useT } from '../../hooks/useT'
+import { formatClockTime } from '../../lib/format-date'
 
 interface ThinkingBlockProps {
   content: string
+  /** End of the thinking phase (unix ms), shown at the bottom of the block. */
+  endedAt?: number
   variant?: 'default' | 'labeled'
 }
 
-export const ThinkingBlock = memo(function ThinkingBlock({ content, variant = 'default' }: ThinkingBlockProps) {
+export const ThinkingBlock = memo(function ThinkingBlock({
+  content,
+  endedAt,
+  variant = 'default',
+}: ThinkingBlockProps) {
   const t = useT()
   if (variant === 'labeled') {
     return (
@@ -22,8 +29,13 @@ export const ThinkingBlock = memo(function ThinkingBlock({ content, variant = 'd
   }
 
   return (
-    <OptionalScrollArea horizontal className="text-text-muted text-sm italic bg-secondary rounded p-1.5 feed-item">
-      <Markdown content={content} muted />
-    </OptionalScrollArea>
+    <div className="feed-item">
+      <OptionalScrollArea horizontal className="text-text-muted text-sm italic bg-secondary rounded p-1.5">
+        <Markdown content={content} muted />
+      </OptionalScrollArea>
+      {endedAt !== undefined && (
+        <div className="text-right text-[10px] text-text-muted">{formatClockTime(endedAt)}</div>
+      )}
+    </div>
   )
 })

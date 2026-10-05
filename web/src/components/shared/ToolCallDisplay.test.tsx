@@ -544,3 +544,113 @@ describe('ToolCallDisplay — truncated path tooltip', () => {
     expect(screen.queryByRole('tooltip')).toBeNull()
   })
 })
+
+describe('ToolCallDisplay — end timestamp', () => {
+  beforeEach(() => {
+    useSessionStore.setState({ pendingPathConfirmations: [] })
+    clearCache()
+  })
+
+  afterEach(cleanup)
+
+  it('shows the end time in the bottom bar for a finished call without a duration', () => {
+    const ts = new Date(2026, 0, 15, 14, 30).getTime()
+    const { container } = render(
+      <ToolCallDisplay
+        tool="web_search"
+        args={{ query: 'x' }}
+        status="success"
+        result="some results"
+        variant="expandable"
+        endedAt={ts}
+      />,
+    )
+
+    expect(container.textContent).toContain('14:30')
+  })
+
+  it('shows the end time alongside the duration for a finished command', () => {
+    const ts = new Date(2026, 0, 15, 14, 30).getTime()
+    const { container } = render(
+      <ToolCallDisplay
+        tool="run_command"
+        args={{ command: 'make' }}
+        status="success"
+        result="ok"
+        durationMs={1234}
+        variant="expandable"
+        endedAt={ts}
+      />,
+    )
+
+    expect(container.textContent).toContain('1.23s')
+    expect(container.textContent).toContain('14:30')
+  })
+
+  it('shows no end time without a latch', () => {
+    const { container } = render(
+      <ToolCallDisplay
+        tool="web_search"
+        args={{ query: 'x' }}
+        status="success"
+        result="some results"
+        variant="expandable"
+      />,
+    )
+
+    expect(container.textContent).not.toContain('14:30')
+  })
+
+  it('shows the end time on the right of the single-line header when folded', () => {
+    const ts = new Date(2026, 0, 15, 14, 30).getTime()
+    const { container } = render(
+      <ToolCallDisplay
+        tool="web_search"
+        args={{ query: 'x' }}
+        status="success"
+        result="some results"
+        variant="expandable"
+        endedAt={ts}
+      />,
+    )
+
+    const header = container.querySelector('button')
+    expect(header).not.toBeNull()
+    fireEvent.click(header as HTMLElement)
+
+    const foldedHeader = container.querySelector('button')
+    expect(foldedHeader).not.toBeNull()
+    expect(foldedHeader!.textContent).toContain('14:30')
+    expect(foldedHeader!.textContent).toMatch(/14:30▶$/)
+    expect(container.querySelector('[data-testid="markdown"]')).toBeNull()
+  })
+
+  it('shows the end time exactly once when expanded (bottom bar only, not in the header)', () => {
+    const ts = new Date(2026, 0, 15, 14, 30).getTime()
+    const { container } = render(
+      <ToolCallDisplay
+        tool="web_search"
+        args={{ query: 'x' }}
+        status="success"
+        result="some results"
+        variant="expandable"
+        endedAt={ts}
+      />,
+    )
+
+    const count = (s: string | null | undefined, sub: string) => (s ?? '').split(sub).length - 1
+    expect(count(container.textContent, '14:30')).toBe(1)
+  })
+
+  it('shows no end time in the header when folded without a latch', () => {
+    const { container } = render(
+      <ToolCallDisplay tool="web_search" args={{ query: 'x' }} status="pending" variant="expandable" />,
+    )
+
+    const header = container.querySelector('button')
+    expect(header).not.toBeNull()
+    fireEvent.click(header as HTMLElement)
+
+    expect(container.textContent).not.toContain('14:30')
+  })
+})

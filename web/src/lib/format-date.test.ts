@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import {
   formatDateHeader,
   formatTime,
+  formatClockTime,
   formatTimeSince,
   formatDateTime,
   formatRelativeDate,
@@ -56,6 +57,19 @@ describe('formatTime', () => {
   it('pads hours and minutes with leading zeros', () => {
     expect(formatTime('2024-01-15T01:02:00')).toBe('01:02')
     expect(formatTime('2024-01-15T00:00:00')).toBe('00:00')
+  })
+})
+
+describe('formatClockTime', () => {
+  it('formats unix milliseconds as "HH:MM" 24-hour local time', () => {
+    expect(formatClockTime(new Date(2026, 0, 15, 14, 30).getTime())).toBe('14:30')
+    expect(formatClockTime(new Date(2026, 0, 15, 9, 5).getTime())).toBe('09:05')
+    expect(formatClockTime(new Date(2026, 0, 15, 0, 0).getTime())).toBe('00:00')
+    expect(formatClockTime(new Date(2026, 0, 15, 23, 59).getTime())).toBe('23:59')
+  })
+
+  it('returns an empty string for invalid timestamps', () => {
+    expect(formatClockTime(Number.NaN)).toBe('')
   })
 })
 

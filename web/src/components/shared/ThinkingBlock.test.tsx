@@ -28,6 +28,19 @@ describe('ThinkingBlock', () => {
       expect(html).toContain('<h2')
       expect(html).toContain('Header')
     })
+
+    it('shows the end time below the block when endedAt is set', () => {
+      const ts = new Date(2026, 0, 15, 14, 30).getTime()
+      const html = renderToString(<ThinkingBlock content="thoughts" endedAt={ts} />)
+
+      expect(html).toContain('14:30')
+    })
+
+    it('shows no end time without endedAt', () => {
+      const html = renderToString(<ThinkingBlock content="thoughts" />)
+
+      expect(html).not.toContain('14:30')
+    })
   })
 
   describe('labeled variant', () => {

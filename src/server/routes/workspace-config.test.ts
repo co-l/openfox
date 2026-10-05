@@ -4,6 +4,7 @@ import { mkdir, rm, writeFile, stat, readFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createWorkspaceConfigRoutes } from './workspace-config.js'
+import { getGlobalDataDir } from '../git/workspace.js'
 import Database from 'better-sqlite3'
 
 /**
@@ -357,7 +358,9 @@ describe('POST /api/workspace/config/validate', () => {
       const origXdg = process.env[dataDirEnv]
       process.env[dataDirEnv] = testDir
       try {
-        const defaultDir = join(testDir, 'openfox', 'workspaces', 'my-project')
+        // Derived from the same helper the route uses so the fixture lands in
+        // the right dir in both dev (openfox-dev) and production (openfox) modes.
+        const defaultDir = join(getGlobalDataDir(), 'workspaces', 'my-project')
         const ws1 = join(defaultDir, 'fix-bug')
         await mkdir(join(ws1, '.git'), { recursive: true })
         await writeFile(join(ws1, '.git', 'HEAD'), 'ref: refs/heads/main\n')

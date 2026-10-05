@@ -47,6 +47,19 @@ export function formatTime(isoString: string): string {
 }
 
 /**
+ * Format a unix timestamp (ms) to "HH:MM" 24-hour format
+ * Example: "14:30"
+ * Uses local time to match user's timezone.
+ */
+export function formatClockTime(timestamp: number): string {
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) return ''
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  return `${hours}:${minutes}`
+}
+
+/**
  * Format the elapsed time since an ISO timestamp, relative to now.
  * Example: "3s", "45s", "2m 0s", "1h 12m 0s"
  * Uses the shared duration formatter (integer seconds); never negative for

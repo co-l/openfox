@@ -25,7 +25,10 @@ vi.mock('../shared/ThinkingBlockToggle', () => ({
 }))
 
 vi.mock('../shared/ToolCallDisplay', () => ({
-  ToolCallDisplay: () => <div>tool call</div>,
+  ToolCallDisplay: (props: unknown) => {
+    toolCallDisplayMock(props)
+    return <div>tool call</div>
+  },
 }))
 
 vi.mock('../shared/ToolCallPreparing', () => ({
@@ -39,10 +42,11 @@ vi.mock('../shared/TodoListDisplay', () => ({
   TodoListDisplay: () => <div>todo</div>,
 }))
 
-const { criteriaGroupMock, toolCallPreparingMock, thinkingBlockToggleMock } = vi.hoisted(() => ({
+const { criteriaGroupMock, toolCallPreparingMock, thinkingBlockToggleMock, toolCallDisplayMock } = vi.hoisted(() => ({
   criteriaGroupMock: vi.fn(),
   toolCallPreparingMock: vi.fn(),
   thinkingBlockToggleMock: vi.fn(),
+  toolCallDisplayMock: vi.fn(),
 }))
 
 vi.mock('../shared/CriteriaGroupDisplay', () => ({
@@ -55,6 +59,8 @@ vi.mock('../shared/CriteriaGroupDisplay', () => ({
 
 import type { Message } from '@shared/types.js'
 import type { TurnStats } from '../../lib/types'
+import { latchMessageEnd, latchToolCallEnd } from '../../lib/block-timing'
+import { formatClockTime } from '../../lib/format-date'
 import { AssistantMessage } from './AssistantMessage'
 import { TurnStatsModal } from './TurnStatsModal'
 
@@ -554,5 +560,111 @@ describe('AssistantMessage', () => {
 
     expect(html).toContain('deepseek-v4-flash-dspark')
     expect(html).not.toContain('my-provider/')
+  })
+})
+
+describe('AssistantMessage block end timestamps', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('shows the latched message end time under the answer text', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000_000)
+    latchMessageEnd('msg-end')
+
+    const { container } = render(
+      <AssistantMessage
+        message={{
+          id: 'msg-end',
+          role: 'assistant',
+          content: 'Hello there',
+          timestamp: '2026-08-16T14:44:00',
+          isStreaming: false,
+        }}
+      />,
+    )
+
+    expect(container.textContent).toContain(formatClockTime(1_000_000))
+  })
+
+  it('shows no end time under the answer text when nothing was latched', () => {
+    render(
+      <AssistantMessage
+        message={{
+          id: 'msg-no-end',
+          role: 'assistant',
+          content: 'Hello there',
+          timestamp: '2026-08-16T14:44:00',
+          isStreaming: false,
+        }}
+      />,
+    )
+
+    expect(screen.queryByTestId('message-end-time')).toBeNull()
+  })
+
+  it('shows the end time only under the last text segment of a multi-segment message', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000_000)
+    latchMessageEnd('msg-multi')
+
+    render(
+      <AssistantMessage
+        message={{
+          id: 'msg-multi',
+          role: 'assistant',
+          content: '',
+          segments: [
+            { type: 'text', content: 'first part' },
+            { type: 'tool_call', toolCallId: 'tc-mid' },
+            { type: 'text', content: 'second part' },
+          ],
+          toolCalls: [
+            {
+              id: 'tc-mid',
+              name: 'run_command',
+              arguments: { command: 'ls' },
+              result: { success: true, durationMs: 1, truncated: false },
+            },
+          ],
+          timestamp: '2026-08-16T14:44:00',
+          isStreaming: false,
+        }}
+      />,
+    )
+
+    const times = screen.getAllByTestId('message-end-time')
+    expect(times).toHaveLength(1)
+    expect(times[0]!.textContent).toBe(formatClockTime(1_000_000))
+    expect(times[0]!.parentElement!.textContent ?? '').toContain('second part')
+  })
+
+  it('passes the latched tool call end to the tool call display', () => {
+    toolCallDisplayMock.mockClear()
+
+    latchToolCallEnd('tc-end')
+
+    render(
+      <AssistantMessage
+        message={{
+          id: 'msg-tools',
+          role: 'assistant',
+          content: '',
+          toolCalls: [
+            {
+              id: 'tc-end',
+              name: 'read_file',
+              arguments: { path: 'src/a.ts' },
+              result: { success: true, durationMs: 1, truncated: false },
+            },
+          ],
+          timestamp: '2026-08-16T14:44:00',
+          isStreaming: false,
+        }}
+      />,
+    )
+
+    expect(toolCallDisplayMock).toHaveBeenCalledWith(expect.objectContaining({ endedAt: expect.any(Number) }))
   })
 })

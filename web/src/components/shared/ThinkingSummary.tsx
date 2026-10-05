@@ -1,7 +1,8 @@
 import { memo, useEffect, useState } from 'react'
 import { useT } from '../../hooks/useT'
 import { formatTime } from '../../lib/format-stats'
-import { clearThinkingTiming, getThinkingStart, latchThinkingEnd, latchThinkingStart } from '../../lib/thinking-timing'
+import { formatClockTime } from '../../lib/format-date'
+import { getThinkingEnd, getThinkingStart, latchThinkingEnd, latchThinkingStart } from '../../lib/thinking-timing'
 
 interface ThinkingSummaryProps {
   messageId: string
@@ -27,7 +28,6 @@ export const ThinkingSummary = memo(function ThinkingSummary({
 
   useEffect(() => {
     if (thinkingDuration !== undefined) {
-      clearThinkingTiming(messageId)
       setClientDuration(undefined)
       return
     }
@@ -52,11 +52,18 @@ export const ThinkingSummary = memo(function ThinkingSummary({
   }
 
   const durationSec = thinkingDuration ?? clientDuration
-  return (
-    <div className="text-text-muted text-sm italic bg-secondary rounded p-1.5 feed-item">
-      {durationSec !== undefined
-        ? t({ en: 'Thought for {{time}}', fr: 'A réfléchi pendant {{time}}' }, { time: formatTime(durationSec) })
-        : t({ en: 'Thought', fr: 'A réfléchi' })}
-    </div>
-  )
+  const endAt = getThinkingEnd(messageId)
+  const endClock = endAt !== undefined ? formatClockTime(endAt) : undefined
+  const label =
+    durationSec !== undefined
+      ? endClock !== undefined
+        ? t(
+            { en: 'Thought for {{time}} · {{end}}', fr: 'A réfléchi pendant {{time}} · {{end}}' },
+            { time: formatTime(durationSec), end: endClock },
+          )
+        : t({ en: 'Thought for {{time}}', fr: 'A réfléchi pendant {{time}}' }, { time: formatTime(durationSec) })
+      : endClock !== undefined
+        ? t({ en: 'Thought · {{end}}', fr: 'A réfléchi · {{end}}' }, { end: endClock })
+        : t({ en: 'Thought', fr: 'A réfléchi' })
+  return <div className="text-text-muted text-sm italic bg-secondary rounded p-1.5 feed-item">{label}</div>
 })

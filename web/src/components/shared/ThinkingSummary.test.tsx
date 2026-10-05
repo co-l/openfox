@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
 import { latchThinkingStart } from '../../lib/thinking-timing'
+import { formatClockTime } from '../../lib/format-date'
 import { ThinkingSummary } from './ThinkingSummary'
 
 afterEach(() => {
@@ -82,5 +83,33 @@ describe('ThinkingSummary', () => {
     expect(container.textContent).toContain('Thought')
     const feedItem = container.querySelector('.feed-item')
     expect(feedItem?.className).toContain('bg-secondary')
+  })
+
+  it('shows the latched end time and keeps it once server stats arrive', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(100_000)
+    latchThinkingStart('m-chip-end')
+
+    vi.setSystemTime(160_000)
+    const { container, rerender } = render(<ThinkingSummary messageId="m-chip-end" isStreaming thinkingFinished />)
+
+    expect(container.textContent).toContain('Thought for 1m 0s')
+    expect(container.textContent).toContain(formatClockTime(160_000))
+
+    // The authoritative duration arrives with the message stats: the chip
+    // must keep showing the latched end time instead of dropping it.
+    rerender(<ThinkingSummary messageId="m-chip-end" isStreaming={false} thinkingFinished thinkingDuration={60} />)
+
+    expect(container.textContent).toContain('Thought for 1m 0s')
+    expect(container.textContent).toContain(formatClockTime(160_000))
+  })
+
+  it('renders no end time when nothing was latched (e.g. after a page reload)', () => {
+    const { container } = render(
+      <ThinkingSummary messageId="m-fresh" isStreaming={false} thinkingFinished thinkingDuration={5} />,
+    )
+
+    expect(container.textContent).toContain('Thought for 5.0s')
+    expect(container.textContent).not.toContain('·')
   })
 })

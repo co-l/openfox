@@ -41,6 +41,7 @@ import type { SessionState, PendingQuestion, SessionPane } from './types'
 import { handleGlobalSoundEffects, resolveAgentType } from './sounds'
 import { getBuffer, scheduleStreamingFlush, cancelStreamingFlush } from './streamingBuffer'
 import { latchThinkingEnd, latchThinkingStart } from '../../lib/thinking-timing'
+import { latchMessageEnd, latchToolCallEnd } from '../../lib/block-timing'
 import { snapshot } from '../../lib/resourceCache'
 import { mcpServersResource, settingResource, SETTINGS_KEYS, type McpServerInfo } from '../../lib/resources'
 import {
@@ -517,6 +518,10 @@ export function handleServerMessage(
     case 'chat.message_updated': {
       const payload = message.payload as ChatMessageUpdatedPayload
       const sessionId = message.sessionId
+      // End-time latch for block footers: finalized once the stream ends.
+      if (payload.updates.isStreaming === false) {
+        latchMessageEnd(payload.messageId)
+      }
       // Ending-stream detection must read the pre-update state. The flush is
       // performed OUTSIDE the set below: cancelling inside an updater triggers
       // a nested set() whose result gets overwritten by the enclosing one —
@@ -736,6 +741,7 @@ export function handleServerMessage(
     case 'chat.tool_result': {
       const sessionId = message.sessionId
       const payload = message.payload as ChatToolResultPayload
+      latchToolCallEnd(payload.callId)
 
       if (
         !applyChat(set, get, sessionId, (pane) => ({

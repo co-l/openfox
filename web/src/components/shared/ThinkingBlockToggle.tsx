@@ -1,5 +1,6 @@
 import { memo, useRef, useState } from 'react'
 import { useT } from '../../hooks/useT'
+import { getThinkingEnd } from '../../lib/thinking-timing'
 import { ThinkingBlock } from './ThinkingBlock'
 import { ThinkingSummary } from './ThinkingSummary'
 
@@ -62,7 +63,7 @@ export const ThinkingBlockToggle = memo(function ThinkingBlockToggle({
       aria-expanded={expanded}
     >
       {expanded ? (
-        <ThinkingBlock content={content} />
+        <ThinkingBlock content={content} endedAt={getThinkingEnd(messageId)} />
       ) : (
         <ThinkingSummary
           messageId={messageId}

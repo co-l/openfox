@@ -824,6 +824,83 @@ describe('chat.thinking timing latch', () => {
   })
 })
 
+describe('block end timing latch', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('latches the message end when streaming ends, not while it runs', async () => {
+    const useSessionStore = await loadSessionStore()
+    const timing = await import('../../lib/block-timing')
+
+    useSessionStore.setState((state) => ({
+      ...state,
+      currentSession: { id: 'session-1' } as any,
+    }))
+
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000_000)
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.message_updated',
+      sessionId: 'session-1',
+      payload: { messageId: 'm-latch', updates: { isStreaming: true } },
+    })
+    expect(timing.getMessageEnd('m-latch')).toBeUndefined()
+
+    vi.setSystemTime(1_060_000)
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.message_updated',
+      sessionId: 'session-1',
+      payload: { messageId: 'm-latch', updates: { isStreaming: false } },
+    })
+    expect(timing.getMessageEnd('m-latch')).toBe(1_060_000)
+  })
+
+  it('keeps the first latched message end on later finalize updates', async () => {
+    const useSessionStore = await loadSessionStore()
+    const timing = await import('../../lib/block-timing')
+
+    useSessionStore.setState((state) => ({
+      ...state,
+      currentSession: { id: 'session-1' } as any,
+    }))
+
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000_000)
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.message_updated',
+      sessionId: 'session-1',
+      payload: { messageId: 'm-again', updates: { isStreaming: false } },
+    })
+    vi.setSystemTime(1_090_000)
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.message_updated',
+      sessionId: 'session-1',
+      payload: { messageId: 'm-again', updates: { isStreaming: false } },
+    })
+    expect(timing.getMessageEnd('m-again')).toBe(1_000_000)
+  })
+
+  it('latches the tool call end by call id on tool_result', async () => {
+    const useSessionStore = await loadSessionStore()
+    const timing = await import('../../lib/block-timing')
+
+    useSessionStore.setState((state) => ({
+      ...state,
+      currentSession: { id: 'session-1' } as any,
+    }))
+
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000_000)
+    useSessionStore.getState().handleServerMessage({
+      type: 'chat.tool_result',
+      sessionId: 'session-1',
+      payload: { messageId: 'm1', callId: 'tc-latch', tool: 'read_file', result: { output: 'done' } } as any,
+    })
+    expect(timing.getToolCallEnd('tc-latch')).toBe(1_000_000)
+  })
+})
+
 describe('session.deleted handler', () => {
   beforeEach(() => {
     wsSendMock.mockClear()

@@ -17,6 +17,8 @@ import { forkSession, forkSessionErrorMessage } from '../../lib/api.js'
 import { deriveToolCallStatus } from '../../lib/toolStatus'
 import { useLocation } from 'wouter'
 import { formatTime } from '../../lib/format-stats'
+import { formatClockTime } from '../../lib/format-date'
+import { getMessageEnd, getToolCallEnd } from '../../lib/block-timing'
 import { copyToClipboard } from '../../lib/clipboard.js'
 import { useContextMenu } from '../../hooks/useContextMenu'
 import { useMessageContextMenu } from '../../hooks/useMessageContextMenu'
@@ -175,6 +177,16 @@ export const AssistantMessage = memo(function AssistantMessage({
     .map((e) => e.content)
     .join('')
   const elements = groupConsecutiveCriteria(rawElements.filter((e) => e.type !== 'thinking'))
+  // The message-level end time is stamped on the last text block only: putting
+  // it under every segment would make an early segment look like it finished
+  // when the whole message did.
+  const lastTextIndex = (() => {
+    for (let i = elements.length - 1; i >= 0; i--) {
+      const el = elements[i]
+      if (el && el.type === 'text') return i
+    }
+    return -1
+  })()
   const [forkPending, setForkPending] = useState(false)
   const [forkError, setForkError] = useState<string | null>(null)
   const [, navigate] = useLocation()
@@ -224,12 +236,19 @@ export const AssistantMessage = memo(function AssistantMessage({
         )}
         {elements.map((element, i) => {
           switch (element.type) {
-            case 'text':
+            case 'text': {
+              const endAt = i === lastTextIndex ? getMessageEnd(message.id) : undefined
               return (
                 <div key={i} className="prose prose-sm prose-invert max-w-none feed-item">
                   <Markdown content={element.content} isStreaming={message.isStreaming} />
+                  {endAt !== undefined && (
+                    <div data-testid="message-end-time" className="mt-1 text-right text-[10px] text-text-muted">
+                      {formatClockTime(endAt)}
+                    </div>
+                  )}
                 </div>
               )
+            }
 
             case 'preparing_tool_call':
               return (
@@ -279,6 +298,7 @@ export const AssistantMessage = memo(function AssistantMessage({
                   diagnostics={result?.diagnostics}
                   editContext={result?.editContext}
                   startedAt={tc.startedAt}
+                  endedAt={getToolCallEnd(tc.id)}
                   streamingOutput={tc.streamingOutput}
                   metadata={result?.metadata}
                   truncated={result?.truncated ?? false}

@@ -11,7 +11,10 @@ interface ThinkingTimingEntry {
 // finished. This bridges the gap between the live "Thinking…" state and the
 // authoritative server-measured duration that lands with the message stats at
 // turn end (and survives page reloads). Keeping it at module scope lets the
-// timing survive scroll-driven remounts within a session.
+// timing survive scroll-driven remounts and session switches within a page
+// session; the latched end additionally feeds the block end-time display, so
+// entries are retained (bounded by the cap) rather than cleared when the
+// server duration arrives.
 const thinkingTiming = new Map<string, ThinkingTimingEntry>()
 // Bound the map: entries for messages that never receive a server-measured
 // duration (aborted turns, brief thinking, no stats) are never evicted on
@@ -35,14 +38,15 @@ export function getThinkingStart(messageId: string): number | undefined {
   return thinkingTiming.get(messageId)?.start
 }
 
+/** The latched thinking end (unix ms), or undefined until latched. */
+export function getThinkingEnd(messageId: string): number | undefined {
+  return thinkingTiming.get(messageId)?.end
+}
+
 /** Latch the thinking end; returns the elapsed time in seconds, or undefined if no start was latched. */
 export function latchThinkingEnd(messageId: string): number | undefined {
   const entry = thinkingTiming.get(messageId)
   if (!entry) return undefined
   if (entry.end === undefined) entry.end = Date.now()
   return (entry.end - entry.start) / 1000
-}
-
-export function clearThinkingTiming(messageId: string): void {
-  thinkingTiming.delete(messageId)
 }
