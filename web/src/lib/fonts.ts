@@ -62,6 +62,34 @@ export const MONOSPACE_FONT_CANDIDATES: string[] = [
   'UbuntuMono Nerd Font',
 ]
 
+/**
+ * Curated list of non-monospace (sans-serif) families offered as candidates for
+ * the UI font. Like the monospace list, these are detected client-side; a
+ * free-form CSS field in the UI covers anything not listed here (serifs, etc.).
+ */
+export const SANS_FONT_CANDIDATES: string[] = [
+  'Arial',
+  'Cantarell',
+  'DejaVu Sans',
+  'Fira Sans',
+  'Gill Sans',
+  'Helvetica Neue',
+  'IBM Plex Sans',
+  'Inter',
+  'Lato',
+  'Liberation Sans',
+  'Noto Sans',
+  'Open Sans',
+  'Roboto',
+  'SF Pro Text',
+  'Segoe UI',
+  'Source Sans 3',
+  'Source Sans Pro',
+  'Trebuchet MS',
+  'Ubuntu',
+  'Verdana',
+]
+
 const TEST_STRING = 'mmmmmmmmmmlliWWWW@0Oo'
 const TEST_SIZE = '72px'
 
@@ -121,10 +149,13 @@ export function resolveDefaultFamily(
   return stack.find((family) => isFontAvailable(family, measure)) ?? ''
 }
 
-export function toFontFamilyValue(family: string): string {
+export function toFontFamilyValue(
+  family: string,
+  fallback: 'monospace' | 'sans-serif' | 'serif' = 'monospace',
+): string {
   const trimmed = family.trim()
   if (!trimmed) return ''
-  return `"${trimmed}", monospace`
+  return `"${trimmed}", ${fallback}`
 }
 
 export function extractPrimaryFamily(fontFamilyValue: string): string {

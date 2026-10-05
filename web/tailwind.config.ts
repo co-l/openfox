@@ -56,7 +56,8 @@ export default {
         },
       },
       fontFamily: {
-        mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'monospace'],
+        mono: ['var(--font-mono)'],
+        ui: ['var(--font-ui)'],
       },
       keyframes: {
         'slide-down': {

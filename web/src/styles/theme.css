@@ -27,4 +27,11 @@
   --color-text-thinking: 192 132 252;
   --color-text-truncated: 251 191 36;
   --color-text-tool-error: 248 81 73;
+
+  /* Font tokens. --font-mono is fixed (code, terminal, diffs, logs always stay
+     monospace). --font-ui drives the whole interface and defaults to the
+     monospace stack; JS overrides it inline on <html> when the user picks a
+     UI font, removing it to restore the default. */
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  --font-ui: var(--font-mono);
 }

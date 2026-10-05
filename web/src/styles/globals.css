@@ -107,6 +107,8 @@
     word-break: break-word !important;
     line-height: 0.9;
     padding: 0.75rem 0;
+    /* Code blocks stay monospace even when the UI font is a non-monospace family */
+    font-family: var(--font-mono);
   }
 
   .shiki code {

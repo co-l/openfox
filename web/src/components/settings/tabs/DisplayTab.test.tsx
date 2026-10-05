@@ -7,6 +7,7 @@ import userEvent from '@testing-library/user-event'
 import { DisplayTab } from './DisplayTab'
 import { setLocale } from '@shared/i18n/index.js'
 import { SETTINGS_KEYS } from '../../../lib/resources'
+import { DEFAULT_TERMINAL_FONT } from '../../../lib/fonts'
 
 vi.mock('wouter', () => ({
   useLocation: () => ['/', vi.fn()],
@@ -29,7 +30,6 @@ vi.mock('../../../lib/resources', async (importOriginal) => ({
 vi.mock('../../../lib/fonts', async (importOriginal) => ({
   ...(await importOriginal()),
   detectAvailableFonts: () => ['JetBrains Mono'],
-  resolveDefaultFamily: () => 'JetBrains Mono',
 }))
 
 describe('DisplayTab Language setting', () => {
@@ -271,5 +271,63 @@ describe('DisplayTab Danger Level Selector settings', () => {
     fireEvent.blur(input)
 
     expect(mockSetSetting).toHaveBeenCalledWith(SETTINGS_KEYS.DISPLAY_DANGER_LEVEL_AUTO_LIST_THRESHOLD, '5')
+  })
+})
+
+describe('DisplayTab Fonts', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    Object.keys(mockSettings).forEach((k) => delete mockSettings[k])
+    setLocale('en')
+  })
+
+  const sectionSelect = (headingText: string) => {
+    const heading = screen.getByText(headingText)
+    return within(heading.parentElement as HTMLElement).getByRole('combobox') as HTMLSelectElement
+  }
+
+  it('renders the Fonts section with Interface and Terminal sub-sections', () => {
+    render(<DisplayTab />)
+    expect(screen.getByText('Fonts')).toBeTruthy()
+    expect(screen.getByText('Interface font')).toBeTruthy()
+    expect(screen.getByText('Terminal font')).toBeTruthy()
+  })
+
+  it('offers a Default (monospace) option in both font editors', () => {
+    render(<DisplayTab />)
+    const ifaceOptions = Array.from(sectionSelect('Interface font').options).map((o) => o.textContent)
+    const termOptions = Array.from(sectionSelect('Terminal font').options).map((o) => o.textContent)
+    expect(ifaceOptions).toContain('Default (monospace)')
+    expect(termOptions).toContain('Default (monospace)')
+  })
+
+  it('selecting a detected UI font saves it with a sans-serif fallback', async () => {
+    const user = userEvent.setup()
+    render(<DisplayTab />)
+    await user.selectOptions(sectionSelect('Interface font'), 'JetBrains Mono')
+    expect(mockSetSetting).toHaveBeenCalledWith(SETTINGS_KEYS.DISPLAY_UI_FONT, '"JetBrains Mono", sans-serif')
+  })
+
+  it('selecting a detected terminal font saves it with a monospace fallback', async () => {
+    const user = userEvent.setup()
+    render(<DisplayTab />)
+    await user.selectOptions(sectionSelect('Terminal font'), 'JetBrains Mono')
+    expect(mockSetSetting).toHaveBeenCalledWith(SETTINGS_KEYS.DISPLAY_TERMINAL_FONT, '"JetBrains Mono", monospace')
+  })
+
+  it('selecting Default in the UI font editor clears the override (saves empty)', async () => {
+    const user = userEvent.setup()
+    mockSettings[SETTINGS_KEYS.DISPLAY_UI_FONT] = '"Fira Code", sans-serif'
+    render(<DisplayTab />)
+    await user.selectOptions(sectionSelect('Interface font'), '__default_font__')
+    expect(mockSetSetting).toHaveBeenCalledWith(SETTINGS_KEYS.DISPLAY_UI_FONT, '')
+  })
+
+  it('selecting Default in the terminal font editor restores the default stack', async () => {
+    const user = userEvent.setup()
+    mockSettings[SETTINGS_KEYS.DISPLAY_TERMINAL_FONT] = '"Fira Code", monospace'
+    render(<DisplayTab />)
+    await user.selectOptions(sectionSelect('Terminal font'), '__default_font__')
+    expect(mockSetSetting).toHaveBeenCalledWith(SETTINGS_KEYS.DISPLAY_TERMINAL_FONT, DEFAULT_TERMINAL_FONT)
   })
 })

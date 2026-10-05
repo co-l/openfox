@@ -105,7 +105,7 @@ const CodeBlock = memo(function CodeBlock({
         </button>
       </div>
       {showSyntaxHighlighting && html ? (
-        <div className="min-w-0" dangerouslySetInnerHTML={{ __html: html }} />
+        <div className="min-w-0 font-mono" dangerouslySetInnerHTML={{ __html: html }} />
       ) : (
         <OptionalScrollArea horizontal scope="codeBlocks">
           <pre className="my-0 px-4 py-3 font-mono text-sm whitespace-pre-wrap break-word">

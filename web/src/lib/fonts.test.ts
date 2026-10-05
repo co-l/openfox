@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   MONOSPACE_FONT_CANDIDATES,
+  SANS_FONT_CANDIDATES,
   GENERIC_FONT_FAMILIES,
   DEFAULT_TERMINAL_FONT,
   DEFAULT_TERMINAL_FONT_STACK,
@@ -87,7 +88,7 @@ describe('MONOSPACE_FONT_CANDIDATES', () => {
 })
 
 describe('toFontFamilyValue', () => {
-  it('quotes the family and appends the monospace fallback', () => {
+  it('quotes the family and appends the monospace fallback by default', () => {
     expect(toFontFamilyValue('Fira Code')).toBe('"Fira Code", monospace')
   })
 
@@ -97,6 +98,36 @@ describe('toFontFamilyValue', () => {
 
   it('returns an empty string for a blank family', () => {
     expect(toFontFamilyValue('   ')).toBe('')
+  })
+
+  it('appends the given generic fallback when provided', () => {
+    expect(toFontFamilyValue('Inter', 'sans-serif')).toBe('"Inter", sans-serif')
+  })
+
+  it('honours an explicit serif fallback', () => {
+    expect(toFontFamilyValue('Georgia', 'serif')).toBe('"Georgia", serif')
+  })
+
+  it('still returns an empty string for a blank family regardless of fallback', () => {
+    expect(toFontFamilyValue('   ', 'sans-serif')).toBe('')
+  })
+})
+
+describe('SANS_FONT_CANDIDATES', () => {
+  it('contains no duplicates', () => {
+    expect(new Set(SANS_FONT_CANDIDATES).size).toBe(SANS_FONT_CANDIDATES.length)
+  })
+
+  it('has no empty or whitespace-only entries', () => {
+    for (const family of SANS_FONT_CANDIDATES) {
+      expect(family.trim()).not.toBe('')
+    }
+  })
+
+  it('includes common cross-platform sans-serif families', () => {
+    for (const family of ['Inter', 'Roboto', 'Segoe UI', 'Open Sans', 'Noto Sans', 'Source Sans 3']) {
+      expect(SANS_FONT_CANDIDATES).toContain(family)
+    }
   })
 })
 

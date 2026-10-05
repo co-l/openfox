@@ -10,8 +10,9 @@ import {
   detectAvailableFonts,
   extractPrimaryFamily,
   toFontFamilyValue,
-  resolveDefaultFamily,
   DEFAULT_TERMINAL_FONT,
+  MONOSPACE_FONT_CANDIDATES,
+  SANS_FONT_CANDIDATES,
 } from '../../../lib/fonts'
 
 function ThemePicker() {
@@ -345,14 +346,29 @@ export function DisplayTab() {
       </div>
 
       <div className="border-t border-border pt-4">
-        <h3 className="text-sm font-medium text-text-primary mb-2">{t({ en: 'Terminal', fr: 'Terminal' })}</h3>
-        <TerminalFontEditor />
+        <h3 className="text-sm font-medium text-text-primary mb-4">{t({ en: 'Fonts', fr: 'Polices' })}</h3>
+
+        <div className="space-y-2">
+          <h4 className="text-sm font-medium text-text-primary">
+            {t({ en: 'Interface font', fr: 'Police d’interface' })}
+          </h4>
+          <UiFontEditor />
+        </div>
+
+        <div className="mt-4 space-y-2">
+          <h4 className="text-sm font-medium text-text-primary">
+            {t({ en: 'Terminal font', fr: 'Police du terminal' })}
+          </h4>
+          <TerminalFontEditor />
+        </div>
       </div>
     </div>
   )
 }
 
 const FONT_PREVIEW_TEXT = '~/project \ue0b0 git status \u2713 \u2717 \u2192 0123 iIlL1 |\u2500\u2524'
+
+const UI_FONT_PREVIEW_TEXT = 'Interface AaBbCcDdEe 0123456789 — Éàçöü·¿¡ 设置字体'
 
 function ModelSelectorEditor() {
   const t = useT()
@@ -622,58 +638,94 @@ function LanguageSetting({
   )
 }
 
-function TerminalFontEditor() {
+// Sentinel option values for the special (non-font) entries in the select.
+const DEFAULT_FONT_SENTINEL = '__default_font__'
+const CUSTOM_FONT_SENTINEL = '__custom_font__'
+
+interface FontFamilyEditorProps {
+  settingKey: string
+  // Value saved when the Default option is chosen (and the useSetting fallback):
+  // '' for the UI font (no override → :root monospace), the full monospace stack
+  // for the terminal.
+  defaultSaveValue: string
+  // Font families offered in the list (detected client-side).
+  candidates: readonly string[]
+  // Generic fallback appended when a single family is picked from the list.
+  fallback: 'monospace' | 'sans-serif'
+  // When provided, adds an explicit "Default" option restoring defaultSaveValue
+  // with one click.
+  defaultOptionLabel?: Translation
+  // When true, the preview inherits the surrounding font instead of pinning an
+  // explicit family. Used by the UI font so its preview always mirrors the actual
+  // UI font (default or custom) without duplicating the monospace stack.
+  previewInherits?: boolean
+  description: Translation
+  noDetectedLabel?: Translation
+  customHintLabel: Translation
+  previewText: string
+}
+
+function FontFamilyEditor({
+  settingKey,
+  defaultSaveValue,
+  candidates,
+  fallback,
+  defaultOptionLabel,
+  previewInherits,
+  description,
+  noDetectedLabel,
+  customHintLabel,
+  previewText,
+}: FontFamilyEditorProps) {
   const t = useT()
-  const savedValue = useSetting(SETTINGS_KEYS.DISPLAY_TERMINAL_FONT, DEFAULT_TERMINAL_FONT).value
+  const savedValue = useSetting(settingKey, defaultSaveValue).value
   const [localValue, setLocalValue] = useState(savedValue)
 
-  const availableFonts = useMemo(() => detectAvailableFonts(), [])
-  const resolvedDefault = useMemo(() => resolveDefaultFamily(), [])
+  const availableFonts = useMemo(() => detectAvailableFonts([...candidates]), [candidates])
 
   useEffect(() => {
     setLocalValue(savedValue)
   }, [savedValue])
 
-  // The default is a fallback stack, so its first family may not be installed:
-  // show the one the browser actually resolves to instead of a phantom entry.
-  const isDefaultStack = savedValue === DEFAULT_TERMINAL_FONT
-  const primaryFamily = isDefaultStack ? resolvedDefault : extractPrimaryFamily(savedValue)
-  const isCustom = primaryFamily !== '' && !availableFonts.includes(primaryFamily)
+  const isDefault = savedValue.trim() === defaultSaveValue.trim()
+  const primaryFamily = isDefault ? '' : extractPrimaryFamily(savedValue)
+  const isCustom = !isDefault && primaryFamily !== '' && !availableFonts.includes(primaryFamily)
 
   const handleSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const family = e.target.value
-    if (!family) return
-    void setSetting(SETTINGS_KEYS.DISPLAY_TERMINAL_FONT, toFontFamilyValue(family))
+    const value = e.target.value
+    if (value === DEFAULT_FONT_SENTINEL) {
+      void setSetting(settingKey, defaultSaveValue)
+      return
+    }
+    if (value === CUSTOM_FONT_SENTINEL) return
+    void setSetting(settingKey, toFontFamilyValue(value, fallback))
   }
 
   const saveCustom = () => {
-    void setSetting(SETTINGS_KEYS.DISPLAY_TERMINAL_FONT, localValue.trim() || DEFAULT_TERMINAL_FONT)
+    const trimmed = localValue.trim()
+    void setSetting(settingKey, trimmed === '' ? defaultSaveValue : trimmed)
   }
+
+  const selectValue = isDefault ? DEFAULT_FONT_SENTINEL : isCustom ? CUSTOM_FONT_SENTINEL : primaryFamily
 
   return (
     <div className="space-y-2">
-      <p className="text-xs text-text-muted">
-        {t({
-          en: 'Only monospace fonts detected on this machine are listed. If your shell theme uses icons or powerline glyphs, pick a Nerd Font.',
-          fr: 'Seules les polices monospace détectées sur cette machine sont listées. Si votre thème de shell utilise des icônes ou des glyphes powerline, choisissez une Nerd Font.',
-        })}
-      </p>
+      <p className="text-xs text-text-muted">{t(description)}</p>
 
       <select
-        value={isCustom ? '' : primaryFamily}
+        value={selectValue}
         onChange={handleSelect}
         className="w-full px-2 py-1.5 text-sm text-text-primary bg-bg-tertiary border border-border rounded focus:outline-none focus:ring-2 focus:ring-accent-primary/50 focus:border-accent-primary"
       >
+        {defaultOptionLabel && <option value={DEFAULT_FONT_SENTINEL}>{t(defaultOptionLabel)}</option>}
         {isCustom && (
-          <option value="">
+          <option value={CUSTOM_FONT_SENTINEL}>
             {t({ en: 'Custom: {{font}}', fr: 'Personnalisée : {{font}}' }, { font: primaryFamily })}
           </option>
         )}
-        {availableFonts.length === 0 && (
-          <option value="">{t({ en: 'No monospace font detected', fr: 'Aucune police monospace détectée' })}</option>
-        )}
+        {availableFonts.length === 0 && noDetectedLabel && <option value="">{t(noDetectedLabel)}</option>}
         {availableFonts.map((font) => (
-          <option key={font} value={font} style={{ fontFamily: `"${font}", monospace` }}>
+          <option key={font} value={font} style={{ fontFamily: `"${font}", ${fallback}` }}>
             {font}
           </option>
         ))}
@@ -682,18 +734,13 @@ function TerminalFontEditor() {
       <ScrollArea
         horizontal
         className="px-3 py-2 text-sm text-text-primary bg-bg-tertiary border border-border rounded whitespace-nowrap"
-        style={{ fontFamily: savedValue }}
+        style={previewInherits ? undefined : { fontFamily: savedValue }}
       >
-        {FONT_PREVIEW_TEXT}
+        {previewText}
       </ScrollArea>
 
       <div>
-        <div className="text-xs text-text-muted mb-1">
-          {t({
-            en: 'Not listed? Enter a CSS font-family manually (e.g. "My Font", monospace)',
-            fr: 'Pas dans la liste ? Saisissez une famille de police CSS manuellement (ex. « My Font », monospace)',
-          })}
-        </div>
+        <div className="text-xs text-text-muted mb-1">{t(customHintLabel)}</div>
         <input
           type="text"
           value={localValue}
@@ -707,6 +754,50 @@ function TerminalFontEditor() {
         />
       </div>
     </div>
+  )
+}
+
+function UiFontEditor() {
+  return (
+    <FontFamilyEditor
+      settingKey={SETTINGS_KEYS.DISPLAY_UI_FONT}
+      defaultSaveValue=""
+      candidates={SANS_FONT_CANDIDATES}
+      fallback="sans-serif"
+      defaultOptionLabel={{ en: 'Default (monospace)', fr: 'Par défaut (monospace)' }}
+      previewInherits
+      description={{
+        en: 'Font used across the whole interface. Code blocks, diffs, logs and the terminal always stay monospace.',
+        fr: 'Police utilisée sur toute l’interface. Les blocs de code, les diffs, les journaux et le terminal restent toujours en police monospace.',
+      }}
+      customHintLabel={{
+        en: 'Not listed? Enter a CSS font-family manually (e.g. "My Font", sans-serif)',
+        fr: 'Pas dans la liste ? Saisissez une famille de police CSS manuellement (ex. « My Font », sans-serif)',
+      }}
+      previewText={UI_FONT_PREVIEW_TEXT}
+    />
+  )
+}
+
+function TerminalFontEditor() {
+  return (
+    <FontFamilyEditor
+      settingKey={SETTINGS_KEYS.DISPLAY_TERMINAL_FONT}
+      defaultSaveValue={DEFAULT_TERMINAL_FONT}
+      candidates={MONOSPACE_FONT_CANDIDATES}
+      fallback="monospace"
+      defaultOptionLabel={{ en: 'Default (monospace)', fr: 'Par défaut (monospace)' }}
+      description={{
+        en: 'Only monospace fonts detected on this machine are listed. If your shell theme uses icons or powerline glyphs, pick a Nerd Font.',
+        fr: 'Seules les polices monospace détectées sur cette machine sont listées. Si votre thème de shell utilise des icônes ou des glyphes powerline, choisissez une Nerd Font.',
+      }}
+      noDetectedLabel={{ en: 'No monospace font detected', fr: 'Aucune police monospace détectée' }}
+      customHintLabel={{
+        en: 'Not listed? Enter a CSS font-family manually (e.g. "My Font", monospace)',
+        fr: 'Pas dans la liste ? Saisissez une famille de police CSS manuellement (ex. « My Font », monospace)',
+      }}
+      previewText={FONT_PREVIEW_TEXT}
+    />
   )
 }
 
