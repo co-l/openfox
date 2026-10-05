@@ -1467,6 +1467,23 @@ describe('EventStore - Event Cleanup', () => {
       expect(store.getEventLogTail('session-1', fromSeq).openMessages).toBe(1)
     })
 
+    it('keeps counting open messages and pending calls when a done or result has no id', () => {
+      // SQL `x NOT IN (..., NULL)` is never true: one id-less row in the
+      // subquery would read every count as 0 and let the cadence snapshot
+      // mid-message.
+      store.append('session-1', { type: 'message.start', data: { messageId: 'a1', role: 'assistant', content: '' } })
+      store.append('session-1', {
+        type: 'tool.call',
+        data: { messageId: 'a1', toolCall: { id: 'c1', name: 'read_file', arguments: {} } },
+      })
+      store.append('session-1', { type: 'message.done', data: {} } as never)
+      store.append('session-1', { type: 'tool.result', data: { messageId: 'a1' } } as never)
+
+      const tail = store.getEventLogTail('session-1', 0)
+      expect(tail.openMessages).toBe(1)
+      expect(tail.pendingToolCalls).toBe(1)
+    })
+
     it('does not let a tool result whose call is before the tail hide a pending call', () => {
       store.append('session-1', {
         type: 'tool.call',

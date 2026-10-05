@@ -630,18 +630,22 @@ export class EventStore {
                 -- a successful compaction starts its summary attempt's
                 -- message a second time, then closes it once, and a done
                 -- whose start is before the tail must not hide another open
-                -- message. Subqueries so they only read their own event
-                -- types (session/type/seq index), not every tail row.
+                -- message. The NOT IN subqueries skip NULL ids: x NOT IN
+                -- (..., NULL) is never true and would read every count as 0.
+                -- Subqueries so they only read their own event types
+                -- (session/type/seq index), not every tail row.
                 (SELECT COUNT(DISTINCT json_extract(payload, '$.messageId')) FROM events
                   WHERE session_id = @sessionId AND event_type = 'message.start' AND seq > @fromSeq
                     AND json_extract(payload, '$.messageId') NOT IN (
                       SELECT json_extract(payload, '$.messageId') FROM events
-                      WHERE session_id = @sessionId AND event_type = 'message.done' AND seq > @fromSeq)) AS openMessages,
+                      WHERE session_id = @sessionId AND event_type = 'message.done' AND seq > @fromSeq
+                        AND json_extract(payload, '$.messageId') IS NOT NULL)) AS openMessages,
                 (SELECT COUNT(DISTINCT json_extract(payload, '$.toolCall.id')) FROM events
                   WHERE session_id = @sessionId AND event_type = 'tool.call' AND seq > @fromSeq
                     AND json_extract(payload, '$.toolCall.id') NOT IN (
                       SELECT json_extract(payload, '$.toolCallId') FROM events
-                      WHERE session_id = @sessionId AND event_type = 'tool.result' AND seq > @fromSeq)) AS pendingToolCalls
+                      WHERE session_id = @sessionId AND event_type = 'tool.result' AND seq > @fromSeq
+                        AND json_extract(payload, '$.toolCallId') IS NOT NULL)) AS pendingToolCalls
          FROM events WHERE session_id = @sessionId AND seq > @fromSeq`,
       )
       .get({ sessionId, fromSeq }) as {
