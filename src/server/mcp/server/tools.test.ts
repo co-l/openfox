@@ -116,7 +116,7 @@ function makeDeps(overrides: Partial<OpenFoxMcpToolDeps> = {}): OpenFoxMcpToolDe
       createdAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-01-01T00:00:00Z',
     })),
-    deleteProject: vi.fn((id: string) => id === 'p-1'),
+    deleteProject: vi.fn(async (id: string) => id === 'p-1'),
     ...overrides,
   }
   return deps

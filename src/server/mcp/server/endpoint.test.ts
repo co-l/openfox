@@ -49,7 +49,7 @@ function makeDeps(): OpenFoxMcpToolDeps {
       createdAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-01-01T00:00:00Z',
     })),
-    deleteProject: vi.fn(() => true),
+    deleteProject: vi.fn(async () => true),
     recentMessages: vi.fn(() => ({ messages: [], hiddenCount: 0 })),
   }
 }

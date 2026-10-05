@@ -232,7 +232,9 @@ describe('Session REST API', () => {
 
       // Filter for chat events that indicate continued agent activity
       const chatActivityEvents = eventsAfterDelete.filter((e) =>
-        ['chat.done', 'chat.tool_call', 'chat.tool_result', 'chat.delta', 'chat.thinking'].includes(e.type),
+        ['chat.done', 'chat.stats', 'chat.tool_call', 'chat.tool_result', 'chat.delta', 'chat.thinking'].includes(
+          e.type,
+        ),
       )
 
       // There should be no chat activity after deletion
@@ -242,6 +244,60 @@ describe('Session REST API', () => {
       const getRes = await fetch(`${server.url}/api/sessions/${sessionId}`)
       expect(getRes.status).toBe(404)
 
+      await client.close()
+    })
+  })
+
+  describe('project-level deletion of a running session', () => {
+    async function startStreamingSession() {
+      const createRes = await fetch(`${server.url}/api/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, title: 'Running' }),
+      })
+      const created: any = await createRes.json()
+      const client = await createTestClient({ url: server.wsUrl })
+      await client.send('session.load', { sessionId: created.session.id })
+      client.send('chat.send', { content: 'Write a very long and detailed explanation of TypeScript.' })
+      await client.waitFor('session.running', (p: { isRunning: boolean }) => p.isRunning)
+      await client.waitFor('chat.delta')
+      return { sessionId: created.session.id as string, client }
+    }
+
+    async function expectNoActivityAfter(client: Awaited<ReturnType<typeof createTestClient>>, from: number) {
+      await sleep(1500)
+      const activity = client
+        .allEvents()
+        .slice(from)
+        .filter((e) =>
+          ['chat.done', 'chat.stats', 'chat.tool_call', 'chat.tool_result', 'chat.delta', 'chat.thinking'].includes(
+            e.type,
+          ),
+        )
+      expect(activity.length).toBe(0)
+    }
+
+    it('DELETE /api/projects/:projectId/sessions cancels active agent execution', async () => {
+      const { sessionId, client } = await startStreamingSession()
+      const before = client.allEvents().length
+
+      const res = await fetch(`${server.url}/api/projects/${projectId}/sessions`, { method: 'DELETE' })
+      expect(res.status).toBe(200)
+
+      await expectNoActivityAfter(client, before)
+      expect((await fetch(`${server.url}/api/sessions/${sessionId}`)).status).toBe(404)
+      await client.close()
+    })
+
+    it('DELETE /api/projects/:id cancels active agent execution of its sessions', async () => {
+      const { sessionId, client } = await startStreamingSession()
+      const before = client.allEvents().length
+
+      const res = await fetch(`${server.url}/api/projects/${projectId}`, { method: 'DELETE' })
+      expect(res.status).toBe(200)
+
+      await expectNoActivityAfter(client, before)
+      expect((await fetch(`${server.url}/api/sessions/${sessionId}`)).status).toBe(404)
       await client.close()
     })
   })
