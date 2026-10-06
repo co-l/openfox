@@ -17,7 +17,7 @@ import { AttachmentPreview } from '../shared/AttachmentPreview.js'
 import { PromptHistoryList } from '../shared/PromptHistory.js'
 import { RunningIndicator } from '../shared/RunningIndicator'
 import { AutoScrollToggle } from '../shared/AutoScrollToggle'
-import { PauseIcon, PlayIcon, SearchIcon, SendIcon, StopIcon, XCloseIcon } from '../shared/icons'
+import { MoonIcon, PauseIcon, PlayIcon, SearchIcon, SendIcon, StopIcon, XCloseIcon } from '../shared/icons'
 import { WorkflowBar } from './WorkflowBar'
 import { processFile } from '../../lib/file-processing.js'
 import { mimeTypeToExtension, isSupportedMimeType } from '../../lib/attachment-utils.js'
@@ -35,7 +35,7 @@ import { McpSelector } from './McpSelector'
 import { PluginSlot } from '../plugins/PluginSlot'
 import { PluginZone } from '../plugins/PluginZone'
 import { useCurrentProject } from '../../hooks/useCurrentProject'
-import { SETTINGS_KEYS } from '../../lib/resources'
+import { SETTINGS_KEYS, setSetting } from '../../lib/resources'
 import { useSetting } from '../../hooks/useSetting'
 import {
   AtMentionAutocomplete,
@@ -126,6 +126,7 @@ export function ChatInput({
   const currentProject = useCurrentProject()
   const perSessionMcpEnabled = useSetting(SETTINGS_KEYS.FEATURES_PER_SESSION_MCP, 'false').value === 'true'
   const fullscreenComposer = useSetting(SETTINGS_KEYS.DISPLAY_MOBILE_FULLSCREEN_COMPOSER, 'false').value === 'true'
+  const zenMode = useSetting(SETTINGS_KEYS.DISPLAY_ZEN_MODE, 'false').value === 'true'
   const stopGeneration = useSessionStore((state) => state.stopGeneration)
   const pauseGeneration = useSessionStore((state) => state.pauseGeneration)
   const resumeGeneration = useSessionStore((state) => state.resumeGeneration)
@@ -724,6 +725,24 @@ export function ChatInput({
         >
           <SearchIcon />
           {t({ en: 'Browse history', fr: 'Historique' })}
+        </button>
+        <button
+          type="button"
+          onClick={() => void setSetting(SETTINGS_KEYS.DISPLAY_ZEN_MODE, zenMode ? 'false' : 'true')}
+          data-testid="chat-zen-toggle"
+          aria-pressed={zenMode}
+          title={t({
+            en: 'Zen mode — hide finished tool calls',
+            fr: 'Mode zen — masquer les appels d’outils terminés',
+          })}
+          className={`flex items-center gap-1.5 px-2 py-0.5 rounded transition-colors ${
+            zenMode
+              ? 'text-accent-primary bg-accent-primary/20'
+              : 'text-text-muted hover:text-text-primary hover:bg-bg-tertiary'
+          }`}
+        >
+          <MoonIcon />
+          {t({ en: 'Zen', fr: 'Zen' })}
         </button>
       </div>
 

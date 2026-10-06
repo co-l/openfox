@@ -22,6 +22,8 @@ import { getMessageEnd, getToolCallEnd } from '../../lib/block-timing'
 import { copyToClipboard } from '../../lib/clipboard.js'
 import { useContextMenu } from '../../hooks/useContextMenu'
 import { useMessageContextMenu } from '../../hooks/useMessageContextMenu'
+import { useSetting } from '../../hooks/useSetting'
+import { SETTINGS_KEYS } from '../../lib/resources'
 
 interface AssistantMessageProps {
   message: Message
@@ -169,6 +171,7 @@ export const AssistantMessage = memo(function AssistantMessage({
   const t = useT()
   const criteria = useSessionStore((state) => state.currentSession?.metadataEntries?.['criteria'])
   const { agents } = useAgents()
+  const zenMode = useSetting(SETTINGS_KEYS.DISPLAY_ZEN_MODE, 'false').value === 'true'
   const rawElements = messageToElements(message, showStats)
   const hasThinking = rawElements.some((e) => e.type === 'thinking')
   const thinkingFinished = rawElements.some((e) => e.type !== 'thinking' && e.type !== 'stats')
@@ -177,6 +180,16 @@ export const AssistantMessage = memo(function AssistantMessage({
     .map((e) => e.content)
     .join('')
   const elements = groupConsecutiveCriteria(rawElements.filter((e) => e.type !== 'thinking'))
+  const zenEmpty =
+    zenMode &&
+    !hasThinking &&
+    !elements.some((el) => {
+      if (el.type === 'tool_call') {
+        const tc = el.toolCall
+        return tc.name === 'todo_write' || deriveToolCallStatus(tc.result) === 'pending'
+      }
+      return true
+    })
   // The message-level end time is stamped on the last text block only: putting
   // it under every segment would make an early segment look like it finished
   // when the whole message did.
@@ -221,7 +234,7 @@ export const AssistantMessage = memo(function AssistantMessage({
   if (elements.length === 0 && !hasThinking) return null
 
   return (
-    <div className="feed-item" onContextMenu={(e) => onContextMenu(e, !!sessionId)}>
+    <div className={`feed-item${zenEmpty ? ' hidden' : ''}`} onContextMenu={(e) => onContextMenu(e, !!sessionId)}>
       <div className="min-w-0">
         {forkError && <p className="text-xs text-accent-error mb-1 ml-0.5">{forkError}</p>}
         {hasThinking && (
@@ -265,9 +278,14 @@ export const AssistantMessage = memo(function AssistantMessage({
               const tc = element.toolCall
               const result = tc.result
 
+              // Determine status from the result — a successful read whose
+              // content merely mentions the "[interrupted by user]" marker
+              // text is NOT an interrupted run (see deriveToolCallStatus).
+              const status = deriveToolCallStatus(result)
+
               // Special: ask_user → inline question card
               if (tc.name === 'ask_user') {
-                return <AskUserCard key={i} toolCall={tc} />
+                return <AskUserCard key={i} toolCall={tc} hidden={zenMode && status !== 'pending'} />
               }
 
               // Special: todo_write → inline todo list
@@ -278,16 +296,12 @@ export const AssistantMessage = memo(function AssistantMessage({
                 return <TodoListDisplay key={i} todos={todos} />
               }
 
-              // Determine status from the result — a successful read whose
-              // content merely mentions the "[interrupted by user]" marker
-              // text is NOT an interrupted run (see deriveToolCallStatus).
-              const status = deriveToolCallStatus(result)
-
               // Default: standard tool call display
               return (
                 <ToolCallDisplay
                   key={i}
                   tool={tc.name}
+                  hidden={zenMode && status !== 'pending'}
                   args={tc.arguments}
                   status={status}
                   variant="expandable"

@@ -657,3 +657,57 @@ describe('ToolCallDisplay — end timestamp', () => {
     expect(container.textContent).not.toContain('14:30')
   })
 })
+
+describe('ToolCallDisplay — hidden', () => {
+  const classes = (el: Element | null) => el?.getAttribute('class')?.split(/\s+/) ?? []
+
+  beforeEach(() => {
+    useSessionStore.setState({ pendingPathConfirmations: [] })
+    clearCache()
+  })
+
+  afterEach(cleanup)
+
+  it('hides the expandable variant with the hidden prop', () => {
+    const { container } = render(
+      <ToolCallDisplay
+        tool="read_file"
+        args={{ path: 'src/a.ts' }}
+        status="success"
+        result="content"
+        variant="expandable"
+        hidden
+      />,
+    )
+
+    expect(classes(container.firstElementChild)).toContain('hidden')
+  })
+
+  it('hides the compact variant with the hidden prop', () => {
+    const { container } = render(
+      <ToolCallDisplay tool="read_file" args={{ path: 'src/a.ts' }} status="success" hidden />,
+    )
+
+    expect(classes(container.firstElementChild)).toContain('hidden')
+  })
+
+  it('hides the step_done pill with the hidden prop', () => {
+    const { container } = render(<ToolCallDisplay tool="step_done" args={{}} status="success" hidden />)
+
+    expect(classes(container.firstElementChild)).toContain('hidden')
+  })
+
+  it('stays visible without the hidden prop', () => {
+    const { container } = render(
+      <ToolCallDisplay
+        tool="read_file"
+        args={{ path: 'src/a.ts' }}
+        status="success"
+        result="content"
+        variant="expandable"
+      />,
+    )
+
+    expect(classes(container.firstElementChild)).not.toContain('hidden')
+  })
+})

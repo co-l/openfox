@@ -57,6 +57,7 @@ interface ToolCallDisplayProps {
   truncated?: boolean // Whether the result was truncated
   // For path confirmation matching
   callId?: string
+  hidden?: boolean
 }
 
 // Finished tool calls with content above this size start collapsed when the
@@ -126,6 +127,7 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
   metadata,
   truncated,
   callId,
+  hidden,
 }: ToolCallDisplayProps) {
   const t = useT()
 
@@ -201,7 +203,9 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
   // step_done is a simple completion signal — minimal inline pill, no collapsible, no args
   if (tool === 'step_done') {
     return (
-      <div className="flex items-center gap-1.5 text-xs bg-secondary border border-border rounded px-2 py-1.5 my-1">
+      <div
+        className={`flex items-center gap-1.5 text-xs bg-secondary border border-border rounded px-2 py-1.5 my-1${hidden ? ' hidden' : ''}`}
+      >
         <span className={`${config.color} ${config.animate ? 'animate-pulse' : ''}`}>{config.icon}</span>
         <span className="font-mono text-accent-primary text-sm">{tool}</span>
       </div>
@@ -210,7 +214,9 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
   if (variant === 'compact') {
     return (
       <div
-        className={`flex items-center gap-1.5 text-xs rounded px-2 py-1.5 border ${remoteProtocol ? 'border-text-thinking/60 bg-text-thinking/10' : 'border-transparent bg-secondary'}`}
+        className={`flex items-center gap-1.5 text-xs rounded px-2 py-1.5 border ${
+          remoteProtocol ? 'border-text-thinking/60 bg-text-thinking/10' : 'border-transparent bg-secondary'
+        }${hidden ? ' hidden' : ''}`}
       >
         <ToolIcon tool={tool} />
         <span className="text-accent-primary font-medium">{tool}</span>
@@ -224,7 +230,11 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
 
   return (
     <div
-      className={`border rounded overflow-hidden my-1 min-w-0 ${remoteProtocol ? 'border-text-thinking/60 shadow-[0_0_0_1px_rgb(var(--color-text-thinking)_/_0.12)]' : 'border-border'}`}
+      className={`border rounded overflow-hidden my-1 min-w-0 ${
+        remoteProtocol
+          ? 'border-text-thinking/60 shadow-[0_0_0_1px_rgb(var(--color-text-thinking)_/_0.12)]'
+          : 'border-border'
+      }${hidden ? ' hidden' : ''}`}
     >
       <button
         className={`w-full flex items-center gap-1.5 p-2 text-left ${remoteProtocol ? 'bg-text-thinking/10 hover:bg-text-thinking/15' : 'bg-secondary hover:bg-secondary/80'}`}

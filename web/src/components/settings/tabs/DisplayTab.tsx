@@ -73,6 +73,15 @@ const FEED_TOGGLES: ToggleDefinition[] = [
     },
   },
   {
+    key: SETTINGS_KEYS.DISPLAY_ZEN_MODE,
+    label: { en: 'Zen mode', fr: 'Mode zen' },
+    description: {
+      en: 'Hide finished tool calls in the feed; running calls and anything waiting for your input stay visible. The composer toolbar has a quick toggle.',
+      fr: 'Masque les appels d’outils terminés dans le fil ; les appels en cours et tout ce qui attend votre saisie restent visibles. La barre d’outils du composeur a une bascule rapide.',
+    },
+    defaultValue: 'false',
+  },
+  {
     key: SETTINGS_KEYS.DISPLAY_SHOW_STATS,
     label: { en: 'Show stats bar', fr: 'Afficher la barre de statistiques' },
     description: {
@@ -193,6 +202,7 @@ export function DisplayTab() {
   const applyLocale = useLocaleStore((state) => state.applyLocale)
   const showThinking = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_THINKING, 'true')
   const showVerboseToolOutput = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_VERBOSE_TOOL_OUTPUT, 'true')
+  const zenMode = useSetting(SETTINGS_KEYS.DISPLAY_ZEN_MODE, 'false')
   const showStats = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_STATS, 'true')
   const showAgentDefinitions = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_AGENT_DEFINITIONS, 'true')
   const showWorkflowBars = useSetting(SETTINGS_KEYS.DISPLAY_SHOW_WORKFLOW_BARS, 'true')
@@ -233,6 +243,7 @@ export function DisplayTab() {
     [SETTINGS_KEYS.DISPLAY_SHOW_TOOL_CALL_STREAMING]: showToolCallStreaming.value,
     [SETTINGS_KEYS.DISPLAY_SHOW_THINKING]: showThinking.value,
     [SETTINGS_KEYS.DISPLAY_SHOW_VERBOSE_TOOL_OUTPUT]: showVerboseToolOutput.value,
+    [SETTINGS_KEYS.DISPLAY_ZEN_MODE]: zenMode.value,
     [SETTINGS_KEYS.DISPLAY_SHOW_STATS]: showStats.value,
     [SETTINGS_KEYS.DISPLAY_SHOW_AGENT_DEFINITIONS]: showAgentDefinitions.value,
     [SETTINGS_KEYS.DISPLAY_SHOW_WORKFLOW_BARS]: showWorkflowBars.value,

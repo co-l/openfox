@@ -18,6 +18,7 @@ export function useDisplaySettings() {
     useNativeScrollbarsCodeBlocks:
       useSetting(SETTINGS_KEYS.DISPLAY_USE_NATIVE_SCROLLBARS_CODE_BLOCKS, 'false').value === 'true',
     collapseLargeToolCalls: useSetting(SETTINGS_KEYS.DISPLAY_COLLAPSE_LARGE_TOOL_CALLS, 'false').value === 'true',
+    zenMode: useSetting(SETTINGS_KEYS.DISPLAY_ZEN_MODE, 'false').value === 'true',
     deferCodeHighlightWhileStreaming:
       useSetting(SETTINGS_KEYS.DISPLAY_DEFER_CODE_HIGHLIGHT_WHILE_STREAMING, 'false').value === 'true',
     feedVirtualization: useSetting(SETTINGS_KEYS.DISPLAY_FEED_VIRTUALIZATION, 'true').value === 'true',

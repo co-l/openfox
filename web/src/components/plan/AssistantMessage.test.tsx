@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useEffect, useState } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
@@ -7,6 +7,12 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 vi.mock('../../stores/session', () => ({
   useSessionStore: (selector: (state: { currentSession: { criteria: [] } }) => unknown) =>
     selector({ currentSession: { criteria: [] } }),
+}))
+
+vi.mock('../../lib/api', () => ({
+  authFetch: vi.fn(() => Promise.reject(new Error('network disabled in tests'))),
+  forkSession: vi.fn(),
+  forkSessionErrorMessage: vi.fn(),
 }))
 
 vi.mock('../shared/Markdown', () => ({
@@ -31,6 +37,13 @@ vi.mock('../shared/ToolCallDisplay', () => ({
   },
 }))
 
+vi.mock('../shared/AskUserCard', () => ({
+  AskUserCard: (props: unknown) => {
+    askUserCardMock(props)
+    return <div>ask-user-card</div>
+  },
+}))
+
 vi.mock('../shared/ToolCallPreparing', () => ({
   ToolCallPreparing: (props: unknown) => {
     toolCallPreparingMock(props)
@@ -42,12 +55,14 @@ vi.mock('../shared/TodoListDisplay', () => ({
   TodoListDisplay: () => <div>todo</div>,
 }))
 
-const { criteriaGroupMock, toolCallPreparingMock, thinkingBlockToggleMock, toolCallDisplayMock } = vi.hoisted(() => ({
-  criteriaGroupMock: vi.fn(),
-  toolCallPreparingMock: vi.fn(),
-  thinkingBlockToggleMock: vi.fn(),
-  toolCallDisplayMock: vi.fn(),
-}))
+const { criteriaGroupMock, toolCallPreparingMock, thinkingBlockToggleMock, toolCallDisplayMock, askUserCardMock } =
+  vi.hoisted(() => ({
+    criteriaGroupMock: vi.fn(),
+    toolCallPreparingMock: vi.fn(),
+    thinkingBlockToggleMock: vi.fn(),
+    toolCallDisplayMock: vi.fn(),
+    askUserCardMock: vi.fn(),
+  }))
 
 vi.mock('../shared/CriteriaGroupDisplay', () => ({
   CriteriaGroupDisplay: (props: unknown) => {
@@ -57,12 +72,14 @@ vi.mock('../shared/CriteriaGroupDisplay', () => ({
   isCriterionTool: () => false,
 }))
 
-import type { Message } from '@shared/types.js'
+import type { Message, ToolCall } from '@shared/types.js'
 import type { TurnStats } from '../../lib/types'
 import { latchMessageEnd, latchToolCallEnd } from '../../lib/block-timing'
 import { formatClockTime } from '../../lib/format-date'
 import { AssistantMessage } from './AssistantMessage'
 import { TurnStatsModal } from './TurnStatsModal'
+import { SETTINGS_KEYS, settingResource } from '../../lib/resources'
+import { clearCache } from '../../lib/resourceCache'
 
 function StatsDetailHarness({ message }: { message: Message }) {
   const [stats, setStats] = useState<TurnStats | null>(null)
@@ -666,5 +683,166 @@ describe('AssistantMessage block end timestamps', () => {
     )
 
     expect(toolCallDisplayMock).toHaveBeenCalledWith(expect.objectContaining({ endedAt: expect.any(Number) }))
+  })
+})
+
+describe('AssistantMessage zen mode', () => {
+  beforeEach(() => {
+    clearCache()
+  })
+
+  afterEach(() => {
+    clearCache()
+    cleanup()
+  })
+
+  const zenOn = () => settingResource.write('true', SETTINGS_KEYS.DISPLAY_ZEN_MODE)
+
+  const messageWithToolCall = (toolCall: ToolCall): Message =>
+    ({
+      id: 'zen-msg',
+      role: 'assistant',
+      content: '',
+      toolCalls: [toolCall],
+      timestamp: '2024-01-01T00:00:00.000Z',
+      isStreaming: false,
+    }) as Message
+
+  it('hides finished tool calls when zen mode is on', () => {
+    toolCallDisplayMock.mockClear()
+    zenOn()
+    render(
+      <AssistantMessage
+        message={messageWithToolCall({
+          id: 'tc-done',
+          name: 'read_file',
+          arguments: { path: 'src/a.ts' },
+          result: { success: true, durationMs: 5, truncated: false },
+        })}
+      />,
+    )
+
+    expect(toolCallDisplayMock).toHaveBeenCalledWith(expect.objectContaining({ hidden: true }))
+  })
+
+  it('keeps running tool calls visible when zen mode is on', () => {
+    toolCallDisplayMock.mockClear()
+    zenOn()
+    render(
+      <AssistantMessage
+        message={messageWithToolCall({
+          id: 'tc-running',
+          name: 'run_command',
+          arguments: { command: 'ls' },
+        })}
+      />,
+    )
+
+    expect(toolCallDisplayMock).toHaveBeenCalledWith(expect.objectContaining({ hidden: false }))
+  })
+
+  it('keeps finished tool calls visible when zen mode is off', () => {
+    toolCallDisplayMock.mockClear()
+    render(
+      <AssistantMessage
+        message={messageWithToolCall({
+          id: 'tc-zen-off',
+          name: 'read_file',
+          arguments: { path: 'src/a.ts' },
+          result: { success: true, durationMs: 5, truncated: false },
+        })}
+      />,
+    )
+
+    expect(toolCallDisplayMock).toHaveBeenCalledWith(expect.objectContaining({ hidden: false }))
+  })
+
+  it('keeps a pending ask_user visible but hides an answered one when zen mode is on', () => {
+    askUserCardMock.mockClear()
+    zenOn()
+    render(
+      <AssistantMessage
+        message={messageWithToolCall({
+          id: 'ask-pending',
+          name: 'ask_user',
+          arguments: { question: 'Which option?' },
+        })}
+      />,
+    )
+
+    expect(askUserCardMock).toHaveBeenCalledWith(expect.objectContaining({ hidden: false }))
+
+    askUserCardMock.mockClear()
+    render(
+      <AssistantMessage
+        message={messageWithToolCall({
+          id: 'ask-answered',
+          name: 'ask_user',
+          arguments: { question: 'Which option?' },
+          result: { success: true, output: 'option A', durationMs: 1, truncated: false },
+        })}
+      />,
+    )
+
+    expect(askUserCardMock).toHaveBeenCalledWith(expect.objectContaining({ hidden: true }))
+  })
+
+  it('keeps the todo list visible when zen mode is on', () => {
+    zenOn()
+    render(
+      <AssistantMessage
+        message={messageWithToolCall({
+          id: 'tc-todos',
+          name: 'todo_write',
+          arguments: { todos: [] },
+          result: { success: true, durationMs: 1, truncated: false },
+        })}
+      />,
+    )
+
+    expect(screen.getByText('todo')).toBeTruthy()
+  })
+
+  it('hides the whole message when only finished tool calls remain', () => {
+    zenOn()
+    const { container } = render(
+      <AssistantMessage
+        message={messageWithToolCall({
+          id: 'tc-only',
+          name: 'read_file',
+          arguments: { path: 'src/a.ts' },
+          result: { success: true, durationMs: 5, truncated: false },
+        })}
+      />,
+    )
+
+    const root = container.querySelector('.feed-item')
+    expect(root?.getAttribute('class')?.split(/\s+/)).toContain('hidden')
+  })
+
+  it('keeps the message visible when text remains', () => {
+    zenOn()
+    const { container } = render(
+      <AssistantMessage
+        message={{
+          id: 'zen-text',
+          role: 'assistant',
+          content: 'Answer text',
+          toolCalls: [
+            {
+              id: 'tc-done-2',
+              name: 'read_file',
+              arguments: { path: 'src/a.ts' },
+              result: { success: true, durationMs: 5, truncated: false },
+            },
+          ],
+          timestamp: '2024-01-01T00:00:00.000Z',
+          isStreaming: false,
+        }}
+      />,
+    )
+
+    expect(screen.getByText('Answer text')).toBeTruthy()
+    expect(container.querySelector('.feed-item')?.getAttribute('class')?.split(/\s+/)).not.toContain('hidden')
   })
 })

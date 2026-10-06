@@ -142,6 +142,40 @@ describe('DisplayTab tool call streaming toggle', () => {
   })
 })
 
+describe('DisplayTab zen mode toggle', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    Object.keys(mockSettings).forEach((k) => delete mockSettings[k])
+    setLocale('en')
+  })
+
+  it('renders the zen mode toggle off by default', () => {
+    render(<DisplayTab />)
+
+    const label = screen.getByText('Zen mode').closest('label') as HTMLElement
+    expect(label).toBeTruthy()
+    expect(within(label).getByRole('button').getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('persists turning the zen mode toggle on', async () => {
+    const user = userEvent.setup()
+    render(<DisplayTab />)
+
+    const label = screen.getByText('Zen mode').closest('label') as HTMLElement
+    await user.click(within(label).getByRole('button'))
+
+    expect(mockSetSetting).toHaveBeenCalledWith(SETTINGS_KEYS.DISPLAY_ZEN_MODE, 'true')
+  })
+
+  it('renders the zen mode toggle on when the setting is stored true', () => {
+    mockSettings[SETTINGS_KEYS.DISPLAY_ZEN_MODE] = 'true'
+    render(<DisplayTab />)
+
+    const label = screen.getByText('Zen mode').closest('label') as HTMLElement
+    expect(within(label).getByRole('button').getAttribute('aria-pressed')).toBe('true')
+  })
+})
+
 describe('DisplayTab Model Selector', () => {
   beforeEach(() => {
     vi.clearAllMocks()
