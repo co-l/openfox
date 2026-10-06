@@ -77,7 +77,7 @@ const baseConfig = defineConfig({
 })
 
 // Load local config if it exists (gitignored, for local overrides like allowedHosts)
-async function loadLocalConfig(): Promise<any> {
+async function loadLocalConfig(): Promise<Record<string, unknown>> {
   const localPath = path.resolve(__dirname, 'vite.config.local.ts')
   if (existsSync(localPath)) {
     const mod = await import(localPath)

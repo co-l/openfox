@@ -289,6 +289,7 @@ export function createPluginRoutes(options: PluginRoutesOptions): Router {
       const response = await fetch(targetUrl, {
         method: req.method,
         headers: forwardHeaders,
+        signal: AbortSignal.timeout(10_000),
         ...(hasBody ? { body: typeof req.body === 'string' ? req.body : JSON.stringify(req.body) } : {}),
       })
 

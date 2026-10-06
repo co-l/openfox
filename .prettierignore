@@ -2,3 +2,6 @@
 # several are intentionally malformed to exercise error handling and cannot be
 # parsed by prettier, so the whole subtree is left as-is.
 src/server/lsp/__fixtures__/
+examples/agent-office-plugin/vendor/
+examples/agent-office-plugin/dist/
+.agent-office/

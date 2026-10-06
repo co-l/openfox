@@ -74,7 +74,7 @@ export function SessionLayout({
             }`}
           >
             <div className="h-full p-4">
-              <ScrollArea className="h-full">
+              <ScrollArea className="h-full [&_.os-viewport]:!flex [&_.os-viewport]:!flex-col">
                 <SessionSidebar workdir={session?.workspace ?? session?.workdir} />
               </ScrollArea>
             </div>
@@ -83,7 +83,7 @@ export function SessionLayout({
           /* Inline sidebar - flex item sharing the row with the feed */
           <aside className="shrink-0 border-l border-border bg-secondary relative" style={{ width: rightSidebarWidth }}>
             <ResizeHandle side="left" onMouseDown={handleResizeMouseDown} />
-            <ScrollArea className="h-full p-4">
+            <ScrollArea className="h-full p-4 [&_.os-viewport]:!flex [&_.os-viewport]:!flex-col">
               <SessionSidebar workdir={session?.workspace ?? session?.workdir} />
             </ScrollArea>
           </aside>

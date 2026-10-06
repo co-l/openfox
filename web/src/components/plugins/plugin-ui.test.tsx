@@ -10,7 +10,7 @@ import { PluginBadges } from './PluginBadges'
 import { PluginPanelHost } from './PluginPanelHost'
 import { PluginZone } from './PluginZone'
 import { DeclarativeRenderer } from './DeclarativeRenderer'
-import { activatePluginAction } from './plugin-ui-utils'
+import { activatePluginAction, applyPanelContent } from './plugin-ui-utils'
 import { usePluginUiStore } from '../../stores/pluginUi'
 import { useLocaleStore } from '../../stores/locale'
 import { clearBadgeCache } from '../../lib/plugin-badge-cache'
@@ -1073,6 +1073,44 @@ describe('PluginZone and DeclarativeRenderer', () => {
     expect(container.textContent).toBe('Before TextNative HeaderAfter Text')
   })
 
+  it('supports overriding session.sidebar.git and session.sidebar.devserver zones', () => {
+    contributionsRef.current = {
+      ...contributionsRef.current,
+      overrides: [
+        {
+          id: 'git-override',
+          pluginId: 'multi-vcs',
+          zone: 'session.sidebar.git',
+          mode: 'replace',
+          replacement: { type: 'text', text: { en: 'Multi-Repo Git Tree', fr: 'Arborescence Git Multi-Dépôts' } },
+        },
+        {
+          id: 'devserver-override',
+          pluginId: 'multi-dev',
+          zone: 'session.sidebar.devserver',
+          mode: 'replace',
+          replacement: { type: 'text', text: { en: '3 Dev Servers Running', fr: '3 Serveurs Dev Actifs' } },
+        },
+      ],
+    }
+
+    render(
+      <div>
+        <PluginZone id="session.sidebar.git">
+          <span data-testid="native-git">Native Git Section</span>
+        </PluginZone>
+        <PluginZone id="session.sidebar.devserver">
+          <span data-testid="native-devserver">Native DevServer</span>
+        </PluginZone>
+      </div>,
+    )
+
+    expect(screen.getByText('Multi-Repo Git Tree')).toBeDefined()
+    expect(screen.queryByTestId('native-git')).toBeNull()
+    expect(screen.getByText('3 Dev Servers Running')).toBeDefined()
+    expect(screen.queryByTestId('native-devserver')).toBeNull()
+  })
+
   it('renders nothing for an empty stack so a hidden header component leaves no full-width gap', () => {
     const { container } = render(<DeclarativeRenderer node={{ type: 'stack', direction: 'row', children: [] }} />)
 
@@ -1211,6 +1249,150 @@ describe('PluginZone and DeclarativeRenderer', () => {
     )
     const svgEl = container.querySelector('svg')
     expect(svgEl).toBeTruthy()
+  })
+
+  it('renders an input with a leading icon using the native search-field styling', () => {
+    const { container } = render(
+      <DeclarativeRenderer
+        node={{
+          type: 'input',
+          id: 'branch-search',
+          inputType: 'text',
+          icon: 'SearchIcon',
+          placeholder: { en: 'Search branches…', fr: 'Rechercher des branches…' },
+        }}
+      />,
+    )
+    const wrapper = container.querySelector('.relative')
+    expect(wrapper).toBeTruthy()
+    const icon = wrapper?.querySelector('svg')
+    expect(icon?.getAttribute('class')).toContain('absolute')
+    expect(icon?.getAttribute('class')).toContain('left-2.5')
+    const input = container.querySelector('input')
+    expect(input?.className).toContain('pl-8')
+    expect(input?.className).toContain('bg-bg-primary')
+  })
+
+  it('renders a bare input without its own border so it can live inside a custom container', () => {
+    const { container } = render(
+      <DeclarativeRenderer
+        node={{
+          type: 'input',
+          id: 'new-branch-name',
+          inputType: 'text',
+          bare: true,
+          placeholder: { en: 'feature/my-branch', fr: 'feature/ma-branche' },
+        }}
+      />,
+    )
+    const input = container.querySelector('input')
+    expect(input?.className).toContain('bg-transparent')
+    expect(input?.className).toContain('font-mono')
+    expect(input?.className).not.toContain('border')
+  })
+
+  it('renders a link-variant button matching the native branch switch affordance', async () => {
+    invokePluginRpc.mockResolvedValue('ok')
+    const { container } = render(
+      <DeclarativeRenderer
+        node={{
+          type: 'button',
+          label: { en: 'Switch', fr: 'Changer' },
+          variant: 'link',
+          className: 'ml-auto',
+          onActivate: { kind: 'rpc', method: 'switchBranch' },
+        }}
+        context={{ pluginId: 'demo-plugin' }}
+      />,
+    )
+    const btn = container.querySelector('button')
+    expect(btn?.className).toContain('ml-auto')
+    expect(btn?.className).toContain('text-xs')
+    expect(btn?.className).toContain('text-accent-primary')
+    expect(btn?.className).not.toContain('rounded-full')
+    await userEvent.setup().click(btn!)
+    expect(invokePluginRpc).toHaveBeenCalledWith('demo-plugin', 'switchBranch', {}, {})
+  })
+
+  it('applies button className overrides and keeps explicit icon sizing conflict-free', () => {
+    const { container } = render(
+      <DeclarativeRenderer
+        node={{
+          type: 'stack',
+          direction: 'row',
+          children: [
+            {
+              type: 'button',
+              label: { en: 'Create Branch', fr: 'Créer la branche' },
+              variant: 'primary',
+              className: 'w-full',
+              onActivate: { kind: 'rpc', method: 'create' },
+            },
+            { type: 'icon', icon: 'BranchIcon', className: 'w-3.5 h-3.5 shrink-0' },
+          ],
+        }}
+      />,
+    )
+    const btn = container.querySelector('button')
+    expect(btn?.className).toContain('w-full')
+    const icon = container.querySelector('svg')
+    const iconClass = icon?.getAttribute('class') ?? ''
+    expect(iconClass).toContain('w-3.5')
+    expect(iconClass).not.toContain('w-4')
+  })
+
+  it('closes the active plugin panel when a closePanel activation fires', async () => {
+    usePluginUiStore.getState().openPanel('demo-plugin', 'multirepo-branch-modal', {})
+    expect(usePluginUiStore.getState().activePanel).not.toBeNull()
+    await activatePluginAction('demo-plugin', { kind: 'closePanel' }, {})
+    expect(usePluginUiStore.getState().activePanel).toBeNull()
+  })
+
+  it('renders a panel footer and closes the panel from it', async () => {
+    contributionsRef.current = {
+      ...contributionsRef.current,
+      panels: [
+        {
+          id: 'multirepo-branch-modal',
+          pluginId: 'demo-plugin',
+          title: { en: 'Switch Branch', fr: 'Changer de branche' },
+          size: 'md',
+          kind: 'declarative',
+          content: [{ type: 'text', text: { en: 'Branches', fr: 'Branches' } }],
+          footer: [
+            {
+              type: 'stack',
+              direction: 'row',
+              justify: 'end',
+              children: [
+                {
+                  type: 'button',
+                  label: { en: 'Cancel', fr: 'Annuler' },
+                  variant: 'default',
+                  onActivate: { kind: 'closePanel' },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    }
+    usePluginUiStore.getState().openPanel('demo-plugin', 'multirepo-branch-modal', {})
+    render(<PluginPanelHost />)
+    const cancel = screen.getByRole('button', { name: 'Cancel' })
+    expect(cancel).toBeDefined()
+    await userEvent.setup().click(cancel)
+    expect(usePluginUiStore.getState().activePanel).toBeNull()
+  })
+
+  it('updates a panel footer at runtime from an RPC result', () => {
+    usePluginUiStore.getState().openPanel('demo-plugin', 'panel-1', {})
+    applyPanelContent('demo-plugin', 'panel-1', {
+      footer: [{ type: 'text', text: { en: 'Ready', fr: 'Prêt' } }],
+    })
+    expect(usePluginUiStore.getState().read('demo-plugin', 'panel-1', 'footer')).toEqual([
+      { type: 'text', text: { en: 'Ready', fr: 'Prêt' } },
+    ])
   })
 
   it('updates dynamic PluginZone components when plugin publishes reactive values', () => {

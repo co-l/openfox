@@ -61,8 +61,11 @@ export function formatCriteriaList(entries: import('../../shared/types.js').Meta
     .join('\n')
 }
 
-export async function formatModifiedFiles(workdir: string): Promise<string> {
-  return formatGitDiffFiles(workdir)
+export async function formatModifiedFiles(
+  workdir: string,
+  context?: { sessionId?: string; projectId?: string },
+): Promise<string> {
+  return formatGitDiffFiles(workdir, context)
 }
 
 // ============================================================================
@@ -505,7 +508,10 @@ export async function executeWorkflow(
       criteriaCount: criteriaEntries.length,
       pendingCount: criteriaEntries.filter((e) => e.status !== 'passed').length,
       criteriaList: formatCriteriaList(criteriaEntries),
-      modifiedFiles: await formatModifiedFiles(sessionManager.getEffectiveWorkdir(sessionId)),
+      modifiedFiles: await formatModifiedFiles(sessionManager.getEffectiveWorkdir(sessionId), {
+        sessionId,
+        ...(session.projectId ? { projectId: session.projectId } : {}),
+      }),
       stepOutput: lastStepOutput,
       params: options.params ?? {},
     }

@@ -581,4 +581,42 @@ describe('agentLoop integration', () => {
       .filter((e: any) => e.type === 'chat.done' && e.data?.reason === 'complete')
     expect(chatDoneEvents.length).toBeGreaterThanOrEqual(1)
   })
+
+  it('ensures message.start is emitted before tool calls when stream yields no intermediate deltas', async () => {
+    const append = vi.fn()
+
+    const toolCall = {
+      id: 'call-direct',
+      name: 'run_command',
+      arguments: { command: 'echo hello' },
+    }
+
+    // Stream directly returns tool_calls without yielding any intermediate text/delta events to callback
+    ;(consumeStreamGenerator as any).mockImplementationOnce(async (_gen: any, _onEvent: any) => {
+      // Intentionally don't invoke _onEvent to simulate 0 intermediate deltas
+      return makeStreamResult({ toolCalls: [toolCall], finishReason: 'tool_calls' })
+    })
+    ;(executeTools as any).mockResolvedValueOnce({
+      toolMessages: [{ role: 'tool', content: 'hello', source: 'history', toolCallId: 'call-direct' }],
+      stepDoneCalled: true,
+    })
+
+    await runTopLevelAgentLoop(
+      makeConfig({
+        append,
+      }),
+      turnMetrics,
+    )
+
+    const events = append.mock.calls.map((args: unknown[]) => args[0] as any)
+    const messageStart = events.find((e: any) => e.type === 'message.start' && e.data?.role === 'assistant')
+    const messageDone = events.find((e: any) => e.type === 'message.done')
+
+    expect(messageStart).toBeDefined()
+    expect(messageDone).toBeDefined()
+
+    const startIndex = events.indexOf(messageStart)
+    const doneIndex = events.indexOf(messageDone)
+    expect(startIndex).toBeLessThan(doneIndex)
+  })
 })

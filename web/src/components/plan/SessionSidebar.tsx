@@ -1,4 +1,3 @@
-import { ScrollArea } from '../shared/ScrollArea'
 import { useState } from 'react'
 import { useT } from '../../hooks/useT'
 import { mergeLiveStats } from '@shared/stats.js'
@@ -70,42 +69,43 @@ export function SessionSidebar({ workdir }: SessionSidebarProps) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Context info */}
-      <ContextPopover variant="sidebar" />
+      {/* Top section: AI Stats, Criteria, Metadata */}
+      <div className="flex-1 space-y-4">
+        {/* Context info */}
+        <ContextPopover variant="sidebar" />
 
-      {/* AI Stats at the top */}
-      {stats && (
-        <div className="mb-4">
-          <button
-            onClick={() => setShowStatsModal(true)}
-            className="w-full flex items-center justify-center px-3 py-2 rounded bg-bg-tertiary hover:bg-bg-secondary transition-colors"
-            title={t({
-              en: 'View detailed response and call-level stats',
-              fr: 'Voir les statistiques détaillées des réponses et des appels',
-            })}
-          >
-            <div className="flex items-center gap-2 text-sm text-text-muted">
-              <span className="text-text-secondary">{formatTime(stats.aiTime)}</span>
-              <span className="w-px h-3 bg-border" />
-              <span className="text-text-secondary">{formatSpeed(stats.avgPrefillSpeed)}</span>
-              <span>pp</span>
-              <span className="w-px h-3 bg-border" />
-              <span className="text-text-secondary">{formatSpeed(stats.avgGenerationSpeed)}</span>
-              <span>tg</span>
-            </div>
-          </button>
+        {/* AI Stats at the top */}
+        {stats && (
+          <div>
+            <button
+              onClick={() => setShowStatsModal(true)}
+              className="w-full flex items-center justify-center px-3 py-2 rounded bg-bg-tertiary hover:bg-bg-secondary transition-colors"
+              title={t({
+                en: 'View detailed response and call-level stats',
+                fr: 'Voir les statistiques détaillées des réponses et des appels',
+              })}
+            >
+              <div className="flex items-center gap-2 text-sm text-text-muted">
+                <span className="text-text-secondary">{formatTime(stats.aiTime)}</span>
+                <span className="w-px h-3 bg-border" />
+                <span className="text-text-secondary">{formatSpeed(stats.avgPrefillSpeed)}</span>
+                <span>pp</span>
+                <span className="w-px h-3 bg-border" />
+                <span className="text-text-secondary">{formatSpeed(stats.avgGenerationSpeed)}</span>
+                <span>tg</span>
+              </div>
+            </button>
 
-          <StatsModal
-            isOpen={showStatsModal}
-            onClose={() => setShowStatsModal(false)}
-            summary={stats}
-            sessionId={session?.id ?? ''}
-          />
-        </div>
-      )}
+            <StatsModal
+              isOpen={showStatsModal}
+              onClose={() => setShowStatsModal(false)}
+              summary={stats}
+              sessionId={session?.id ?? ''}
+            />
+          </div>
+        )}
 
-      {/* Metadata sections */}
-      <ScrollArea className="flex flex-col flex-1 px-4 -mx-4 pb-4">
+        {/* Metadata sections */}
         <div>
           <button
             onClick={() => setActiveMetadataKey('criteria')}
@@ -153,23 +153,39 @@ export function SessionSidebar({ workdir }: SessionSidebarProps) {
                 ))
             })()}
         </div>
-      </ScrollArea>
+      </div>
 
-      {/* Workspace & branch info — only shown for git repos. */}
-      <WorkspaceBranchSection
-        workspaceName={workspaceName ?? 'original'}
-        branch={branch}
-        workdir={workdir}
-        showEditorLink={showEditorLink}
-        sessionId={session?.id ?? ''}
-        projectId={session?.projectId ?? ''}
-      />
+      {/* Bottom section: Git, Dev Server, Background Processes */}
+      <div className="mt-auto pt-4 space-y-4">
+        {/* Workspace & branch info — only shown for git repos. */}
+        <PluginZone
+          id="session.sidebar.git"
+          context={{
+            workspaceName: workspaceName ?? 'original',
+            branch,
+            workdir,
+            sessionId: session?.id,
+            projectId: session?.projectId,
+          }}
+        >
+          <WorkspaceBranchSection
+            workspaceName={workspaceName ?? 'original'}
+            branch={branch}
+            workdir={workdir}
+            showEditorLink={showEditorLink}
+            sessionId={session?.id ?? ''}
+            projectId={session?.projectId ?? ''}
+          />
+        </PluginZone>
 
-      {/* Dev Server — below separator */}
-      <DevServerFooter workdir={workdir} />
+        {/* Dev Server — below separator */}
+        <PluginZone id="session.sidebar.devserver" context={{ workdir, sessionId: session?.id }}>
+          <DevServerFooter workdir={workdir} />
+        </PluginZone>
 
-      {/* Background Processes */}
-      <BackgroundProcesses sessionId={session?.id} />
+        {/* Background Processes */}
+        <BackgroundProcesses sessionId={session?.id} />
+      </div>
 
       {/* Version footer */}
       <PluginZone id="session.footer" context={{ sessionId: session?.id, workdir }}>

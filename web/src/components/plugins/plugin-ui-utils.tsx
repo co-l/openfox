@@ -17,20 +17,55 @@ export type PluginActionContext = {
 const ICON_EXPORTS: Record<string, string> = {
   bell: 'BellIcon',
   check: 'CheckIcon',
+  'check-circle': 'CheckIcon',
+  'check-square': 'CheckIcon',
   download: 'DownloadIcon',
   external: 'OpenExternalIcon',
+  'external-link': 'OpenExternalIcon',
   folder: 'FolderIcon',
+  'folder-open': 'FolderIcon',
   gear: 'GearIcon',
+  settings: 'GearIcon',
+  cog: 'GearIcon',
   info: 'InfoIcon',
   play: 'PlayIcon',
+  'play-circle': 'PlayIcon',
   plus: 'PlusIcon',
+  'plus-circle': 'PlusIcon',
   puzzle: 'PuzzleIcon',
   refresh: 'ReloadIcon',
+  'refresh-cw': 'ReloadIcon',
+  'rotate-cw': 'ReloadIcon',
+  reload: 'ReloadIcon',
   search: 'SearchIcon',
   star: 'StarIcon',
+  stop: 'StopIcon',
+  square: 'StopIcon',
+  'stop-circle': 'StopIcon',
   terminal: 'TerminalIcon',
+  console: 'TerminalIcon',
+  prompt: 'TerminalIcon',
   trash: 'TrashIcon',
+  'trash-2': 'TrashIcon',
+  delete: 'TrashIcon',
   warning: 'WarningIcon',
+  alert: 'WarningIcon',
+  'alert-triangle': 'WarningIcon',
+  edit: 'PencilIcon',
+  pencil: 'PencilIcon',
+  eye: 'EyeIcon',
+  pin: 'PinIcon',
+  send: 'SendIcon',
+  heart: 'HeartIcon',
+  copy: 'CopyIcon',
+  clipboard: 'ClipboardIcon',
+  branch: 'BranchIcon',
+  'git-branch': 'BranchIcon',
+  agent: 'AgentIcon',
+  bot: 'AgentIcon',
+  sparkles: 'AgentIcon',
+  brain: 'ThinkingIcon',
+  thinking: 'ThinkingIcon',
 }
 
 type IconComponent = ComponentType<{ className?: string }>
@@ -150,6 +185,10 @@ export function applyPanelContent(pluginId: string, targetId: string, result: un
         : resultObj['content'] && typeof resultObj['content'] === 'object'
           ? ([resultObj['content']] as DeclarativeNode[])
           : undefined
+    const footer = Array.isArray(resultObj['footer']) ? (resultObj['footer'] as DeclarativeNode[]) : undefined
+    if (footer) {
+      usePluginUiStore.getState().setState(pluginId, targetId, 'footer', footer)
+    }
     if (content) {
       usePluginUiStore.getState().setState(pluginId, targetId, 'content', content)
       return true
@@ -313,6 +352,15 @@ export async function activatePluginAction(
       const targetPluginId =
         !pluginId || pluginId === 'unknown' ? activePanel?.pluginId || 'openfox-codebase-memory' : pluginId
       usePluginUiStore.getState().openPanel(targetPluginId, activation.panelId, pluginRpcContext(context))
+      return
+    }
+
+    if (activation.kind === 'closePanel') {
+      const activePanel = usePluginUiStore.getState().activePanel
+      if (activePanel) {
+        usePluginUiStore.getState().clearPanel(activePanel.pluginId, activePanel.panelId)
+      }
+      usePluginUiStore.getState().closePanel()
       return
     }
 

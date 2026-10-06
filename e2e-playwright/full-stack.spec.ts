@@ -1,11 +1,36 @@
 import { test, expect } from '@playwright/test'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdir, rm } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import {
+  resolveLlmMode,
+  resolveProdConfigPath,
+  selectProdLlm,
+  type ProdLlmSelection,
+} from '../scripts/publish-e2e-llm.js'
 
 const TEST_PROMPT =
   'this is just a test - add a "this is just a test criteria, validate it without doing anything" criteria (but do not validate it just yet, not in planning mode!)'
+
+// Opt-in fallback: when the local model server is unavailable, drive the
+// onboarding wizard with the provider configured in the production config.
+// Default (unset / `local`) keeps the hardcoded local flow untouched.
+const IS_PROD_LLM = resolveLlmMode(process.env['OPENFOX_PUBLISH_E2E_LLM']) === 'prod'
+const TEST_TIMEOUT_MS = IS_PROD_LLM ? 300_000 : 180_000
+const SAVE_READY_TIMEOUT_MS = IS_PROD_LLM ? 90_000 : 30_000
+
+function loadProdLlm(): ProdLlmSelection {
+  const path = resolveProdConfigPath(process.env)
+  let raw: string
+  try {
+    raw = readFileSync(path, 'utf-8')
+  } catch {
+    throw new Error(`OPENFOX_PUBLISH_E2E_LLM=prod but no production config was found at ${path}`)
+  }
+  return selectProdLlm(JSON.parse(raw) as unknown, process.env['OPENFOX_PUBLISH_E2E_PROVIDER'])
+}
 
 interface TestContext {
   serverUrl: string
@@ -121,8 +146,8 @@ test.describe('Full-stack Build & Verify E2E', () => {
   })
 
   test('complete workflow: onboarding -> project -> session -> build&verify', async ({ page }) => {
-    test.setTimeout(180_000)
-    const { serverUrl, workdir } = ctx
+    test.setTimeout(TEST_TIMEOUT_MS)
+    const { serverUrl } = ctx
 
     // Navigate to onboarding
     await page.goto(`${serverUrl}/onboarding`)
@@ -143,21 +168,45 @@ test.describe('Full-stack Build & Verify E2E', () => {
     // Step 1: Add LLM provider via the ProviderModal wizard
     await page.getByTestId('onboarding-add-provider-button').click()
 
-    // Modal step 1: click the vLLM preset first (sets backend type, name, and URL),
-    // then override the URL with the test server address
-    await page.getByRole('button', { name: 'vLLM' }).click()
-    await page.getByTestId('provider-modal-url').fill('http://192.168.1.223:8000')
-    await page.getByTestId('provider-modal-next').click()
+    if (IS_PROD_LLM) {
+      // Fallback mode: drive the wizard with the provider configured in the
+      // user's production config (used when the local model server is down).
+      const { url, apiKey, model } = loadProdLlm()
 
-    // Modal step 2: backend is already selected from the preset.
-    // Auto-config runs automatically for single-model providers — wait for it to finish
-    // then save directly (no separate review step).
+      // "Other" preset → generic OpenAI-compatible API (backend unknown, not local).
+      await page.getByRole('button', { name: 'Other', exact: true }).click()
+      await page.getByTestId('provider-modal-url').fill(url)
+      await page.getByTestId('provider-modal-api-key').fill(apiKey)
+
+      const modelsResponse = page.waitForResponse((response) => response.url().includes('/api/providers/models'), {
+        timeout: 60000,
+      })
+      await page.getByTestId('provider-modal-next').click()
+      // Wait for the automatic catalog fetch to settle so a manual selection is
+      // not dropped by a late-arriving response.
+      await modelsResponse
+      await page.waitForTimeout(500)
+
+      // Pin the exact production model — the catalog may expose many, and only a
+      // manual add guarantees the one we intend to test.
+      await page.getByTestId('provider-modal-manual-model-input').fill(model)
+      await page.getByTestId('provider-modal-manual-model-add').click()
+    } else {
+      // Modal step 1: click the vLLM preset first (sets backend type, name, and URL),
+      // then override the URL with the test server address
+      await page.getByRole('button', { name: 'vLLM' }).click()
+      await page.getByTestId('provider-modal-url').fill('http://192.168.1.223:8000')
+      await page.getByTestId('provider-modal-next').click()
+    }
+
+    // Modal step 2: auto-config runs automatically — wait for it to finish, then
+    // save directly (no separate review step).
     await page.waitForFunction(
       () => {
         const btn = document.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
         return btn && !btn.disabled
       },
-      { timeout: 30000 },
+      { timeout: SAVE_READY_TIMEOUT_MS },
     )
 
     await page.getByTestId('provider-modal-save').click()

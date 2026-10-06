@@ -7,7 +7,21 @@ export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    ignores: ['dist/**', 'node_modules/**', 'e2e/**', 'src/server/lsp/__fixtures__/**'],
+    ignores: [
+      'dist/**',
+      'node_modules/**',
+      'e2e/**',
+      'e2e-playwright/**',
+      'debug/**',
+      'src/server/lsp/__fixtures__/**',
+      'tmp/**',
+      'examples/**',
+      '.agent-office/**',
+      'web/public/**',
+      'web/tests/**',
+      'web/*.mjs',
+      'scripts/**/*.mjs',
+    ],
   },
   {
     rules: {

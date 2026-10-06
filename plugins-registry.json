@@ -112,11 +112,35 @@
     "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"9\"></circle><path d=\"M3.3 9h17.4\"></path><path d=\"M3.3 15h17.4\"></path><path d=\"M12 3c2.4 2.5 3.7 5.6 3.7 9S14.4 18.5 12 21c-2.4-2.5-3.7-5.6-3.7-9S9.6 5.5 12 3z\"></path></svg>"
   },
   {
+    "name": "openfox-codebase-memory",
+    "displayName": "Codebase Memory",
+    "description": "Structural code knowledge graph with codebase-memory-mcp integration, interactive graph visualization, and live project synchronization.",
+    "githubUrl": "https://github.com/JamesDAdams/openfox-codebase-memory",
+    "author": "James Adams",
+    "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><circle cx=\"6\" cy=\"6\" r=\"3\"/><circle cx=\"18\" cy=\"6\" r=\"3\"/><circle cx=\"12\" cy=\"18\" r=\"3\"/><path d=\"M8.5 7.5L15.5 7.5M7.5 8.5L10.5 15.5M16.5 8.5L13.5 15.5\"/></svg>"
+  },
+  {
     "name": "openfox-whitelist",
     "displayName": "Whitelist File Access",
     "description": "Adds Whitelist and Whitelist Only danger levels to allow configured external paths without confirmation, and optionally auto-reject unauthorized files.",
     "githubUrl": "https://github.com/JamesDAdams/openfox-whitelist",
     "author": "James Adams",
     "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#10B981\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z\"/><polyline points=\"9 12 11 14 15 10\"/></svg>"
+  },
+  {
+    "name": "openfox-pareto-line",
+    "displayName": "Pareto Line",
+    "description": "Intelligence Index vs Cost Pareto line comparison based on Artificial Analysis for available OpenFox models.",
+    "githubUrl": "https://github.com/JamesDAdams/openfox-pareto-line",
+    "author": "James Adams",
+    "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#10b981\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"6\" cy=\"18\" r=\"2\"/><circle cx=\"12\" cy=\"12\" r=\"2\"/><circle cx=\"19\" cy=\"7\" r=\"2\"/><path d=\"M6 18c3-4 7-6 13-11\" stroke-dasharray=\"2 2\"/></svg>"
+  },
+  {
+    "name": "openfox-multirepo-plugin",
+    "displayName": "Multi-Repo & Multi-DevServer",
+    "description": "Multi-repository Git support and multi-devserver orchestration plugin for OpenFox.",
+    "githubUrl": "https://github.com/JamesDAdams/openfox-multi-rep",
+    "author": "James Adams",
+    "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#3b82f6\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><line x1=\"6\" y1=\"3\" x2=\"6\" y2=\"15\"/><circle cx=\"18\" cy=\"6\" r=\"3\"/><circle cx=\"6\" cy=\"18\" r=\"3\"/><path d=\"M18 9a9 9 0 0 1-9 9\"/></svg>"
   }
 ]

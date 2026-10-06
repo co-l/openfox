@@ -100,13 +100,34 @@ export function PluginPanelHost() {
     ? (values['content'] as DeclarativeNode[])
     : (panel.content ?? [])
 
+  const footerNodes = Array.isArray(values['footer']) ? (values['footer'] as DeclarativeNode[]) : (panel.footer ?? [])
+
   const handleClose = () => {
     usePluginUiStore.getState().clearPanel(activePanel.pluginId, activePanel.panelId)
     closePanel()
   }
 
   return (
-    <Modal isOpen onClose={handleClose} size={PANEL_SIZES[panel.size ?? 'md']} title={localize(panel.title)}>
+    <Modal
+      isOpen
+      onClose={handleClose}
+      size={PANEL_SIZES[panel.size ?? 'md']}
+      title={localize(panel.title)}
+      footer={
+        footerNodes.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            {footerNodes.map((node, index) => (
+              <DeclarativeRenderer
+                key={nodeDeclarativeKey(node, index)}
+                node={node}
+                values={values}
+                context={context}
+              />
+            ))}
+          </div>
+        ) : undefined
+      }
+    >
       {iframeUrl ? (
         <iframe
           src={iframeUrl}

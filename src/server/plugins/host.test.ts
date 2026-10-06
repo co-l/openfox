@@ -8,6 +8,7 @@ import { PluginHost } from './host.js'
 import { emitPluginHook } from './hook-emitter.js'
 import { listPluginModelMetadataProviders } from './model-metadata.js'
 import { listPluginMessageTransforms } from './message-transforms.js'
+import { listPluginVcsProviders } from './vcs-providers.js'
 import { listPluginTransitionHandlers, runPluginTransitionHandler } from './transition-handlers.js'
 import { getAllSettings } from '../db/settings.js'
 
@@ -707,5 +708,38 @@ describe('PluginHost', () => {
     expect(t2.loaded).toBe(false)
     expect(t2.error).toContain("Plugin messageTransform 'shared_transform' is already registered by 'plugin-t1'")
     expect(host.registry.getMessageTransforms()).toHaveLength(1)
+  })
+
+  it('registers, applies, and cleans up VCS providers on enable/disable', async () => {
+    await writePlugin(
+      configDirectory,
+      'vcs-plugin',
+      2,
+      `registry.registerVcsProvider({
+        id: 'mock_vcs',
+        priority: 10,
+        detect: () => true,
+        getDiffFiles: async () => [{ path: 'test.ts', status: 'modified' }],
+        getBranch: async () => 'mock-branch'
+      });`,
+      { capabilities: ['vcs'] },
+    )
+
+    const host = makeHost(configDirectory)
+    await host.start()
+
+    expect(host.registry.getVcsProviders()).toHaveLength(1)
+    expect(host.getPlugins()[0]?.contributions.vcsProviders).toBe(1)
+    expect(listPluginVcsProviders()).toHaveLength(1)
+
+    // Disable plugin
+    await host.disable('vcs-plugin')
+    expect(host.registry.getVcsProviders()).toHaveLength(0)
+    expect(listPluginVcsProviders()).toHaveLength(0)
+
+    // Re-enable plugin
+    await host.enable('vcs-plugin')
+    expect(host.registry.getVcsProviders()).toHaveLength(1)
+    expect(listPluginVcsProviders()).toHaveLength(1)
   })
 })

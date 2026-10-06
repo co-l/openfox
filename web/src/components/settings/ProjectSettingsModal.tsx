@@ -22,6 +22,7 @@ import { useT } from '../../hooks/useT'
 import { usePlugins } from '../../hooks/usePlugins'
 import { useLocalizedString } from '../../hooks/useLocalizedString'
 import { PluginSettingsForm } from '../plugins/PluginSettingsForm'
+import { PluginZone } from '../plugins/PluginZone'
 
 interface ProjectSettingsModalProps {
   isOpen: boolean
@@ -528,6 +529,16 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
           })()}
         </div>
 
+        {/* Project Plugin Zone */}
+        <PluginZone
+          id="project.settings"
+          context={{
+            projectId: project.id,
+            workdir: project.workdir,
+            projectName: project.name,
+          }}
+        />
+
         <div>
           <label
             htmlFor="project-default-agent"
@@ -705,6 +716,8 @@ export function ProjectSettingsModal({ isOpen, onClose, project }: ProjectSettin
             </div>
           </div>
         )}
+
+        {/* Project Plugin Zone */}
 
         {saveError && (
           <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded px-3 py-2">

@@ -13,13 +13,16 @@ const PROGRESS_COLORS: Record<string, string> = {
   danger: 'bg-accent-error',
 }
 
-const BUTTON_VARIANT_CLASSES: Record<'default' | 'primary' | 'danger' | 'ghost' | 'pill', string> = {
-  default: 'bg-bg-tertiary text-text-primary hover:bg-bg-primary',
-  primary: 'bg-accent-primary text-white hover:bg-accent-primary/80',
-  danger: 'bg-accent-error text-white hover:bg-accent-error/80',
-  ghost: 'p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary',
-  pill: 'px-1.5 py-0.5 shrink-0 rounded-full border border-accent-primary/40 bg-accent-primary/10 text-accent-primary text-[10px] font-mono font-medium hover:bg-accent-primary/20',
-}
+const BUTTON_VARIANT_CLASSES: Record<'default' | 'primary' | 'danger' | 'success' | 'ghost' | 'pill' | 'link', string> =
+  {
+    default: 'bg-bg-tertiary text-text-primary hover:bg-bg-primary',
+    primary: 'bg-accent-primary text-white hover:bg-accent-primary/80',
+    danger: 'bg-accent-error text-white hover:bg-accent-error/80',
+    success: 'bg-accent-success text-white hover:bg-accent-success/80',
+    ghost: 'p-2.5 rounded hover:bg-bg-tertiary text-text-muted hover:text-text-primary',
+    pill: 'px-1.5 py-0.5 shrink-0 rounded-full border border-accent-primary/40 bg-accent-primary/10 text-accent-primary text-[10px] font-mono font-medium hover:bg-accent-primary/20',
+    link: 'text-xs text-accent-primary hover:text-accent-primary/80 shrink-0',
+  }
 
 const GAP_CLASSES: Record<'none' | 'xs' | 'sm' | 'md' | 'lg', string> = {
   none: 'gap-0',
@@ -146,8 +149,10 @@ function DeclarativeTextField({
   const lineCount = localVal ? localVal.split('\n').length : 1
   const computedRows = Math.min(Math.max(node.rows ?? 2, lineCount), 15)
 
+  const Icon = node.icon ? pluginIcon(node.icon) : null
+
   return (
-    <div className="flex-1 min-w-0">
+    <div className={`flex-1 min-w-0 ${node.className ?? ''}`}>
       {node.label && (
         <label htmlFor={node.id} className="text-xs text-text-secondary block mb-0.5">
           {localize(node.label)}
@@ -165,6 +170,33 @@ function DeclarativeTextField({
           onBlur={handleBlur}
           className={`w-full px-2.5 py-1.5 bg-bg-tertiary border border-border rounded text-xs font-mono text-text-primary focus:outline-none focus:border-accent-primary resize-y ${disabledClass}`}
         />
+      ) : node.bare ? (
+        <input
+          id={node.id}
+          type={node.inputType ?? 'text'}
+          disabled={node.disabled}
+          value={localVal}
+          placeholder={placeholder}
+          onFocus={handleFocus}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          className={`w-full bg-transparent text-sm text-text-primary outline-none font-mono placeholder-text-muted ${disabledClass}`}
+        />
+      ) : Icon ? (
+        <div className="relative">
+          <Icon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted pointer-events-none" />
+          <input
+            id={node.id}
+            type={node.inputType ?? 'text'}
+            disabled={node.disabled}
+            value={localVal}
+            placeholder={placeholder}
+            onFocus={handleFocus}
+            onChange={handleChange}
+            onBlur={handleBlur}
+            className={`w-full text-sm bg-bg-primary border border-border-default rounded pl-8 pr-2 py-1.5 text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-primary ${disabledClass}`}
+          />
+        </div>
       ) : (
         <input
           id={node.id}
@@ -297,12 +329,50 @@ export function DeclarativeRenderer({ node, values = {}, context = {} }: Declara
   const localize = useLocalizedString()
 
   switch (node.type) {
-    case 'text':
+    case 'text': {
+      const action = node.action ?? node.onActivate
+      const content = interpolate(localize(node.text), values)
+      const isPre = Boolean(
+        node.className && (node.className.includes('whitespace-pre') || node.className.includes('font-mono')),
+      )
+      const baseClass = node.className ?? (node.muted ? 'text-sm text-text-muted' : 'text-sm text-text-primary')
+      if (action) {
+        return (
+          <div
+            role="button"
+            tabIndex={0}
+            title={node.title ? localize(node.title) : undefined}
+            onClick={() => void activatePluginAction(context.pluginId, action, context)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                void activatePluginAction(context.pluginId, action, context)
+              }
+            }}
+            className={`cursor-pointer ${baseClass}`}
+            style={isPre ? { whiteSpace: 'pre-wrap' } : undefined}
+          >
+            {content}
+          </div>
+        )
+      }
+      if (isPre) {
+        return (
+          <pre
+            title={node.title ? localize(node.title) : undefined}
+            className={`${baseClass} overflow-x-auto`}
+            style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}
+          >
+            {content}
+          </pre>
+        )
+      }
       return (
-        <div className={node.className ?? (node.muted ? 'text-sm text-text-muted' : 'text-sm text-text-primary')}>
-          {interpolate(localize(node.text), values)}
+        <div title={node.title ? localize(node.title) : undefined} className={baseClass}>
+          {content}
         </div>
       )
+    }
 
     case 'keyValue':
       return (
@@ -395,8 +465,14 @@ export function DeclarativeRenderer({ node, values = {}, context = {} }: Declara
       const Icon = node.icon ? pluginIcon(node.icon) : null
       const labelText = localize(node.label)
       const isGhost = node.variant === 'ghost'
-      const showLabel = !isGhost || !Icon
+      const isSelfStyled = node.variant === 'ghost' || node.variant === 'link'
+      const showLabel = Boolean(labelText && (!isGhost || !Icon))
       const tooltipText = node.title ? localize(node.title) : labelText
+      const variantClass = isSelfStyled
+        ? node.variant === 'ghost'
+          ? `${BUTTON_VARIANT_CLASSES.ghost} ${!Icon ? 'px-2.5 py-1.5 text-sm' : ''}`
+          : BUTTON_VARIANT_CLASSES.link
+        : `gap-1.5 px-3 py-1.5 rounded text-sm font-medium ${BUTTON_VARIANT_CLASSES[node.variant ?? 'default']}`
       return (
         <button
           type="button"
@@ -408,16 +484,12 @@ export function DeclarativeRenderer({ node, values = {}, context = {} }: Declara
               void activatePluginAction(context.pluginId, node.action ?? node.onActivate, context)
             }
           }}
-          className={`transition-colors inline-flex items-center justify-center ${
+          className={`transition-colors inline-flex items-center justify-center shrink-0 ${
             node.disabled ? 'opacity-50 cursor-not-allowed' : ''
-          } ${
-            isGhost
-              ? `${BUTTON_VARIANT_CLASSES.ghost} ${!Icon ? 'px-2.5 py-1.5 text-sm' : ''}`
-              : `gap-1.5 px-3 py-1.5 rounded text-sm font-medium ${BUTTON_VARIANT_CLASSES[node.variant ?? 'default']}`
-          }`}
+          } ${variantClass} ${node.className ?? ''}`}
         >
-          {Icon && <Icon className="w-4 h-4" />}
-          {showLabel && labelText && <span>{labelText}</span>}
+          {Icon && <Icon className="w-3.5 h-3.5 shrink-0" />}
+          {showLabel && <span className="truncate text-xs">{labelText}</span>}
         </button>
       )
     }
@@ -427,7 +499,11 @@ export function DeclarativeRenderer({ node, values = {}, context = {} }: Declara
 
     case 'stack': {
       if (node.children.length === 0) return null
-      const directionClass = node.direction === 'row' ? 'flex flex-row w-full' : 'flex flex-col'
+      const hasCustomWidth = Boolean(
+        node.className && /(?:^|\s)(w-|flex-1|flex-auto|flex-initial|flex-none|shrink)/.test(node.className),
+      )
+      const directionClass =
+        node.direction === 'row' ? (hasCustomWidth ? 'flex flex-row' : 'flex flex-row w-full') : 'flex flex-col'
       const gapClass = GAP_CLASSES[node.gap ?? 'sm']
       const alignClass = ALIGN_CLASSES[node.align ?? 'start']
       const justifyClass = JUSTIFY_CLASSES[node.justify ?? 'start']
@@ -443,7 +519,7 @@ export function DeclarativeRenderer({ node, values = {}, context = {} }: Declara
     case 'card': {
       return (
         <div
-          className={`rounded-lg border border-border bg-bg-secondary p-3 shadow-sm space-y-2 flex-1 min-w-0 ${
+          className={`@container rounded-lg border border-border bg-bg-secondary p-3 shadow-sm space-y-2 flex-1 min-w-0 ${
             node.className ?? ''
           }`}
         >
@@ -495,7 +571,8 @@ export function DeclarativeRenderer({ node, values = {}, context = {} }: Declara
 
     case 'icon': {
       const Icon = pluginIcon(node.icon)
-      return <Icon className={`w-4 h-4 ${node.className ?? ''}`} />
+      const sizeClass = /\bw-/.test(node.className ?? '') ? '' : 'w-4 h-4 '
+      return <Icon className={`${sizeClass}${node.className ?? ''}`} />
     }
 
     case 'input': {

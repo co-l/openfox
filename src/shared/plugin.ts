@@ -15,6 +15,7 @@ export type PluginCapability =
   | 'assets'
   | 'transforms'
   | 'dangerLevels'
+  | 'vcs'
 
 export type PluginSlotName =
   | 'header.actions'
@@ -51,6 +52,8 @@ export type PluginZoneId =
   | 'composer.top'
   | 'composer.toolbar'
   | 'composer.actions'
+  | 'session.sidebar.git'
+  | 'session.sidebar.devserver'
   | 'session.footer'
   | 'settings.sidebar'
   | 'settings.content'
@@ -68,6 +71,7 @@ export type PluginBadgeTone = 'neutral' | 'info' | 'success' | 'warning' | 'dang
 export type PluginActivation =
   | { kind: 'rpc'; method: string; params?: Record<string, unknown> }
   | { kind: 'openPanel'; panelId: string }
+  | { kind: 'closePanel' }
   | { kind: 'openUrl'; url: string }
   | { kind: 'openSettings'; tab?: PluginSettingsTabRef }
 
@@ -145,7 +149,15 @@ export interface PluginUiBadge {
 }
 
 export type DeclarativeNode =
-  | { type: 'text'; text: LocalizedString; muted?: boolean; className?: string }
+  | {
+      type: 'text'
+      text: LocalizedString
+      muted?: boolean
+      className?: string
+      title?: LocalizedString
+      onActivate?: PluginActivation
+      action?: PluginActivation
+    }
   | { type: 'keyValue'; items: { key: LocalizedString; value: string }[] }
   | { type: 'table'; columns: LocalizedString[]; rows: string[][] }
   | { type: 'progress'; label: LocalizedString; value: number; max: number; tone?: PluginBadgeTone }
@@ -154,9 +166,10 @@ export type DeclarativeNode =
       type: 'button'
       label: LocalizedString
       title?: LocalizedString
-      variant?: 'default' | 'primary' | 'danger' | 'ghost' | 'pill'
+      variant?: 'default' | 'primary' | 'danger' | 'success' | 'ghost' | 'pill' | 'link'
       icon?: string
       disabled?: boolean
+      className?: string
       onActivate?: PluginActivation
       action?: PluginActivation
     }
@@ -208,6 +221,9 @@ export type DeclarativeNode =
       inputType?: 'text' | 'number' | 'password' | 'checkbox' | 'textarea'
       rows?: number
       disabled?: boolean
+      icon?: string
+      bare?: boolean
+      className?: string
       onChange?: PluginActivation
       onBlur?: PluginActivation
     }
@@ -281,6 +297,7 @@ export interface PluginUiPanel {
   size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | 'full'
   kind: 'declarative' | 'iframe'
   content?: DeclarativeNode[]
+  footer?: DeclarativeNode[]
   url?: string
 }
 
@@ -455,6 +472,28 @@ export interface PluginModelMetadataView {
   extra?: Record<string, unknown>
 }
 
+export interface PluginVcsDiffFile {
+  path: string
+  status: 'added' | 'modified' | 'deleted'
+  additions?: number
+  deletions?: number
+}
+
+export interface PluginVcsContext {
+  workdir: string
+  sessionId?: string
+  projectId?: string
+}
+
+export interface PluginVcsProvider {
+  id: string
+  priority?: number
+  detect(context: PluginVcsContext): Promise<boolean> | boolean
+  getDiffFiles(context: PluginVcsContext): Promise<PluginVcsDiffFile[]>
+  getBranch?(context: PluginVcsContext): Promise<string | null>
+  formatModifiedFiles?(files: PluginVcsDiffFile[], context: PluginVcsContext): Promise<string> | string
+}
+
 export interface PluginContributionSummary {
   presets: number
   authAdapters: number
@@ -475,6 +514,7 @@ export interface PluginContributionSummary {
   uiOverrides: number
   messageTransforms: number
   dangerLevels: number
+  vcsProviders: number
 }
 
 export interface PluginInfo {
@@ -543,4 +583,5 @@ export const EMPTY_PLUGIN_CONTRIBUTIONS: PluginContributionSummary = {
   uiOverrides: 0,
   messageTransforms: 0,
   dangerLevels: 0,
+  vcsProviders: 0,
 }

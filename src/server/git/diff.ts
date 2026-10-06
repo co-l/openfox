@@ -1,8 +1,18 @@
 import { spawn } from 'node:child_process'
 import type { GitDiffFile } from '../../shared/protocol.js'
+import type { PluginVcsContext } from '../../plugin/index.js'
 import { gitSpawnEnv } from './env.js'
+import { resolveVcsBranch, resolveVcsDiffFiles, resolveVcsModifiedFiles } from '../plugins/vcs-providers.js'
 
-export function getGitDiffFiles(cwd: string): Promise<GitDiffFile[]> {
+function toVcsContext(cwd: string, context?: { sessionId?: string; projectId?: string }): PluginVcsContext {
+  return {
+    workdir: cwd,
+    ...(context?.sessionId !== undefined ? { sessionId: context.sessionId } : {}),
+    ...(context?.projectId !== undefined ? { projectId: context.projectId } : {}),
+  }
+}
+
+function nativeGetGitDiffFiles(cwd: string): Promise<GitDiffFile[]> {
   return new Promise((resolve) => {
     const env = gitSpawnEnv()
     const diffProc = spawn('git', ['diff', '--ignore-submodules=none', '--name-status', 'HEAD'], {
@@ -83,8 +93,72 @@ export function getGitDiffFiles(cwd: string): Promise<GitDiffFile[]> {
   })
 }
 
-export async function formatGitDiffFiles(cwd: string): Promise<string> {
-  const files = await getGitDiffFiles(cwd)
+export async function getGitDiffFiles(
+  cwd: string,
+  context?: { sessionId?: string; projectId?: string },
+): Promise<GitDiffFile[]> {
+  const pluginDiffFiles = await resolveVcsDiffFiles(toVcsContext(cwd, context))
+
+  if (pluginDiffFiles !== null) {
+    return pluginDiffFiles.map((file) => ({
+      path: file.path,
+      status: file.status,
+      additions: file.additions ?? 0,
+      deletions: file.deletions ?? 0,
+    }))
+  }
+
+  return nativeGetGitDiffFiles(cwd)
+}
+
+export async function formatGitDiffFiles(
+  cwd: string,
+  context?: { sessionId?: string; projectId?: string },
+): Promise<string> {
+  const pluginFormatted = await resolveVcsModifiedFiles(toVcsContext(cwd, context))
+
+  if (pluginFormatted !== null) {
+    return pluginFormatted
+  }
+
+  const files = await getGitDiffFiles(cwd, context)
   if (files.length === 0) return '(none)'
   return files.map((f) => `- ${f.path} (${f.status})`).join('\n')
+}
+
+export function nativeGetGitBranch(cwd: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const proc = spawn('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+      cwd,
+      env: gitSpawnEnv(),
+      stdio: ['ignore', 'pipe', 'ignore'],
+      windowsHide: true,
+    })
+
+    let stdout = ''
+    proc.stdout.on('data', (data: Buffer) => {
+      stdout += data.toString()
+    })
+    proc.on('close', (code) => {
+      if (code === 0 && stdout.trim()) {
+        resolve(stdout.trim())
+      } else {
+        resolve(null)
+      }
+    })
+    proc.on('error', () => resolve(null))
+  })
+}
+
+export async function getGitBranch(
+  cwd: string,
+  context?: { sessionId?: string; projectId?: string },
+): Promise<string | null> {
+  const pluginBranch = await resolveVcsBranch(toVcsContext(cwd, context))
+
+  if (pluginBranch !== undefined) {
+    return pluginBranch
+  }
+
+  return nativeGetGitBranch(cwd)
 }

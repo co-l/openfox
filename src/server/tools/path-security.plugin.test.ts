@@ -1,29 +1,31 @@
-import { mkdtemp, rm, mkdir, realpath } from 'node:fs/promises'
-import { join } from 'node:path'
-import { tmpdir } from 'node:os'
-import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
+import { realpath } from 'node:fs/promises'
+import { normalize, resolve } from 'node:path'
 import { requestPathAccess, PathAccessDeniedError, isPathAllowed, clearAllowedPaths } from './path-security.js'
 import { setPluginDangerLevels, clearPluginDangerLevels } from '../plugins/danger-levels.js'
 
 const SESSION_ID = 'session-dl-test'
 
-// Real canonical paths (like the main path-security suite): a real temp workdir
-// and /etc/passwd as the outside path. Canonicalizing up front keeps the
-// allowlist assertions exact even on hosts where paths are symlinked
-// (e.g. a /app that resolves elsewhere).
+/**
+ * Canonicalize like the implementation's safeRealpath: realpath when the path
+ * exists, plain resolve otherwise. Lets Unix literals such as /etc/passwd act
+ * as "nonexistent path outside the sandbox" on Windows (e.g. D:\etc\passwd)
+ * instead of crashing the fixtures with ENOENT.
+ */
+async function canonicalOrResolved(path: string): Promise<string> {
+  try {
+    return await realpath(path)
+  } catch {
+    return normalize(resolve(path))
+  }
+}
+
 let WORKDIR: string
 let OUTSIDE_PATH: string
-let testDir: string
 
 beforeAll(async () => {
-  testDir = await mkdtemp(join(tmpdir(), 'openfox-plugin-danger-level-'))
-  WORKDIR = join(testDir, 'project', 'workdir')
-  await mkdir(WORKDIR, { recursive: true })
-  OUTSIDE_PATH = await realpath('/etc/passwd')
-})
-
-afterAll(async () => {
-  await rm(testDir, { recursive: true, force: true })
+  WORKDIR = await canonicalOrResolved(process.platform === 'win32' ? 'C:\\app\\project' : '/app/project')
+  OUTSIDE_PATH = await canonicalOrResolved('/etc/passwd')
 })
 
 beforeEach(() => {

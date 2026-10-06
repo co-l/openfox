@@ -1,5 +1,4 @@
 import { WebSocketServer, WebSocket } from 'ws'
-import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import type { Server } from 'node:http'
 import type { ServerMessage } from '../../shared/protocol.js'
@@ -57,7 +56,7 @@ export function signalMcpReady(): void {
 }
 
 import { getAuthConfig, isValidToken } from '../auth.js'
-import { gitSpawnEnv } from '../git/env.js'
+import { getGitBranch, getGitDiffFiles } from '../git/diff.js'
 import {
   parseClientMessage,
   serializeServerMessage,
@@ -75,112 +74,18 @@ import {
 } from './protocol.js'
 
 function moduleGitBranch(cwd: string): Promise<string | null> {
-  return new Promise((resolve) => {
-    const proc = spawn('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
-      cwd,
-      env: gitSpawnEnv(),
-      stdio: ['ignore', 'pipe', 'ignore'],
-      windowsHide: true,
-    })
-    let stdout = ''
-    proc.stdout.on('data', (data: Buffer) => {
-      stdout += data.toString()
-    })
-    proc.on('close', (code) => {
-      if (code === 0 && stdout.trim()) {
-        resolve(stdout.trim())
-      } else {
-        resolve(null)
-      }
-    })
-    proc.on('error', () => resolve(null))
-  })
+  return getGitBranch(cwd)
 }
 
 function hashContent(content: string): string {
   return createHash('sha256').update(content).digest('hex')
 }
 
-function moduleGitDiff(cwd: string): Promise<{ hash: string; files: GitDiffFile[] }> {
-  return new Promise((resolve) => {
-    const env = gitSpawnEnv()
-    const diffProc = spawn('git', ['diff', '--ignore-submodules=none', '--name-status', 'HEAD'], {
-      cwd,
-      env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-    })
-    const statusProc = spawn('git', ['status', '--porcelain', '--ignore-submodules=none'], {
-      cwd,
-      env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-    })
-    let diffStdout = ''
-    let statusStdout = ''
-    let diffExited = false
-    let statusExited = false
-    let diffCode: number | null = null
-    let statusCode: number | null = null
-
-    const processResults = () => {
-      if (!diffExited || !statusExited) return
-
-      const raw = diffStdout + statusStdout
-      const hash = raw ? hashContent(raw) : ''
-      const files: GitDiffFile[] = []
-
-      if (diffCode === 0) {
-        for (const line of diffStdout.split('\n')) {
-          if (!line.trim()) continue
-          const [statusChar, ...pathParts] = line.split('\t')
-          const path = pathParts.join('\t') || statusChar || ''
-          if (!path) continue
-          const status = statusChar === 'A' ? 'added' : statusChar === 'D' ? 'deleted' : 'modified'
-          files.push({ path, status, additions: 0, deletions: 0 })
-        }
-      }
-
-      if (statusCode === 0) {
-        for (const line of statusStdout.split('\n')) {
-          if (!line.startsWith('?? ')) continue
-          const path = line.slice(3).trim()
-          if (!path) continue
-          files.push({ path, status: 'added', additions: 0, deletions: 0 })
-        }
-      }
-
-      resolve({ hash, files })
-    }
-
-    diffProc.stdout.on('data', (data: Buffer) => {
-      diffStdout += data.toString()
-    })
-    statusProc.stdout.on('data', (data: Buffer) => {
-      statusStdout += data.toString()
-    })
-
-    diffProc.on('close', (code) => {
-      diffExited = true
-      diffCode = code
-      processResults()
-    })
-    statusProc.on('close', (code) => {
-      statusExited = true
-      statusCode = code
-      processResults()
-    })
-    diffProc.on('error', () => {
-      diffExited = true
-      diffCode = 1
-      processResults()
-    })
-    statusProc.on('error', () => {
-      statusExited = true
-      statusCode = 1
-      processResults()
-    })
-  })
+async function moduleGitDiff(cwd: string): Promise<{ hash: string; files: GitDiffFile[] }> {
+  const files = await getGitDiffFiles(cwd)
+  const raw = files.map((f) => `${f.status}\t${f.path}`).join('\n')
+  const hash = raw ? hashContent(raw) : ''
+  return { hash, files }
 }
 
 const moduleWorkdirLastHash = new Map<string, string>()

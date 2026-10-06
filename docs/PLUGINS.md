@@ -105,14 +105,14 @@ header.
 
 ### Manifest reference
 
-| Field                  | Required   | Description                                                                                                                                  |
-| ---------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `openfox.apiVersion`   | yes        | `1` (providers only, legacy) or `2` (full plugin API)                                                                                        |
-| `openfox.entry`        | yes for v2 | Path to the ESM entry point, relative to the package root. `openfox.plugin` is accepted for v1 packages                                      |
-| `openfox.displayName`  | no         | Shown in the Plugins tab. Defaults to the package name                                                                                       |
-| `openfox.description`  | no         | Shown in the Plugins tab                                                                                                                     |
-| `openfox.capabilities` | no         | `providers`, `models`, `settings`, `tools`, `commands`, `skills`, `ui`, `hooks`, `notifications`, `workflows`, `rpc`, `assets`, `transforms` |
-| `openfox.timeoutMs`    | no         | Per-plugin RPC timeout in ms (default 30 000)                                                                                                |
+| Field                  | Required   | Description                                                                                                                                         |
+| ---------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `openfox.apiVersion`   | yes        | `1` (providers only, legacy) or `2` (full plugin API)                                                                                               |
+| `openfox.entry`        | yes for v2 | Path to the ESM entry point, relative to the package root. `openfox.plugin` is accepted for v1 packages                                             |
+| `openfox.displayName`  | no         | Shown in the Plugins tab. Defaults to the package name                                                                                              |
+| `openfox.description`  | no         | Shown in the Plugins tab                                                                                                                            |
+| `openfox.capabilities` | no         | `providers`, `models`, `settings`, `tools`, `commands`, `skills`, `ui`, `hooks`, `notifications`, `workflows`, `rpc`, `assets`, `transforms`, `vcs` |
+| `openfox.timeoutMs`    | no         | Per-plugin RPC timeout in ms (default 30 000)                                                                                                       |
 
 ### Discovery and lifecycle
 
@@ -374,6 +374,8 @@ registry.registerUiAction({
   lists are refetched in place, so items written to disk by an RPC (an installed
   pack, a generated agent, …) show up without a page reload or a server restart.
 - `{ kind: 'openPanel', panelId }` — opens one of your panels.
+- `{ kind: 'closePanel' }` — closes the currently open panel (and clears its
+  published state). Useful for a Cancel button in a panel footer.
 - `{ kind: 'openSettings', tab? }` — opens the global settings modal, optionally
   on a given tab: a core tab id (`plugins`, `tools`, `skills`, …) or a full
   plugin tab reference `plugin:<yourPluginId>:<tabId>` for one of the settings
@@ -442,9 +444,10 @@ registry.registerUiPanel({
       type: 'button',
       label: { en: 'Refresh', fr: 'Actualiser' },
       title: { en: 'Refresh quota', fr: 'Actualiser le quota' },
-      variant: 'default', // 'default' | 'primary' | 'danger' | 'ghost' | 'pill'
+      variant: 'default', // 'default' | 'primary' | 'danger' | 'ghost' | 'pill' | 'link'
       icon: 'refresh',
       disabled: false,
+      className: 'w-full', // optional extra classes merged onto the button
       onActivate: { kind: 'rpc', method: 'refresh' },
     },
     {
@@ -461,9 +464,12 @@ registry.registerUiPanel({
           label: { en: 'Name', fr: 'Nom' },
           placeholder: { en: 'Enter name...', fr: 'Entrer un nom...' },
           defaultValue: '{{name}}',
+          icon: 'search', // optional leading icon (search-field styling)
+          bare: false, // true renders a borderless input for a custom container
           rows: 3, // for textarea
           defaultChecked: false, // for checkbox
           disabled: false,
+          className: 'mb-2', // optional classes on the field wrapper
           onChange: { kind: 'rpc', method: 'updateField' },
           onBlur: { kind: 'rpc', method: 'saveField' },
         },
@@ -501,8 +507,29 @@ registry.registerUiPanel({
     { type: 'iframe', url: 'https://example.com/widget', height: 250, width: '100%' },
     { type: 'divider' },
   ],
+  footer: [
+    {
+      type: 'stack',
+      direction: 'row',
+      justify: 'end',
+      children: [
+        {
+          type: 'button',
+          label: { en: 'Cancel', fr: 'Annuler' },
+          variant: 'default',
+          onActivate: { kind: 'closePanel' },
+        },
+      ],
+    },
+  ],
 })
 ```
+
+`footer` is an optional list of declarative nodes rendered in the panel's
+bordered footer bar, outside the scrollable body — the idiomatic place for a
+`Cancel` button wired to `{ kind: 'closePanel' }`. A panel's content and footer
+can also be replaced at runtime: an RPC returning `{ content }` / `{ footer }`
+(or `{ nodes }`) updates the open panel in place.
 
 **Zones, components and overrides**
 
@@ -534,6 +561,8 @@ unmount). The RPC receives the zone context as params (`providerId`, `modelId`,
 `{ content: DeclarativeNode }` or `{ nodes: DeclarativeNode[] }`. Source content
 wins over `component`/`replacement`; a failing call keeps the last rendered
 content, so the static declaration is only ever the fallback.
+
+**Common UI Zones:** `header.brand`, `header.nav`, `header.actions`, `sidebar.header`, `sidebar.sessions_list`, `session.sidebar.git`, `session.sidebar.devserver`, `session.footer`, `composer.top`, `composer.actions`, `modal.footer`, `stats.modal`.
 
 **Declarative node types:** `text`, `keyValue`, `table`, `progress`, `badge`, `button`, `toggle`, `stack`, `card`, `callout`, `icon`, `details`, `input`, `select`, `iframe`, `divider`. String values may contain `{{key}}` placeholders filled from values you publish with `context.publish(panelId, key, value)`; published state arrives over WebSocket (`plugin.ui_state`) and re-renders the open panel.
 
@@ -667,6 +696,35 @@ registry.registerMessageTransform({
 - Transforms intercept and mutate context messages and/or system prompt before dispatch to the LLM.
 - **Fail-open resilience**: If a transform throws an error or times out (5 s), the core logs a warning and proceeds with uncompressed/unmodified messages without interrupting the turn.
 - Multiple active transforms execute sequentially in priority order.
+
+### VCS Providers (`vcs`)
+
+```ts
+registry.registerVcsProvider({
+  id: 'my-multirepo-vcs',
+  priority: 10, // optional ordering (lower runs first, default: 100)
+  detect: async (context) => {
+    // context: { workdir, sessionId?, projectId? }
+    return isMultiRepo(context.workdir)
+  },
+  getDiffFiles: async (context) => {
+    return [
+      { path: 'backend/src/index.ts', status: 'modified' },
+      { path: 'frontend/src/App.tsx', status: 'added' },
+    ]
+  },
+  getBranch: async (context) => {
+    return 'multi [backend: main, frontend: dev]'
+  },
+  formatModifiedFiles: (files, context) => {
+    return files.map((f) => `- ${f.path} (${f.status})`).join('\n')
+  },
+})
+```
+
+- VCS providers override or customize the source control layer (Git diffs, file modifications in `{{modifiedFiles}}`, branch resolution in WebSocket and UI).
+- When a registered VCS provider returns `true` from `detect()`, OpenFox delegates `getDiffFiles()`, `getBranch()`, and `formatModifiedFiles()` to it.
+- If no VCS provider matches or if an error occurs, OpenFox automatically falls back to standard mono-repo Git behavior.
 
 ### Context API
 

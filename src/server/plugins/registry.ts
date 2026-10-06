@@ -22,6 +22,7 @@ import type {
   PluginSkillSource,
   PluginTool,
   PluginTransitionContext,
+  PluginVcsProvider,
 } from '../../plugin/index.js'
 import type {
   PluginContributionSummary,
@@ -57,6 +58,7 @@ type Kind =
   | 'asset'
   | 'messageTransform'
   | 'dangerLevel'
+  | 'vcsProvider'
 
 interface Owned<T> {
   pluginId: string
@@ -199,6 +201,10 @@ export class PluginRegistry implements ProviderPluginRegistry, PluginRegistryCon
     this.register('dangerLevel', dangerLevel.id, dangerLevel)
   }
 
+  registerVcsProvider(provider: PluginVcsProvider): void {
+    this.register('vcsProvider', provider.id, provider)
+  }
+
   notify(request: PluginNotificationRequest): void {
     this.context.notify(request)
   }
@@ -255,6 +261,13 @@ export class PluginRegistry implements ProviderPluginRegistry, PluginRegistryCon
     return this.listOwned<PluginDangerLevel>('dangerLevel').map((entry) => ({
       pluginId: entry.pluginId,
       dangerLevel: entry.value,
+    }))
+  }
+
+  getVcsProviders(): { pluginId: string; provider: PluginVcsProvider }[] {
+    return this.listOwned<PluginVcsProvider>('vcsProvider').map((entry) => ({
+      pluginId: entry.pluginId,
+      provider: entry.value,
     }))
   }
 
@@ -349,6 +362,7 @@ export class PluginRegistry implements ProviderPluginRegistry, PluginRegistryCon
       uiOverrides: count('uiOverride'),
       messageTransforms: count('messageTransform'),
       dangerLevels: count('dangerLevel'),
+      vcsProviders: count('vcsProvider'),
     }
   }
 

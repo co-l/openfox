@@ -14,6 +14,7 @@ import type {
   PluginUiComponent,
   PluginUiOverride,
   PluginUiPanel,
+  PluginVcsProvider,
 } from '../shared/plugin.js'
 import type {
   ProviderAccessContext,
@@ -57,6 +58,9 @@ export type {
   PluginUiPanel,
   PluginUiSection,
   PluginVisibilityCondition,
+  PluginVcsDiffFile,
+  PluginVcsContext,
+  PluginVcsProvider,
 } from '../shared/plugin.js'
 
 export type {
@@ -285,6 +289,7 @@ export interface PluginRegistry {
   registerAsset(relativePath: string): void
   registerMessageTransform(transform: PluginMessageTransform): void
   registerDangerLevel(dangerLevel: PluginDangerLevel): void
+  registerVcsProvider(provider: PluginVcsProvider): void
 }
 
 export interface PluginPathAccessContext {

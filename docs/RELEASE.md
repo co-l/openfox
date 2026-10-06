@@ -165,6 +165,16 @@ npm publish 2>&1 | tail -10
 
 This triggers `prepublishOnly` which builds and runs e2e tests.
 
+**Local model server unavailable?** The prepublish full-stack test normally drives onboarding against the hardcoded local model server. Set `OPENFOX_PUBLISH_E2E_LLM=prod` to instead use the provider configured in your production config (`~/.config/openfox/config.json`):
+
+```bash
+OPENFOX_PUBLISH_E2E_LLM=prod npm publish 2>&1 | tail -10
+# or run the test alone:
+npm run test:publish:e2e:prod
+```
+
+Defaults to `local` (off). Pick a specific provider with `OPENFOX_PUBLISH_E2E_PROVIDER="DeepSeek API"` and override the config path with `OPENFOX_PUBLISH_E2E_PROD_CONFIG`.
+
 ### 10. Push and create GitHub Release
 
 ```bash

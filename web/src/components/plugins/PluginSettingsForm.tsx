@@ -14,6 +14,7 @@ import type {
   PluginBadgeTone,
   PluginSettingsField,
   PluginSettingsLinkButton,
+  PluginSettingsSchema,
   PluginSettingScope,
   PluginSettingValue,
 } from '@shared/plugin.js'
@@ -327,32 +328,49 @@ function initialValue(
   return (field.default as string) ?? ''
 }
 
+// Form rendering component
 export function PluginSettingsForm({
   pluginId,
   scope: initialScope = 'global',
   projectId,
   dangerLevel,
   hideScopeSelector = false,
+  initialSchema,
 }: {
   pluginId: string
   scope?: PluginSettingScope
   projectId?: string
   dangerLevel?: string
   hideScopeSelector?: boolean
+  initialSchema?: PluginSettingsSchema
 }) {
   const t = useT()
   const localize = useLocalizedString()
   const [scope, setScope] = useState<PluginSettingScope>(initialScope)
   const { data } = useResource(pluginSettingsResource, pluginId, scope, projectId)
-  const [values, setValues] = useState<FormValues>({})
+  const activeSchema = data?.schema ?? initialSchema
+  const [values, setValues] = useState<FormValues>(() => {
+    if (data) {
+      const initial: FormValues = {}
+      for (const field of data.schema.fields) initial[field.key] = initialValue(field, data.values, data.secretsSet)
+      return initial
+    }
+    if (initialSchema) {
+      const initial: FormValues = {}
+      for (const field of initialSchema.fields) initial[field.key] = initialValue(field, {}, [])
+      return initial
+    }
+    return {}
+  })
   const [statusStates, setStatusStates] = useState<Record<string, StatusFieldState>>({})
   const [browsingField, setBrowsingField] = useState<PluginSettingsField | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
 
   const refreshStatuses = useCallback(async () => {
-    if (!data) return
-    const statusFields = data.schema.fields.filter((f) => f.type === 'status')
+    const schema = data?.schema ?? initialSchema
+    if (!schema) return
+    const statusFields = schema.fields.filter((f) => f.type === 'status')
     if (statusFields.length === 0) return
 
     for (const field of statusFields) {
@@ -382,7 +400,7 @@ export function PluginSettingsForm({
         }))
       }
     }
-  }, [data, pluginId])
+  }, [data, initialSchema, pluginId])
 
   useEffect(() => {
     if (!data) return
@@ -392,15 +410,15 @@ export function PluginSettingsForm({
     void refreshStatuses()
   }, [data, refreshStatuses])
 
-  if (!data) {
+  if (!activeSchema) {
     return <p className="text-sm text-text-muted">{t({ en: 'Loading settings…', fr: 'Chargement des paramètres…' })}</p>
   }
 
-  const projectScoped = projectId !== undefined && data.schema.fields.some((field) => field.scope === 'project')
+  const projectScoped = projectId !== undefined && activeSchema.fields.some((field) => field.scope === 'project')
 
   const saveValues = async (nextValues: FormValues) => {
     const payload: Record<string, unknown> = {}
-    for (const field of data.schema.fields) {
+    for (const field of activeSchema.fields) {
       if (field.type === 'button' || field.type === 'status' || field.readOnly) continue
       const value = nextValues[field.key]
       if (isSecretField(field) && (isMaskedValue(value) || value === '' || value === undefined)) continue
@@ -414,14 +432,14 @@ export function PluginSettingsForm({
     }
     // A freshly typed secret is not echoed back by the server: mark it as set so
     // the input switches to the mask instead of looking empty.
-    const secretsSet = new Set(data.secretsSet)
-    for (const field of data.schema.fields) {
+    const secretsSet = new Set(data?.secretsSet ?? [])
+    for (const field of activeSchema.fields) {
       const written = payload[field.key]
       if (isSecretField(field) && typeof written === 'string' && written !== '') secretsSet.add(field.key)
     }
     pluginSettingsResource.write(
       {
-        schema: data.schema,
+        schema: activeSchema,
         values: payload as Record<string, string | number | boolean>,
         secretsSet: [...secretsSet],
       },
@@ -454,7 +472,7 @@ export function PluginSettingsForm({
         </div>
       ) : null}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {data.schema.fields.map((field, index) => {
+        {activeSchema.fields.map((field, index) => {
           if (field.dangerLevels && dangerLevel && !field.dangerLevels.includes(dangerLevel)) {
             return null
           }
@@ -467,11 +485,11 @@ export function PluginSettingsForm({
           const description = field.description ? localize(field.description) : undefined
           const value = values[field.key]
           const parentEnabled = field.parentKey ? values[field.parentKey] === true : true
-          const previousField = index > 0 ? data.schema.fields[index - 1] : undefined
+          const previousField = index > 0 ? activeSchema.fields[index - 1] : undefined
           const previousParentKey = previousField?.parentKey
           const startsGroup = Boolean(field.parentKey && field.parentKey !== previousParentKey)
           const nextParentKey =
-            index < data.schema.fields.length - 1 ? data.schema.fields[index + 1]?.parentKey : undefined
+            index < activeSchema.fields.length - 1 ? activeSchema.fields[index + 1]?.parentKey : undefined
           const endsGroup = Boolean(field.parentKey && field.parentKey !== nextParentKey)
           const isHalf = field.width === 'half'
           const showSectionHeader =

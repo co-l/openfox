@@ -1,5 +1,40 @@
 # Changelog
 
+## 2.0.161 - 2026-10-05
+
+### Features
+
+- **Night mode for unattended runs** — a session-scoped toggle (off by default) auto-answers questions and auto-resolves path/shell/workspace confirmations, so the agent never blocks on a prompt.
+- **Plugin message transforms** — plugins can rewrite the message list and system prompt before every LLM call.
+- **Plugin-defined danger levels** — plugins can register custom danger levels that decide path access.
+- **Plugin VCS integrations** — plugins can supply custom branch and diff providers.
+- **Plugin update notifications** — get notified when plugins update, choose a check interval (1h/6h/24h/startup), and reinstall any plugin from its original source.
+- **New plugin setting types** — repeatable `list` rows, live `status` badges, directory pickers, read-only and storage-backed fields, and buttons that open an external token page.
+- **Richer declarative plugin UI** — toggle switches, checkboxes, textareas, icon and bare input styles, success/link button variants, footer nodes, clickable text, and coloured badges.
+- **Live plugin panels** — panels can load content from a plugin RPC and auto-refresh.
+- **New plugin activation hooks** — a `plugin.menu` slot turns a menu row into an action; plugins can open a settings tab or close the active panel.
+- **More plugin UI slots** — composer top, project settings, provider modal, and stats.
+- **RTK extracted into a plugin** — now ships with a gain dashboard.
+- **Home page layout option** — show projects above recent sessions.
+- **Compact danger level dropdown** — the danger level selector can render as a compact dropdown list.
+- **More curated plugins** — Codebase Memory, Pareto Line, Multi-Repo, Community Hub, and more.
+
+### Enhancements
+
+- **Retry changes apply immediately** — editing retry patterns or the retry cap now takes effect on the next LLM round instead of the next turn.
+- **No plugin settings layout shift** — plugin settings render instantly from an initial schema.
+- **Richer plugin cards** — installed plugins now show their author, icon, and logo.
+- **Merged model variants** — model lists collapse reasoning-effort variants into a single entry.
+- **Reorganised session sidebar** — stats and criteria pinned to the top, git and dev server at the bottom.
+- **Toasts above modals** — notification toasts now render above modals.
+- **More icon aliases for plugins** — a wider set of icons is available to plugin UIs.
+
+### Bug Fixes
+
+- **Deleting or disconnecting a provider removes its accounts** — credentials created by a provider are now cleaned up with it.
+- **Plugin proxy requests no longer hang** — proxy calls abort after 10 seconds instead of waiting forever.
+- **Model names and context windows follow the catalog** — stale saved values no longer mask the catalog's display name or context window.
+
 ## 2.0.160 - 2026-09-26
 
 ### Features
