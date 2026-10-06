@@ -143,6 +143,18 @@ describe('Sidebar', () => {
     expect(html).not.toContain('bg-black/50')
   })
 
+  it('keeps the session list in a min-height-clamped flex chain so the list can scroll', () => {
+    const html = renderToStaticMarkup(<Sidebar projectId="project-1" />)
+
+    const outerZone = html.match(/<div [^>]*data-plugin-zone="sidebar"[^>]*>/)
+    expect(outerZone?.[0]).toContain('class="flex-1 min-h-0 flex flex-col"')
+
+    const listZone = html.match(/<div [^>]*data-plugin-zone="sidebar.sessions_list"[^>]*>/)
+    expect(listZone?.[0]).toContain('class="flex-1 min-h-0 flex flex-col"')
+
+    expect(html).toContain('class="flex-1 min-h-0"')
+  })
+
   it('collapses the inline sidebar to zero width when closed', () => {
     const html = renderToStaticMarkup(<Sidebar projectId="project-1" isOpen={false} overlay={false} />)
     expect(html).toContain('w-0')
