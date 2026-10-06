@@ -25,6 +25,8 @@ import { TERMINAL_DONE, TERMINAL_BLOCKED } from './types.js'
 import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
 import { createChatMessageMessage } from '../ws/protocol.js'
 import { runAgentTurn, TurnMetrics, createMessageStartEvent } from '../chat/orchestrator.js'
+import { createSnapshotCadence } from '../chat/snapshot-cadence.js'
+import type { TurnEvent } from '../events/types.js'
 import { loadAllAgentsDefault, resolveDefaultAgentId } from '../agents/registry.js'
 import { computeSessionStats } from '../../shared/stats.js'
 import { formatGitDiffFiles } from '../git/diff.js'
@@ -627,7 +629,10 @@ export async function executeWorkflow(
 
         const turnMetrics = new TurnMetrics()
         const es = getEventStore()
-        const append = (event: import('../events/types.js').TurnEvent) => es.append(sessionId, event)
+        const append = (event: TurnEvent) => es.append(sessionId, event)
+        // Workflow steps call runAgentTurn directly, so without this a long step
+        // would never snapshot nor prune (the chat path's cadence never runs).
+        const cadence = createSnapshotCadence({ sessionManager, sessionId, append })
 
         let stepDoneCalled = false
 
@@ -675,7 +680,7 @@ export async function executeWorkflow(
             },
             turnMetrics,
             stepAgentId,
-            append,
+            cadence.append,
             {
               ...(!firstEntryForStep.has(step.id) && !agentStep.prompt && !isResumingCurrentStep
                 ? { injectKickoff: () => injectGenericKickoff(sessionId) }
@@ -709,6 +714,9 @@ export async function executeWorkflow(
         if (agentResult.failed) {
           return blockOnLLMFailure(agentResult.failed.error)
         }
+
+        // Snapshot + prune at the end of the step, mirroring runChatTurn.
+        cadence.flush()
 
         firstEntryForStep.add(step.id)
         // After the first resumed turn completes, mark resume as consumed so

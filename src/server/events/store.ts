@@ -20,12 +20,25 @@ import type { TurnEvent, StoredEvent, SessionSnapshot, SnapshotMessage } from '.
 import { logger } from '../utils/logger.js'
 import { foldSessionState, buildSnapshot, trimSnapshotStreamingOutput } from './folding.js'
 import { SETTINGS_KEYS } from '../db/settings.js'
+import { EVENTS_INDEX_DDL } from '../db/events-schema.js'
 
 // Rollback backups (.pre-de-dup.bak) are held for 10 days after creation, then
 // auto-pruned on the next migration invocation (startup auto-run or manual
 // script). Long enough to recover from a bad migration, short enough that a
 // 1GB+ copy is not left on disk forever.
 const SNAPSHOT_BACKUP_RETENTION_MS = 10 * 24 * 60 * 60 * 1000
+
+/**
+ * A state load slower than this blocks every HTTP request, WS push and the
+ * agent loop (better-sqlite3 is synchronous). The incident ran for 9 h at 98 %
+ * of a core with nothing in the log, because the only signal — a 12 s state
+ * load — was never reported.
+ */
+const SLOW_STATE_LOAD_WARN_MS = 1_000
+/** At most one slow-load warning per minute, process-wide. */
+const SLOW_LOAD_WARN_THROTTLE_MS = 60 * 1000
+/** Size at which a session database is worth warning about at startup. */
+const DB_SIZE_WARN_BYTES = 300 * 1024 * 1024
 
 /**
  * Detect a UNIQUE constraint violation (e.g. another openfox instance writing
@@ -161,6 +174,8 @@ export class EventStore {
   private snapshotCacheBytes = 0
   private static readonly SNAPSHOT_CACHE_MAX_ENTRIES = 16
   private static readonly SNAPSHOT_CACHE_MAX_BYTES = 128 * 1024 * 1024
+  /** Process-wide throttle for the slow-state-load warning. */
+  private static lastSlowLoadWarnAt = 0
   // Recent user prompts per session (sidebar list). Computed once from the
   // snapshot + message.start events, then served from memory. Bounded — small
   // arrays, but a long-lived server must not accumulate one per listed
@@ -194,15 +209,7 @@ export class EventStore {
       )
     `)
 
-    this.db.exec(`
-      CREATE INDEX IF NOT EXISTS idx_events_session_seq 
-      ON events(session_id, seq)
-    `)
-
-    this.db.exec(`
-      CREATE INDEX IF NOT EXISTS idx_events_session_type 
-      ON events(session_id, event_type)
-    `)
+    this.db.exec(EVENTS_INDEX_DDL)
 
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS tombstones (
@@ -256,7 +263,10 @@ export class EventStore {
       }
     }
 
-    this.invalidateSessionCache(sessionId)
+    // Only a snapshot can change the latest snapshot. Evicting the parsed
+    // snapshot cache on every append keeps it permanently cold during a turn —
+    // deltas, thinking and tool.preparing events stream in continuously.
+    this.invalidateSessionCache(sessionId, { snapshot: event.type === 'turn.snapshot' })
 
     const stored: StoredEvent = {
       seq,
@@ -309,7 +319,7 @@ export class EventStore {
         })
         transaction()
 
-        this.invalidateSessionCache(sessionId)
+        this.invalidateSessionCache(sessionId, { snapshot: events.some((event) => event.type === 'turn.snapshot') })
 
         // Notify after transaction commits
         for (const stored of results) {
@@ -346,7 +356,7 @@ export class EventStore {
     })
     transaction()
 
-    this.invalidateSessionCache(sessionId)
+    this.invalidateSessionCache(sessionId, { snapshot: events.some((event) => event.type === 'turn.snapshot') })
 
     const stored: StoredEvent[] = events.map((event) => ({ ...event, sessionId }))
     for (const event of stored) {
@@ -450,7 +460,7 @@ export class EventStore {
 
     const row = this.db
       .prepare(
-        `SELECT * FROM events 
+        `SELECT * FROM events INDEXED BY idx_events_session_type_seq
          WHERE session_id = ? AND event_type = 'turn.snapshot' 
          ORDER BY seq DESC LIMIT 1`,
       )
@@ -485,11 +495,21 @@ export class EventStore {
     }
   }
 
-  private invalidateSessionCache(sessionId: string): void {
-    const entry = this.snapshotCache.get(sessionId)
-    if (entry) {
-      this.snapshotCacheBytes -= entry.bytes
-      this.snapshotCache.delete(sessionId)
+  /**
+   * Drop the in-memory caches for a session.
+   *
+   * `snapshot: false` keeps the parsed latest-snapshot entry: an append that is
+   * not a `turn.snapshot` cannot change which snapshot is latest. Deletion and
+   * cleanup paths must invalidate unconditionally — they can remove the row the
+   * cache entry was built from.
+   */
+  private invalidateSessionCache(sessionId: string, opts: { snapshot?: boolean } = {}): void {
+    if (opts.snapshot !== false) {
+      const entry = this.snapshotCache.get(sessionId)
+      if (entry) {
+        this.snapshotCacheBytes -= entry.bytes
+        this.snapshotCache.delete(sessionId)
+      }
     }
     this.promptsCache.delete(sessionId)
   }
@@ -582,10 +602,113 @@ export class EventStore {
   }
 
   /**
+   * Event count, payload bytes and in-flight counters for the events appended
+   * after `fromSeq`.
+   *
+   * The snapshot cadence measures this to decide when to snapshot: bounded by
+   * the last snapshot, so the check stays cheap as the log grows. Counting the
+   * whole log instead would make the check as expensive as the problem.
+   *
+   * `openMessages` (message.start without its message.done) and
+   * `pendingToolCalls` (tool.call without its tool.result) say whether the log
+   * is at a quiescent boundary: a snapshot taken mid-message freezes a partial
+   * message, and the context fold drops every later event carrying that
+   * messageId — including the tool results of the round in flight.
+   */
+  getEventLogTail(
+    sessionId: string,
+    fromSeq: number,
+  ): { events: number; bytes: number; openMessages: number; pendingToolCalls: number } {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS events,
+                -- CAST to BLOB: LENGTH() on a TEXT value counts characters, not
+                -- bytes, so a non-ASCII payload (accents, CJK, emoji) would
+                -- understate the tail by up to 3x and overshoot the byte budget.
+                COALESCE(SUM(LENGTH(CAST(payload AS BLOB))), 0) AS bytes,
+                -- Ids started and not done in the tail. A set, not a count:
+                -- a successful compaction starts its summary attempt's
+                -- message a second time, then closes it once, and a done
+                -- whose start is before the tail must not hide another open
+                -- message. The NOT IN subqueries skip NULL ids: x NOT IN
+                -- (..., NULL) is never true and would read every count as 0.
+                -- Subqueries so they only read their own event types
+                -- (session/type/seq index), not every tail row.
+                (SELECT COUNT(DISTINCT json_extract(payload, '$.messageId')) FROM events
+                  WHERE session_id = @sessionId AND event_type = 'message.start' AND seq > @fromSeq
+                    AND json_extract(payload, '$.messageId') NOT IN (
+                      SELECT json_extract(payload, '$.messageId') FROM events
+                      WHERE session_id = @sessionId AND event_type = 'message.done' AND seq > @fromSeq
+                        AND json_extract(payload, '$.messageId') IS NOT NULL)) AS openMessages,
+                (SELECT COUNT(DISTINCT json_extract(payload, '$.toolCall.id')) FROM events
+                  WHERE session_id = @sessionId AND event_type = 'tool.call' AND seq > @fromSeq
+                    AND json_extract(payload, '$.toolCall.id') NOT IN (
+                      SELECT json_extract(payload, '$.toolCallId') FROM events
+                      WHERE session_id = @sessionId AND event_type = 'tool.result' AND seq > @fromSeq
+                        AND json_extract(payload, '$.toolCallId') IS NOT NULL)) AS pendingToolCalls
+         FROM events WHERE session_id = @sessionId AND seq > @fromSeq`,
+      )
+      .get({ sessionId, fromSeq }) as {
+      events: number
+      bytes: number
+      openMessages: number
+      pendingToolCalls: number
+    }
+
+    return row
+  }
+
+  /**
+   * Count real (non system-generated) user messages in a session.
+   *
+   * Real user messages live in two places: the ones already folded into the
+   * latest snapshot, and the `message.start` rows appended since. Their raw rows
+   * are deleted by `cleanupOldEvents()` (which does not whitelist them, unlike
+   * `mode.changed` or `context.state`), so counting only the raw rows makes the
+   * count collapse to ~0 after every prune — which re-arms the "is this the
+   * first user message?" condition that drives session naming.
+   *
+   * Session naming only needs the count: materializing every event to count
+   * `message.start` events re-reads the whole log on a path that runs at
+   * session creation and on the sidebar.
+   */
+  countUserMessages(sessionId: string): number {
+    const snapshot = this.getLatestSnapshot(sessionId)
+    let count = 0
+    for (const message of snapshot?.data.messages ?? []) {
+      if (message.role === 'user' && message.isSystemGenerated !== true) count++
+    }
+
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM events e
+         WHERE e.session_id = ? AND e.seq > ? AND e.event_type = 'message.start'
+           AND json_extract(e.payload, '$.role') = 'user'
+           AND COALESCE(json_extract(e.payload, '$.isSystemGenerated'), 0) = 0
+           AND NOT EXISTS (
+             SELECT 1 FROM tombstones t WHERE t.session_id = e.session_id AND t.seq = e.seq
+           )`,
+      )
+      .get(sessionId, snapshot?.seq ?? 0) as { n: number }
+
+    return count + row.n
+  }
+
+  /**
    * Get the latest snapshot and all events since it
    * This is the primary method for loading a session efficiently
    */
   getEventsSinceSnapshot(sessionId: string): { snapshot: SessionSnapshot | undefined; events: StoredEvent[] } {
+    const startedAt = Date.now()
+    const result = this.readEventsSinceSnapshot(sessionId)
+    this.warnIfSlowStateLoad(sessionId, Date.now() - startedAt)
+    return result
+  }
+
+  private readEventsSinceSnapshot(sessionId: string): {
+    snapshot: SessionSnapshot | undefined
+    events: StoredEvent[]
+  } {
     const snapshotEvent = this.getLatestSnapshot(sessionId)
 
     if (!snapshotEvent) {
@@ -603,6 +726,51 @@ export class EventStore {
       snapshot: snapshotEvent.data,
       events,
     }
+  }
+
+  /**
+   * The whole server is synchronous: a slow state load blocks every HTTP
+   * request, WS push and the agent loop. It used to be silent — the incident
+   * ran at 98 % CPU for 9 h with nothing in the log. Throttled process-wide so
+   * a degraded server cannot flood the log it is trying to report about.
+   */
+  private warnIfSlowStateLoad(sessionId: string, elapsedMs: number): void {
+    if (elapsedMs < SLOW_STATE_LOAD_WARN_MS) return
+    const now = Date.now()
+    if (now - EventStore.lastSlowLoadWarnAt < SLOW_LOAD_WARN_THROTTLE_MS) return
+    EventStore.lastSlowLoadWarnAt = now
+    logger.warn('Slow session state load (blocks the main thread)', {
+      sessionId,
+      elapsedMs,
+      hint: 'event log is not being snapshotted/pruned',
+    })
+  }
+
+  /**
+   * Events that determine the current context window.
+   *
+   * `foldContextState` derives `currentContextWindowId` from exactly these four
+   * event types, so recovering it must not read (and JSON-parse) the whole log:
+   * on a 322k-event session the unbounded read cost ~6 s of synchronous work on
+   * the main thread, and it runs inside tool execution.
+   *
+   * `INDEXED BY` is required — the planner otherwise walks `(session_id, seq)`
+   * and filters row by row (measured: 109 ms vs 1.4 ms on the same database).
+   */
+  getContextWindowEvents(sessionId: string): StoredEvent[] {
+    const rows = this.db
+      .prepare(
+        `SELECT e.* FROM events e INDEXED BY idx_events_session_type_seq
+         WHERE e.session_id = ?
+           AND e.event_type IN ('session.initialized', 'turn.snapshot', 'context.state', 'context.compacted')
+           AND NOT EXISTS (
+             SELECT 1 FROM tombstones t WHERE t.session_id = e.session_id AND t.seq = e.seq
+           )
+         ORDER BY e.seq`,
+      )
+      .all(sessionId) as EventRow[]
+
+    return rows.map((row) => this.rowToStoredEvent(row))
   }
 
   /**
@@ -892,7 +1060,7 @@ export class EventStore {
     const row = this.db
       .prepare(
         `
-        SELECT seq FROM events 
+        SELECT seq FROM events INDEXED BY idx_events_session_type_seq
         WHERE session_id = ? AND event_type = 'turn.snapshot' 
         ORDER BY seq DESC LIMIT 1
       `,
@@ -1285,6 +1453,26 @@ export function initEventStore(db: Database.Database): EventStore {
   const result = eventStoreInstance.optimizeStorage()
   if (result.deletedSnapshots > 0) {
     logger.info('Storage optimized', result)
+  }
+
+  // Surface an oversized database at boot: it means pruning has not kept up
+  // with the writes, and state loads may block the main thread for seconds.
+  // Best-effort diagnostic — it must never block startup.
+  try {
+    const dbPath = db.name
+    if (dbPath && dbPath !== ':memory:') {
+      const { size } = statSync(dbPath)
+      if (size >= DB_SIZE_WARN_BYTES) {
+        logger.warn('Session database is large', {
+          path: dbPath,
+          sizeMB: Math.round(size / (1024 * 1024)),
+          freelistPages: db.pragma('freelist_count', { simple: true }),
+          hint: 'deleted events leave free pages — VACUUM reclaims them',
+        })
+      }
+    }
+  } catch {
+    // Ignore: diagnostics only
   }
 
   // Snapshot stream de-dup, asynchronously (don't block startup). Automatic

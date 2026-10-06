@@ -30,9 +30,13 @@ vi.mock('../events/index.js', () => ({
   getEventStore: () => ({
     append: mockAppend,
     getLatestSeq: vi.fn(() => 0),
+    getLatestSnapshotSeq: vi.fn(() => 0),
+    getEventsSinceSnapshot: vi.fn(() => ({ snapshot: undefined, events: [] })),
+    getEventLogTail: vi.fn(() => ({ events: 0, bytes: 0 })),
     getEvents: vi.fn(() => []),
     deleteEventsAfterSeq: vi.fn(),
   }),
+  combineEventsWithSnapshot: (_sessionId: string, _snapshot: unknown, events: unknown[]) => events,
   getCurrentContextWindowId: vi.fn(() => undefined),
 }))
 

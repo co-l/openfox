@@ -6,23 +6,9 @@ import { createContextStateMessage } from '../ws/protocol.js'
 import { getEventStore } from '../events/index.js'
 
 export function getSessionMessageCount(sessionId: string): number {
-  const eventStore = getEventStore()
-  const events = eventStore.getEvents(sessionId)
-
-  let count = 0
-  for (const event of events) {
-    if (event.type === 'message.start') {
-      const data = event.data as { role: string; isSystemGenerated?: boolean }
-      // System-generated messages (task reminders, auto prompts) are not
-      // "real" user input — they must not count as the first user message so
-      // auto session naming keys off the actual prompt.
-      if (data.role === 'user' && !data.isSystemGenerated) {
-        count++
-      }
-    }
-  }
-
-  return count
+  // Counted in SQL: the callers only need the number of real user messages, and
+  // materializing every event of the session to count them re-reads the log.
+  return getEventStore().countUserMessages(sessionId)
 }
 
 export function finalizeTurnCompletion(

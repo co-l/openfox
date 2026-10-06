@@ -31,6 +31,7 @@ import { getEventStore, getCurrentContextWindowId } from '../events/index.js'
 import { createChatMessageMessage } from '../ws/protocol.js'
 import { logger } from '../utils/logger.js'
 import { getConversationMessages, processEventsForConversation } from '../chat/conversation-history.js'
+import { createSnapshotCadence } from '../chat/snapshot-cadence.js'
 
 const RETURN_VALUE_INSTRUCTION = `
 
@@ -323,7 +324,16 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
     loopResult = await runTopLevelAgentLoop(
       {
         mode: subAgentType,
-        append: (event) => eventStore.append(sessionId, event),
+        // Sub-agents append to the parent session's log directly. Without a
+        // cadence here a long sub-agent run would grow the log unbounded (the
+        // parent's own cadence only ticks on the parent's appends, and the
+        // parent is awaiting this sub-agent). The cadence state is shared per
+        // session, so this does not double the snapshot work.
+        append: createSnapshotCadence({
+          sessionManager,
+          sessionId,
+          append: (event) => eventStore.append(sessionId, event),
+        }).append,
         sessionManager,
         sessionId,
         llmClient,

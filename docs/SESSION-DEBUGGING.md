@@ -74,8 +74,7 @@ This is the single source of truth. All session state derives from events.
 
 **Indexes**:
 
-- `idx_events_session_seq` - For fetching events by session + sequence
-- `idx_events_session_type` - For filtering by event type
+- `idx_events_session_type_seq` - Covering index `(session_id, event_type, seq)`; serves the snapshot lookup, the context-window fold and the cleanup DELETE. `(session_id, seq)` is also covered by the UNIQUE constraint's auto-index.
 
 ## Event Types
 

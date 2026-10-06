@@ -28,6 +28,7 @@ vi.mock('../events/store.js', () => ({
     getEvents: vi.fn(() => []),
     getLatestSeq: vi.fn(() => undefined),
     getLatestSnapshot: vi.fn(() => undefined),
+    countUserMessages: vi.fn(() => 0),
   })),
   initEventStore: vi.fn(),
 }))

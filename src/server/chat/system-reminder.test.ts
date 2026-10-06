@@ -28,8 +28,18 @@ function createEventStore(initialEvents: any[] = []) {
       events.push(event)
     }),
     getEvents: vi.fn(() => events),
+    // Mirrors EventStore.getContextWindowEvents: only these four types feed
+    // the current window id.
+    getContextWindowEvents: vi.fn(() =>
+      events.filter((event) =>
+        ['session.initialized', 'turn.snapshot', 'context.state', 'context.compacted'].includes(event.type),
+      ),
+    ),
     getAllEvents: vi.fn(() => events),
     getLatestSnapshot: vi.fn().mockReturnValue(undefined),
+    getLatestSnapshotSeq: vi.fn(() => [...events].reverse().find((event) => event.type === 'turn.snapshot')?.seq ?? 0),
+    getEventsSinceSnapshot: vi.fn(() => ({ snapshot: undefined, events })),
+    getEventLogTail: vi.fn(() => ({ events: 0, bytes: 0 })),
     cleanupOldEvents: vi.fn(),
     getLatestSeq: vi.fn().mockReturnValue(0),
     deleteSession: vi.fn(),
