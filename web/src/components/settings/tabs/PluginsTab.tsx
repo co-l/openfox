@@ -115,7 +115,7 @@ function PluginCardLayout({
   children?: ReactNode
 }) {
   return (
-    <div className="border border-border rounded-lg p-4 flex flex-col justify-between">
+    <div className="relative border border-border rounded-lg p-4 flex flex-col justify-between">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div className="flex-1 min-w-0">{header}</div>
         {right}
@@ -192,11 +192,14 @@ function InstalledPluginCard({ plugin }: { plugin: PluginInfo }) {
     <PluginCardLayout
       header={
         <>
-          <PluginTitle title={plugin.displayName} subtitle={plugin.id} icon={plugin.icon} logo={plugin.logo}>
-            <span className="text-xs text-text-muted">{`v${plugin.version}`}</span>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded border ${statusClass}`}>{statusLabel}</span>
-            <span className="text-[10px] text-text-muted">{`API v${plugin.apiVersion}`}</span>
-          </PluginTitle>
+          {/* Room for the toggle, which sits in the card's top-right corner on narrow screens. */}
+          <div className="pr-14 sm:pr-0">
+            <PluginTitle title={plugin.displayName} subtitle={plugin.id} icon={plugin.icon} logo={plugin.logo}>
+              <span className="text-xs text-text-muted">{`v${plugin.version}`}</span>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded border ${statusClass}`}>{statusLabel}</span>
+              <span className="text-[10px] text-text-muted">{`API v${plugin.apiVersion}`}</span>
+            </PluginTitle>
+          </div>
           <PluginDescription description={plugin.description} />
           <div className="flex flex-wrap items-center gap-1.5 mt-2">
             {CAPABILITY_ORDER.filter((capability) => plugin.capabilities.includes(capability)).map((capability) => (
@@ -214,7 +217,9 @@ function InstalledPluginCard({ plugin }: { plugin: PluginInfo }) {
       }
       right={
         <div className="flex flex-col items-start gap-2 sm:items-end">
-          <Toggle enabled={plugin.enabled} disabled={busy} onClick={() => void toggleEnabled(!plugin.enabled)} />
+          <div className="absolute top-4 right-4 sm:static">
+            <Toggle enabled={plugin.enabled} disabled={busy} onClick={() => void toggleEnabled(!plugin.enabled)} />
+          </div>
           <div className="flex flex-wrap gap-1 sm:justify-end">
             {section ? (
               <Button variant="secondary" size="sm" onClick={() => setShowSettings((open) => !open)}>

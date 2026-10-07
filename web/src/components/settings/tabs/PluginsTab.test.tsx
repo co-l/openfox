@@ -191,6 +191,14 @@ describe('PluginsTab', () => {
     expect(row.className).toContain('sm:flex-row')
   })
 
+  it('keeps the enable toggle in the top-right corner on narrow screens', () => {
+    render(<PluginsTab />)
+    const corner = screen.getByRole('switch').parentElement!
+    expect(corner.className).toContain('absolute')
+    expect(corner.className).toContain('sm:static')
+    expect(screen.getByText('Demo plugin').closest('.rounded-lg')!.className).toContain('relative')
+  })
+
   it('opens the schema-driven settings form when a section is declared', async () => {
     render(<PluginsTab />)
     await userEvent.setup().click(screen.getByRole('button', { name: 'Settings' }))
