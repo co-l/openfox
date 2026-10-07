@@ -89,6 +89,7 @@ export type ServerMessageType =
   | 'session.deleted'
   | 'session.deletedAll'
   | 'session.running' // Real-time running state change
+  | 'session.awaiting_answer' // An ask_user question is pending (or resolved) in this session (broadcast to all)
   | 'session.pause' // Cooperative pause state change (none/pending/paused/resuming)
   | 'session.name_generated' // Session name was auto-generated
   | 'session.confirmation_pending' // Path confirmation waiting in another session (broadcast to all)
@@ -240,6 +241,10 @@ export interface SessionCreatedPayload {
 
 export interface SessionRunningPayload {
   isRunning: boolean
+}
+
+export interface SessionAwaitingAnswerPayload {
+  awaitingAnswer: boolean
 }
 
 export interface SessionPausePayload {

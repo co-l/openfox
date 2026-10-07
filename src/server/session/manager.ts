@@ -73,6 +73,8 @@ import { logger } from '../utils/logger.js'
 import { EventEmitter, type Unsubscribe } from '../utils/async.js'
 import { getLspManager as getOrCreateLspManager, shutdownLspManager, type LspManager } from '../lsp/index.js'
 import { devServerManager } from '../dev-server/manager.js'
+import { cancelQuestionsForSession } from '../tools/ask.js'
+import { cancelPathConfirmationsForSession } from '../tools/path-security.js'
 import { resolveLLMClientForAgent, getAgentModelOverride } from '../agents/model-overrides.js'
 import { parseDefaultModelSelection } from '../provider-manager.js'
 import { getEventStore } from '../events/store.js'
@@ -750,6 +752,9 @@ export class SessionManager {
 
     // Clear message queue to prevent memory leak
     this.messageQueues.delete(id)
+
+    cancelQuestionsForSession(id, 'Session deleted')
+    cancelPathConfirmationsForSession(id, 'Session deleted')
 
     // Release any blocked pause gate and drop the pause state
     this.clearPauseState(id)

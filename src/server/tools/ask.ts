@@ -4,19 +4,67 @@ import type { PendingQuestionPayload, ChoiceOption } from '../../shared/protocol
 import { normalizeAskOptions } from '../../shared/ask-options.js'
 import { createDeferred } from '../utils/async.js'
 
+interface PendingQuestion {
+  promise: Promise<string>
+  resolve: (answer: string) => void
+  reject: (error: Error) => void
+  sessionId: string
+  question: string
+  type: 'text' | 'confirm' | 'choice'
+  options: ChoiceOption[] | undefined
+}
+
 // Store pending questions by call ID
-const pendingQuestions = new Map<
-  string,
-  {
-    promise: Promise<string>
-    resolve: (answer: string) => void
-    reject: (error: Error) => void
-    sessionId: string
-    question: string
-    type: 'text' | 'confirm' | 'choice'
-    options: ChoiceOption[] | undefined
+const pendingQuestions = new Map<string, PendingQuestion>()
+const pendingCountBySession = new Map<string, number>()
+
+function addPendingQuestion(callId: string, pending: PendingQuestion): void {
+  removePendingQuestion(callId)
+  pendingQuestions.set(callId, pending)
+  pendingCountBySession.set(pending.sessionId, (pendingCountBySession.get(pending.sessionId) ?? 0) + 1)
+}
+
+function removePendingQuestion(callId: string): void {
+  const pending = pendingQuestions.get(callId)
+  if (!pending) return
+  pendingQuestions.delete(callId)
+  const remaining = (pendingCountBySession.get(pending.sessionId) ?? 1) - 1
+  if (remaining > 0) {
+    pendingCountBySession.set(pending.sessionId, remaining)
+  } else {
+    pendingCountBySession.delete(pending.sessionId)
   }
->()
+}
+
+type AwaitingAnswerListener = (sessionId: string, awaiting: boolean) => void
+const awaitingAnswerListeners = new Set<AwaitingAnswerListener>()
+
+export function isSessionAwaitingAnswer(sessionId: string): boolean {
+  return pendingCountBySession.has(sessionId)
+}
+
+export function onAwaitingAnswerChange(listener: AwaitingAnswerListener): () => void {
+  awaitingAnswerListeners.add(listener)
+  return () => {
+    awaitingAnswerListeners.delete(listener)
+  }
+}
+
+function trackAwaitingTransition<T>(sessionId: string, mutate: () => T): T {
+  const before = isSessionAwaitingAnswer(sessionId)
+  const result = mutate()
+  const after = isSessionAwaitingAnswer(sessionId)
+  if (before !== after) {
+    for (const listener of awaitingAnswerListeners) {
+      try {
+        listener(sessionId, after)
+      } catch {
+        // a failing listener must not break question handling
+      }
+    }
+  }
+  return result
+}
 
 export const askUserTool: Tool = {
   name: 'ask_user',
@@ -80,15 +128,17 @@ export const askUserTool: Tool = {
     const deferred = createDeferred<string>()
     void deferred.promise.catch(() => {})
 
-    pendingQuestions.set(callId, {
-      promise: deferred.promise,
-      resolve: deferred.resolve,
-      reject: deferred.reject,
-      sessionId: context.sessionId,
-      question,
-      type,
-      options,
-    })
+    trackAwaitingTransition(context.sessionId, () =>
+      addPendingQuestion(callId, {
+        promise: deferred.promise,
+        resolve: deferred.resolve,
+        reject: deferred.reject,
+        sessionId: context.sessionId,
+        question,
+        type,
+        options,
+      }),
+    )
 
     throw new AskUserInterrupt(callId, question, type, options)
   },
@@ -113,7 +163,7 @@ export function provideAnswer(callId: string, answer: string, skip?: boolean): b
   }
 
   pending.resolve(skip ? '[user skipped]' : answer)
-  pendingQuestions.delete(callId)
+  trackAwaitingTransition(pending.sessionId, () => removePendingQuestion(callId))
   return true
 }
 
@@ -124,24 +174,26 @@ export function cancelQuestion(callId: string, reason: string): boolean {
   }
 
   pending.reject(new Error(reason))
-  pendingQuestions.delete(callId)
+  trackAwaitingTransition(pending.sessionId, () => removePendingQuestion(callId))
   return true
 }
 
 export function cancelQuestionsForSession(sessionId: string, reason: string): number {
-  let cancelledCount = 0
+  return trackAwaitingTransition(sessionId, () => {
+    let cancelledCount = 0
 
-  for (const [callId, pending] of pendingQuestions.entries()) {
-    if (pending.sessionId !== sessionId) {
-      continue
+    for (const [callId, pending] of pendingQuestions.entries()) {
+      if (pending.sessionId !== sessionId) {
+        continue
+      }
+
+      pending.reject(new Error(reason))
+      removePendingQuestion(callId)
+      cancelledCount += 1
     }
 
-    pending.reject(new Error(reason))
-    pendingQuestions.delete(callId)
-    cancelledCount += 1
-  }
-
-  return cancelledCount
+    return cancelledCount
+  })
 }
 
 export function hasPendingQuestion(callId: string): boolean {

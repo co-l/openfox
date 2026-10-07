@@ -692,6 +692,31 @@ describe('chat.stats handler', () => {
     expect(useSessionStore.getState().liveTurnStats).toBeNull()
   })
 
+  it('tracks awaitingAnswer on a background session summary', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState((state) => ({
+      ...state,
+      sessions: [{ id: 'bg-1', isRunning: false } as any, { id: 'bg-2', isRunning: false } as any],
+    }))
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'session.awaiting_answer',
+      sessionId: 'bg-1',
+      payload: { awaitingAnswer: true },
+    })
+    const afterTrue = useSessionStore.getState().sessions
+    expect(afterTrue.find((s) => s.id === 'bg-1')?.awaitingAnswer).toBe(true)
+    expect(afterTrue.find((s) => s.id === 'bg-2')?.awaitingAnswer).toBeUndefined()
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'session.awaiting_answer',
+      sessionId: 'bg-1',
+      payload: { awaitingAnswer: false },
+    })
+    expect(useSessionStore.getState().sessions.find((s) => s.id === 'bg-1')?.awaitingAnswer).toBe(false)
+  })
+
   it('clears stale live turn stats when a new turn starts running', async () => {
     const useSessionStore = await loadSessionStore()
 
