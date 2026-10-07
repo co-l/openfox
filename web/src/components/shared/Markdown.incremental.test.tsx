@@ -21,6 +21,7 @@ vi.mock('react-markdown', async (importOriginal) => {
 vi.mock('../../lib/syntax-highlighter', () => ({
   highlightCode: async (code: string) => code,
   useShikiTheme: () => 'github-dark-default',
+  warmUpHighlighter: () => {},
 }))
 
 const SAMPLE = `## Plan

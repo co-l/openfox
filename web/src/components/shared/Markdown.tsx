@@ -2,7 +2,7 @@ import { memo, useMemo, useEffect, useState, useRef } from 'react'
 import { OptionalScrollArea } from './OptionalScrollArea'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { highlightCode, useShikiTheme } from '../../lib/syntax-highlighter'
+import { highlightCode, useShikiTheme, warmUpHighlighter } from '../../lib/syntax-highlighter'
 import { useDisplaySettings } from '../../hooks/useDisplaySettings'
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
 import { CheckIcon, CopyIcon } from './icons'
@@ -312,6 +312,12 @@ export const Markdown = memo(function Markdown({
   isStreaming = false,
 }: MarkdownProps) {
   const { showSyntaxHighlighting, deferCodeHighlightWhileStreaming } = useDisplaySettings()
+
+  // Compile the common languages while the page is idle, before a code block
+  // needs them (runs once per page).
+  useEffect(() => {
+    if (showSyntaxHighlighting) warmUpHighlighter()
+  }, [showSyntaxHighlighting])
 
   // While streaming, defer syntax highlighting while a code block is still open
   // (odd number of ``` fences) so the block is not re-highlighted on every frame.

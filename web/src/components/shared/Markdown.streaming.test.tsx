@@ -5,10 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Markdown } from './Markdown'
 
 const highlightCodeMock = vi.hoisted(() => vi.fn())
+const warmUpMock = vi.hoisted(() => vi.fn())
 
 vi.mock('../../lib/syntax-highlighter', () => ({
   highlightCode: highlightCodeMock,
   useShikiTheme: () => 'github-dark-default',
+  warmUpHighlighter: warmUpMock,
 }))
 
 const settingsMock = vi.hoisted(() => ({ deferCodeHighlightWhileStreaming: false }))
@@ -151,6 +153,14 @@ describe('Markdown streaming highlight deferral', () => {
       expect(container.querySelector('.shiki img, .shiki b')).toBeNull()
       expect(container.textContent).toContain('if (a < b && c > d) {}')
     })
+  })
+
+  it('warms the highlighter up as soon as a message shows', () => {
+    // Compiling the common languages while the page is idle keeps that cost
+    // off the first code block (see warmUpHighlighter).
+    warmUpMock.mockClear()
+    render(<Markdown content="Plain text, no code yet." />)
+    expect(warmUpMock).toHaveBeenCalled()
   })
 
   it('skips highlighting for plain text blocks', async () => {

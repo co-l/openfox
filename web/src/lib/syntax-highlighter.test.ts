@@ -10,6 +10,7 @@ const mockHighlighter = {
   loadLanguage: mockLoadLanguage,
   dispose: mockDispose,
   codeToHtml: vi.fn(() => '<pre>code</pre>'),
+  codeToTokensBase: vi.fn(() => []),
 }
 
 vi.mock('shiki', () => ({
@@ -74,6 +75,46 @@ describe('syntax-highlighter', () => {
     await Promise.all([mod.loadLanguage('swift'), mod.loadLanguage('swift')])
 
     expect(mockLoadLanguage).toHaveBeenCalledTimes(1)
+  })
+
+  describe('warmUpHighlighter', () => {
+    it('tokenizes one common language per idle slot, once', async () => {
+      // shiki compiles a language's rules the first time it tokenizes it
+      // (~0.5 s for a few languages on a slow phone): doing it while the page
+      // is idle keeps that cost off the first code block shown, e.g. a whole
+      // answer rendered at once when the user comes back to the tab.
+      vi.clearAllMocks()
+      const idle: Array<() => void> = []
+      vi.stubGlobal('requestIdleCallback', (callback: () => void) => {
+        idle.push(callback)
+        return idle.length
+      })
+      try {
+        const mod = await import('./syntax-highlighter')
+        mod.warmUpHighlighter()
+        mod.warmUpHighlighter()
+
+        const languages: string[] = []
+        while (languages.length < mod.WARM_UP_LANGUAGES.length) {
+          // One idle slot runs one language, then queues the next slot.
+          expect(idle).toHaveLength(1)
+          idle.shift()!()
+          await vi.waitFor(() => {
+            expect(mockHighlighter.codeToTokensBase.mock.calls.length).toBe(languages.length + 1)
+          })
+          const call = mockHighlighter.codeToTokensBase.mock.calls.at(-1) as unknown as [string, { lang: string }]
+          languages.push(call[1].lang)
+          await vi.waitFor(() => expect(idle).toHaveLength(1))
+        }
+        idle.shift()!()
+
+        expect(languages).toEqual([...mod.WARM_UP_LANGUAGES])
+        expect(mockHighlighter.codeToTokensBase).toHaveBeenCalledTimes(languages.length)
+        expect(idle).toHaveLength(0)
+      } finally {
+        vi.unstubAllGlobals()
+      }
+    })
   })
 
   describe('useShikiTheme', () => {
