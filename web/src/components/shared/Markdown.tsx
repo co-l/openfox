@@ -343,7 +343,16 @@ export const Markdown = memo(function Markdown({
         </p>
       )
     }
-    if (isStreaming) return renderMarkdown(processed, components)
+    if (isStreaming) {
+      // Re-parsing the whole message on every streamed frame makes each frame
+      // cost O(message length). Parse block by block instead: finished blocks
+      // keep their content, so their memoized parse is reused and only the block
+      // still being written is parsed again. Once streaming ends, the message is
+      // parsed as a whole (below), exactly as before.
+      return splitMarkdownBlocks(processed).map((block, index) => (
+        <MarkdownBlock key={index} content={block} components={components} />
+      ))
+    }
     return getCachedMarkdown(processed, components, muted, showSyntaxHighlighting)
   }, [content, isStreaming, components, muted, showSyntaxHighlighting])
 
@@ -391,6 +400,56 @@ function containsMarkdownSyntax(content: string): boolean {
     content.includes('&')
   )
 }
+
+const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})/
+const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})\s*$/
+
+/**
+ * Split markdown into top-level blocks that parse the same on their own: a new
+ * block starts at a non-indented line following a blank line, outside fenced
+ * code. Indented lines stay with their block (list item paragraphs, nested
+ * content). The blocks join back to the input. The only construct parsed
+ * differently is a loose list (items separated by blank lines), which becomes
+ * consecutive lists; ordered ones keep their numbering through `start`.
+ */
+export function splitMarkdownBlocks(content: string): string[] {
+  const blocks: string[] = []
+  const lines = content.split('\n')
+  let current = ''
+  let fence: { char: string; length: number } | null = null
+  let afterBlank = false
+
+  lines.forEach((line, index) => {
+    const text = index < lines.length - 1 ? `${line}\n` : line
+    if (fence) {
+      const marker = FENCE_CLOSE.exec(line)?.[1]
+      if (marker && marker[0] === fence.char && marker.length >= fence.length) fence = null
+      current += text
+      return
+    }
+    if (afterBlank && /^\S/.test(line) && current.trim()) {
+      blocks.push(current)
+      current = ''
+    }
+    const opening = FENCE_OPEN.exec(line)?.[1]
+    if (opening) fence = { char: opening[0] ?? '`', length: opening.length }
+    afterBlank = line.trim() === ''
+    current += text
+  })
+  if (current) blocks.push(current)
+  return blocks
+}
+
+/** One independently parsed block of a streaming message; memoized on its content. */
+const MarkdownBlock = memo(function MarkdownBlock({
+  content,
+  components,
+}: {
+  content: string
+  components: ReturnType<typeof createMarkdownComponents>
+}) {
+  return renderMarkdown(content, components)
+})
 
 function renderMarkdown(content: string, components: ReturnType<typeof createMarkdownComponents>): React.ReactNode {
   return (
