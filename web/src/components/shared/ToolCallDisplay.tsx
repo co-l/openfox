@@ -155,14 +155,19 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
         getContentSize(result, streamingOutput, args) < COLLAPSE_THRESHOLD))
   const [expanded, setExpanded] = useState(shouldAutoExpand)
 
-  // React to async arrival of forceCompact setting or pending confirmation.
+  // React to async arrival of the forceCompact or collapseLargeToolCalls
+  // setting, or of a pending confirmation. Settings load after the first render
+  // on a page load: without this, collapseLargeToolCalls only applied when
+  // navigating inside an already loaded app.
   const prevForceCompact = useRef(forceCompact)
+  const prevCollapseLarge = useRef(collapseLargeToolCalls)
   useEffect(() => {
-    if (prevForceCompact.current !== forceCompact) {
+    if (prevForceCompact.current !== forceCompact || prevCollapseLarge.current !== collapseLargeToolCalls) {
       prevForceCompact.current = forceCompact
+      prevCollapseLarge.current = collapseLargeToolCalls
       setExpanded(shouldAutoExpand)
     }
-  }, [forceCompact, shouldAutoExpand])
+  }, [forceCompact, collapseLargeToolCalls, shouldAutoExpand])
 
   useEffect(() => {
     if (pendingConfirmation) {
