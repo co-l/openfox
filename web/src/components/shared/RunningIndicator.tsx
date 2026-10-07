@@ -3,6 +3,7 @@ import { useSessionStore } from '../../stores/session'
 import { projectFromSessionStore, statusLabel, type SessionStatusState } from '../../lib/session-status'
 import { formatTimeSince } from '../../lib/format-date'
 import { useT } from '../../hooks/useT'
+import { usePageVisible } from '../../hooks/usePageVisible'
 
 /**
  * Session status indicator shown at the bottom of the chat.
@@ -35,8 +36,11 @@ export function RunningIndicator() {
 
   const lastPromptAt = view.lastPromptAt
   const [now, setNow] = useState(() => Date.now())
+  const visible = usePageVisible()
 
-  const timerActive = lastPromptAt !== null && (state === 'running' || state === 'waiting' || state === 'pausing')
+  // The elapsed time only matters on screen: no ticking while the page is hidden.
+  const timerActive =
+    visible && lastPromptAt !== null && (state === 'running' || state === 'waiting' || state === 'pausing')
 
   useEffect(() => {
     if (!timerActive) return
