@@ -169,7 +169,7 @@ export const useAutoScroll = (
     })
 
     const interval = setInterval(() => {
-      if (!is_active.current) return
+      if (!is_active.current || document.hidden) return
       scroll_to_bottom()
     }, 1000)
 
