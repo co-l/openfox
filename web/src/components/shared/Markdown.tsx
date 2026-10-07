@@ -18,6 +18,30 @@ interface MarkdownProps {
 // Blocks larger than this are rendered without shiki (tool outputs, dumps).
 const SKIP_HIGHLIGHT_THRESHOLD = 5000
 
+// Minimum delay between two highlights of a code block that keeps growing
+// (streaming). The text itself is never delayed, only its colors.
+const STREAMING_HIGHLIGHT_INTERVAL_MS = 400
+
+const SHIKI_LAST_LINE_END = '</span></code></pre>'
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+/**
+ * Append not-yet-highlighted text to shiki html, keeping its structure: the
+ * first line of `tail` continues the last highlighted line, each further line
+ * becomes its own `.line` (block-level, numbered by CSS). Returns null when the
+ * html does not have the expected shape, so the caller falls back to plain text.
+ */
+function appendPlainTail(html: string, tail: string): string | null {
+  const end = html.lastIndexOf(SHIKI_LAST_LINE_END)
+  if (end === -1) return null
+  const [first = '', ...rest] = tail.split('\n')
+  const newLines = rest.map((line) => `\n<span class="line">${escapeHtml(line)}</span>`).join('')
+  return `${html.slice(0, end)}${escapeHtml(first)}</span>${newLines}</code></pre>${html.slice(end + SHIKI_LAST_LINE_END.length)}`
+}
+
 // Cache the parsed markdown output per content string + render options.
 // Non-streaming messages are immutable, so re-parsing them on every re-render
 // (session switch, theme change, unrelated state updates) wastes main-thread
@@ -68,24 +92,65 @@ const CodeBlock = memo(function CodeBlock({
 }) {
   const t = useT()
   const { copied, copy } = useCopyToClipboard()
-  const [html, setHtml] = useState<string | null>(null)
   const shikiTheme = useShikiTheme()
+  // `source` is the code the html was produced for; `key` ties it to the
+  // language and theme so a theme switch re-highlights.
+  const [highlighted, setHighlighted] = useState<{ key: string; source: string; html: string } | null>(null)
   const latestCodeRef = useRef(codeString)
+  // Last highlight started (code + time), whether or not it has resolved yet.
+  const lastRequestRef = useRef<{ key: string; source: string; at: number } | null>(null)
 
   // Skip shiki for plain-text blocks (no syntax to highlight) and for very
   // large blocks (tool outputs, read_file dumps): highlighting tens of
   // thousands of characters costs seconds of main-thread CPU for no benefit.
   const skipHighlight = language === 'text' || codeString.length > SKIP_HIGHLIGHT_THRESHOLD
+  const key = `${language}|${shikiTheme}`
+  const current = highlighted?.key === key ? highlighted : null
+
+  latestCodeRef.current = codeString
 
   useEffect(() => {
     if (!showSyntaxHighlighting || deferHighlight || skipHighlight) return
-    latestCodeRef.current = codeString
-    highlightCode(codeString, language, shikiTheme).then((result) => {
-      if (latestCodeRef.current === codeString) {
-        setHtml(result)
-      }
-    })
-  }, [codeString, language, shikiTheme, showSyntaxHighlighting, deferHighlight, skipHighlight])
+    if (current?.source === codeString) return
+
+    const run = () => {
+      lastRequestRef.current = { key, source: codeString, at: Date.now() }
+      highlightCode(codeString, language, shikiTheme).then((html) => {
+        // Keep a result as long as it still describes the start of the block:
+        // while streaming, the block has usually grown past it by the time it
+        // resolves, and dropping it would leave the block unhighlighted.
+        if (!latestCodeRef.current.startsWith(codeString)) return
+        setHighlighted((previous) =>
+          previous?.key === key && previous.source.length > codeString.length && previous.source.startsWith(codeString)
+            ? previous
+            : { key, source: codeString, html },
+        )
+      })
+    }
+
+    // A block that only grows is being streamed. shiki re-highlights the whole
+    // block every time, so doing it on every frame is the main streaming cost
+    // on slow devices: throttle it. Meanwhile the new text is shown as plain
+    // lines after the highlighted part (appendPlainTail).
+    const last = lastRequestRef.current
+    const growing = last !== null && last.key === key && codeString.startsWith(last.source)
+    const wait = growing ? last.at + STREAMING_HIGHLIGHT_INTERVAL_MS - Date.now() : 0
+    if (wait <= 0) {
+      run()
+      return
+    }
+    const timer = setTimeout(run, wait)
+    return () => clearTimeout(timer)
+  }, [codeString, key, language, shikiTheme, showSyntaxHighlighting, deferHighlight, skipHighlight, current])
+
+  const html =
+    current === null
+      ? null
+      : current.source === codeString
+        ? current.html
+        : codeString.startsWith(current.source)
+          ? appendPlainTail(current.html, codeString.slice(current.source.length))
+          : null
 
   return (
     <div className="relative group my-1.5 rounded overflow-hidden">
