@@ -1234,6 +1234,21 @@ describe('SessionManager', () => {
       expect(mockProviderManager.getModelSettings).toHaveBeenCalledWith('session-provider', 'session-model', 'thinking')
     })
 
+    it('getCurrentModelSettings forces non-thinking mode when asked (compaction retry)', () => {
+      ;(mockProviderManager.resolveModelEffort as ReturnType<typeof vi.fn>).mockReturnValue('high')
+      const session = manager.createSession(projectId, 'Test Session', 'session-provider', 'session-model')
+      manager.setSessionProvider(session.id, 'session-provider', 'session-model', true, 'high')
+      manager.setSessionProviderActive(session.id, true)
+
+      manager.getCurrentModelSettings(session.id, undefined, { thinking: false })
+
+      expect(mockProviderManager.getModelSettings).toHaveBeenLastCalledWith(
+        'session-provider',
+        'session-model',
+        'non-thinking',
+      )
+    })
+
     it('getCurrentModelSettings defaults to thinking mode when no effort is resolved', () => {
       ;(mockProviderManager.resolveModelEffort as ReturnType<typeof vi.fn>).mockReturnValue(undefined)
       const session = manager.createSession(projectId, 'Test Session', 'session-provider', 'session-model')
