@@ -336,7 +336,10 @@ export function readProjects(): ProjectsData | undefined {
 export async function fetchProject(projectId: string): Promise<Project | null> {
   if (!projectId) return null
   const res = await authFetch(`/api/projects/${projectId}`)
-  if (!res.ok) return null
+  // null means the project does not exist; any other failure says nothing
+  // about it and must not be taken for that (see useProject's notFound).
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(`Failed to load project (${res.status})`)
   const data = (await res.json()) as { project?: Project }
   return data.project ?? null
 }
