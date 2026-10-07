@@ -62,7 +62,7 @@ export const ThinkingBlockToggle = memo(function ThinkingBlockToggle({
       aria-expanded={expanded}
     >
       {expanded ? (
-        <ThinkingBlock content={content} />
+        <ThinkingBlock content={content} isStreaming={isStreaming && !thinkingFinished} />
       ) : (
         <ThinkingSummary
           messageId={messageId}

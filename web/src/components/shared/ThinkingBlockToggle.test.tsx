@@ -4,7 +4,9 @@ import { cleanup, fireEvent, render } from '@testing-library/react'
 import { ThinkingBlockToggle } from './ThinkingBlockToggle'
 
 vi.mock('./ThinkingBlock', () => ({
-  ThinkingBlock: ({ content }: { content: string }) => <div>block:{content}</div>,
+  ThinkingBlock: ({ content, isStreaming }: { content: string; isStreaming?: boolean }) => (
+    <div data-streaming={String(Boolean(isStreaming))}>block:{content}</div>
+  ),
 }))
 
 afterEach(cleanup)
@@ -161,5 +163,26 @@ describe('ThinkingBlockToggle', () => {
     )
 
     expect(remounted.container.textContent).toContain('Thought for')
+  })
+
+  it('renders the reasoning as streaming only while it is being written', () => {
+    const streamingOf = (isStreaming: boolean, thinkingFinished: boolean) => {
+      const { container } = render(
+        <ThinkingBlockToggle
+          messageId={`t-stream-${isStreaming}-${thinkingFinished}`}
+          content="thoughts"
+          isStreaming={isStreaming}
+          thinkingFinished={thinkingFinished}
+          showThinking
+        />,
+      )
+      const value = container.querySelector('[data-streaming]')?.getAttribute('data-streaming')
+      cleanup()
+      return value
+    }
+
+    expect(streamingOf(true, false)).toBe('true')
+    expect(streamingOf(true, true)).toBe('false')
+    expect(streamingOf(false, false)).toBe('false')
   })
 })

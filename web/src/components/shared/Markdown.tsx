@@ -2,7 +2,7 @@ import { memo, useMemo, useEffect, useState, useRef } from 'react'
 import { OptionalScrollArea } from './OptionalScrollArea'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { highlightCode, useShikiTheme } from '../../lib/syntax-highlighter'
+import { highlightCode, useShikiTheme, warmUpHighlighter } from '../../lib/syntax-highlighter'
 import { useDisplaySettings } from '../../hooks/useDisplaySettings'
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
 import { CheckIcon, CopyIcon } from './icons'
@@ -17,6 +17,30 @@ interface MarkdownProps {
 
 // Blocks larger than this are rendered without shiki (tool outputs, dumps).
 const SKIP_HIGHLIGHT_THRESHOLD = 5000
+
+// Minimum delay between two highlights of a code block that keeps growing
+// (streaming). The text itself is never delayed, only its colors.
+const STREAMING_HIGHLIGHT_INTERVAL_MS = 400
+
+const SHIKI_LAST_LINE_END = '</span></code></pre>'
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+/**
+ * Append not-yet-highlighted text to shiki html, keeping its structure: the
+ * first line of `tail` continues the last highlighted line, each further line
+ * becomes its own `.line` (block-level, numbered by CSS). Returns null when the
+ * html does not have the expected shape, so the caller falls back to plain text.
+ */
+function appendPlainTail(html: string, tail: string): string | null {
+  const end = html.lastIndexOf(SHIKI_LAST_LINE_END)
+  if (end === -1) return null
+  const [first = '', ...rest] = tail.split('\n')
+  const newLines = rest.map((line) => `\n<span class="line">${escapeHtml(line)}</span>`).join('')
+  return `${html.slice(0, end)}${escapeHtml(first)}</span>${newLines}</code></pre>${html.slice(end + SHIKI_LAST_LINE_END.length)}`
+}
 
 // Cache the parsed markdown output per content string + render options.
 // Non-streaming messages are immutable, so re-parsing them on every re-render
@@ -68,24 +92,65 @@ const CodeBlock = memo(function CodeBlock({
 }) {
   const t = useT()
   const { copied, copy } = useCopyToClipboard()
-  const [html, setHtml] = useState<string | null>(null)
   const shikiTheme = useShikiTheme()
+  // `source` is the code the html was produced for; `key` ties it to the
+  // language and theme so a theme switch re-highlights.
+  const [highlighted, setHighlighted] = useState<{ key: string; source: string; html: string } | null>(null)
   const latestCodeRef = useRef(codeString)
+  // Last highlight started (code + time), whether or not it has resolved yet.
+  const lastRequestRef = useRef<{ key: string; source: string; at: number } | null>(null)
 
   // Skip shiki for plain-text blocks (no syntax to highlight) and for very
   // large blocks (tool outputs, read_file dumps): highlighting tens of
   // thousands of characters costs seconds of main-thread CPU for no benefit.
   const skipHighlight = language === 'text' || codeString.length > SKIP_HIGHLIGHT_THRESHOLD
+  const key = `${language}|${shikiTheme}`
+  const current = highlighted?.key === key ? highlighted : null
+
+  latestCodeRef.current = codeString
 
   useEffect(() => {
     if (!showSyntaxHighlighting || deferHighlight || skipHighlight) return
-    latestCodeRef.current = codeString
-    highlightCode(codeString, language, shikiTheme).then((result) => {
-      if (latestCodeRef.current === codeString) {
-        setHtml(result)
-      }
-    })
-  }, [codeString, language, shikiTheme, showSyntaxHighlighting, deferHighlight, skipHighlight])
+    if (current?.source === codeString) return
+
+    const run = () => {
+      lastRequestRef.current = { key, source: codeString, at: Date.now() }
+      highlightCode(codeString, language, shikiTheme).then((html) => {
+        // Keep a result as long as it still describes the start of the block:
+        // while streaming, the block has usually grown past it by the time it
+        // resolves, and dropping it would leave the block unhighlighted.
+        if (!latestCodeRef.current.startsWith(codeString)) return
+        setHighlighted((previous) =>
+          previous?.key === key && previous.source.length > codeString.length && previous.source.startsWith(codeString)
+            ? previous
+            : { key, source: codeString, html },
+        )
+      })
+    }
+
+    // A block that only grows is being streamed. shiki re-highlights the whole
+    // block every time, so doing it on every frame is the main streaming cost
+    // on slow devices: throttle it. Meanwhile the new text is shown as plain
+    // lines after the highlighted part (appendPlainTail).
+    const last = lastRequestRef.current
+    const growing = last !== null && last.key === key && codeString.startsWith(last.source)
+    const wait = growing ? last.at + STREAMING_HIGHLIGHT_INTERVAL_MS - Date.now() : 0
+    if (wait <= 0) {
+      run()
+      return
+    }
+    const timer = setTimeout(run, wait)
+    return () => clearTimeout(timer)
+  }, [codeString, key, language, shikiTheme, showSyntaxHighlighting, deferHighlight, skipHighlight, current])
+
+  const html =
+    current === null
+      ? null
+      : current.source === codeString
+        ? current.html
+        : codeString.startsWith(current.source)
+          ? appendPlainTail(current.html, codeString.slice(current.source.length))
+          : null
 
   return (
     <div className="relative group my-1.5 rounded overflow-hidden">
@@ -248,6 +313,12 @@ export const Markdown = memo(function Markdown({
 }: MarkdownProps) {
   const { showSyntaxHighlighting, deferCodeHighlightWhileStreaming } = useDisplaySettings()
 
+  // Compile the common languages while the page is idle, before a code block
+  // needs them (runs once per page).
+  useEffect(() => {
+    if (showSyntaxHighlighting) warmUpHighlighter()
+  }, [showSyntaxHighlighting])
+
   // While streaming, defer syntax highlighting while a code block is still open
   // (odd number of ``` fences) so the block is not re-highlighted on every frame.
   // Opt-in: default keeps code highlighted progressively as it streams in; the
@@ -278,7 +349,26 @@ export const Markdown = memo(function Markdown({
         </p>
       )
     }
-    if (isStreaming) return renderMarkdown(processed, components)
+    if (isStreaming || !hasCrossBlockReferences(processed)) {
+      // Re-parsing the whole message on every streamed frame makes each frame
+      // cost O(message length). Parse block by block instead: finished blocks
+      // keep their content, so their memoized parse is reused and only the block
+      // still being written is parsed again. The blocks parse like the whole
+      // message (lists are never split), so they are kept once streaming ends:
+      // parsing it all again then was one long task. A message whose links or
+      // footnotes are defined in another block is parsed as a whole (below).
+      // A finished block (any block once streaming ends) goes through the parse
+      // cache like a finished message did; the block still being written does not.
+      const blocks = splitMarkdownBlocks(processed)
+      return blocks.map((block, index) => (
+        <MarkdownBlock
+          key={index}
+          content={block}
+          components={components}
+          cache={!isStreaming || index < blocks.length - 1 ? { muted, showSyntaxHighlighting } : null}
+        />
+      ))
+    }
     return getCachedMarkdown(processed, components, muted, showSyntaxHighlighting)
   }, [content, isStreaming, components, muted, showSyntaxHighlighting])
 
@@ -326,6 +416,79 @@ function containsMarkdownSyntax(content: string): boolean {
     content.includes('&')
   )
 }
+
+const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})/
+const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})\s*$/
+
+/**
+ * Split markdown into top-level blocks that parse the same on their own: a new
+ * block starts at a non-indented line following a blank line, outside fenced
+ * code. Indented lines stay with their block (list item paragraphs, nested
+ * content). The blocks join back to the input. The only construct parsed
+ * differently is a loose list (items separated by blank lines), which becomes
+ * consecutive lists; ordered ones keep their numbering through `start`.
+ */
+const LIST_ITEM = /^([-*+]|\d{1,9}[.)])(\s|$)/
+const LIST_ITEM_LINE = /^([-*+]|\d{1,9}[.)])(\s|$)/m
+
+/**
+ * A reference definition (`[id]: url`) or footnote applies across blocks, so a
+ * message using one is parsed as a whole once finished.
+ */
+function hasCrossBlockReferences(content: string): boolean {
+  return /^ {0,3}\[[^\]\n]+\]:/m.test(content) || content.includes('[^')
+}
+
+export function splitMarkdownBlocks(content: string): string[] {
+  const blocks: string[] = []
+  const lines = content.split('\n')
+  let current = ''
+  let fence: { char: string; length: number } | null = null
+  let afterBlank = false
+
+  lines.forEach((line, index) => {
+    const text = index < lines.length - 1 ? `${line}\n` : line
+    if (fence) {
+      const marker = FENCE_CLOSE.exec(line)?.[1]
+      if (marker && marker[0] === fence.char && marker.length >= fence.length) fence = null
+      current += text
+      return
+    }
+    // A list item after a blank line continues the list (a loose list) when the
+    // block already has one: splitting there would render two lists.
+    if (afterBlank && /^\S/.test(line) && current.trim() && !(LIST_ITEM.test(line) && LIST_ITEM_LINE.test(current))) {
+      blocks.push(current)
+      current = ''
+    }
+    const opening = FENCE_OPEN.exec(line)?.[1]
+    if (opening) fence = { char: opening[0] ?? '`', length: opening.length }
+    afterBlank = line.trim() === ''
+    current += text
+  })
+  if (current) blocks.push(current)
+  return blocks
+}
+
+/** One independently parsed block of a message; memoized on its content. */
+const MarkdownBlock = memo(
+  function MarkdownBlock({
+    content,
+    components,
+    cache,
+  }: {
+    content: string
+    components: ReturnType<typeof createMarkdownComponents>
+    cache: { muted: boolean; showSyntaxHighlighting: boolean } | null
+  }) {
+    return cache
+      ? getCachedMarkdown(content, components, cache.muted, cache.showSyntaxHighlighting)
+      : renderMarkdown(content, components)
+  },
+  (prev, next) =>
+    prev.content === next.content &&
+    prev.components === next.components &&
+    (prev.cache === null) === (next.cache === null),
+)
 
 function renderMarkdown(content: string, components: ReturnType<typeof createMarkdownComponents>): React.ReactNode {
   return (
