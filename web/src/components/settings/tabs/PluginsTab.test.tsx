@@ -178,6 +178,19 @@ describe('PluginsTab', () => {
     expect(refresh).toHaveBeenCalled()
   })
 
+  it('lets the card actions wrap below the header on narrow screens', () => {
+    // On a phone the four action buttons were wider than their column: they
+    // overflowed over the title and description and squeezed them into a
+    // column a few characters wide. The card stacks below the sm breakpoint
+    // and the buttons wrap instead.
+    render(<PluginsTab />)
+    const actions = screen.getByRole('button', { name: 'Reinstall' }).parentElement!
+    expect(actions.className).toContain('flex-wrap')
+    const row = screen.getByText('Demo plugin').closest('.rounded-lg')!.firstElementChild!
+    expect(row.className).toContain('flex-col')
+    expect(row.className).toContain('sm:flex-row')
+  })
+
   it('opens the schema-driven settings form when a section is declared', async () => {
     render(<PluginsTab />)
     await userEvent.setup().click(screen.getByRole('button', { name: 'Settings' }))

@@ -116,7 +116,7 @@ function PluginCardLayout({
 }) {
   return (
     <div className="border border-border rounded-lg p-4 flex flex-col justify-between">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div className="flex-1 min-w-0">{header}</div>
         {right}
       </div>
@@ -213,9 +213,9 @@ function InstalledPluginCard({ plugin }: { plugin: PluginInfo }) {
         </>
       }
       right={
-        <div className="flex flex-col items-end gap-2">
+        <div className="flex flex-col items-start gap-2 sm:items-end">
           <Toggle enabled={plugin.enabled} disabled={busy} onClick={() => void toggleEnabled(!plugin.enabled)} />
-          <div className="flex gap-1">
+          <div className="flex flex-wrap gap-1 sm:justify-end">
             {section ? (
               <Button variant="secondary" size="sm" onClick={() => setShowSettings((open) => !open)}>
                 {t({ en: 'Settings', fr: 'Paramètres' })}
