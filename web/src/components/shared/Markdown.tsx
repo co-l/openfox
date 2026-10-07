@@ -349,14 +349,24 @@ export const Markdown = memo(function Markdown({
         </p>
       )
     }
-    if (isStreaming) {
+    if (isStreaming || !hasCrossBlockReferences(processed)) {
       // Re-parsing the whole message on every streamed frame makes each frame
       // cost O(message length). Parse block by block instead: finished blocks
       // keep their content, so their memoized parse is reused and only the block
-      // still being written is parsed again. Once streaming ends, the message is
-      // parsed as a whole (below), exactly as before.
-      return splitMarkdownBlocks(processed).map((block, index) => (
-        <MarkdownBlock key={index} content={block} components={components} />
+      // still being written is parsed again. The blocks parse like the whole
+      // message (lists are never split), so they are kept once streaming ends:
+      // parsing it all again then was one long task. A message whose links or
+      // footnotes are defined in another block is parsed as a whole (below).
+      // A finished block (any block once streaming ends) goes through the parse
+      // cache like a finished message did; the block still being written does not.
+      const blocks = splitMarkdownBlocks(processed)
+      return blocks.map((block, index) => (
+        <MarkdownBlock
+          key={index}
+          content={block}
+          components={components}
+          cache={!isStreaming || index < blocks.length - 1 ? { muted, showSyntaxHighlighting } : null}
+        />
       ))
     }
     return getCachedMarkdown(processed, components, muted, showSyntaxHighlighting)
@@ -418,6 +428,17 @@ const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})\s*$/
  * differently is a loose list (items separated by blank lines), which becomes
  * consecutive lists; ordered ones keep their numbering through `start`.
  */
+const LIST_ITEM = /^([-*+]|\d{1,9}[.)])(\s|$)/
+const LIST_ITEM_LINE = /^([-*+]|\d{1,9}[.)])(\s|$)/m
+
+/**
+ * A reference definition (`[id]: url`) or footnote applies across blocks, so a
+ * message using one is parsed as a whole once finished.
+ */
+function hasCrossBlockReferences(content: string): boolean {
+  return /^ {0,3}\[[^\]\n]+\]:/m.test(content) || content.includes('[^')
+}
+
 export function splitMarkdownBlocks(content: string): string[] {
   const blocks: string[] = []
   const lines = content.split('\n')
@@ -433,7 +454,9 @@ export function splitMarkdownBlocks(content: string): string[] {
       current += text
       return
     }
-    if (afterBlank && /^\S/.test(line) && current.trim()) {
+    // A list item after a blank line continues the list (a loose list) when the
+    // block already has one: splitting there would render two lists.
+    if (afterBlank && /^\S/.test(line) && current.trim() && !(LIST_ITEM.test(line) && LIST_ITEM_LINE.test(current))) {
       blocks.push(current)
       current = ''
     }
@@ -446,16 +469,26 @@ export function splitMarkdownBlocks(content: string): string[] {
   return blocks
 }
 
-/** One independently parsed block of a streaming message; memoized on its content. */
-const MarkdownBlock = memo(function MarkdownBlock({
-  content,
-  components,
-}: {
-  content: string
-  components: ReturnType<typeof createMarkdownComponents>
-}) {
-  return renderMarkdown(content, components)
-})
+/** One independently parsed block of a message; memoized on its content. */
+const MarkdownBlock = memo(
+  function MarkdownBlock({
+    content,
+    components,
+    cache,
+  }: {
+    content: string
+    components: ReturnType<typeof createMarkdownComponents>
+    cache: { muted: boolean; showSyntaxHighlighting: boolean } | null
+  }) {
+    return cache
+      ? getCachedMarkdown(content, components, cache.muted, cache.showSyntaxHighlighting)
+      : renderMarkdown(content, components)
+  },
+  (prev, next) =>
+    prev.content === next.content &&
+    prev.components === next.components &&
+    (prev.cache === null) === (next.cache === null),
+)
 
 function renderMarkdown(content: string, components: ReturnType<typeof createMarkdownComponents>): React.ReactNode {
   return (
