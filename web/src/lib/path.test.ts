@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { pathBasename, pathBreadcrumbs, truncateMiddle } from './path'
+import { joinPath, pathBasename, pathBreadcrumbs, truncateMiddle } from './path'
 
 describe('pathBasename', () => {
   it('returns the last segment of a Unix path', () => {
@@ -45,6 +45,20 @@ describe('pathBreadcrumbs', () => {
 
   it('returns no crumbs for an empty path', () => {
     expect(pathBreadcrumbs('')).toEqual([])
+  })
+})
+
+describe('joinPath', () => {
+  it('joins using the base separator on Windows', () => {
+    expect(joinPath('D:\\projects', 'my-project')).toBe('D:\\projects\\my-project')
+  })
+
+  it('joins using the base separator on Unix', () => {
+    expect(joinPath('/home/user', 'my-project')).toBe('/home/user/my-project')
+  })
+
+  it('does not double the separator on a drive root', () => {
+    expect(joinPath('D:\\', 'my-project')).toBe('D:\\my-project')
   })
 })
 

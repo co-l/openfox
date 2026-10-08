@@ -10,6 +10,7 @@ export { ChevronDownIcon, ChevronUpIcon, ChevronRightIcon } from './ChevronDownI
 export { ClipboardIcon } from './ClipboardIcon'
 export { CopyIcon } from './CopyIcon'
 export { DownloadIcon } from './DownloadIcon'
+export { DriveIcon } from './DriveIcon'
 export { UploadIcon } from './UploadIcon'
 export { EditSmallIcon } from './EditSmallIcon'
 export { PencilIcon } from './PencilIcon'

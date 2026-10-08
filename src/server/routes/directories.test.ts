@@ -4,6 +4,7 @@ import { mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createDirectoryRoutes } from './directories.js'
+import { DRIVES_VIEW } from '../../shared/directory.js'
 
 describe('GET /api/directories', () => {
   let app: express.Express
@@ -60,6 +61,34 @@ describe('GET /api/directories', () => {
     const linked = body.directories.find((d) => d.name === 'linked')
     expect(linked).toBeDefined()
     expect(linked!.path).toBe(join(testDir, 'linked'))
+  })
+
+  describe('drive view', () => {
+    it('GET /api/directories/drives returns the drives list', async () => {
+      const res = await fetch(`${baseUrl}/api/directories/drives`)
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as { drives: Array<{ name: string; path: string }> }
+      if (process.platform === 'win32') {
+        expect(body.drives.length).toBeGreaterThan(0)
+        expect(body.drives.some((d) => d.path === 'C:\\')).toBe(true)
+      } else {
+        expect(body.drives).toEqual([{ name: '/', path: '/' }])
+      }
+    })
+
+    it.skipIf(process.platform !== 'win32')('a drive root ascends to the drives view instead of stopping', async () => {
+      const res = await fetch(`${baseUrl}/api/directories?path=${encodeURIComponent('C:\\')}`)
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as { parent: string | null }
+      expect(body.parent).toBe(DRIVES_VIEW)
+    })
+
+    it.skipIf(process.platform === 'win32')('posix keeps a null parent at the root', async () => {
+      const res = await fetch(`${baseUrl}/api/directories?path=${encodeURIComponent('/')}`)
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as { parent: string | null }
+      expect(body.parent).toBeNull()
+    })
   })
 
   describe.skipIf(process.platform === 'win32')('broken symlinks', () => {
