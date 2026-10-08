@@ -209,6 +209,7 @@ ${listing}
 To call a sub-agent, use the call_sub_agent tool with:
 - subAgentType: The ID of the sub-agent
 - prompt: Clear description of what you need
+- subAgentId: (Optional) ID of an existing sub-agent to resume. If a previous sub-agent was interrupted or you want it to continue its work, provide its subAgentId so it resumes with all its prior context rather than restarting from zero.
 `
 }
 

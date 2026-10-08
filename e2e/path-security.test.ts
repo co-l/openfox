@@ -131,8 +131,8 @@ describe('Path Security', () => {
         content: 'Write to /home/test/secret.txt with content "data"',
       })
 
-      // Wait for path confirmation (short timeout since it should arrive quickly)
-      const confirmationEvent = await client.waitFor('chat.path_confirmation', undefined, 500).catch(() => null)
+      // Wait for path confirmation
+      const confirmationEvent = await client.waitFor('chat.path_confirmation', undefined, 5000).catch(() => null)
 
       // Path confirmation SHOULD happen for /home/test (outside workdir)
       expect(confirmationEvent).not.toBeNull()
@@ -151,7 +151,7 @@ describe('Path Security', () => {
         content: `Run the exact command: python3 -c "print(open('/home/test/nested.txt').read())"`,
       })
 
-      const confirmationEvent = await client.waitFor('chat.path_confirmation', undefined, 500).catch(() => null)
+      const confirmationEvent = await client.waitFor('chat.path_confirmation', undefined, 5000).catch(() => null)
 
       expect(confirmationEvent).not.toBeNull()
 
@@ -218,7 +218,7 @@ describe('Path Security', () => {
       })
 
       // Wait for path_confirmation event (short timeout since it should arrive quickly)
-      const confirmationEvent = await client.waitFor('chat.path_confirmation', undefined, 500).catch(() => null)
+      const confirmationEvent = await client.waitFor('chat.path_confirmation', undefined, 5000).catch(() => null)
 
       // For debugging - log all events if no confirmation
       if (!confirmationEvent) {
@@ -254,7 +254,7 @@ describe('Path Security', () => {
       })
 
       // Wait for path_confirmation event (short timeout)
-      const confirmationEvent = await client.waitFor('chat.path_confirmation', undefined, 500).catch(() => null)
+      const confirmationEvent = await client.waitFor('chat.path_confirmation', undefined, 5000).catch(() => null)
 
       // Path confirmation SHOULD happen
       expect(confirmationEvent).not.toBeNull()

@@ -253,3 +253,42 @@ Need to trace through a session, understand why the agent did something, or find
 ## Production Config
 
 NEVER modify production configuration files (e.g., `~/.config/openfox/`). These are user-specific and should only be changed by the user.
+
+## Cross-Project Dependencies
+
+**Consumes**: OpenFox plugins (in `openfox-plugins/`), Agent Office (via `openfox-plugins/openfox-agent-office`).
+
+**Consumed by**: all OpenFox plugins (via `openfox/provider` or `openfox/plugin`), `openfox-plugins/openfox-agent-office` (runs Agent Office as a managed sub-process), `agent-office-plugins/agentoffice-openfox` (reverse bridge).
+
+**Touchpoints**:
+
+- Plugins: `src/plugin/index.ts` (registry), `src/provider/index.ts` (LLM providers)
+- Agent Office: `src/server/routes/` (HTTP API), `src/server/ws/` (WebSocket)
+
+## Known Gotchas
+
+- `dist/` is the entry point loaded by plugins, not `src/`. Always build after modifying.
+- `e2e-playwright/` is heavy, read only for e2e tests.
+- Dev server may already be running. Do not kill it.
+- `.test.ts` files are co-located in `src/`, not in a separate `tests/` directory.
+- `credentials.json` and `credentials.key` in provider plugins must never be committed.
+
+## Do Not Read / Do Not Touch
+
+- `node_modules/`, `dist/`, `build/`, `.git/`
+- `e2e-playwright/` (except for e2e tests)
+- `~/.config/openfox/`, `~/.local/share/openfox/` (production config)
+
+## Further Reading
+
+- [docs/PROJECT.md](docs/PROJECT.md) — detailed description, internal architecture, primary flows
+- [docs/PLUGINS.md](docs/PLUGINS.md) — plugin architecture
+- [docs/PLUGIN-ARCHITECTURE.md](docs/PLUGIN-ARCHITECTURE.md) — detailed plugin API
+- [docs/WORKFLOWS.md](docs/WORKFLOWS.md) — workflow format
+- [docs/I18N.md](docs/I18N.md) — internationalization
+- [docs/SESSION-DEBUGGING.md](docs/SESSION-DEBUGGING.md) — session debugging
+- [docs/RELEASE.md](docs/RELEASE.md) — release procedure
+
+---
+
+> After any change affecting structure, a command, a convention, an inter-project contract, or a primary flow, update this file and/or `docs/PROJECT.md` in the same commit. If any information here is inaccurate, fix it.

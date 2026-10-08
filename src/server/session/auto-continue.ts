@@ -12,6 +12,7 @@
 import type { StoredEvent, TurnEvent } from '../events/types.js'
 import { createMessageDoneEvent } from '../chat/stream-pure.js'
 import { CONTINUE_PROMPT, CONTINUE_AFTER_STREAM_ERROR_PROMPT } from '../chat/agent-loop.js'
+import { findInterruptedSubAgentsFromEvents } from './sub-agent-recovery.js'
 import { logger } from '../utils/logger.js'
 
 export { CONTINUE_PROMPT, CONTINUE_AFTER_STREAM_ERROR_PROMPT }
@@ -30,6 +31,14 @@ export interface BootContinuationPlan {
 export function planBootContinuation(events: StoredEvent[], hasActiveWorkflow: boolean): BootContinuationPlan | null {
   if (hasActiveWorkflow) return null
   const finalizeMessageId = findUnfinalizedAssistantMessage(events)
+  const interruptedSubAgents = findInterruptedSubAgentsFromEvents(events)
+
+  if (interruptedSubAgents.length > 0) {
+    const list = interruptedSubAgents.map((sa) => `- ${sa.subAgentType} (id: ${sa.subAgentId})`).join('\n')
+    const content = `Execution was interrupted while sub-agent(s) were running:\n${list}\nDo NOT restart them from zero. Resume each sub-agent by calling call_sub_agent with its subAgentId and prompt: "Continue where you left off".`
+    return finalizeMessageId ? { finalizeMessageId, content } : { content }
+  }
+
   return finalizeMessageId
     ? { finalizeMessageId, content: CONTINUE_AFTER_STREAM_ERROR_PROMPT }
     : { content: CONTINUE_PROMPT }

@@ -49,6 +49,7 @@ const CAPABILITY_ORDER = [
   'transforms',
   'dangerLevels',
   'vcs',
+  'thinkingGuards',
 ] as const
 
 function contributionSummaryParts(summary: PluginContributionSummary): { key: string; count: number }[] {
@@ -67,6 +68,7 @@ function contributionSummaryParts(summary: PluginContributionSummary): { key: st
     { key: 'transforms', count: summary.messageTransforms },
     { key: 'dangerLevels', count: summary.dangerLevels },
     { key: 'vcsProviders', count: summary.vcsProviders },
+    { key: 'thinkingGuards', count: summary.thinkingGuards },
   ].filter((entry) => entry.count > 0)
 }
 

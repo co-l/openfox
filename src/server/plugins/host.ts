@@ -52,6 +52,7 @@ import { setPluginModelMetadataProviders } from './model-metadata.js'
 import { setPluginMessageTransforms } from './message-transforms.js'
 import { setPluginDangerLevels } from './danger-levels.js'
 import { setPluginVcsProviders } from './vcs-providers.js'
+import { setPluginThinkingGuards } from './thinking-guards.js'
 import { setPluginHookEmitter } from './hook-emitter.js'
 import { PluginUpdateChecker, type PluginUpdateInfo } from './update-checker.js'
 
@@ -388,6 +389,7 @@ export class PluginHost {
     setPluginMessageTransforms(this.registry.getMessageTransforms())
     setPluginDangerLevels(this.registry.getDangerLevels())
     setPluginVcsProviders(this.registry.getVcsProviders())
+    setPluginThinkingGuards(this.registry.getThinkingGuards())
     void this.refreshSkillSources()
   }
 

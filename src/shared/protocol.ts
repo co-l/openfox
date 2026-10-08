@@ -103,6 +103,7 @@ export type ServerMessageType =
   | 'chat.todo' // Todo list update (displayed in chat)
   | 'chat.progress' // Progress update (e.g., "Generating summary...")
   | 'chat.format_retry' // Model used wrong format (XML tools), retrying
+  | 'chat.thinking_guard' // Thinking loop guard aborted a repetitive reasoning stream
   | 'chat.message' // Full message added (system-generated, etc.)
   | 'chat.message_updated' // Message updated (e.g., isStreaming changed)
   | 'chat.stats' // Live cumulative turn stats while a turn is running
@@ -307,6 +308,15 @@ export interface ChatFormatRetryPayload {
   pattern?: string
   field?: string
   matchedContent?: string
+}
+
+export interface ChatThinkingGuardPayload {
+  attempt: number
+  maxAttempts: number
+  guardId: string
+  pluginId: string
+  repeatedText?: string
+  count?: number
 }
 
 export interface ChatVisionFallbackPayload {

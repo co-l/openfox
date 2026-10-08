@@ -805,6 +805,16 @@ export function handleServerMessage(
       break
     }
 
+    case 'chat.thinking_guard': {
+      // A plugin thinking guard aborted a repetitive reasoning stream. Same
+      // treatment as format_retry: acknowledge, mark background sessions unread.
+      // The injected correction message (chat.message) renders the visible notice.
+      if (!isLivePane(get(), message.sessionId)) {
+        markBackgroundSessionUnread(set, message)
+      }
+      break
+    }
+
     case 'chat.done': {
       const sessionId = message.sessionId
       const payload = message.payload as ChatDonePayload

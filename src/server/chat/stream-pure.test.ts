@@ -14,6 +14,7 @@ import {
   streamLLMPure,
   extractTopLevelPathArg,
 } from './stream-pure.js'
+import { setPluginThinkingGuards, clearPluginThinkingGuards } from '../plugins/thinking-guards.js'
 
 function createMockClient(events: LLMStreamEvent[]) {
   return {
@@ -743,6 +744,34 @@ describe('stream-pure', () => {
   })
 
   describe('retry pattern matching mid-stream', () => {
+    beforeEach(() => {
+      setPluginThinkingGuards([
+        {
+          pluginId: 'test-plugin',
+          guard: {
+            id: 'test-loop-guard',
+            evaluateThinking: (accumulated: string) => {
+              const sentence =
+                'This is a repetitive thought that keeps repeating over and over again in the thinking block.'
+              const count = accumulated.split(sentence).length - 1
+              if (count >= 3) {
+                return {
+                  action: 'abort' as const,
+                  repeatedText: sentence,
+                  count,
+                  message: 'Loop detected',
+                }
+              }
+              return null
+            },
+          },
+        },
+      ])
+    })
+
+    afterEach(() => {
+      clearPluginThinkingGuards()
+    })
     it('aborts stream and returns patternMatch when content matches', async () => {
       const client = createMockClient([
         { type: 'text_delta', content: 'hello ' },
@@ -797,6 +826,33 @@ describe('stream-pure', () => {
       expect(result.patternMatch).toBeDefined()
       expect(result.patternMatch!.field).toBe('thinking')
       expect(result.patternMatch!.matchedContent).toContain('unsure')
+    })
+
+    it('aborts stream when thinking guard detects repetitive loop', async () => {
+      const sentence = 'This is a repetitive thought that keeps repeating over and over again in the thinking block.'
+      const client = createMockClient([
+        { type: 'thinking_delta', content: sentence + ' ' },
+        { type: 'thinking_delta', content: sentence + ' ' },
+        { type: 'thinking_delta', content: sentence + ' ' },
+        { type: 'done', response: mockResponse },
+      ])
+      const gen = streamLLMPure({
+        messageId: 'msg-thinking-guard',
+        systemPrompt: 'system',
+        llmClient: client,
+        messages: [{ role: 'user', content: 'hello' }],
+      })
+      const events: Array<{ type: string; data: unknown }> = []
+      const result = await consumeStreamGenerator(gen, (event) => {
+        events.push(event)
+      })
+      expect(result.thinkingGuardMatch).toBeDefined()
+      expect(result.thinkingGuardMatch!.action).toBe('abort')
+      expect(result.thinkingGuardMatch!.repeatedText).toContain('repetitive thought')
+      expect(result.thinkingGuardMatch!.count).toBeGreaterThanOrEqual(3)
+      // Consumed thinking tokens are accounted for (not silently free).
+      expect(result.usage.completionTokens).toBeGreaterThan(0)
+      expect(result.usage.cacheSource).toBe('estimated')
     })
 
     it('completes normally when no pattern matches', async () => {

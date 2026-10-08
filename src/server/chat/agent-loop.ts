@@ -616,6 +616,77 @@ export async function runTopLevelAgentLoop(
       continue
     }
 
+    // Check if a thinking guard aborted the stream due to repetitive thinking
+    if (result.thinkingGuardMatch) {
+      if (assistantMessageStarted) {
+        append(createMessageDoneEvent(assistantMsgId, { partial: true }))
+        onMessage?.(createChatMessageUpdatedMessage(assistantMsgId, { isStreaming: false, partial: true }))
+      }
+
+      if (!retryLimiter.canRetry()) {
+        append({
+          type: 'chat.error',
+          data: {
+            error: serverT(
+              {
+                en: 'Thinking loop guard retry limit exceeded after {{count}} retries',
+                fr: 'Limite de relance anti-boucle de pensée dépassée après {{count}} tentatives',
+              },
+              { count: retryLimiter.maxRetries() },
+            ),
+            recoverable: false,
+          },
+        })
+        append(createChatDoneEvent(assistantMsgId, 'error', undefined, agentType))
+        throw new Error('Thinking loop guard retry limit exceeded')
+      }
+      retryLimiter.increment()
+      const guardMatch = result.thinkingGuardMatch
+
+      // Emit thinking.guard event
+      append({
+        type: 'thinking.guard',
+        data: {
+          messageId: assistantMsgId,
+          guardId: guardMatch.guardId,
+          pluginId: guardMatch.pluginId,
+          attempt: retryLimiter.count(),
+          maxAttempts: retryLimiter.maxRetries(),
+          ...(guardMatch.repeatedText !== undefined && { repeatedText: guardMatch.repeatedText }),
+          ...(guardMatch.count !== undefined && { count: guardMatch.count }),
+        },
+      })
+
+      // Emit system message telling the AI it was looping in its thoughts.
+      // A guard may supply its own (plugin-localized, user-configurable) message;
+      // fall back to the built-in copy when it does not.
+      const guardMsgId = crypto.randomUUID()
+      const guardMessage =
+        guardMatch.message ??
+        (() => {
+          const repeatedSnippet = guardMatch.repeatedText
+            ? ` "${guardMatch.repeatedText.slice(0, 200)}${guardMatch.repeatedText.length > 200 ? '…' : ''}"`
+            : ''
+          return serverT(
+            {
+              en: `You are repeating yourself in a loop in your thoughts${repeatedSnippet} (repeated {{count}} times). Stop immediately repeating this thought block in your thinking, change your approach or angle, and continue with the task.`,
+              fr: `Tu te répètes en boucle dans tes pensées${repeatedSnippet} (répété {{count}} fois). Arrête immédiatement de répéter ce bloc de réflexion dans tes pensées, change d'approche ou d'angle, et poursuis la tâche.`,
+            },
+            { count: String(guardMatch.count ?? 'multiple') },
+          )
+        })()
+      append(
+        createMessageStartEvent(guardMsgId, 'user', guardMessage, {
+          ...(currentWindowMessageOptions ?? {}),
+          isSystemGenerated: true,
+          messageKind: 'correction',
+        }),
+      )
+      append({ type: 'message.done', data: { messageId: guardMsgId } })
+
+      continue
+    }
+
     if (result.aborted) {
       // Only finalize if the assistant message was actually started (a turn
       // aborted during the backoff wait never created one).

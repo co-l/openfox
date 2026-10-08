@@ -119,6 +119,7 @@ function makePlugin(overrides: Partial<PluginInfo> = {}): PluginInfo {
       messageTransforms: 0,
       dangerLevels: 0,
       vcsProviders: 0,
+      thinkingGuards: 0,
     },
     ...overrides,
   }

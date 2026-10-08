@@ -55,6 +55,8 @@ export interface SubAgentExecutionOptions {
   providerManager?: ProviderManager | undefined
   signal?: AbortSignal
   onMessage?: (msg: ServerMessage) => void
+  subAgentId?: string
+  isResuming?: boolean
 }
 
 export interface SubAgentResult {
@@ -151,7 +153,8 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
 
   const agentDef = await resolveAgentDef(subAgentType, sessionManager.getProjectWorkdir(sessionId))
   const eventStore = getEventStore()
-  const subAgentId = crypto.randomUUID()
+  const isResuming = options.isResuming ?? false
+  const subAgentId = options.subAgentId ?? crypto.randomUUID()
   const session = sessionManager.requireSession(sessionId)
   const windowOptions = getWindowOptions(sessionId)
 
@@ -238,22 +241,24 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
     }
   }
 
-  logger.debug('Sub-agent starting', { subAgentType, subAgentId, sessionId })
+  logger.debug('Sub-agent starting', { subAgentType, subAgentId, sessionId, isResuming })
 
   // --- Setup: context reset + prompt messages ---
 
-  const resetMsgId = crypto.randomUUID()
-  eventStore.append(
-    sessionId,
-    createMessageStartEvent(resetMsgId, 'user', `Fresh Context - ${agentDef.metadata.name} Sub-Agent`, {
-      ...(windowOptions ?? {}),
-      isSystemGenerated: true,
-      messageKind: 'context-reset',
-      subAgentId,
-      subAgentType,
-    }),
-  )
-  eventStore.append(sessionId, { type: 'message.done', data: { messageId: resetMsgId } })
+  if (!isResuming) {
+    const resetMsgId = crypto.randomUUID()
+    eventStore.append(
+      sessionId,
+      createMessageStartEvent(resetMsgId, 'user', `Fresh Context - ${agentDef.metadata.name} Sub-Agent`, {
+        ...(windowOptions ?? {}),
+        isSystemGenerated: true,
+        messageKind: 'context-reset',
+        subAgentId,
+        subAgentType,
+      }),
+    )
+    eventStore.append(sessionId, { type: 'message.done', data: { messageId: resetMsgId } })
+  }
 
   const promptMsgId = crypto.randomUUID()
   eventStore.append(
@@ -357,9 +362,19 @@ export async function executeSubAgent(options: SubAgentExecutionOptions): Promis
       },
       turnMetrics,
     )
+  } catch (error) {
+    sessionManager.recordInterruptedSubAgent?.(sessionId, {
+      subAgentId,
+      subAgentType,
+      prompt,
+      interruptedAt: Date.now(),
+    })
+    throw error
   } finally {
     sessionManager.setActiveSubAgent(sessionId, undefined)
   }
+
+  sessionManager.clearInterruptedSubAgent?.(sessionId, subAgentId)
 
   // --- Build result ---
 

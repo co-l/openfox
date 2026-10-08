@@ -16,6 +16,7 @@ export type PluginCapability =
   | 'transforms'
   | 'dangerLevels'
   | 'vcs'
+  | 'thinkingGuards'
 
 export type PluginSlotName =
   | 'header.actions'
@@ -515,6 +516,7 @@ export interface PluginContributionSummary {
   messageTransforms: number
   dangerLevels: number
   vcsProviders: number
+  thinkingGuards: number
 }
 
 export interface PluginInfo {
@@ -584,4 +586,5 @@ export const EMPTY_PLUGIN_CONTRIBUTIONS: PluginContributionSummary = {
   messageTransforms: 0,
   dangerLevels: 0,
   vcsProviders: 0,
+  thinkingGuards: 0,
 }

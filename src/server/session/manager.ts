@@ -92,6 +92,10 @@ import {
   getCurrentContextWindowId,
   getCurrentWindowMessages,
 } from '../events/index.js'
+import { type InterruptedSubAgentInfo, findInterruptedSubAgentsFromEvents } from './sub-agent-recovery.js'
+
+export type { InterruptedSubAgentInfo }
+export { findInterruptedSubAgentsFromEvents }
 import type { Message, CriterionStatus } from '../../shared/types.js'
 import { isInDangerZone, canCompact } from '../context/tokenizer.js'
 import { serverT } from '../i18n.js'
@@ -164,6 +168,7 @@ export class SessionManager {
   // Used to scope system-generated events (drift reminders) to the sub-agent
   // window instead of the main session.
   private activeSubAgents = new Map<string, { subAgentId: string; subAgentType: string }>()
+  private interruptedSubAgents = new Map<string, Map<string, InterruptedSubAgentInfo>>()
   private switchLocks = new Map<string, Promise<unknown>>()
   private workspaceCreationLocks = new Map<string, Promise<void>>()
   // Cooperative pause: in-memory only (a pause is only meaningful for a live,
@@ -1615,6 +1620,40 @@ export class SessionManager {
   /** The sub-agent currently running for a session, if any. */
   getActiveSubAgent(sessionId: string): { subAgentId: string; subAgentType: string } | undefined {
     return this.activeSubAgents.get(sessionId)
+  }
+
+  recordInterruptedSubAgent(sessionId: string, info: InterruptedSubAgentInfo): void {
+    let sessionMap = this.interruptedSubAgents.get(sessionId)
+    if (!sessionMap) {
+      sessionMap = new Map()
+      this.interruptedSubAgents.set(sessionId, sessionMap)
+    }
+    sessionMap.set(info.subAgentId, info)
+  }
+
+  clearInterruptedSubAgent(sessionId: string, subAgentId: string): void {
+    const sessionMap = this.interruptedSubAgents.get(sessionId)
+    if (sessionMap) {
+      sessionMap.delete(subAgentId)
+      if (sessionMap.size === 0) {
+        this.interruptedSubAgents.delete(sessionId)
+      }
+    }
+  }
+
+  getInterruptedSubAgents(sessionId: string): InterruptedSubAgentInfo[] {
+    const sessionMap = this.interruptedSubAgents.get(sessionId)
+    return sessionMap ? Array.from(sessionMap.values()) : []
+  }
+
+  getLastInterruptedSubAgentForType(sessionId: string, subAgentType: string): InterruptedSubAgentInfo | undefined {
+    const memorySubAgents = this.getInterruptedSubAgents(sessionId).filter((s) => s.subAgentType === subAgentType)
+    if (memorySubAgents.length > 0) {
+      return memorySubAgents[memorySubAgents.length - 1]
+    }
+    const events = getEventStore().getEvents(sessionId)
+    const fromEvents = findInterruptedSubAgentsFromEvents(events).filter((s) => s.subAgentType === subAgentType)
+    return fromEvents.length > 0 ? fromEvents[fromEvents.length - 1] : undefined
   }
 
   // ============================================================================

@@ -142,5 +142,13 @@
     "githubUrl": "https://github.com/JamesDAdams/openfox-multi-rep",
     "author": "James Adams",
     "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#3b82f6\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><line x1=\"6\" y1=\"3\" x2=\"6\" y2=\"15\"/><circle cx=\"18\" cy=\"6\" r=\"3\"/><circle cx=\"6\" cy=\"18\" r=\"3\"/><path d=\"M18 9a9 9 0 0 1-9 9\"/></svg>"
+  },
+  {
+    "name": "openfox-thinking-loop-guard",
+    "displayName": "Thinking Loop Guard",
+    "description": "Detects repetitive thinking loops in AI reasoning and interrupts them with a correction message.",
+    "githubUrl": "https://github.com/JamesDAdams/openfox-thinking-loop-guard",
+    "author": "James Adams",
+    "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#f59e0b\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M21 12a9 9 0 1 1-2.64-6.36\"/><polyline points=\"21 3 21 9 15 9\"/><circle cx=\"12\" cy=\"12\" r=\"2\" fill=\"#f59e0b\" stroke=\"none\"/></svg>"
   }
 ]

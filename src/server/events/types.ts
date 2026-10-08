@@ -362,7 +362,18 @@ export type TurnEvent =
         matchedContent: string
       }
     }
-
+  | {
+      type: 'thinking.guard'
+      data: {
+        messageId: string
+        guardId: string
+        pluginId: string
+        attempt: number
+        maxAttempts: number
+        repeatedText?: string
+        count?: number
+      }
+    }
   // ----------------------------------------------------------------------------
   // Vision fallback (image description by fallback model)
   // ----------------------------------------------------------------------------

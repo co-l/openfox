@@ -105,14 +105,14 @@ header.
 
 ### Manifest reference
 
-| Field                  | Required   | Description                                                                                                                                         |
-| ---------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `openfox.apiVersion`   | yes        | `1` (providers only, legacy) or `2` (full plugin API)                                                                                               |
-| `openfox.entry`        | yes for v2 | Path to the ESM entry point, relative to the package root. `openfox.plugin` is accepted for v1 packages                                             |
-| `openfox.displayName`  | no         | Shown in the Plugins tab. Defaults to the package name                                                                                              |
-| `openfox.description`  | no         | Shown in the Plugins tab                                                                                                                            |
-| `openfox.capabilities` | no         | `providers`, `models`, `settings`, `tools`, `commands`, `skills`, `ui`, `hooks`, `notifications`, `workflows`, `rpc`, `assets`, `transforms`, `vcs` |
-| `openfox.timeoutMs`    | no         | Per-plugin RPC timeout in ms (default 30 000)                                                                                                       |
+| Field                  | Required   | Description                                                                                                                                                                           |
+| ---------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `openfox.apiVersion`   | yes        | `1` (providers only, legacy) or `2` (full plugin API)                                                                                                                                 |
+| `openfox.entry`        | yes for v2 | Path to the ESM entry point, relative to the package root. `openfox.plugin` is accepted for v1 packages                                                                               |
+| `openfox.displayName`  | no         | Shown in the Plugins tab. Defaults to the package name                                                                                                                                |
+| `openfox.description`  | no         | Shown in the Plugins tab                                                                                                                                                              |
+| `openfox.capabilities` | no         | `providers`, `models`, `settings`, `tools`, `commands`, `skills`, `ui`, `hooks`, `notifications`, `workflows`, `rpc`, `assets`, `transforms`, `dangerLevels`, `vcs`, `thinkingGuards` |
+| `openfox.timeoutMs`    | no         | Per-plugin RPC timeout in ms (default 30 000)                                                                                                                                         |
 
 ### Discovery and lifecycle
 

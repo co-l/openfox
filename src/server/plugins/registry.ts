@@ -20,6 +20,7 @@ import type {
   PluginSettingsSchema,
   PluginSettingsTab,
   PluginSkillSource,
+  PluginThinkingGuard,
   PluginTool,
   PluginTransitionContext,
   PluginVcsProvider,
@@ -59,6 +60,7 @@ type Kind =
   | 'messageTransform'
   | 'dangerLevel'
   | 'vcsProvider'
+  | 'thinkingGuard'
 
 interface Owned<T> {
   pluginId: string
@@ -205,6 +207,10 @@ export class PluginRegistry implements ProviderPluginRegistry, PluginRegistryCon
     this.register('vcsProvider', provider.id, provider)
   }
 
+  registerThinkingGuard(guard: PluginThinkingGuard): void {
+    this.register('thinkingGuard', guard.id, guard)
+  }
+
   notify(request: PluginNotificationRequest): void {
     this.context.notify(request)
   }
@@ -268,6 +274,13 @@ export class PluginRegistry implements ProviderPluginRegistry, PluginRegistryCon
     return this.listOwned<PluginVcsProvider>('vcsProvider').map((entry) => ({
       pluginId: entry.pluginId,
       provider: entry.value,
+    }))
+  }
+
+  getThinkingGuards(): { pluginId: string; guard: PluginThinkingGuard }[] {
+    return this.listOwned<PluginThinkingGuard>('thinkingGuard').map((entry) => ({
+      pluginId: entry.pluginId,
+      guard: entry.value,
     }))
   }
 
@@ -363,6 +376,7 @@ export class PluginRegistry implements ProviderPluginRegistry, PluginRegistryCon
       messageTransforms: count('messageTransform'),
       dangerLevels: count('dangerLevel'),
       vcsProviders: count('vcsProvider'),
+      thinkingGuards: count('thinkingGuard'),
     }
   }
 

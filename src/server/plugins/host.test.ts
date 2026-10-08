@@ -8,6 +8,7 @@ import { PluginHost } from './host.js'
 import { emitPluginHook } from './hook-emitter.js'
 import { listPluginModelMetadataProviders } from './model-metadata.js'
 import { listPluginMessageTransforms } from './message-transforms.js'
+import { listPluginThinkingGuards } from './thinking-guards.js'
 import { listPluginVcsProviders } from './vcs-providers.js'
 import { listPluginTransitionHandlers, runPluginTransitionHandler } from './transition-handlers.js'
 import { getAllSettings } from '../db/settings.js'
@@ -646,6 +647,36 @@ describe('PluginHost', () => {
     await host.enable('transform-plugin')
     expect(host.registry.getMessageTransforms()).toHaveLength(1)
     expect(listPluginMessageTransforms()).toHaveLength(1)
+  })
+
+  it('registers, applies, and cleans up thinking guards on enable/disable', async () => {
+    await writePlugin(
+      configDirectory,
+      'thinking-guard-plugin',
+      2,
+      `registry.registerThinkingGuard({
+        id: 'loop_guard',
+        evaluateThinking: () => null,
+      });`,
+      { capabilities: ['thinkingGuards'] },
+    )
+
+    const host = makeHost(configDirectory)
+    await host.start()
+
+    expect(host.registry.getThinkingGuards()).toHaveLength(1)
+    expect(host.getPlugins()[0]?.contributions.thinkingGuards).toBe(1)
+    expect(listPluginThinkingGuards()).toHaveLength(1)
+
+    // Disable plugin
+    await host.disable('thinking-guard-plugin')
+    expect(host.registry.getThinkingGuards()).toHaveLength(0)
+    expect(listPluginThinkingGuards()).toHaveLength(0)
+
+    // Re-enable plugin
+    await host.enable('thinking-guard-plugin')
+    expect(host.registry.getThinkingGuards()).toHaveLength(1)
+    expect(listPluginThinkingGuards()).toHaveLength(1)
   })
 
   it('keeps the original plugin owner when a UI component is re-registered at runtime', async () => {

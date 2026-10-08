@@ -290,6 +290,7 @@ export interface PluginRegistry {
   registerMessageTransform(transform: PluginMessageTransform): void
   registerDangerLevel(dangerLevel: PluginDangerLevel): void
   registerVcsProvider(provider: PluginVcsProvider): void
+  registerThinkingGuard(guard: PluginThinkingGuard): void
 }
 
 export interface PluginPathAccessContext {
@@ -342,6 +343,30 @@ export interface PluginTransitionContext {
   config?: unknown
   outcome: { result: string; output: Record<string, string> } | null
   metadataEntries?: Record<string, { [field: string]: unknown }[]>
+}
+
+export interface PluginThinkingGuardContext {
+  sessionId: string
+  messageId: string
+  model: string
+  projectId?: string
+}
+
+export interface PluginThinkingGuardResult {
+  action: 'continue' | 'abort'
+  repeatedText?: string
+  count?: number
+  message?: string
+  reason?: string
+}
+
+export interface PluginThinkingGuard {
+  id: string
+  evaluateThinking(
+    accumulatedThinking: string,
+    delta: string,
+    context: PluginThinkingGuardContext,
+  ): PluginThinkingGuardResult | null | undefined
 }
 
 export interface PluginDefinition {

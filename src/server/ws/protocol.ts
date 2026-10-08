@@ -21,6 +21,7 @@ import type {
   ChatTodoPayload,
   ChatProgressPayload,
   ChatFormatRetryPayload,
+  ChatThinkingGuardPayload,
   ChatMessagePayload,
   ChatMessageUpdatedPayload,
   ChatDonePayload,
@@ -275,6 +276,24 @@ export function createChatFormatRetryMessage(
     ...(pattern !== undefined ? { pattern } : {}),
     ...(field !== undefined ? { field } : {}),
     ...(matchedContent !== undefined ? { matchedContent } : {}),
+  })
+}
+
+export function createChatThinkingGuardMessage(
+  attempt: number,
+  maxAttempts: number,
+  guardId: string,
+  pluginId: string,
+  repeatedText?: string,
+  count?: number,
+): ServerMessage<ChatThinkingGuardPayload> {
+  return createServerMessage('chat.thinking_guard', {
+    attempt,
+    maxAttempts,
+    guardId,
+    pluginId,
+    ...(repeatedText !== undefined ? { repeatedText } : {}),
+    ...(count !== undefined ? { count } : {}),
   })
 }
 
@@ -626,6 +645,17 @@ export function storedEventToServerMessage(event: StoredEvent): ServerMessage | 
     case 'pattern.retry': {
       const data = event.data as Extract<TurnEvent, { type: 'pattern.retry' }>['data']
       return createChatFormatRetryMessage(data.attempt, data.maxAttempts, data.pattern, data.field, data.matchedContent)
+    }
+    case 'thinking.guard': {
+      const data = event.data as Extract<TurnEvent, { type: 'thinking.guard' }>['data']
+      return createChatThinkingGuardMessage(
+        data.attempt,
+        data.maxAttempts,
+        data.guardId,
+        data.pluginId,
+        data.repeatedText,
+        data.count,
+      )
     }
 
     case 'path.confirmation_pending':

@@ -237,6 +237,48 @@ describe('agentLoop integration', () => {
     expect(retryEvents.length).toBeGreaterThanOrEqual(1)
   })
 
+  it('continues loop and injects correction when a thinking guard aborts the stream', async () => {
+    const append = vi.fn()
+
+    ;(consumeStreamGenerator as any)
+      .mockResolvedValueOnce(
+        makeStreamResult({
+          thinkingGuardMatch: {
+            action: 'abort',
+            guardId: 'thinking-loop-guard',
+            pluginId: 'openfox-thinking-loop-guard',
+            repeatedText: 'the model keeps repeating this same thought',
+            count: 3,
+            message: 'You are looping in your thoughts',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(makeStreamResult({ content: 'Recovered', finishReason: 'stop' }))
+
+    await runTopLevelAgentLoop(makeConfig({ append }), turnMetrics)
+
+    // Should have called streamLLM twice
+    expect(consumeStreamGenerator).toHaveBeenCalledTimes(2)
+
+    // Should have appended thinking.guard event
+    const guardEvents = append.mock.calls.filter((args: unknown[]) => (args[0] as any).type === 'thinking.guard')
+    expect(guardEvents.length).toBe(1)
+    expect(guardEvents[0]![0].data.guardId).toBe('thinking-loop-guard')
+
+    // Should have injected a correction user message mentioning the loop
+    const correctionMessages = append.mock.calls
+      .filter(
+        (args: unknown[]) =>
+          (args[0] as any).type === 'message.start' &&
+          (args[0] as any).data.role === 'user' &&
+          (args[0] as any).data.messageKind === 'correction',
+      )
+      .map((args: unknown[]) => (args[0] as any).data.content as string)
+    expect(correctionMessages.some((c) => /loop|répé/i.test(c))).toBe(true)
+    // The guard-supplied message is used verbatim when present.
+    expect(correctionMessages).toContain('You are looping in your thoughts')
+  })
+
   const MATCHING_CONTENT = 'the model keeps emitting <marker> every round'
 
   function matchingStreamMock() {

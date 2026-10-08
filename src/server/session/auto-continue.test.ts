@@ -48,6 +48,59 @@ describe('planBootContinuation', () => {
     const plan = planBootContinuation([userStart('u1', 1), userStart('u2', 2)], false)
     expect(plan).toEqual({ content: CONTINUE_PROMPT })
   })
+
+  it('detects an interrupted sub-agent and includes its subAgentId in the continuation plan', () => {
+    const events = [
+      userStart('u1', 1),
+      stored(2, 'message.start', {
+        messageId: 'sa-prompt',
+        role: 'user',
+        content: 'Check code',
+        subAgentId: 'sub-1',
+        subAgentType: 'explorer',
+        messageKind: 'auto-prompt',
+      }),
+      stored(3, 'message.start', {
+        messageId: 'sa-asst',
+        role: 'assistant',
+        subAgentId: 'sub-1',
+        subAgentType: 'explorer',
+      }),
+    ]
+    const plan = planBootContinuation(events, false)
+    expect(plan).not.toBeNull()
+    expect(plan?.finalizeMessageId).toBe('sa-asst')
+    expect(plan?.content).toContain('sub-1')
+    expect(plan?.content).toContain('explorer')
+    expect(plan?.content).toContain('call_sub_agent')
+  })
+
+  it('detects multiple interrupted sub-agents and includes all their subAgentIds', () => {
+    const events = [
+      userStart('u1', 1),
+      stored(2, 'message.start', {
+        messageId: 'sa-prompt-1',
+        role: 'user',
+        content: 'Explore',
+        subAgentId: 'sub-1',
+        subAgentType: 'explorer',
+      }),
+      stored(3, 'message.start', {
+        messageId: 'sa-prompt-2',
+        role: 'user',
+        content: 'Review',
+        subAgentId: 'sub-2',
+        subAgentType: 'code_reviewer',
+      }),
+      messageDone('u1', 4),
+    ]
+    const plan = planBootContinuation(events, false)
+    expect(plan).not.toBeNull()
+    expect(plan?.content).toContain('sub-1')
+    expect(plan?.content).toContain('sub-2')
+    expect(plan?.content).toContain('explorer')
+    expect(plan?.content).toContain('code_reviewer')
+  })
 })
 
 describe('runBootAutoContinuations', () => {

@@ -97,6 +97,10 @@ function createMockSessionManager(): SessionManager {
     enterPauseGate: vi.fn().mockResolvedValue('released'),
     setActiveSubAgent: vi.fn(),
     getActiveSubAgent: vi.fn().mockReturnValue(undefined),
+    recordInterruptedSubAgent: vi.fn(),
+    clearInterruptedSubAgent: vi.fn(),
+    getInterruptedSubAgents: vi.fn().mockReturnValue([]),
+    getLastInterruptedSubAgentForType: vi.fn().mockReturnValue(undefined),
   } as unknown as SessionManager
 }
 
@@ -245,6 +249,54 @@ describe('SubAgentManager', () => {
     const messageUpdatedPayload = (messageUpdatedMessages[0]![0] as { payload: { updates: { stats?: unknown } } })
       .payload
     expect('stats' in messageUpdatedPayload.updates).toBe(true)
+
+    const events = eventStore.getEvents('test-session')
+    const contextResetEvents = events.filter(
+      (e) => e.type === 'message.start' && (e.data as any).messageKind === 'context-reset',
+    )
+    expect(contextResetEvents).toHaveLength(1)
+    expect((contextResetEvents[0]?.data as any).content).toContain('Fresh Context')
+  })
+
+  it('resumes an existing sub-agent without emitting context-reset event and retains subAgentId', async () => {
+    const mockSessionManager = createMockSessionManager()
+    const mockLLMClient = createMockLLMClient()
+    const mockToolRegistry = createMockToolRegistry()
+    const mockTurnMetrics = createMockTurnMetrics()
+    const existingSubAgentId = 'existing-subagent-123'
+
+    const result = await executeSubAgent({
+      subAgentType: 'explorer',
+      prompt: 'Continue searching where you left off.',
+      subAgentId: existingSubAgentId,
+      isResuming: true,
+      sessionManager: mockSessionManager,
+      sessionId: 'test-session',
+      llmClient: mockLLMClient,
+      toolRegistry: mockToolRegistry,
+      turnMetrics: mockTurnMetrics,
+      statsIdentity: TEST_STATS_IDENTITY,
+    })
+
+    expect(result.content).toBe('Test result content')
+    expect(mockSessionManager.setActiveSubAgent).toHaveBeenCalledWith('test-session', {
+      subAgentId: existingSubAgentId,
+      subAgentType: 'explorer',
+    })
+    expect(mockSessionManager.clearInterruptedSubAgent).toHaveBeenCalledWith('test-session', existingSubAgentId)
+
+    const events = eventStore.getEvents('test-session')
+    const contextResetEvents = events.filter(
+      (e) => e.type === 'message.start' && (e.data as any).messageKind === 'context-reset',
+    )
+    expect(contextResetEvents).toHaveLength(0)
+
+    const autoPromptEvents = events.filter(
+      (e) => e.type === 'message.start' && (e.data as any).messageKind === 'auto-prompt',
+    )
+    expect(autoPromptEvents.length).toBeGreaterThanOrEqual(1)
+    expect((autoPromptEvents[0]?.data as any).subAgentId).toBe(existingSubAgentId)
+    expect((autoPromptEvents[0]?.data as any).content).toBe('Continue searching where you left off.')
   })
 
   describe('model overrides', () => {

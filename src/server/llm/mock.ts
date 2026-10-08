@@ -216,7 +216,8 @@ function getInstructionAwareResponse(request: LLMCompletionRequest): string | nu
 }
 
 function getPromptAwareToolResponse(prompt: string): MockMatchResult | null {
-  const exactCommandMatch = prompt.match(/Run the exact command:\s*(.+)$/i) ?? prompt.match(/^Run exactly:\s*(.+)$/i)
+  const exactCommandMatch =
+    prompt.match(/Run (?:this |the )?exact command:\s*(.+)$/i) ?? prompt.match(/^Run exactly:\s*(.+)$/i)
   const quotedValues = [...prompt.matchAll(/"([^"]+)"/g)].map((match) => match[1]!)
 
   if (/Use the session_metadata tool with key.*todos.*to create a todo list/i.test(prompt)) {

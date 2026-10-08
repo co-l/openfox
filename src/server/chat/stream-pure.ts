@@ -1,3 +1,4 @@
+import { evaluateThinkingGuards } from '../plugins/thinking-guards.js'
 /**
  * Pure LLM Streaming Generator
  *
@@ -27,6 +28,7 @@ import type { StreamTiming } from '../llm/streaming.js'
 import type { TurnEvent } from '../events/types.js'
 import type { RetryPatternConfig, RetryPatternMatch } from './auto-patterns.js'
 import { matchRetryPatterns } from './auto-patterns.js'
+import { CHARS_PER_TOKEN } from './token-budget.js'
 import { randomUUID } from 'node:crypto'
 import { buildStreamRequest } from './stream-utils.js'
 import { computeAggregatedStats } from './stats.js'
@@ -96,6 +98,8 @@ export interface PureStreamResult {
   finishReason: 'stop' | 'tool_calls' | 'length' | 'content_filter'
   /** Set when a retry pattern matched mid-stream */
   patternMatch?: RetryPatternMatch
+  /** Set when a plugin thinking guard aborted the stream due to repetitive thinking */
+  thinkingGuardMatch?: import('../plugins/thinking-guards.js').PluginThinkingGuardMatch
   /** Set when the LLM stream reported an error — the call failed, so no usable usage exists */
   error?: string
 }
@@ -259,8 +263,18 @@ function siblingReadsSamePath(
  * as chat.error events — retry decisions belong to the caller.
  */
 export async function* streamLLMPure(options: PureStreamOptions): AsyncGenerator<TurnEvent, PureStreamResult> {
-  const { messageId, systemPrompt, llmClient, messages, tools, toolChoice, signal, reasoningEffort, retryPatterns } =
-    options
+  const {
+    messageId,
+    systemPrompt,
+    llmClient,
+    messages,
+    tools,
+    toolChoice,
+    signal,
+    reasoningEffort,
+    retryPatterns,
+    sessionId,
+  } = options
 
   // Build LLM messages
   const llmMessages = [{ role: 'system' as const, content: systemPrompt }, ...messages]
@@ -340,6 +354,7 @@ export async function* streamLLMPure(options: PureStreamOptions): AsyncGenerator
   let thinkingStartedAt: number | undefined
   let lastThinkingAt = 0
   let patternMatch: RetryPatternMatch | undefined
+  let thinkingGuardMatch: import('../plugins/thinking-guards.js').PluginThinkingGuardMatch | undefined
   // Preflight fast-fail state: indices already checked + the failure payload
   const checkedPreflight = new Set<number>()
   let preflightFailure: { index: number; toolName: string; toolCallId: string; path: string; error: string } | undefined
@@ -371,15 +386,26 @@ export async function* streamLLMPure(options: PureStreamOptions): AsyncGenerator
           }
           break
 
-        case 'thinking_delta':
+        case 'thinking_delta': {
           accumulatedThinking += value.content
           if (thinkingStartedAt === undefined) thinkingStartedAt = Date.now()
           lastThinkingAt = Date.now()
+          const guardMatch = evaluateThinkingGuards(accumulatedThinking, value.content, {
+            sessionId: sessionId ?? '',
+            messageId,
+            model: llmClient.getModel(),
+          })
+          if (guardMatch && guardMatch.action === 'abort') {
+            thinkingGuardMatch = guardMatch
+            patternAbortController.abort()
+            break
+          }
           yield {
             type: 'message.thinking',
             data: { messageId, content: value.content },
           }
           break
+        }
 
         case 'tool_call_delta': {
           // Accumulate tool name and id if provided
@@ -589,6 +615,29 @@ export async function* streamLLMPure(options: PureStreamOptions): AsyncGenerator
   // Pattern match took precedence over normal result
   if (patternMatch) {
     return createEmptyStreamResult(false, modelParams, patternMatch)
+  }
+
+  // Thinking guard abort takes precedence over normal result.
+  // The provider never reports usage for an aborted stream, so account for the
+  // tokens consumed so far with a rough ~4-chars-per-token estimate — a long
+  // reasoning loop otherwise shows up as a free turn.
+  if (thinkingGuardMatch) {
+    const consumedChars = accumulatedContent.length + accumulatedThinking.length
+    return {
+      content: accumulatedContent,
+      toolCalls: [],
+      segments: [],
+      usage: {
+        promptTokens: 0,
+        completionTokens: Math.ceil(consumedChars / CHARS_PER_TOKEN),
+        cacheSource: 'estimated',
+      },
+      timing: { ttft: 0, completionTime: 0, tps: 0, prefillTps: 0 },
+      aborted: false,
+      modelParams,
+      finishReason: 'stop',
+      thinkingGuardMatch,
+    }
   }
 
   // Return result (available via generator.value after iteration)
