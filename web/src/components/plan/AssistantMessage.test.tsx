@@ -757,7 +757,7 @@ describe('AssistantMessage zen mode', () => {
     expect(toolCallDisplayMock).toHaveBeenCalledWith(expect.objectContaining({ hidden: false }))
   })
 
-  it('keeps a pending ask_user visible but hides an answered one when zen mode is on', () => {
+  it('keeps ask_user visible when zen mode is on, pending and answered', () => {
     askUserCardMock.mockClear()
     zenOn()
     render(
@@ -770,7 +770,7 @@ describe('AssistantMessage zen mode', () => {
       />,
     )
 
-    expect(askUserCardMock).toHaveBeenCalledWith(expect.objectContaining({ hidden: false }))
+    expect(askUserCardMock).toHaveBeenCalled()
 
     askUserCardMock.mockClear()
     render(
@@ -784,7 +784,24 @@ describe('AssistantMessage zen mode', () => {
       />,
     )
 
-    expect(askUserCardMock).toHaveBeenCalledWith(expect.objectContaining({ hidden: true }))
+    expect(askUserCardMock).toHaveBeenCalled()
+  })
+
+  it('keeps the message visible when it only contains an answered ask_user', () => {
+    zenOn()
+    const { container } = render(
+      <AssistantMessage
+        message={messageWithToolCall({
+          id: 'ask-answered-only',
+          name: 'ask_user',
+          arguments: { question: 'Which option?' },
+          result: { success: true, output: 'option A', durationMs: 1, truncated: false },
+        })}
+      />,
+    )
+
+    expect(askUserCardMock).toHaveBeenCalled()
+    expect(container.querySelector('.feed-item')?.getAttribute('class')?.split(/\s+/)).not.toContain('hidden')
   })
 
   it('keeps the todo list visible when zen mode is on', () => {

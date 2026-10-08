@@ -9,10 +9,9 @@ import { useT } from '../../hooks/useT'
 
 interface AskUserCardProps {
   toolCall: ToolCall
-  hidden?: boolean
 }
 
-export function AskUserCard({ toolCall, hidden }: AskUserCardProps) {
+export function AskUserCard({ toolCall }: AskUserCardProps) {
   const t = useT()
   const sessionId = useSessionScope()
   const pendingQuestions = usePendingQuestions(sessionId)
@@ -86,7 +85,7 @@ export function AskUserCard({ toolCall, hidden }: AskUserCardProps) {
   const btnBase = 'px-3 py-1.5 text-xs font-medium rounded transition-colors'
 
   return (
-    <div ref={containerRef} className={`my-1${hidden ? ' hidden' : ''}`}>
+    <div ref={containerRef} className="my-1">
       <div className="text-sm">
         <Markdown content={question} />
       </div>

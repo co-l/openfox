@@ -186,7 +186,7 @@ export const AssistantMessage = memo(function AssistantMessage({
     !elements.some((el) => {
       if (el.type === 'tool_call') {
         const tc = el.toolCall
-        return tc.name === 'todo_write' || deriveToolCallStatus(tc.result) === 'pending'
+        return tc.name === 'todo_write' || tc.name === 'ask_user' || deriveToolCallStatus(tc.result) === 'pending'
       }
       return true
     })
@@ -285,7 +285,7 @@ export const AssistantMessage = memo(function AssistantMessage({
 
               // Special: ask_user → inline question card
               if (tc.name === 'ask_user') {
-                return <AskUserCard key={i} toolCall={tc} hidden={zenMode && status !== 'pending'} />
+                return <AskUserCard key={i} toolCall={tc} />
               }
 
               // Special: todo_write → inline todo list
