@@ -60,6 +60,48 @@ describe('DisplayTab Language setting', () => {
   })
 })
 
+describe('DisplayTab Sidebar section', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    Object.keys(mockSettings).forEach((k) => delete mockSettings[k])
+    setLocale('en')
+  })
+
+  it('renders the Sidebar section with the hide version and update toggle in English', () => {
+    render(<DisplayTab />)
+
+    expect(screen.getByText('Sidebar')).toBeTruthy()
+    expect(screen.getByText('Hide version and update in right sidebar')).toBeTruthy()
+    expect(
+      screen.getByText('Hide the OpenFox version and update check footer at the bottom of the right sidebar'),
+    ).toBeTruthy()
+  })
+
+  it('renders the Sidebar section in French', () => {
+    setLocale('fr')
+    render(<DisplayTab />)
+
+    expect(screen.getByText('Barre latérale')).toBeTruthy()
+    expect(screen.getByText('Masquer la version et les mises à jour dans la barre latérale droite')).toBeTruthy()
+    expect(
+      screen.getByText(
+        'Masquer la version d’OpenFox et la vérification des mises à jour en bas de la barre latérale droite',
+      ),
+    ).toBeTruthy()
+  })
+
+  it('persists the hide version and update toggle', async () => {
+    const user = userEvent.setup()
+    render(<DisplayTab />)
+
+    const label = screen.getByText('Hide version and update in right sidebar').closest('label') as HTMLElement
+    const toggle = within(label).getByRole('button')
+    await user.click(toggle)
+
+    expect(mockSetSetting).toHaveBeenCalledWith(SETTINGS_KEYS.DISPLAY_HIDE_SIDEBAR_VERSION, 'true')
+  })
+})
+
 describe('DisplayTab Composer setting', () => {
   beforeEach(() => {
     vi.clearAllMocks()
