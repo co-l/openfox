@@ -60,6 +60,7 @@ vi.mock('../../../hooks/useResource', () => ({
           error: registryErrorRef.current,
           refresh: vi.fn(),
         },
+  useResourceWhen: () => ({ data: undefined, loading: false, refresh: vi.fn() }),
 }))
 
 const installPlugin = vi.fn()

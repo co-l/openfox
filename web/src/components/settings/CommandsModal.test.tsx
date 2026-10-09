@@ -38,6 +38,7 @@ const { mockResourceState } = vi.hoisted(() => ({
 
 vi.mock('../../hooks/useResource', () => ({
   useResource: () => mockResourceState,
+  useResourceWhen: () => ({ data: undefined, loading: false, refresh: vi.fn() }),
 }))
 
 vi.mock('../../lib/resources', async (importOriginal) => {

@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const port = 10770
+const port = 10771
 const serverUrl = `http://127.0.0.1:${port}`
 
 export default defineConfig({
@@ -17,14 +17,13 @@ export default defineConfig({
   use: {
     baseURL: serverUrl,
     browserName: 'chromium',
-    channel: 'chrome',
     viewport: { width: 1450, height: 920 },
     trace: 'retain-on-failure',
   },
   webServer: {
-    command: `npm run build && npm start -- --port ${port} --no-browser`,
+    command: `OPENFOX_PORT=${port} OPENFOX_DB_PATH=:memory: OPENFOX_MOCK_LLM=true npm run dev`,
     url: serverUrl,
-    reuseExistingServer: false,
+    reuseExistingServer: true,
     timeout: 120_000,
     env: {
       ...process.env,

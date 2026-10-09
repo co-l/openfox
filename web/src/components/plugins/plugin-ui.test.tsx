@@ -14,6 +14,8 @@ import { activatePluginAction, applyPanelContent } from './plugin-ui-utils'
 import { usePluginUiStore } from '../../stores/pluginUi'
 import { useLocaleStore } from '../../stores/locale'
 import { clearBadgeCache } from '../../lib/plugin-badge-cache'
+import { SETTINGS_KEYS, settingResource } from '../../lib/resources'
+import { clearCache } from '../../lib/resourceCache'
 import { EMPTY_PLUGIN_CONTRIBUTIONS } from '@shared/plugin.js'
 import type { PluginUiContributions } from '@shared/plugin.js'
 
@@ -32,15 +34,23 @@ vi.mock('../../hooks/usePlugins', () => ({
 }))
 
 const invokePluginRpc = vi.fn()
-vi.mock('../../lib/plugin-actions', () => ({
-  invokePluginRpc: (...args: unknown[]) => invokePluginRpc(...args),
-}))
+vi.mock('../../lib/plugin-actions', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/plugin-actions')>()
+  return {
+    ...actual,
+    invokePluginRpc: (...args: unknown[]) => invokePluginRpc(...args),
+  }
+})
 
 const refreshItemResources = vi.fn()
-vi.mock('../../lib/resources', () => ({
-  providersResource: { refresh: vi.fn() },
-  refreshItemResources: (kinds: string[]) => refreshItemResources(kinds),
-}))
+vi.mock('../../lib/resources', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/resources')>()
+  return {
+    ...actual,
+    providersResource: { refresh: vi.fn() },
+    refreshItemResources: (kinds: string[]) => refreshItemResources(kinds),
+  }
+})
 
 const openSettings = vi.fn()
 vi.mock('../settings/GlobalSettingsModal', () => ({
@@ -49,6 +59,8 @@ vi.mock('../settings/GlobalSettingsModal', () => ({
 
 describe('plugin UI slots', () => {
   beforeEach(() => {
+    clearCache()
+    settingResource.write('false', SETTINGS_KEYS.DISPLAY_USE_NATIVE_SCROLLBARS)
     contributionsRef.current = {
       actions: [],
       badges: [],
@@ -884,6 +896,8 @@ describe('plugin UI slots', () => {
 
 describe('PluginZone and DeclarativeRenderer', () => {
   beforeEach(() => {
+    clearCache()
+    settingResource.write('false', SETTINGS_KEYS.DISPLAY_USE_NATIVE_SCROLLBARS)
     contributionsRef.current = {
       actions: [],
       badges: [],

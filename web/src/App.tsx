@@ -44,6 +44,7 @@ import { PlanPanel } from './components/plan/PlanPanel'
 import { ReadonlySessionView } from './components/plan/ReadonlySessionView'
 import { SplitView } from './components/split/SplitView'
 import { useIsSplit, readSplitLayout } from './lib/splitPersistence'
+import { warmupHighlighter } from './lib/syntax-highlighter'
 import { Spinner, SpinnerWithText } from './components/shared/Spinner'
 import { PasswordModal } from './components/PasswordModal'
 import { OnboardingWizard } from './components/onboarding/OnboardingWizard'
@@ -190,6 +191,13 @@ function App() {
 
   const [configFetched, setConfigFetched] = useState(false)
 
+  // Shiki grammar/theme loading spreads over idle frames at startup so a big
+  // session opened later finds a warm highlighter instead of paying that
+  // cost inside its own load burst.
+  useEffect(() => {
+    warmupHighlighter()
+  }, [])
+
   useEffect(() => {
     if (connectionStatus === 'connected' || hasToken) {
       fetchConfig().then(() => {
@@ -231,7 +239,7 @@ function App() {
   // fills these same keys after connect, so gating here costs nothing once in.
   const themeSetting = useSetting(SETTINGS_KEYS.DISPLAY_THEME, '', configFetched).value
   const userPresetsSetting = useSetting(SETTINGS_KEYS.DISPLAY_USER_PRESETS, '', configFetched).value
-  const followSystemSetting = useSetting(SETTINGS_KEYS.DISPLAY_FOLLOW_SYSTEM_THEME, '', configFetched).value
+  const followSystemSetting = useSetting(SETTINGS_KEYS.DISPLAY_FOLLOW_SYSTEM_THEME, '', configFetched)
   const customCssSetting = useSetting(SETTINGS_KEYS.DISPLAY_CUSTOM_CSS, '', configFetched).value
   const uiFontSetting = useSetting(SETTINGS_KEYS.DISPLAY_UI_FONT, '', configFetched)
   const uiFontSizeSetting = useSetting(SETTINGS_KEYS.DISPLAY_UI_FONT_SIZE, '', configFetched)
@@ -246,13 +254,12 @@ function App() {
   useEffect(() => {
     // Server-reconciled theme only matters once authenticated and the config
     // (and the batched settings warm-up) have landed. Before that the store's
-    // synchronous localStorage theme already applies; running this early would
-    // treat the '' fallbacks as real values (e.g. PUT followSystemTheme=false).
+    // synchronous localStorage theme already applies.
     if (!configFetched) return
     const { applyPreset, applyTokens, setFollowSystemTheme, initSystemThemeListener } = useThemeStore.getState()
     const serverTheme = themeSetting
     const serverPresets = userPresetsSetting
-    const serverFollowSystem = followSystemSetting
+    const serverFollowSystem = followSystemSetting.value
 
     if (serverPresets) {
       localStorage.setItem('openfox:userPresets', serverPresets)
@@ -279,7 +286,10 @@ function App() {
       applyPreset('system')
     }
 
-    if (serverFollowSystem !== undefined) {
+    // Gate on hasData, not on a non-undefined value: during the load window
+    // the value is the '' fallback, which reads as "server says false" and
+    // would flip the store and PUT a value the server never asked for.
+    if (followSystemSetting.hasData) {
       const currentFollowSystem = useThemeStore.getState().followSystemTheme
       if (currentFollowSystem !== (serverFollowSystem === 'true')) {
         setFollowSystemTheme(serverFollowSystem === 'true')
@@ -288,7 +298,7 @@ function App() {
 
     const cleanup = initSystemThemeListener()
     return () => cleanup()
-  }, [configFetched, themeSetting, userPresetsSetting, followSystemSetting])
+  }, [configFetched, themeSetting, userPresetsSetting, followSystemSetting.value, followSystemSetting.hasData])
 
   // Inject custom CSS into a <style> tag
   useEffect(() => {

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, act } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ContextState, Message } from '@shared/types.js'
 
@@ -153,6 +153,11 @@ describe('SubAgentContainer', () => {
         isStreaming={false}
       />,
     )
+
+    // The body (divider and messages) is mounted on first expand.
+    act(() => {
+      screen.getByRole('button', { name: /expand/i }).click()
+    })
 
     const divider = screen.getByTestId('subagent-compaction-divider')
     expect(divider).toBeInTheDocument()

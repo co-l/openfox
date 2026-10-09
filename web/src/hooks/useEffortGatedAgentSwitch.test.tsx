@@ -39,6 +39,7 @@ vi.mock('../hooks/useResource', () => ({
     error: undefined,
     refresh: vi.fn(),
   }),
+  useResourceWhen: () => ({ data: undefined, loading: false, refresh: vi.fn() }),
 }))
 
 vi.mock('../stores/config', () => ({

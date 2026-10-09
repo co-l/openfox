@@ -34,6 +34,7 @@ vi.mock('../../lib/workflows-actions', async (importOriginal) => {
 
 vi.mock('../../hooks/useResource', () => ({
   useResource: () => mockResourceState,
+  useResourceWhen: () => ({ data: undefined, loading: false, refresh: vi.fn() }),
 }))
 
 const reviewUser = {

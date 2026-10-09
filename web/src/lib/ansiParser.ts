@@ -159,11 +159,58 @@ export function stripAnsi(text: string): string {
 }
 
 /**
- * Convert parsed segments to React nodes
+ * Convert parsed segments to React nodes.
+ *
+ * Memoized per text string: streaming tool output re-renders on every flush
+ * (16ms) and previously re-parsed the entire retained tail each time —
+ * quadratic over chatty commands. Parsed nodes are immutable, so sharing
+ * them across renders is safe. Bounded like the markdown cache so a long
+ * session cannot grow it without limit.
  */
 import React from 'react'
 
+const ansiReactCache = new Map<string, React.ReactNode>()
+const ANSI_CACHE_MAX = 2000
+const ANSI_CACHE_MAX_BYTES = 2 * 1024 * 1024
+let ansiCacheMaxBytes = ANSI_CACHE_MAX_BYTES
+let ansiCacheBytes = 0
+
+// Exposed for tests: verifies the byte-bounded eviction with a small budget
+// instead of the real 2MB.
+export function getAnsiCacheBytesForTest(): number {
+  return ansiCacheBytes
+}
+
+export function setAnsiCacheMaxBytesForTest(bytes = ANSI_CACHE_MAX_BYTES): void {
+  ansiCacheMaxBytes = bytes
+}
+
+// Real UTF-8 byte size of a string. text.length only counts UTF-16 code
+// units, which under-measures multibyte text (a CJK character is 3 UTF-8
+// bytes but 1 code unit).
+function utf8ByteLength(text: string): number {
+  let bytes = 0
+  for (let i = 0; i < text.length; i++) {
+    const code = text.codePointAt(i)
+    if (code === undefined) break
+    if (code < 0x80) {
+      bytes++
+    } else if (code < 0x800) {
+      bytes += 2
+    } else if (code < 0x10000) {
+      bytes += 3
+    } else {
+      i++
+      bytes += 4
+    }
+  }
+  return bytes
+}
+
 export function ansiToReact(text: string): React.ReactNode {
+  const cached = ansiReactCache.get(text)
+  if (cached !== undefined) return cached
+
   const segments = parseAnsi(text)
 
   const nodes: React.ReactNode[] = []
@@ -188,5 +235,21 @@ export function ansiToReact(text: string): React.ReactNode {
     })
   })
 
-  return nodes.length === 1 ? nodes[0] : nodes
+  const result = nodes.length === 1 ? nodes[0] : nodes
+
+  ansiCacheBytes += utf8ByteLength(text)
+  while (ansiReactCache.size > ANSI_CACHE_MAX || ansiCacheBytes > ansiCacheMaxBytes) {
+    const firstKey = ansiReactCache.keys().next().value
+    if (firstKey === undefined) break
+    ansiCacheBytes -= utf8ByteLength(firstKey)
+    ansiReactCache.delete(firstKey)
+  }
+  ansiReactCache.set(text, result)
+
+  return result
+}
+
+export function clearAnsiCacheForTest(): void {
+  ansiReactCache.clear()
+  ansiCacheBytes = 0
 }

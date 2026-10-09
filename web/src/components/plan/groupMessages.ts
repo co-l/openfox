@@ -46,25 +46,19 @@ export function groupMessages(messages: Message[], previousItems: DisplayItem[] 
   // Reset at each context window boundary so groups don't span compactions.
   let windowBuckets: Map<string, { subAgentType: string; messages: Message[] }> | null = null
 
+  // First-occurrence position (among non-tool messages of the current
+  // window) of each subAgentId, tracked during the single pass below so
+  // flushing never re-scans the whole array (the previous per-flush scan
+  // made this function O(N²) on long feeds).
+  let firstOccurrenceInWindow = new Map<string, number>()
+  let windowMessageIndex = 0
+
   const flushWindowBuckets = () => {
     if (!windowBuckets || windowBuckets.size === 0) return
 
-    // Track first occurrence index of each subAgentId within this window
-    // to emit groups in chronological order
-    const firstOccurrence = new Map<string, number>()
-    let idx = 0
-    for (const msg of messages) {
-      if (msg.role === 'tool') continue
-      if (msg.contextWindowId !== lastContextWindowId) continue
-      if (msg.subAgentId && !firstOccurrence.has(msg.subAgentId)) {
-        firstOccurrence.set(msg.subAgentId, idx)
-      }
-      idx++
-    }
-
     // Sort buckets by first occurrence and emit
     const sorted = [...windowBuckets.entries()].sort(
-      (a, b) => (firstOccurrence.get(a[0]) ?? 0) - (firstOccurrence.get(b[0]) ?? 0),
+      (a, b) => (firstOccurrenceInWindow.get(a[0]) ?? 0) - (firstOccurrenceInWindow.get(b[0]) ?? 0),
     )
 
     for (const [subAgentId, bucket] of sorted) {
@@ -99,7 +93,18 @@ export function groupMessages(messages: Message[], previousItems: DisplayItem[] 
       windowSequence++
       items.push({ type: 'context-divider', windowSequence })
     }
+    if (msg.contextWindowId !== lastContextWindowId) {
+      // Window changed (including the first window and undefined→defined):
+      // restart first-occurrence tracking for the new window.
+      firstOccurrenceInWindow = new Map()
+      windowMessageIndex = 0
+    }
     lastContextWindowId = msg.contextWindowId
+
+    if (msg.subAgentId && !firstOccurrenceInWindow.has(msg.subAgentId)) {
+      firstOccurrenceInWindow.set(msg.subAgentId, windowMessageIndex)
+    }
+    windowMessageIndex++
 
     if (msg.subAgentId && msg.subAgentType) {
       // Collect into per-window bucket

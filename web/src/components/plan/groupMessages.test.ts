@@ -4,6 +4,86 @@ import { groupMessages } from './groupMessages'
 import type { Message } from '@shared/types.js'
 import type { DisplayItem } from './groupMessages'
 
+/**
+ * Copy of the previous (pre-O(N)) implementation, kept as a reference for
+ * differential testing of the single-pass rewrite.
+ */
+function groupMessagesReference(messages: Message[], previousItems: DisplayItem[] = []): DisplayItem[] {
+  const previousItemsByMessageId = new Map<string, DisplayItem>()
+  const previousItemsBySubAgentId = new Map<string, DisplayItem>()
+  for (const item of previousItems) {
+    if (item.type === 'message') {
+      previousItemsByMessageId.set(item.message.id, item)
+    } else if (item.type === 'subagent') {
+      previousItemsBySubAgentId.set(item.subAgentId, item)
+    }
+  }
+  const items: DisplayItem[] = []
+  let lastContextWindowId: string | undefined
+  let windowSequence = 1
+  let windowBuckets: Map<string, { subAgentType: string; messages: Message[] }> | null = null
+
+  const flushWindowBuckets = () => {
+    if (!windowBuckets || windowBuckets.size === 0) return
+    const firstOccurrence = new Map<string, number>()
+    let idx = 0
+    for (const msg of messages) {
+      if (msg.role === 'tool') continue
+      if (msg.contextWindowId !== lastContextWindowId) continue
+      if (msg.subAgentId && !firstOccurrence.has(msg.subAgentId)) {
+        firstOccurrence.set(msg.subAgentId, idx)
+      }
+      idx++
+    }
+    const sorted = [...windowBuckets.entries()].sort(
+      (a, b) => (firstOccurrence.get(a[0]) ?? 0) - (firstOccurrence.get(b[0]) ?? 0),
+    )
+    for (const [subAgentId, bucket] of sorted) {
+      const previousItem = previousItemsBySubAgentId.get(subAgentId)
+      const messagesMatch =
+        previousItem?.type === 'subagent' &&
+        previousItem.messages.length === bucket.messages.length &&
+        previousItem.messages.every((m, j) => m === bucket.messages[j])
+      if (messagesMatch) {
+        items.push(previousItem)
+      } else {
+        items.push({ type: 'subagent', subAgentId, subAgentType: bucket.subAgentType, messages: bucket.messages })
+      }
+    }
+    windowBuckets = null
+  }
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i]!
+    if (msg.role === 'tool') continue
+    if (msg.contextWindowId && lastContextWindowId && msg.contextWindowId !== lastContextWindowId) {
+      flushWindowBuckets()
+      windowSequence++
+      items.push({ type: 'context-divider', windowSequence })
+    }
+    lastContextWindowId = msg.contextWindowId
+    if (msg.subAgentId && msg.subAgentType) {
+      if (!windowBuckets) windowBuckets = new Map()
+      let bucket = windowBuckets.get(msg.subAgentId)
+      if (!bucket) {
+        bucket = { subAgentType: msg.subAgentType, messages: [] }
+        windowBuckets.set(msg.subAgentId, bucket)
+      }
+      bucket.messages.push(msg)
+    } else {
+      flushWindowBuckets()
+      const previousItem = previousItemsByMessageId.get(msg.id)
+      if (previousItem?.type === 'message' && previousItem.message === msg) {
+        items.push(previousItem)
+      } else {
+        items.push({ type: 'message', message: msg })
+      }
+    }
+  }
+  flushWindowBuckets()
+  return items
+}
+
 function createMessage(
   id: string,
   role: 'user' | 'assistant' | 'system' | 'tool' = 'assistant',
@@ -270,6 +350,91 @@ describe('groupMessages identity preservation', () => {
       messages: [b1, b2],
     })
     expect(items[4]).toEqual({ type: 'message', message: user3 })
+  })
+
+  it('should produce identical output to the previous implementation on random realistic feeds', () => {
+    // Deterministic PRNG so a divergence is reproducible.
+    let seed = 0x5eed
+    const rand = () => {
+      seed = (seed * 1664525 + 1013904223) >>> 0
+      return seed / 2 ** 32
+    }
+
+    const subAgents = Array.from({ length: 40 }, (_, i) => `sub-agent-${i}`)
+    const messages: Message[] = []
+    let windowIndex = 0
+    let messageId = 0
+    let inWindow = 0
+    // Window ids change monotonically (each compaction creates a new one),
+    // which is the shape real sessions have.
+    while (messages.length < 5000) {
+      if (inWindow === 0 && rand() < 0.12) {
+        windowIndex++
+      }
+      inWindow++
+      const windowId = windowIndex === 0 ? undefined : `win-${windowIndex}`
+      const roll = rand()
+      if (roll < 0.35) {
+        messages.push(createMessage(`msg-${messageId++}`, 'user', `user ${messageId}`, { contextWindowId: windowId }))
+      } else if (roll < 0.5) {
+        messages.push(createMessage(`msg-${messageId++}`, 'tool', `tool ${messageId}`, { contextWindowId: windowId }))
+      } else {
+        const subAgentId = subAgents[Math.floor(rand() * subAgents.length)]!
+        messages.push(
+          createMessage(`msg-${messageId++}`, 'assistant', `agent ${messageId}`, {
+            subAgentId,
+            subAgentType: 'verifier',
+            contextWindowId: windowId,
+          }),
+        )
+      }
+      if (inWindow > 400) inWindow = 0
+    }
+
+    const expected = groupMessagesReference(messages)
+    const actual = groupMessages(messages)
+    expect(actual).toEqual(expected)
+    // Same with previous items for identity-preservation parity
+    expect(groupMessages(messages, expected)).toEqual(groupMessagesReference(messages, expected))
+  })
+
+  it('should run in well under 10ms for a 10k-message feed', () => {
+    const subAgents = Array.from({ length: 200 }, (_, i) => `sub-agent-${i}`)
+    const messages: Message[] = []
+    let windowIndex = 0
+    let inWindow = 0
+    for (let i = 0; i < 10_000; i++) {
+      if (inWindow === 0 && i % 500 === 0) windowIndex++
+      inWindow++
+      const windowId = windowIndex === 0 ? undefined : `win-${windowIndex}`
+      if (i % 3 === 0) {
+        messages.push(createMessage(`msg-${i}`, 'user', `user ${i}`, { contextWindowId: windowId }))
+      } else {
+        const subAgentId = subAgents[i % subAgents.length]!
+        messages.push(
+          createMessage(`msg-${i}`, 'assistant', `agent ${i}`, {
+            subAgentId,
+            subAgentType: 'verifier',
+            contextWindowId: windowId,
+          }),
+        )
+      }
+    }
+
+    // Warm up, then take the minimum of a few runs: a single wall-clock
+    // sample is noise-prone under parallel CI load, while the min bounds the
+    // algorithm's real cost (the old O(N²) variant was ~100x slower even at
+    // its best).
+    groupMessages(messages)
+    let elapsed = Infinity
+    for (let run = 0; run < 5; run++) {
+      const start = performance.now()
+      const items = groupMessages(messages)
+      elapsed = Math.min(elapsed, performance.now() - start)
+      expect(items.length).toBeGreaterThan(0)
+    }
+
+    expect(elapsed).toBeLessThan(10)
   })
 
   it('should split sub-agent groups at context window boundaries', () => {

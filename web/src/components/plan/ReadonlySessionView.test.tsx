@@ -68,7 +68,7 @@ describe('ReadonlySessionView — server-side truncation', () => {
     })
   })
 
-  it('renders the feed with windowing virtualization forced off', async () => {
+  it('renders the feed with top-anchored windowing so big sessions stay bounded', async () => {
     vi.mocked(authFetch).mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -90,6 +90,7 @@ describe('ReadonlySessionView — server-side truncation', () => {
     await waitFor(() => {
       expect(screen.getByText('ChatFeedItems')).toBeDefined()
     })
-    expect(capturedFeedProps.current.virtualization).toBe(false)
+    expect(capturedFeedProps.current.anchored).toBe('top')
+    expect(capturedFeedProps.current.scrollContainerRef).toBeDefined()
   })
 })

@@ -234,7 +234,10 @@ export const AssistantMessage = memo(function AssistantMessage({
   if (elements.length === 0 && !hasThinking) return null
 
   return (
-    <div className={`feed-item${zenEmpty ? ' hidden' : ''}`} onContextMenu={(e) => onContextMenu(e, !!sessionId)}>
+    <div
+      className={`feed-item${zenMode ? ' mb-2' : ''}${zenEmpty ? ' hidden' : ''}`}
+      onContextMenu={(e) => onContextMenu(e, !!sessionId)}
+    >
       <div className="min-w-0">
         {forkError && <p className="text-xs text-accent-error mb-1 ml-0.5">{forkError}</p>}
         {hasThinking && (

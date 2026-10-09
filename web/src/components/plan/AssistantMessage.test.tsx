@@ -862,4 +862,36 @@ describe('AssistantMessage zen mode', () => {
     expect(screen.getByText('Answer text')).toBeTruthy()
     expect(container.querySelector('.feed-item')?.getAttribute('class')?.split(/\s+/)).not.toContain('hidden')
   })
+
+  it('tightens the message gap when zen mode is on', () => {
+    zenOn()
+    const { container } = render(
+      <AssistantMessage
+        message={messageWithToolCall({
+          id: 'tc-gap-on',
+          name: 'run_command',
+          arguments: { command: 'ls' },
+        })}
+      />,
+    )
+
+    const classes = container.querySelector('.feed-item')?.getAttribute('class')?.split(/\s+/)
+    expect(classes).toContain('mb-2')
+    expect(classes).not.toContain('hidden')
+  })
+
+  it('keeps the default message gap when zen mode is off', () => {
+    const { container } = render(
+      <AssistantMessage
+        message={messageWithToolCall({
+          id: 'tc-gap-off',
+          name: 'read_file',
+          arguments: { path: 'src/a.ts' },
+          result: { success: true, durationMs: 5, truncated: false },
+        })}
+      />,
+    )
+
+    expect(container.querySelector('.feed-item')?.getAttribute('class')?.split(/\s+/)).not.toContain('mb-2')
+  })
 })

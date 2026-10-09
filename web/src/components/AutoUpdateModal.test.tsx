@@ -15,6 +15,8 @@ const mockFetch = vi.fn()
 vi.stubGlobal('fetch', mockFetch)
 
 import { AutoUpdateModal } from './AutoUpdateModal'
+import { SETTINGS_KEYS, settingResource } from '../lib/resources'
+import { clearCache } from '../lib/resourceCache'
 
 const VERSION_INFO = { current: '2.0.110', latest: '2.0.111' } as const
 const STALE_CHECK = {
@@ -157,6 +159,8 @@ function bodyText(): string {
 }
 
 beforeEach(() => {
+  clearCache()
+  settingResource.write('false', SETTINGS_KEYS.DISPLAY_USE_NATIVE_SCROLLBARS)
   mockAuthFetch.mockReset()
   mockFetch.mockReset()
   localStorage.clear()

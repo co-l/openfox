@@ -74,6 +74,12 @@ export const SubAgentContainer = memo(function SubAgentContainer({
   const containerRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<OverlayScrollbarsComponentRef<'div'>>(null)
   const [expanded, setExpanded] = useState(false)
+  // The message history is mounted lazily on first expand: a collapsed
+  // sub-agent run can hold hundreds of messages (markdown, tool calls,
+  // code blocks), and mounting every group's history in a big session is
+  // what froze the main thread. Once expanded, the body stays mounted so
+  // toggling back and forth never re-parses or re-highlights it.
+  const [everExpanded, setEverExpanded] = useState(false)
   const { agents } = useAgents()
   const contextState = useSessionStore((state) => state.subAgentContextStates[subAgentId])
   const { showThinking, showVerboseToolOutput } = useDisplaySettings()
@@ -85,8 +91,8 @@ export const SubAgentContainer = memo(function SubAgentContainer({
   const handleToggleExpand = useCallback(() => {
     const willExpand = !expanded
     setExpanded(willExpand)
-
     if (willExpand) {
+      setEverExpanded(true)
       setTimeout(() => {
         containerRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
       }, 220)
@@ -98,7 +104,8 @@ export const SubAgentContainer = memo(function SubAgentContainer({
   const color = getAgentColor(agents, subAgentType)
   const hStyle = headerStyle(color)
 
-  const displayMessages = messages.filter((m) => m.role !== 'tool')
+  const bodyMounted = expanded || everExpanded
+  const displayMessages = bodyMounted ? messages.filter((m) => m.role !== 'tool') : []
 
   return (
     <div ref={containerRef} className="feed-item border border-border rounded overflow-hidden bg-secondary">
@@ -139,32 +146,43 @@ export const SubAgentContainer = memo(function SubAgentContainer({
         </div>
       </div>
 
-      <ScrollArea
-        ref={scrollRef}
-        className={`${expanded ? 'max-h-[calc(100vh-16rem)]' : 'max-h-80'} p-2 transition-[max-height] duration-200`}
-        onScrollbarGesture={handleScrollbarGesture}
-      >
-        {displayMessages.map((message) => (
-          <Fragment key={message.id}>
-            {message.isCompactionSummary && (
-              <FeedDivider
-                testId="subagent-compaction-divider"
-                label={t({ en: 'Earlier context summarized', fr: 'Contexte antérieur résumé' })}
-              />
-            )}
-            {message.role === 'assistant' ? (
-              <AssistantMessage
-                message={message}
-                showStats={true}
-                showThinking={showThinking}
-                showVerboseToolOutput={showVerboseToolOutput}
-              />
-            ) : (
-              <ChatMessage message={message} isLastAssistantMessage={false} />
-            )}
-          </Fragment>
-        ))}
-      </ScrollArea>
+      {bodyMounted ? (
+        <ScrollArea
+          ref={scrollRef}
+          className={`${expanded ? 'max-h-[calc(100vh-16rem)]' : 'max-h-80'} p-2 transition-[max-height] duration-200`}
+          onScrollbarGesture={handleScrollbarGesture}
+        >
+          {displayMessages.map((message) => (
+            <Fragment key={message.id}>
+              {message.isCompactionSummary && (
+                <FeedDivider
+                  testId="subagent-compaction-divider"
+                  label={t({ en: 'Earlier context summarized', fr: 'Contexte antérieur résumé' })}
+                />
+              )}
+              {message.role === 'assistant' ? (
+                <AssistantMessage
+                  message={message}
+                  showStats={true}
+                  showThinking={showThinking}
+                  showVerboseToolOutput={showVerboseToolOutput}
+                />
+              ) : (
+                <ChatMessage message={message} isLastAssistantMessage={false} />
+              )}
+            </Fragment>
+          ))}
+        </ScrollArea>
+      ) : (
+        <div data-testid="subagent-collapsed-body" className="px-2 py-1.5 text-xs text-text-muted">
+          {t(
+            { en: '{{count}} messages', fr: '{{count}} messages' },
+            {
+              count: messages.reduce((count, message) => count + (message.role !== 'tool' ? 1 : 0), 0),
+            },
+          )}
+        </div>
+      )}
     </div>
   )
 })

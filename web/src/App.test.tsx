@@ -349,6 +349,63 @@ describe('App - responsive sidebar visibility', () => {
   })
 })
 
+describe('App - followSystemTheme reconciliation', () => {
+  function hangingSettingsFetch() {
+    mockAuthFetch.mockImplementation((url: string) => {
+      if (String(url).includes('/api/settings')) {
+        return new Promise(() => {}) as unknown as Response
+      }
+      return { ok: true, json: async () => ({}) } as unknown as Response
+    })
+  }
+
+  it('does not reconcile or persist followSystemTheme while the setting is still loading', async () => {
+    await act(async () => {
+      clearCache()
+    })
+    themeStoreState.setFollowSystemTheme.mockClear()
+    // Store default (true) vs the '' load-window fallback (reads as false)
+    // must not be treated as a server-mandated flip.
+    themeStoreState.followSystemTheme = true
+    hangingSettingsFetch()
+
+    await renderAppAsync()
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 100))
+    })
+
+    expect(themeStoreState.setFollowSystemTheme).not.toHaveBeenCalled()
+    const puts = mockAuthFetch.mock.calls.filter(
+      (c) => String(c[0]).includes('followSystemTheme') && (c[1] as { method?: string })?.method === 'PUT',
+    )
+    expect(puts).toHaveLength(0)
+  })
+
+  it('reconciles followSystemTheme once the server value has settled', async () => {
+    await act(async () => {
+      clearCache()
+    })
+    themeStoreState.setFollowSystemTheme.mockClear()
+    themeStoreState.followSystemTheme = true
+    mockAuthFetch.mockImplementation((url: string) => {
+      if (String(url).includes('display.followSystemTheme')) {
+        return Promise.resolve({ ok: true, json: async () => ({ value: 'false' }) }) as unknown as Response
+      }
+      if (String(url).includes('/api/settings')) {
+        return Promise.resolve({ ok: true, json: async () => ({ value: null }) }) as unknown as Response
+      }
+      return { ok: true, json: async () => ({}) } as unknown as Response
+    })
+
+    await renderAppAsync()
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 100))
+    })
+
+    expect(themeStoreState.setFollowSystemTheme).toHaveBeenCalledWith(false)
+  })
+})
+
 describe('App - UI font size (no dip to default on load)', () => {
   it('keeps the pre-rendered size while the setting is still loading', async () => {
     // Wipe per-key entries from earlier tests so the settings fetch starts fresh.

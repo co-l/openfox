@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, act } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Message } from '@shared/types.js'
 
@@ -52,7 +52,7 @@ function referenceMessages(): Message[] {
 afterEach(cleanup)
 
 describe('SubAgentContainer long-session rendering', () => {
-  it('mounts full message history regardless of collapse state', () => {
+  it('mounts no message nodes while collapsed', () => {
     render(
       <SubAgentContainer
         messages={referenceMessages()}
@@ -62,8 +62,35 @@ describe('SubAgentContainer long-session rendering', () => {
       />,
     )
 
+    // A collapsed group must not carry its message history in the DOM: on big
+    // sessions a 100-item feed window can contain dozens of sub-agent runs,
+    // and mounting all of their histories is what froze the main thread.
+    expect(screen.queryAllByTestId('subagent-message')).toHaveLength(0)
+  })
+
+  it('mounts the full history on first expand and keeps it mounted when collapsed again', () => {
+    render(
+      <SubAgentContainer
+        messages={referenceMessages()}
+        subAgentType="scout"
+        subAgentId="scout-run-1"
+        isStreaming={false}
+      />,
+    )
+
+    act(() => {
+      screen.getByRole('button', { name: /expand/i }).click()
+    })
+
     expect(screen.getAllByTestId('subagent-message')).toHaveLength(REFERENCE_LLM_CALLS)
     expect(screen.getByText('Sub-agent output 1')).toBeInTheDocument()
     expect(screen.getByText(`Sub-agent output ${REFERENCE_LLM_CALLS}`)).toBeInTheDocument()
+
+    // Collapsing again must not unmount the history (no re-parse/re-highlight
+    // churn when the user toggles the group back and forth).
+    act(() => {
+      screen.getByRole('button', { name: /expand/i }).click()
+    })
+    expect(screen.getAllByTestId('subagent-message')).toHaveLength(REFERENCE_LLM_CALLS)
   })
 })

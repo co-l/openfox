@@ -1,5 +1,6 @@
 import { ScrollArea } from '../shared/ScrollArea'
-import { useState, useEffect, useMemo } from 'react'
+import type { OverlayScrollbarsComponentRef } from 'overlayscrollbars-react'
+import { useRef, useState, useEffect, useMemo } from 'react'
 import { useRoute } from 'wouter'
 import { useT } from '../../hooks/useT'
 import { readonlySessionResource } from '../../lib/resources'
@@ -19,6 +20,7 @@ export function ReadonlySessionView() {
   const [hiddenCount, setHiddenCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const scrollRef = useRef<OverlayScrollbarsComponentRef<'div'>>(null)
 
   const loadSession = async () => {
     if (!sessionId) return
@@ -97,7 +99,7 @@ export function ReadonlySessionView() {
         </div>
       </div>
 
-      <ScrollArea className="flex-1 print:overflow-visible">
+      <ScrollArea ref={scrollRef} data-testid="chat-scroll-container" className="flex-1 print:overflow-visible">
         <div className="pt-4">
           <ChatFeedItems
             displayItems={displayItems}
@@ -106,7 +108,8 @@ export function ReadonlySessionView() {
             showStats={showStats}
             showAgentDefinitions={showAgentDefinitions}
             showWorkflowBars={showWorkflowBars}
-            virtualization={false}
+            anchored="top"
+            scrollContainerRef={scrollRef}
           />
         </div>
         <div className="h-8" />

@@ -35,9 +35,13 @@ vi.mock('../../hooks/usePlugins', () => ({
 }))
 
 const invokePluginRpc = vi.fn()
-vi.mock('../../lib/plugin-actions', () => ({
-  invokePluginRpc: (...args: unknown[]) => invokePluginRpc(...args),
-}))
+vi.mock('../../lib/plugin-actions', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/plugin-actions')>()
+  return {
+    ...actual,
+    invokePluginRpc: (...args: unknown[]) => invokePluginRpc(...args),
+  }
+})
 
 const openSettings = vi.fn()
 vi.mock('../settings/GlobalSettingsModal', () => ({

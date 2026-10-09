@@ -532,6 +532,130 @@ describe('ChatFeedItems progressive rendering', () => {
 
     expect(container.querySelectorAll('[data-placeholder]')).toHaveLength(20)
   })
+  it('top-anchored: mounts the earliest items first', () => {
+    const items = Array.from({ length: 70 }, (_, i) => msg(`m${i}`, 'user', `Content ${i}`))
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    flushSync(() => root.render(<ChatFeedItems displayItems={items} anchored="top" />))
+
+    // Only the 30 earliest are mounted: m0..m29
+    expect(container.querySelector('[data-message-id="m0"]')).toBeTruthy()
+    expect(container.querySelector('[data-message-id="m29"]')).toBeTruthy()
+    expect(container.querySelector('[data-message-id="m30"]')).toBeNull()
+    expect(container.querySelector('[data-message-id="m69"]')).toBeNull()
+    expect(container.querySelectorAll('.feed-item')).toHaveLength(30)
+    expect(container.querySelectorAll('[data-placeholder]')).toHaveLength(40)
+    expect(container.querySelector('[data-testid="feed-unmounted-hint-newer"]')).toBeTruthy()
+    expect(container.querySelector('[data-testid="feed-sentinel-newer"]')).toBeTruthy()
+  })
+
+  it('top-anchored: reveals newer items in batches when the bottom sentinel becomes visible', () => {
+    const items = Array.from({ length: 70 }, (_, i) => msg(`m${i}`, 'user', `Content ${i}`))
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    flushSync(() => root.render(<ChatFeedItems displayItems={items} anchored="top" />))
+    expect(container.querySelectorAll('.feed-item')).toHaveLength(30)
+
+    act(() => {
+      MockIntersectionObserver.instances.at(-1)!.trigger()
+    })
+    expect(container.querySelectorAll('.feed-item')).toHaveLength(50)
+    expect(container.querySelector('[data-message-id="m30"]')).toBeTruthy()
+
+    act(() => {
+      MockIntersectionObserver.instances.at(-1)!.trigger()
+    })
+    expect(container.querySelectorAll('.feed-item')).toHaveLength(70)
+    expect(container.querySelector('[data-message-id="m69"]')).toBeTruthy()
+    expect(container.querySelector('[data-placeholder]')).toBeNull()
+    expect(container.querySelector('[data-testid="feed-sentinel-newer"]')).toBeNull()
+  })
+
+  it('top-anchored: reveals up to a target index on the feed reveal event', () => {
+    const items = Array.from({ length: 100 }, (_, i) => msg(`m${i}`, 'user', `Content ${i}`))
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    flushSync(() => root.render(<ChatFeedItems displayItems={items} anchored="top" />))
+    expect(container.querySelectorAll('.feed-item')).toHaveLength(30)
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent(FEED_REVEAL_EVENT, { detail: { index: 80 } }))
+    })
+    expect(container.querySelector('[data-message-id="m80"]')).toBeTruthy()
+    expect(container.querySelectorAll('.feed-item')).toHaveLength(91)
+  })
+
+  it('top-anchored: resets the window when the session changes', () => {
+    const items = Array.from({ length: 70 }, (_, i) => msg(`m${i}`, 'user', `Content ${i}`))
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    flushSync(() => root.render(<ChatFeedItems displayItems={items} anchored="top" sessionId="session-a" />))
+    expect(container.querySelectorAll('.feed-item')).toHaveLength(30)
+
+    const itemsB = Array.from({ length: 200 }, (_, i) => msg(`b${i}`, 'user', `B ${i}`))
+    act(() => {
+      root.render(<ChatFeedItems displayItems={itemsB} anchored="top" sessionId="session-b" />)
+    })
+    expect(container.querySelectorAll('.feed-item')).toHaveLength(30)
+    expect(container.querySelector('[data-message-id="b0"]')).toBeTruthy()
+    expect(container.querySelector('[data-message-id="b30"]')).toBeNull()
+  })
+
+  it('top-anchored: stays bounded when items grow (new items wait behind the reveal)', () => {
+    const items = Array.from({ length: 70 }, (_, i) => msg(`m${i}`, 'user', `Content ${i}`))
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    flushSync(() => root.render(<ChatFeedItems displayItems={items.slice(0, 10)} anchored="top" />))
+    expect(container.querySelectorAll('[data-item-index]:not([data-placeholder])')).toHaveLength(10)
+
+    const grown = [...items, msg('m70', 'user', 'Newest')]
+    act(() => {
+      root.render(<ChatFeedItems displayItems={grown} anchored="top" />)
+    })
+    // The window does not grow past the initial render count.
+    expect(container.querySelectorAll('[data-item-index]:not([data-placeholder])')).toHaveLength(30)
+    expect(container.querySelector('[data-message-id="m0"]')).toBeTruthy()
+    expect(container.querySelector('[data-message-id="m30"]')).toBeNull()
+  })
+
+  it('top-anchored: reveals when the viewport gets close to the bottom', () => {
+    const items = Array.from({ length: 70 }, (_, i) => msg(`m${i}`, 'user', `Content ${i}`))
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const { scrollContainerRef, scrollTo } = makeViewportMock()
+
+    flushSync(() =>
+      root.render(<ChatFeedItems displayItems={items} anchored="top" scrollContainerRef={scrollContainerRef} />),
+    )
+    expect(container.querySelectorAll('[data-placeholder]')).toHaveLength(40)
+
+    // The mock viewport reports a zero scroll box, so it is always "near the
+    // bottom" — enough to prove the reveal path fires from scroll events.
+    act(() => {
+      scrollTo(0)
+    })
+
+    expect(container.querySelectorAll('[data-placeholder]')).toHaveLength(20)
+    expect(container.querySelector('[data-message-id="m30"]')).toBeTruthy()
+  })
+
   it('does not re-anchor while auto-scroll is off (user reading history)', () => {
     const items = Array.from({ length: 70 }, (_, i) => msg(`m${i}`, 'user', `Content ${i}`))
 

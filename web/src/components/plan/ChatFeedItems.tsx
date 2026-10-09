@@ -45,11 +45,18 @@ interface ChatFeedItemsProps {
   /**
    * Overrides the feedVirtualization setting for the windowing (hint,
    * placeholders, reveal triggers). Containment still follows the setting.
-   * Top-anchored views (readonly full history) pass false: they open at
-   * scrollTop 0, where the bottom-anchored "scroll up to load older" reveal
-   * can never fire.
    */
   virtualization?: boolean
+  /**
+   * Which end of the feed the initial window is pinned to. 'bottom' (default)
+   * mounts the most recent items and reveals older ones while scrolling up —
+   * the live feed. 'top' mounts the earliest items and reveals newer ones
+   * while scrolling down — top-anchored views (readonly full history) that
+   * open at scrollTop 0, where the bottom-anchored reveal can never fire.
+   * Top-anchored windowing is independent of the feedVirtualization setting:
+   * the readonly view must stay bounded on arbitrarily large sessions.
+   */
+  anchored?: 'bottom' | 'top'
 }
 
 function itemKey(item: DisplayItem): string {
@@ -70,30 +77,53 @@ export const ChatFeedItems = memo(function ChatFeedItems({
   showAgentDefinitions = true,
   showWorkflowBars = true,
   virtualization,
+  anchored = 'bottom',
 }: ChatFeedItemsProps) {
   const t = useT()
   const totalItems = displayItems.length
   const { feedVirtualization } = useDisplaySettings()
-  const windowing = virtualization ?? feedVirtualization
-  // Absolute index of the first mounted item. New items appended at the end
-  // (streaming) keep the window stable — only the reveal moves it up.
+  const topAnchored = anchored === 'top'
+  const windowing = topAnchored || (virtualization ?? feedVirtualization)
+  // Bottom-anchored: absolute index of the first mounted item. New items
+  // appended at the end (streaming) keep the window stable — only the reveal
+  // moves it up.
   const [startIndex, setStartIndex] = useState(() => Math.max(0, totalItems - INITIAL_RENDER_COUNT))
+  // Top-anchored: index of the first unmounted item. The initial window is
+  // the earliest items; the reveal moves it down as the reader scrolls.
+  const [endIndex, setEndIndex] = useState(() => Math.min(totalItems, INITIAL_RENDER_COUNT))
+  const endIndexRef = useRef(endIndex)
+  endIndexRef.current = endIndex
+  const totalItemsRef = useRef(totalItems)
+  totalItemsRef.current = totalItems
   const sentinelRef = useRef<HTMLDivElement | null>(null)
+  const sentinelNewerRef = useRef<HTMLDivElement | null>(null)
   const prevItemCountRef = useRef(displayItems.length)
   const userScrolledRef = useRef(false)
-  const displayStart = windowing ? startIndex : 0
+  const displayStart = windowing && !topAnchored ? startIndex : 0
+  const displayEnd = topAnchored ? Math.min(totalItems, endIndex) : totalItems
   // Only virtualized feeds get content-visibility containment. Off-screen it
   // freezes element heights at the last-known intrinsic size, so applying it to
   // dynamically-mutating content (streaming LLM output) leaves stale phantom
-  // gaps below messages. Non-virtualized feeds render at natural height.
-  const itemContainmentStyle = feedVirtualization ? ITEM_CONTAINMENT_STYLE : undefined
+  // gaps below messages. The bottom-anchored feed follows the setting (even
+  // when windowing is overridden off, per the setting's contract); the
+  // top-anchored (readonly) feed is immutable content, so containment always
+  // applies there.
+  const itemContainmentStyle = topAnchored || feedVirtualization ? ITEM_CONTAINMENT_STYLE : undefined
 
-  // Reset the virtual window when switching sessions.
+  // Reset the bottom-anchored window when switching sessions. The dependency
+  // list intentionally omits the item count: a mid-session length change must
+  // not re-anchor a reader who is scrolled into history.
   useEffect(() => {
-    if (!windowing) return
+    if (!windowing || topAnchored) return
     setStartIndex(Math.max(0, displayItems.length - INITIAL_RENDER_COUNT))
     userScrolledRef.current = false
-  }, [sessionId, windowing])
+  }, [sessionId, windowing, topAnchored])
+
+  // Reset the top-anchored window when the session (or its size) changes.
+  useEffect(() => {
+    if (!topAnchored) return
+    setEndIndex(Math.min(displayItems.length, INITIAL_RENDER_COUNT))
+  }, [sessionId, windowing, topAnchored, displayItems.length])
 
   // Re-anchor the window to the newest items. This has to cover three cases:
   // a bulk history load, a session that started empty and grew by single
@@ -105,7 +135,7 @@ export const ChatFeedItems = memo(function ChatFeedItems({
   useEffect(() => {
     const prev = prevItemCountRef.current
     prevItemCountRef.current = displayItems.length
-    if (!windowing) return
+    if (!windowing || topAnchored) return
     if (!isAutoScrollActive) return
     const length = displayItems.length
     const bulkAppend = length - prev >= BULK_APPEND_THRESHOLD
@@ -114,21 +144,31 @@ export const ChatFeedItems = memo(function ChatFeedItems({
       if (!bulkAppend && !drifted) return current
       return Math.max(0, length - INITIAL_RENDER_COUNT)
     })
-  }, [displayItems.length, windowing, isAutoScrollActive])
+  }, [displayItems.length, windowing, topAnchored, isAutoScrollActive])
 
   // Clamp when items are removed (truncation, session switch).
   useEffect(() => {
-    if (!windowing) return
+    if (!windowing || topAnchored) return
     if (startIndex > 0 && startIndex >= displayItems.length) {
       setStartIndex(Math.max(0, displayItems.length - INITIAL_RENDER_COUNT))
     }
-  }, [displayItems.length, startIndex, windowing])
+  }, [displayItems.length, startIndex, windowing, topAnchored])
+
+  // Top-anchored: clamp when items are removed, and keep the window at least
+  // the initial render count once the feed has grown past it.
+  useEffect(() => {
+    if (!topAnchored) return
+    setEndIndex((current) => {
+      const clamped = Math.min(current, displayItems.length)
+      return Math.max(clamped, Math.min(displayItems.length, INITIAL_RENDER_COUNT))
+    })
+  }, [displayItems.length, topAnchored])
 
   // Reveal older items in batches while the sentinel approaches the viewport.
   // The bottom-expanded rootMargin triggers before the user reaches the
   // placeholder region, so scrolling up never exposes gaps.
   useEffect(() => {
-    if (!windowing) return
+    if (!windowing || topAnchored) return
     if (startIndex <= 0 || typeof IntersectionObserver === 'undefined') return
     const sentinel = sentinelRef.current
     if (!sentinel) return
@@ -142,7 +182,26 @@ export const ChatFeedItems = memo(function ChatFeedItems({
     )
     observer.observe(sentinel)
     return () => observer.disconnect()
-  }, [startIndex, windowing])
+  }, [startIndex, windowing, topAnchored])
+
+  // Top-anchored: reveal newer items in batches while the sentinel below the
+  // mounted region approaches the viewport.
+  useEffect(() => {
+    if (!topAnchored || typeof IntersectionObserver === 'undefined') return
+    if (endIndex >= totalItems) return
+    const sentinel = sentinelNewerRef.current
+    if (!sentinel) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setEndIndex((index) => Math.min(totalItemsRef.current, index + REVEAL_BATCH_SIZE))
+        }
+      },
+      { rootMargin: '0px 0px 300px 0px' },
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [endIndex, totalItems, topAnchored])
 
   // When the user reaches the very top, keep revealing until everything is
   // mounted — the sentinel can end up below remaining placeholders, out of the
@@ -153,7 +212,7 @@ export const ChatFeedItems = memo(function ChatFeedItems({
   startIndexRef.current = startIndex
 
   useEffect(() => {
-    if (!windowing) return
+    if (!windowing || topAnchored) return
     // Resolve the viewport inside the handler, not while attaching. The
     // OverlayScrollbars instance is created in a passive effect of the feed's
     // ScrollArea, and React runs child effects first — so at attach time
@@ -173,17 +232,35 @@ export const ChatFeedItems = memo(function ChatFeedItems({
     }
     document.addEventListener('scroll', onScroll, { capture: true, passive: true })
     return () => document.removeEventListener('scroll', onScroll, { capture: true })
-  }, [scrollContainerRef, windowing])
+  }, [scrollContainerRef, windowing, topAnchored])
 
   useEffect(() => {
-    if (!windowing) return
+    if (!windowing || topAnchored) return
     if (startIndex <= 0 || !userScrolledRef.current) return
     const container = scrollContainerRef?.current
     const viewport = container?.osInstance?.()?.elements().viewport
     if (viewport && viewport.scrollTop <= REVEAL_TOP_THRESHOLD_PX) {
       setStartIndex((index) => Math.max(0, index - REVEAL_BATCH_SIZE))
     }
-  }, [startIndex, scrollContainerRef, windowing])
+  }, [startIndex, scrollContainerRef, windowing, topAnchored])
+
+  // Top-anchored: keep revealing newer items once the reader gets close to
+  // the bottom of the mounted region — the sentinel can end up above the
+  // remaining placeholders, out of the observer margin.
+  useEffect(() => {
+    if (!topAnchored) return
+    const onScroll = (event: Event) => {
+      const viewport = scrollContainerRef?.current?.osInstance?.()?.elements().viewport
+      if (!viewport || event.target !== viewport) return
+      const gapToBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight
+      if (gapToBottom > REVEAL_TOP_THRESHOLD_PX) return
+      if (endIndexRef.current < totalItemsRef.current) {
+        setEndIndex((index) => Math.min(totalItemsRef.current, index + REVEAL_BATCH_SIZE))
+      }
+    }
+    document.addEventListener('scroll', onScroll, { capture: true, passive: true })
+    return () => document.removeEventListener('scroll', onScroll, { capture: true })
+  }, [scrollContainerRef, topAnchored])
 
   // Timeline navigation: reveal up to a target index when asked. This is the
   // only active reveal path — highlightedMessageId (ChatFeedItems) has no
@@ -194,13 +271,17 @@ export const ChatFeedItems = memo(function ChatFeedItems({
     const onRevealRequest = (event: Event) => {
       const index = (event as CustomEvent<{ index: number }>).detail?.index
       if (typeof index !== 'number') return
-      setStartIndex((current) => Math.min(current, Math.max(0, index - REVEAL_MARGIN)))
+      if (topAnchored) {
+        setEndIndex((current) => Math.max(current, Math.min(totalItemsRef.current, index + REVEAL_MARGIN + 1)))
+      } else {
+        setStartIndex((current) => Math.min(current, Math.max(0, index - REVEAL_MARGIN)))
+      }
     }
     window.addEventListener(FEED_REVEAL_EVENT, onRevealRequest)
     return () => window.removeEventListener(FEED_REVEAL_EVENT, onRevealRequest)
-  }, [windowing])
+  }, [windowing, topAnchored])
 
-  const visibleItems = displayItems.slice(displayStart)
+  const visibleItems = displayItems.slice(displayStart, displayEnd)
 
   return (
     <>
@@ -304,6 +385,32 @@ export const ChatFeedItems = memo(function ChatFeedItems({
           </div>
         )
       })}
+      {displayEnd < totalItems && (
+        <>
+          <div
+            className="flex items-center justify-center gap-2 py-3 text-xs text-text-muted"
+            data-testid="feed-unmounted-hint-newer"
+          >
+            {t(
+              {
+                en: {
+                  one: 'Scroll down to load {{count}} newer item',
+                  other: 'Scroll down to load {{count}} newer items',
+                },
+                fr: {
+                  one: 'Faites défiler vers le bas pour charger {{count}} élément plus récent',
+                  other: 'Faites défiler vers le bas pour charger {{count}} éléments plus récents',
+                },
+              },
+              { count: totalItems - displayEnd },
+            )}
+          </div>
+          {Array.from({ length: totalItems - displayEnd }, (_, i) => (
+            <div key={`ph-newer-${i}`} data-item-index={displayEnd + i} data-placeholder style={PLACEHOLDER_STYLE} />
+          ))}
+          <div ref={sentinelNewerRef} data-testid="feed-sentinel-newer" style={{ height: 1 }} />
+        </>
+      )}
     </>
   )
 })

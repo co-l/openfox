@@ -120,12 +120,12 @@ const PERF_TOGGLES: ToggleDefinition[] = [
   {
     key: SETTINGS_KEYS.DISPLAY_USE_NATIVE_SCROLLBARS,
     label: {
-      en: 'Use native scrollbars in tool calls',
-      fr: 'Utiliser les barres de défilement natives dans les appels d’outils',
+      en: 'Use native scrollbars',
+      fr: 'Utiliser les barres de défilement natives',
     },
     description: {
-      en: 'Swap custom styled scrollbars for native ones in tool call views (file previews, arguments, results). Faster, but native scrollbars look different on some platforms.',
-      fr: 'Remplace les barres de défilement personnalisées par des barres natives dans les vues d’appels d’outils (aperçus de fichiers, arguments, résultats). Plus rapide, mais l’apparence diffère selon les plateformes.',
+      en: 'Swap custom styled scrollbars for native ones across scrollable views (chat feed, tool calls, sub-agent runs, modals). Faster, but native scrollbars look different on some platforms.',
+      fr: 'Remplace les barres de défilement personnalisées par des barres natives dans toutes les vues défilantes (fil de discussion, appels d’outils, exécutions de sous-agents, fenêtres modales). Plus rapide, mais l’apparence diffère selon les plateformes.',
     },
     defaultValue: 'false',
   },
