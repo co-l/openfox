@@ -1,5 +1,14 @@
-import { describe, expect, it, beforeEach, vi } from 'vitest'
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { describe, expect, it, beforeEach, afterEach } from 'vitest'
+import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import {
+  constants,
+  createPublicKey,
+  createVerify,
+  generateKeyPairSync,
+  publicEncrypt,
+} from 'node:crypto'
 import type { Config } from '../shared/types.js'
 import {
   requiresAuth,
@@ -12,517 +21,278 @@ import {
   loadServerAuthConfig,
   getAuthConfig,
   hashPassword,
+  decryptPassword,
+  signPasswordToken,
 } from './auth.js'
 import { setRuntimeConfig } from './runtime-config.js'
 
-vi.mock('node:fs/promises', () => ({
-  readFile: vi.fn(),
-  writeFile: vi.fn(),
-  mkdir: vi.fn(),
-}))
+const { publicKey, privateKey } = generateKeyPairSync('rsa', {
+  modulusLength: 2048,
+  privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+  publicKeyEncoding: { type: 'spki', format: 'pem' },
+})
+
+function encrypt(password: string, padding: number = constants.RSA_PKCS1_OAEP_PADDING): string {
+  return publicEncrypt(
+    { key: publicKey, padding, oaepHash: 'sha256' },
+    Buffer.from(password),
+  ).toString('base64')
+}
+
+function verifyToken(token: string, password: string): boolean {
+  const verifier = createVerify('SHA256')
+  verifier.update(hashPassword(password))
+  verifier.end()
+  return verifier.verify(publicKey, token, 'base64')
+}
+
+let authDir: string
+
+function makeConfig(overrides: Partial<Config> = {}): Config {
+  return {
+    mode: 'production',
+    llm: { baseUrl: '', model: '', backend: 'unknown', timeout: 300000, idleTimeout: 300000 },
+    context: { maxTokens: 100000, compactionThreshold: 0.85, compactionTarget: 0.6 },
+    agent: { maxIterations: 10, maxConsecutiveFailures: 3, toolTimeout: 120000 },
+    server: { port: 0, host: '127.0.0.1' },
+    database: { path: ':memory:' },
+    logging: { level: 'error' },
+    workdir: '/tmp',
+    authDir,
+    ...overrides,
+  }
+}
+
+async function startServer(overrides: Partial<Config> = {}): Promise<void> {
+  setRuntimeConfig(makeConfig(overrides))
+  resetAuthCache()
+}
+
+async function writeAuthConfig(config: Record<string, unknown>): Promise<void> {
+  await writeFile(join(authDir, 'auth.json'), JSON.stringify(config))
+}
+
+async function writeKey(pem: string): Promise<void> {
+  await writeFile(join(authDir, 'auth.key'), pem, { mode: 0o600 })
+}
 
 describe('auth', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    authDir = await mkdtemp(join(tmpdir(), 'openfox-auth-'))
+  })
+
+  afterEach(async () => {
     resetAuthCache()
-    vi.clearAllMocks()
-    const config: Config = {
-      mode: 'test',
-      llm: { baseUrl: '', model: '', backend: 'unknown', timeout: 300000, idleTimeout: 300000 },
-      context: { maxTokens: 100000, compactionThreshold: 0.85, compactionTarget: 0.6 },
-      agent: { maxIterations: 10, maxConsecutiveFailures: 3, toolTimeout: 120000 },
-      server: { port: 0, host: '127.0.0.1' },
-      database: { path: ':memory:' },
-      logging: { level: 'error' },
-      workdir: '/tmp',
-    }
-    setRuntimeConfig(config)
+    await rm(authDir, { recursive: true, force: true })
   })
 
-  describe('requiresAuth', () => {
-    it('returns false when no auth config loaded', () => {
+  describe('without an auth config', () => {
+    it('loads null and keeps auth disabled', async () => {
+      await startServer()
+      expect(await loadServerAuthConfig()).toBeNull()
       expect(requiresAuth()).toBe(false)
+      expect(hasPassword()).toBe(false)
     })
 
-    it('returns false when config is null', () => {
+    it('rejects passwords and tokens', async () => {
+      await startServer()
+      expect(await verifyPassword('testpassword')).toBe(false)
+      expect(await isValidToken('sometoken')).toBe(false)
+      expect(await isValidToken('')).toBe(false)
+      expect(await currentSessionToken()).toBeNull()
+    })
+
+    it('still mints tokens, generating the key inside authDir', async () => {
+      await startServer()
+      const token = await tokenFromPassword('testpassword')
+
+      const key = await readFile(join(authDir, 'auth.key'), 'utf-8')
+      const derivedPublicKey = createPublicKey(key).export({ type: 'spki', format: 'pem' })
+      const verifier = createVerify('SHA256')
+      verifier.update(hashPassword('testpassword'))
+      verifier.end()
+      expect(verifier.verify(derivedPublicKey, token, 'base64')).toBe(true)
+    })
+  })
+
+  describe('with network strategy and a password', () => {
+    beforeEach(async () => {
+      await writeKey(privateKey)
+      await writeAuthConfig({ strategy: 'network', encryptedPassword: encrypt('correctpassword') })
+      await startServer()
+      await loadServerAuthConfig()
+    })
+
+    it('requires auth and exposes the stored password', () => {
+      expect(requiresAuth()).toBe(true)
+      expect(hasPassword()).toBe(true)
+      const config = getAuthConfig()
+      expect(config?.strategy).toBe('network')
+      // OAEP is randomized, so compare by decryption rather than by ciphertext
+      expect(decryptPassword(privateKey, config!.encryptedPassword!)?.toString()).toBe('correctpassword')
+    })
+
+    it('accepts the correct password and rejects a wrong one', async () => {
+      expect(await verifyPassword('correctpassword')).toBe(true)
+      expect(await verifyPassword('wrongpassword')).toBe(false)
+    })
+
+    it('accepts a legacy PKCS1-encrypted password', async () => {
+      await writeAuthConfig({ strategy: 'network', encryptedPassword: encrypt('legacypassword', constants.RSA_PKCS1_PADDING) })
+      resetAuthCache()
+      await loadServerAuthConfig()
+
+      expect(await verifyPassword('legacypassword')).toBe(true)
+    })
+  })
+
+  describe('strategy variants', () => {
+    it('does not require auth with local strategy', async () => {
+      await writeKey(privateKey)
+      await writeAuthConfig({ strategy: 'local', encryptedPassword: encrypt('whatever') })
+      await startServer()
+      await loadServerAuthConfig()
+
       expect(requiresAuth()).toBe(false)
+      expect(hasPassword()).toBe(true)
+    })
+
+    it('reports no password when encryptedPassword is null or empty', async () => {
+      await writeAuthConfig({ strategy: 'network', encryptedPassword: null })
+      await startServer()
+      await loadServerAuthConfig()
+      expect(hasPassword()).toBe(false)
+      expect(await verifyPassword('x')).toBe(false)
+
+      await writeAuthConfig({ strategy: 'network', encryptedPassword: '' })
+      resetAuthCache()
+      await loadServerAuthConfig()
+      expect(hasPassword()).toBe(false)
     })
   })
 
-  describe('hasPassword', () => {
-    it('returns false when no auth config', () => {
-      expect(hasPassword()).toBe(false)
-    })
+  describe('caching', () => {
+    it('serves the cached config until reset, in every mode', async () => {
+      await writeKey(privateKey)
+      const encrypted = encrypt('stored')
+      await writeAuthConfig({ strategy: 'network', encryptedPassword: encrypted })
+      await startServer({ mode: 'test' })
+      await loadServerAuthConfig()
 
-    it('returns false when encryptedPassword is null', () => {
-      expect(hasPassword()).toBe(false)
-    })
+      await writeAuthConfig({ strategy: 'local', encryptedPassword: null })
+      expect(await loadServerAuthConfig()).toEqual({ strategy: 'network', encryptedPassword: encrypted })
 
-    it('returns false when encryptedPassword is empty string', () => {
-      expect(hasPassword()).toBe(false)
-    })
-  })
-
-  describe('verifyPassword', () => {
-    it('returns false when no auth config', async () => {
-      const result = await verifyPassword('testpassword')
-      expect(result).toBe(false)
+      resetAuthCache()
+      expect(await loadServerAuthConfig()).toEqual({ strategy: 'local', encryptedPassword: null })
     })
   })
 
   describe('isValidToken', () => {
-    it('returns false when no auth config', async () => {
-      const result = await isValidToken('sometoken')
-      expect(result).toBe(false)
+    beforeEach(async () => {
+      await writeKey(privateKey)
+      await writeAuthConfig({ strategy: 'network', encryptedPassword: encrypt('storedpassword') })
+      await startServer()
+      await loadServerAuthConfig()
     })
 
-    it('returns false for empty token', async () => {
-      const result = await isValidToken('')
-      expect(result).toBe(false)
-    })
-  })
-
-  describe('tokenFromPassword', () => {
-    it('generates a token when no auth config exists (creates keypair)', async () => {
-      vi.mocked(readFile).mockRejectedValue(new Error('ENOENT'))
-      vi.mocked(mkdir).mockResolvedValue(undefined)
-      vi.mocked(writeFile).mockResolvedValue(undefined)
-
-      const result = await tokenFromPassword('testpassword')
-      expect(result).not.toBeNull()
-      expect(typeof result).toBe('string')
-      expect(result!.length).toBeGreaterThan(0)
+    it('accepts a token minted for the stored password', async () => {
+      const token = await tokenFromPassword('storedpassword')
+      expect(await isValidToken(token)).toBe(true)
     })
 
-    it('generates different tokens for different passwords', async () => {
-      vi.mocked(readFile).mockRejectedValue(new Error('ENOENT'))
-      vi.mocked(mkdir).mockResolvedValue(undefined)
-      vi.mocked(writeFile).mockResolvedValue(undefined)
-
-      const token1 = await tokenFromPassword('password1')
-      const token2 = await tokenFromPassword('password2')
-      expect(token1).not.toBe(token2)
+    it('rejects an invalid token', async () => {
+      expect(await isValidToken('invalidtoken')).toBe(false)
     })
-  })
 
-  describe('resetAuthCache', () => {
-    it('clears the cached auth config', () => {
+    it('accepts a token for a legacy PKCS1-encrypted password', async () => {
+      await writeAuthConfig({ strategy: 'network', encryptedPassword: encrypt('storedpassword', constants.RSA_PKCS1_PADDING) })
       resetAuthCache()
-      expect(requiresAuth()).toBe(false)
+      await loadServerAuthConfig()
+
+      expect(await isValidToken(await tokenFromPassword('storedpassword'))).toBe(true)
     })
   })
 
-  describe('loadServerAuthConfig', () => {
-    it('loads auth config from file in test mode', async () => {
-      const mockAuthConfig = { strategy: 'network', encryptedPassword: 'abc123' }
-      vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify(mockAuthConfig))
-
-      const result = await loadServerAuthConfig()
-      expect(result).toEqual(mockAuthConfig)
-    })
-
-    it('returns null when auth file does not exist', async () => {
-      vi.mocked(readFile).mockRejectedValueOnce(new Error('ENOENT'))
-
-      const result = await loadServerAuthConfig()
-      expect(result).toBeNull()
-    })
-
-    it('returns null on corrupted JSON', async () => {
-      vi.mocked(readFile).mockResolvedValueOnce('not valid json')
-
-      const result = await loadServerAuthConfig()
-      expect(result).toBeNull()
-    })
-
-    it('caches config in non-test mode', async () => {
-      const config: Config = {
-        mode: 'production',
-        llm: { baseUrl: '', model: '', backend: 'unknown', timeout: 300000, idleTimeout: 300000 },
-        context: { maxTokens: 100000, compactionThreshold: 0.85, compactionTarget: 0.6 },
-        agent: { maxIterations: 10, maxConsecutiveFailures: 3, toolTimeout: 120000 },
-        server: { port: 0, host: '127.0.0.1' },
-        database: { path: ':memory:' },
-        logging: { level: 'error' },
-        workdir: '/tmp',
-      }
-      setRuntimeConfig(config)
-
-      const mockAuthConfig = { strategy: 'network', encryptedPassword: 'abc123' }
-      vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify(mockAuthConfig))
-
-      await loadServerAuthConfig()
-      await loadServerAuthConfig()
-
-      expect(readFile).toHaveBeenCalledTimes(1)
-    })
-
-    it('does not cache config in test mode', async () => {
-      const config: Config = {
-        mode: 'test',
-        llm: { baseUrl: '', model: '', backend: 'unknown', timeout: 300000, idleTimeout: 300000 },
-        context: { maxTokens: 100000, compactionThreshold: 0.85, compactionTarget: 0.6 },
-        agent: { maxIterations: 10, maxConsecutiveFailures: 3, toolTimeout: 120000 },
-        server: { port: 0, host: '127.0.0.1' },
-        database: { path: ':memory:' },
-        logging: { level: 'error' },
-        workdir: '/tmp',
-      }
-      setRuntimeConfig(config)
-
-      const mockAuthConfig = { strategy: 'network', encryptedPassword: 'abc123' }
-      vi.mocked(readFile).mockResolvedValue(JSON.stringify(mockAuthConfig))
-
-      await loadServerAuthConfig()
-      await loadServerAuthConfig()
-
-      expect(readFile).toHaveBeenCalledTimes(2)
-    })
-  })
-
-  describe('getAuthConfig', () => {
-    it('returns null when no config loaded', () => {
-      resetAuthCache()
-      expect(getAuthConfig()).toBeNull()
-    })
-
-    it('returns cached config after loading', async () => {
-      const mockAuthConfig = { strategy: 'network', encryptedPassword: 'abc123' }
-      vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify(mockAuthConfig))
-
-      await loadServerAuthConfig()
-      expect(getAuthConfig()).toEqual(mockAuthConfig)
-    })
-  })
-
-  describe('hashPassword', () => {
-    it('produces consistent hash for same password', () => {
-      const hash1 = hashPassword('mypassword')
-      const hash2 = hashPassword('mypassword')
-      expect(hash1).toBe(hash2)
-    })
-
-    it('produces different hash for different passwords', () => {
-      const hash1 = hashPassword('password1')
-      const hash2 = hashPassword('password2')
-      expect(hash1).not.toBe(hash2)
-    })
-
-    it('produces 64-character hex string', () => {
-      const hash = hashPassword('test')
-      expect(hash).toMatch(/^[a-f0-9]{64}$/)
-    })
-  })
-
-  describe('requiresAuth with config loaded', () => {
-    it('returns true when strategy is network', async () => {
-      const mockAuthConfig = { strategy: 'network', encryptedPassword: 'abc123' }
-      vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify(mockAuthConfig))
-      await loadServerAuthConfig()
-
-      expect(requiresAuth()).toBe(true)
-    })
-
-    it('returns false when strategy is local', async () => {
-      const mockAuthConfig = { strategy: 'local', encryptedPassword: null }
-      vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify(mockAuthConfig))
-      await loadServerAuthConfig()
-
-      expect(requiresAuth()).toBe(false)
-    })
-  })
-
-  describe('hasPassword with config loaded', () => {
-    it('returns true when encryptedPassword is set', async () => {
-      const mockAuthConfig = { strategy: 'network', encryptedPassword: 'abc123' }
-      vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify(mockAuthConfig))
-      await loadServerAuthConfig()
-
-      expect(hasPassword()).toBe(true)
-    })
-
-    it('returns false when encryptedPassword is null', async () => {
-      const mockAuthConfig = { strategy: 'network', encryptedPassword: null }
-      vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify(mockAuthConfig))
-      await loadServerAuthConfig()
-
-      expect(hasPassword()).toBe(false)
-    })
-
-    it('returns false when encryptedPassword is empty string', async () => {
-      const mockAuthConfig = { strategy: 'network', encryptedPassword: '' }
-      vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify(mockAuthConfig))
-      await loadServerAuthConfig()
-
-      expect(hasPassword()).toBe(false)
-    })
-  })
-
-  describe('verifyPassword with config loaded', () => {
-    it('returns true for correct password', async () => {
-      const { privateKey, publicKey } = await import('node:crypto').then((c) =>
-        c.generateKeyPairSync('rsa', {
-          modulusLength: 2048,
-          privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-          publicKeyEncoding: { type: 'spki', format: 'pem' },
-        }),
-      )
-
-      const encryptedPassword = await import('node:crypto').then((c) =>
-        c
-          .publicEncrypt(
-            { key: publicKey, padding: c.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
-            Buffer.from('correctpassword'),
-          )
-          .toString('base64'),
-      )
-
-      vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify({ strategy: 'network', encryptedPassword }))
-      vi.mocked(readFile).mockResolvedValueOnce(privateKey)
-
-      await loadServerAuthConfig()
-
-      const result = await verifyPassword('correctpassword')
-      expect(result).toBe(true)
-    })
-
-    it('returns false for incorrect password', async () => {
-      const { privateKey, publicKey } = await import('node:crypto').then((c) =>
-        c.generateKeyPairSync('rsa', {
-          modulusLength: 2048,
-          privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-          publicKeyEncoding: { type: 'spki', format: 'pem' },
-        }),
-      )
-
-      const encryptedPassword = await import('node:crypto').then((c) =>
-        c
-          .publicEncrypt(
-            { key: publicKey, padding: c.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
-            Buffer.from('correctpassword'),
-          )
-          .toString('base64'),
-      )
-
-      vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify({ strategy: 'network', encryptedPassword }))
-      vi.mocked(readFile).mockResolvedValueOnce(privateKey)
-
-      await loadServerAuthConfig()
-
-      const result = await verifyPassword('wrongpassword')
-      expect(result).toBe(false)
-    })
-
-    it('returns true for a legacy PKCS1-encrypted password (backward compat)', async () => {
-      const { privateKey, publicKey } = await import('node:crypto').then((c) =>
-        c.generateKeyPairSync('rsa', {
-          modulusLength: 2048,
-          privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-          publicKeyEncoding: { type: 'spki', format: 'pem' },
-        }),
-      )
-
-      const encryptedPassword = await import('node:crypto').then((c) =>
-        c
-          .publicEncrypt({ key: publicKey, padding: c.constants.RSA_PKCS1_PADDING }, Buffer.from('legacypassword'))
-          .toString('base64'),
-      )
-
-      vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify({ strategy: 'network', encryptedPassword }))
-      vi.mocked(readFile).mockResolvedValueOnce(privateKey)
-
-      await loadServerAuthConfig()
-
-      const result = await verifyPassword('legacypassword')
-      expect(result).toBe(true)
-    })
-  })
-
-  describe('isValidToken with config loaded', () => {
-    it('returns true for valid token', async () => {
-      const { privateKey, publicKey } = await import('node:crypto').then((c) =>
-        c.generateKeyPairSync('rsa', {
-          modulusLength: 2048,
-          privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-          publicKeyEncoding: { type: 'spki', format: 'pem' },
-        }),
-      )
-
-      const password = 'testpassword'
-      const passwordHash = hashPassword(password)
-
-      const sign = await import('node:crypto').then((c) => {
-        const s = c.createSign('SHA256')
-        s.update(passwordHash)
-        s.end()
-        return s.sign(privateKey, 'base64')
-      })
-
-      const encryptedPassword = await import('node:crypto').then((c) =>
-        c
-          .publicEncrypt(
-            { key: publicKey, padding: c.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
-            Buffer.from(password),
-          )
-          .toString('base64'),
-      )
-
-      vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify({ strategy: 'network', encryptedPassword }))
-      vi.mocked(readFile).mockResolvedValueOnce(privateKey)
-
-      await loadServerAuthConfig()
-
-      const result = await isValidToken(sign)
-      expect(result).toBe(true)
-    })
-
-    it('returns true for a token derived from a legacy PKCS1-encrypted password (backward compat)', async () => {
-      const { privateKey, publicKey } = await import('node:crypto').then((c) =>
-        c.generateKeyPairSync('rsa', {
-          modulusLength: 2048,
-          privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-          publicKeyEncoding: { type: 'spki', format: 'pem' },
-        }),
-      )
-
-      const password = 'testpassword'
-      const passwordHash = hashPassword(password)
-
-      const sign = await import('node:crypto').then((c) => {
-        const s = c.createSign('SHA256')
-        s.update(passwordHash)
-        s.end()
-        return s.sign(privateKey, 'base64')
-      })
-
-      const encryptedPassword = await import('node:crypto').then((c) =>
-        c
-          .publicEncrypt({ key: publicKey, padding: c.constants.RSA_PKCS1_PADDING }, Buffer.from(password))
-          .toString('base64'),
-      )
-
-      vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify({ strategy: 'network', encryptedPassword }))
-      vi.mocked(readFile).mockResolvedValueOnce(privateKey)
-
-      await loadServerAuthConfig()
-
-      const result = await isValidToken(sign)
-      expect(result).toBe(true)
-    })
-
-    it('returns false for invalid token', async () => {
-      const { privateKey, publicKey } = await import('node:crypto').then((c) =>
-        c.generateKeyPairSync('rsa', {
-          modulusLength: 2048,
-          privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-          publicKeyEncoding: { type: 'spki', format: 'pem' },
-        }),
-      )
-
-      const encryptedPassword = await import('node:crypto').then((c) =>
-        c
-          .publicEncrypt(
-            { key: publicKey, padding: c.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
-            Buffer.from('password'),
-          )
-          .toString('base64'),
-      )
-
-      vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify({ strategy: 'network', encryptedPassword }))
-      vi.mocked(readFile).mockResolvedValueOnce(privateKey)
-
-      await loadServerAuthConfig()
-
-      const result = await isValidToken('invalidtoken')
-      expect(result).toBe(false)
-    })
-
-    it('returns false when no encryptedPassword in config', async () => {
-      const mockAuthConfig = { strategy: 'network', encryptedPassword: null }
-      vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify(mockAuthConfig))
-
-      await loadServerAuthConfig()
-
-      const result = await isValidToken('sometoken')
-      expect(result).toBe(false)
-    })
-  })
-
-  describe('tokenFromPassword with config loaded', () => {
-    it('generates valid signature token', async () => {
-      const { privateKey, publicKey } = await import('node:crypto').then((c) =>
-        c.generateKeyPairSync('rsa', {
-          modulusLength: 2048,
-          privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-          publicKeyEncoding: { type: 'spki', format: 'pem' },
-        }),
-      )
-
-      const encryptedPassword = await import('node:crypto').then((c) =>
-        c
-          .publicEncrypt(
-            { key: publicKey, padding: c.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
-            Buffer.from('password'),
-          )
-          .toString('base64'),
-      )
-
-      vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify({ strategy: 'network', encryptedPassword }))
-      vi.mocked(readFile).mockResolvedValueOnce(privateKey)
-
-      await loadServerAuthConfig()
-
-      const token = await tokenFromPassword('password')
-
-      const verify = await import('node:crypto').then((c) => {
-        const v = c.createVerify('SHA256')
-        v.update(hashPassword('password'))
-        v.end()
-        return v
-      })
-
-      const publicKeyObj = await import('node:crypto').then((c) => c.createPublicKey(privateKey))
-      const exportedPublicKey = publicKeyObj.export({ type: 'spki', format: 'pem' })
-
-      const isValid = verify.verify(exportedPublicKey, token, 'base64')
-      expect(isValid).toBe(true)
-    })
-  })
-
-  describe('currentSessionToken with config loaded', () => {
-    it('returns a valid token for a legacy PKCS1-encrypted password (backward compat)', async () => {
-      const { privateKey, publicKey } = await import('node:crypto').then((c) =>
-        c.generateKeyPairSync('rsa', {
-          modulusLength: 2048,
-          privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-          publicKeyEncoding: { type: 'spki', format: 'pem' },
-        }),
-      )
-
-      const password = 'legacypassword'
-      const encryptedPassword = await import('node:crypto').then((c) =>
-        c
-          .publicEncrypt({ key: publicKey, padding: c.constants.RSA_PKCS1_PADDING }, Buffer.from(password))
-          .toString('base64'),
-      )
-
-      vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify({ strategy: 'network', encryptedPassword }))
-      vi.mocked(readFile).mockResolvedValueOnce(privateKey)
-
+  describe('currentSessionToken', () => {
+    it('returns a token that verifies against the stored password', async () => {
+      await writeKey(privateKey)
+      await writeAuthConfig({ strategy: 'network', encryptedPassword: encrypt('sessionpassword') })
+      await startServer()
       await loadServerAuthConfig()
 
       const token = await currentSessionToken()
       expect(token).not.toBeNull()
+      expect(verifyToken(token!, 'sessionpassword')).toBe(true)
+    })
 
-      const passwordHash = hashPassword(password)
-      const verify = await import('node:crypto').then((c) => {
-        const v = c.createVerify('SHA256')
-        v.update(passwordHash)
-        v.end()
-        return v
+    it('returns null when no password is stored', async () => {
+      await writeAuthConfig({ strategy: 'network', encryptedPassword: null })
+      await startServer()
+      await loadServerAuthConfig()
+
+      expect(await currentSessionToken()).toBeNull()
+    })
+  })
+
+  describe('hashPassword', () => {
+    it('produces a consistent 64-char hex digest', () => {
+      expect(hashPassword('mypassword')).toBe(hashPassword('mypassword'))
+      expect(hashPassword('password1')).not.toBe(hashPassword('password2'))
+      expect(hashPassword('test')).toMatch(/^[a-f0-9]{64}$/)
+    })
+  })
+
+  describe('decryptPassword (pure)', () => {
+    it('decrypts OAEP and legacy PKCS1 payloads', () => {
+      expect(decryptPassword(privateKey, encrypt('hunter2'))?.toString()).toBe('hunter2')
+      expect(decryptPassword(privateKey, encrypt('hunter2', constants.RSA_PKCS1_PADDING))?.toString()).toBe('hunter2')
+    })
+
+    it('returns null for malformed input', () => {
+      expect(decryptPassword(privateKey, 'not-base64-!!!')).toBeNull()
+      // full-size garbage must not be mistaken for a decrypted password
+      expect(decryptPassword(privateKey, Buffer.alloc(256, 0xab).toString('base64'))).toBeNull()
+    })
+
+    it('accepts a legacy block with the minimum eight padding bytes', () => {
+      // PKCS#1 (RFC 8017) allows exactly 8 padding bytes, so a 245-byte
+      // message is the longest valid payload for a 2048-bit key
+      const message = Buffer.alloc(245, 0x41)
+      const block = Buffer.concat([
+        Buffer.from([0x00, 0x02]),
+        Buffer.from([1, 2, 3, 4, 5, 6, 7, 8]),
+        Buffer.from([0x00]),
+        message,
+      ])
+      expect(block.length).toBe(256)
+      const ciphertext = publicEncrypt(
+        { key: publicKey, padding: constants.RSA_NO_PADDING },
+        block,
+      ).toString('base64')
+
+      expect(decryptPassword(privateKey, ciphertext)?.toString()).toBe(message.toString())
+    })
+
+    it('accepts a valid ciphertext when the key bit length is not a multiple of eight', () => {
+      const { privateKey: key, publicKey: pub } = generateKeyPairSync('rsa', {
+        modulusLength: 2050,
+        privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+        publicKeyEncoding: { type: 'spki', format: 'pem' },
       })
-      const publicKeyObj = await import('node:crypto').then((c) => c.createPublicKey(privateKey))
-      const exportedPublicKey = publicKeyObj.export({ type: 'spki', format: 'pem' })
-      expect(verify.verify(exportedPublicKey, token!, 'base64')).toBe(true)
+      const ciphertext = publicEncrypt(
+        { key: pub, padding: constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
+        Buffer.from('s3cret'),
+      ).toString('base64')
+      expect(Buffer.from(ciphertext, 'base64').length).toBe(257)
+      expect(decryptPassword(key, ciphertext)?.toString()).toBe('s3cret')
+    })
+  })
+
+  describe('signPasswordToken (pure)', () => {
+    it('produces a token that verifies against the public key', () => {
+      const token = signPasswordToken(privateKey, 'hunter2')
+      expect(verifyToken(token, 'hunter2')).toBe(true)
+      expect(token).not.toBe(signPasswordToken(privateKey, 'other'))
     })
   })
 })

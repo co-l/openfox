@@ -8,6 +8,8 @@
 import type { ServerHandle } from '../../src/server/context.js'
 import type { Config } from '../../src/shared/types.js'
 import { loadConfig } from '../../src/server/config.js'
+import { resetAuthCache } from '../../src/server/auth.js'
+import { getGlobalConfigDir } from '../../src/cli/paths.js'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -39,6 +41,9 @@ function createTestConfig(options: CreateTestServerOptions = {}): Config {
 
   // Use test mode to isolate config from production
   config.mode = 'test'
+
+  // Explicit config dir (e2e/.openfox-test), independent of the launch cwd
+  config.authDir = getGlobalConfigDir('test')
 
   // Give this server its own isolated config file so parallel tests don't clash
   config.globalConfigPath = join(tmpdir(), `openfox-e2e-config-${randomUUID()}.json`)
@@ -85,6 +90,7 @@ export async function createTestServer(options: CreateTestServerOptions = {}): P
   if (options.mcpServers !== undefined) {
     config.mcpServers = options.mcpServers
   }
+  resetAuthCache()
   const handle = await createServerHandle(config)
   const { port } = await handle.start(options.port ?? 0) // Dynamic port by default
 

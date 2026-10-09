@@ -1,46 +1,7 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
-import { constants, createHash, createVerify, generateKeyPairSync, publicEncrypt } from 'node:crypto'
-import { verifyPassword, signSessionToken, renderMcpClientConfig, portCandidates, findLivePort } from './mcp.js'
-
-const { publicKey, privateKey } = generateKeyPairSync('rsa', {
-  modulusLength: 2048,
-  privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-  publicKeyEncoding: { type: 'spki', format: 'pem' },
-})
-
-function encryptPassword(password: string): string {
-  return publicEncrypt(
-    { key: publicKey, padding: constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
-    Buffer.from(password),
-  ).toString('base64')
-}
+import { renderMcpClientConfig, portCandidates, findLivePort } from './mcp.js'
 
 describe('cli/mcp', () => {
-  describe('verifyPassword', () => {
-    it('accepts the correct password', () => {
-      expect(verifyPassword(encryptPassword('hunter2'), privateKey, 'hunter2')).toBe(true)
-    })
-
-    it('rejects a wrong password', () => {
-      expect(verifyPassword(encryptPassword('hunter2'), privateKey, 'wrong')).toBe(false)
-    })
-
-    it('rejects malformed encrypted input', () => {
-      expect(verifyPassword('not-base64-!!!', privateKey, 'x')).toBe(false)
-    })
-  })
-
-  describe('signSessionToken', () => {
-    it('produces a token that verifies against the public key', () => {
-      const token = signSessionToken(privateKey, 'hunter2')
-      const passwordHash = createHash('sha256').update('hunter2').digest('hex')
-      const verifier = createVerify('SHA256')
-      verifier.update(passwordHash)
-      verifier.end()
-      expect(verifier.verify(publicKey, token, 'base64')).toBe(true)
-    })
-  })
-
   describe('renderMcpClientConfig', () => {
     it('renders a paste-ready client config with auth headers', () => {
       const output = renderMcpClientConfig({

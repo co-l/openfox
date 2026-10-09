@@ -1,10 +1,10 @@
 import { readFile } from 'node:fs/promises'
-import { createHash, createSign, privateDecrypt, constants } from 'node:crypto'
 import { password, isCancel, cancel } from '@clack/prompts'
 import type { Mode } from './main.js'
 import { loadAuthConfig } from './auth.js'
 import { loadGlobalConfig } from './config.js'
 import { getAuthKeyPath } from './paths.js'
+import { decryptPassword, signPasswordToken } from '../server/auth.js'
 import { buildOpenFoxMcpBootstrap, type OpenFoxMcpBootstrapConfig } from '../server/mcp/server/bootstrap.js'
 import { cliT } from './i18n.js'
 
@@ -45,41 +45,6 @@ export async function findLivePort(host: string, candidates: number[]): Promise<
     }
   }
   return null
-}
-
-/**
- * Verify a plaintext password against the RSA-encrypted password stored in the
- * auth config. Pure — no process-global state, unlike the server's variant.
- */
-export function verifyPassword(encryptedPassword: string, privateKey: string, entered: string): boolean {
-  const data = Buffer.from(encryptedPassword, 'base64')
-  try {
-    const decrypted = privateDecrypt(
-      { key: privateKey, padding: constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
-      data,
-    )
-    if (decrypted.toString() === entered) return true
-  } catch {
-    // fall through to legacy padding
-  }
-  try {
-    const decrypted = privateDecrypt({ key: privateKey, padding: constants.RSA_PKCS1_PADDING }, data)
-    return decrypted.toString() === entered
-  } catch {
-    return false
-  }
-}
-
-/**
- * Mint a session token for the given password: an RSA signature over the
- * password hash, identical to the server's tokenFromPassword.
- */
-export function signSessionToken(privateKey: string, passwordValue: string): string {
-  const passwordHash = createHash('sha256').update(passwordValue).digest('hex')
-  const sign = createSign('SHA256')
-  sign.update(passwordHash)
-  sign.end()
-  return sign.sign(privateKey, 'base64')
 }
 
 /**
@@ -130,11 +95,12 @@ export async function runMcpCommand(mode: Mode, options: { password?: string; po
       entered = typeof pwd === 'string' ? pwd : ''
     }
 
-    if (!verifyPassword(auth.encryptedPassword!, privateKey, entered)) {
+    const decrypted = decryptPassword(privateKey, auth.encryptedPassword!)
+    if (!decrypted || decrypted.toString() !== entered) {
       console.error(cliT({ en: 'Invalid password', fr: 'Mot de passe invalide' }))
       process.exit(1)
     }
-    sessionToken = signSessionToken(privateKey, entered)
+    sessionToken = signPasswordToken(privateKey, entered)
   }
 
   const bootstrap = buildOpenFoxMcpBootstrap({ host, port, authRequired, sessionToken })

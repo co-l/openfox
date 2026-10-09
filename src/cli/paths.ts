@@ -1,11 +1,14 @@
 import { homedir, platform } from 'node:os'
-import { join } from 'node:path'
+import { join, basename } from 'node:path'
 import { mkdir, access } from 'node:fs/promises'
 import type { Mode } from './main.js'
 
 export function getGlobalConfigDir(mode: Mode): string {
   if (mode === 'test') {
-    return join(process.cwd(), 'e2e', '.openfox-test')
+    // Accept both launch directories: repo root and e2e/ itself (documented `cd e2e` workflow)
+    const cwd = process.cwd()
+    const base = basename(cwd) === 'e2e' ? cwd : join(cwd, 'e2e')
+    return join(base, '.openfox-test')
   }
   const suffix = mode === 'development' ? '-dev' : ''
   const home = homedir()

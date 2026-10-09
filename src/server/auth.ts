@@ -1,33 +1,25 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
-import { join, dirname, basename } from 'node:path'
-import { createHash, privateDecrypt, createPublicKey, constants } from 'node:crypto'
+import { dirname, join } from 'node:path'
+import { createHash, createPrivateKey, privateDecrypt, createPublicKey, createSign, constants } from 'node:crypto'
 import { getRuntimeConfig } from './runtime-config.js'
+import { getGlobalConfigDir } from '../cli/paths.js'
 import type { Mode } from '../cli/main.js'
 
-function getAuthConfigPath(): string {
-  const configDir = getRuntimeConfig()
-  const mode: Mode =
-    configDir.mode === 'development' ? 'development' : configDir.mode === 'test' ? 'test' : 'production'
-
-  if (mode === 'test') {
-    const cwd = process.cwd()
-    const base = basename(cwd) === 'e2e' ? cwd : join(cwd, 'e2e')
-    const testAuthPath = join(base, '.openfox-test', 'auth.json')
-    return testAuthPath
-  }
-
-  const home = process.env['HOME'] || process.env['USERPROFILE'] || ''
-  const basePath = process.env['XDG_CONFIG_HOME'] || `${home}/.config`
-
-  const suffix = mode === 'development' ? '-dev' : ''
-
-  return `${basePath}/openfox${suffix}/auth.json`
+function resolveMode(): Mode {
+  const mode = getRuntimeConfig().mode
+  return mode === 'development' ? 'development' : mode === 'test' ? 'test' : 'production'
 }
 
-function getKeyPath(): string {
-  const authPath = getAuthConfigPath()
-  const dir = dirname(authPath)
-  return join(dir, 'auth.key')
+function getAuthDir(): string {
+  return getRuntimeConfig().authDir ?? getGlobalConfigDir(resolveMode())
+}
+
+function getAuthConfigPath(): string {
+  return join(getAuthDir(), 'auth.json')
+}
+
+function getAuthKeyPath(): string {
+  return join(getAuthDir(), 'auth.key')
 }
 
 export interface AuthConfig {
@@ -49,7 +41,7 @@ async function loadPrivateKey(): Promise<string> {
     return cachedPrivateKey
   }
 
-  const keyPath = getKeyPath()
+  const keyPath = getAuthKeyPath()
   const keyDir = dirname(keyPath)
 
   try {
@@ -73,21 +65,14 @@ async function loadPrivateKey(): Promise<string> {
 }
 
 export async function loadServerAuthConfig(): Promise<AuthConfig | null> {
-  const configDir = getRuntimeConfig()
-  const isTestMode = configDir.mode === 'test'
-
-  if (!isTestMode) {
-    if (cachedAuth) {
-      return cachedAuth
-    }
+  if (cachedAuth) {
+    return cachedAuth
   }
 
   try {
-    const authPath = getAuthConfigPath()
-    const data = await readFile(authPath, 'utf-8')
-    const authConfig = JSON.parse(data)
-    cachedAuth = authConfig
-    return authConfig
+    const data = await readFile(getAuthConfigPath(), 'utf-8')
+    cachedAuth = JSON.parse(data)
+    return cachedAuth
   } catch {
     return null
   }
@@ -101,29 +86,53 @@ export function hashPassword(password: string): string {
   return createHash('sha256').update(password).digest('hex')
 }
 
-function decryptPassword(privateKey: string, encryptedPassword: string): Buffer | null {
+function keyByteLength(privateKey: string): number {
+  const bits = createPrivateKey(privateKey).asymmetricKeyDetails?.modulusLength
+  if (!bits) throw new Error('unsupported key')
+  return Math.ceil(Number(bits) / 8)
+}
+
+export function decryptPassword(privateKey: string, encryptedPassword: string): Buffer | null {
   const data = Buffer.from(encryptedPassword, 'base64')
+  if (data.length === 0) return null
+
+  let keyBytes: number
+  try {
+    keyBytes = keyByteLength(privateKey)
+  } catch {
+    return null
+  }
+  if (data.length !== keyBytes) return null
+
   try {
     return privateDecrypt({ key: privateKey, padding: constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' }, data)
   } catch {
+    let raw: Buffer
     try {
-      return privateDecrypt({ key: privateKey, padding: constants.RSA_PKCS1_PADDING }, data)
+      raw = privateDecrypt({ key: privateKey, padding: constants.RSA_NO_PADDING }, data)
     } catch {
-      try {
-        const raw = privateDecrypt({ key: privateKey, padding: constants.RSA_NO_PADDING }, data)
-        const start = raw[0] === 0 ? 2 : raw[0] === 2 ? 1 : -1
-        if (start === -1) return null
-        for (let i = start; i < raw.length; i++) {
-          if (raw[i] === 0) {
-            return raw.subarray(i + 1)
-          }
-        }
-        return null
-      } catch {
-        return null
+      return null
+    }
+    if (raw.length < 12 || raw[0] !== 0 || raw[1] !== 2) return null
+
+    let separator = -1
+    for (let i = 2; i < raw.length; i++) {
+      if (raw[i] === 0) {
+        separator = i
+        break
       }
     }
+    if (separator < 10) return null
+    return raw.subarray(separator + 1)
   }
+}
+
+export function signPasswordToken(privateKey: string, password: string): string {
+  const passwordHash = hashPassword(password)
+  const sign = createSign('SHA256')
+  sign.update(passwordHash)
+  sign.end()
+  return sign.sign(privateKey, 'base64')
 }
 
 export function requiresAuth(): boolean {
@@ -146,16 +155,7 @@ export async function verifyPassword(password: string): Promise<boolean> {
 
 export async function tokenFromPassword(password: string): Promise<string> {
   const privateKey = await loadPrivateKey()
-  const passwordHash = hashPassword(password)
-
-  const sign = await import('node:crypto').then((c) => {
-    const s = c.createSign('SHA256')
-    s.update(passwordHash)
-    s.end()
-    return s.sign(privateKey, 'base64')
-  })
-
-  return sign
+  return signPasswordToken(privateKey, password)
 }
 
 /**

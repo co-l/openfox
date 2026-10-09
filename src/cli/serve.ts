@@ -4,7 +4,7 @@ import { logger } from '../server/utils/logger.js'
 import { displayStartupBanner } from '../server/utils/network.js'
 import { detectProviderDefaultsFromUrl } from '../server/llm/backend.js'
 import { loadGlobalConfig, getActiveProvider, getDefaultModel } from './config.js'
-import { getDatabasePath, getGlobalConfigPath, ensureDataDirExists } from './paths.js'
+import { getDatabasePath, getGlobalConfigDir, getGlobalConfigPath, ensureDataDirExists } from './paths.js'
 import open from 'open'
 import type { Mode } from './main.js'
 import type { LlmBackend } from '../shared/types.js'
@@ -79,6 +79,8 @@ export async function runServe(options: ServeOptions): Promise<void> {
       level: globalConfig.logging?.level ?? ('error' as const),
     },
     mode,
+    // Explicit config directory so the server never derives it from cwd
+    authDir: getGlobalConfigDir(mode),
     // Pass providers for the server to use
     providers: globalConfig.providers,
     activeProviderId: globalConfig.activeProviderId,

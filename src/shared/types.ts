@@ -980,6 +980,13 @@ export interface Config {
   disableAutoSessionTitle?: boolean
   /** Override path for the global config file (used for test isolation) */
   globalConfigPath?: string
+  /**
+   * Explicit directory holding auth.json / auth.key only (plugins, skills,
+   * commands, and workflows still resolve from the platform config dir).
+   * Set by the CLI entry points and test harnesses; the server never derives
+   * it from cwd.
+   */
+  authDir?: string
   /** MCP server configurations */
   mcpServers?:
     | Record<
