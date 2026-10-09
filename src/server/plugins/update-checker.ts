@@ -1,7 +1,8 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { readdir, readFile, stat } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
+import { packageDirectories } from './fs-utils.js'
 import type { NotificationService } from './notifications.js'
 import type { HookLogger } from './hooks.js'
 import { getSetting } from '../db/settings.js'
@@ -147,38 +148,14 @@ export class PluginUpdateChecker {
     const seen = new Set<string>()
 
     for (const root of roots) {
-      let entries
-      try {
-        entries = await readdir(root, { withFileTypes: true })
-      } catch {
-        continue
-      }
-
-      for (const entry of entries) {
-        if (entry.name.startsWith('.') || (root === pluginsDir && entry.name === 'node_modules')) continue
-        const entryPath = join(root, entry.name)
-        const isDirectory =
-          entry.isDirectory() ||
-          (entry.isSymbolicLink() && (await stat(entryPath).catch(() => undefined))?.isDirectory())
-        if (!isDirectory) continue
-
-        if (entry.name.startsWith('@')) {
-          const scoped = await readdir(entryPath, { withFileTypes: true }).catch(() => [])
-          for (const child of scoped) {
-            if (child.name.startsWith('.')) continue
-            const childPath = join(entryPath, child.name)
-            const childIsDirectory =
-              child.isDirectory() ||
-              (child.isSymbolicLink() && (await stat(childPath).catch(() => undefined))?.isDirectory())
-            if (childIsDirectory && !seen.has(childPath)) {
-              seen.add(childPath)
-              directories.push(childPath)
-            }
-          }
-        } else if (!seen.has(entryPath)) {
-          seen.add(entryPath)
-          directories.push(entryPath)
-        }
+      const found = await packageDirectories(root, {
+        skipTopLevel: (name) => name.startsWith('.') || (root === pluginsDir && name === 'node_modules'),
+        skipChild: (name) => name.startsWith('.'),
+      })
+      for (const dir of found) {
+        if (seen.has(dir)) continue
+        seen.add(dir)
+        directories.push(dir)
       }
     }
 

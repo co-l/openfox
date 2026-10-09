@@ -121,13 +121,15 @@ describe('Terminal Routes', () => {
 
   describe('GET /api/terminals/:id', () => {
     it('returns terminal by id', async () => {
-      const session = terminalManager.create('/home')
+      // A nonexistent cwd makes the pty exit immediately on Windows, deleting
+      // the session before the fetch. Use a directory that always exists.
+      const session = terminalManager.create(process.cwd())
 
       const res = await fetch(`${baseUrl}/api/terminals/${session.id}`)
       expect(res.status).toBe(200)
       const body = await json<{ id: string; workdir: string }>(res)
       expect(body.id).toBe(session.id)
-      expect(body.workdir).toBe('/home')
+      expect(body.workdir).toBe(process.cwd())
     })
 
     it('returns 404 for non-existent id', async () => {

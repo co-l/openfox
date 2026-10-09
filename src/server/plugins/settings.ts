@@ -90,14 +90,17 @@ function coerce(field: PluginSettingsField, raw: string | undefined): PluginSett
   }
 }
 
+function secretItemFields(field: PluginSettingsField): NonNullable<PluginSettingsField['itemFields']> {
+  return (field.itemFields ?? []).filter(isSecret)
+}
+
 /** Replaces every configured secret sub-value of a list with the mask. */
 function maskListSecrets(field: PluginSettingsField, raw: string): string {
   const items = parseListValue(raw)
   if (!items) return raw
   const masked = items.map((item) => {
     const next: Record<string, unknown> = { ...item }
-    for (const sub of field.itemFields ?? []) {
-      if (!isSecret(sub)) continue
+    for (const sub of secretItemFields(field)) {
       const value = next[sub.key]
       if (typeof value === 'string' && value !== '') next[sub.key] = MASKED_SECRET
     }
@@ -116,8 +119,7 @@ function mergeListSecrets(field: PluginSettingsField, incoming: string, stored: 
   const storedItems = stored === undefined ? [] : (parseListValue(stored) ?? [])
   const merged = incomingItems.map((item, index) => {
     const next: Record<string, unknown> = { ...item }
-    for (const sub of field.itemFields ?? []) {
-      if (!isSecret(sub)) continue
+    for (const sub of secretItemFields(field)) {
       const value = next[sub.key]
       if (typeof value === 'string' && value !== '' && !isMaskedValue(value)) continue
       const previous = storedItems[index]?.[sub.key]

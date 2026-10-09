@@ -23,6 +23,12 @@ export function pathBreadcrumbs(path: string): Breadcrumb[] {
     }))
 }
 
+/** Join a base path and a segment using the base path's separator. */
+export function joinPath(base: string, segment: string): string {
+  const sep = base.includes('\\') ? '\\' : '/'
+  return base.endsWith(sep) ? `${base}${segment}` : `${base}${sep}${segment}`
+}
+
 export function truncateMiddle(path: string, maxLen = 28): string {
   if (path.length <= maxLen) return path
   const sep = path.includes('\\') ? '\\' : '/'

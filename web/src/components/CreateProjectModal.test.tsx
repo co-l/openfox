@@ -3,8 +3,31 @@
  * Tests for CreateProjectModal validation logic
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { validateProjectName } from './shared/validation'
+import { CreateProjectModal } from './CreateProjectModal'
+
+const { authFetch, projectsResource } = vi.hoisted(() => ({
+  authFetch: vi.fn(),
+  projectsResource: { refresh: vi.fn() },
+}))
+
+vi.mock('../lib/api', () => ({ authFetch }))
+vi.mock('../lib/resources', () => ({ projectsResource }))
+vi.mock('../hooks/useConfig', () => ({
+  useConfig: () => ({ config: { workdir: 'C:\\Users\\me' }, refresh: vi.fn(), loading: false }),
+}))
+vi.mock('wouter', () => ({
+  useLocation: () => ['/', vi.fn()],
+}))
+vi.mock('./shared/DirectoryBrowser', () => ({
+  DirectoryBrowser: ({ onSelect }: { onSelect: (path: string) => void }) => (
+    <div data-testid="directory-browser-mock">
+      <button onClick={() => onSelect('D:\\projects')}>choose</button>
+    </div>
+  ),
+}))
 
 describe('CreateProjectModal validation', () => {
   describe('validateProjectName', () => {
@@ -85,5 +108,58 @@ describe('CreateProjectModal payload parsing', () => {
 
     expect(project).toBeDefined()
     expect(project?.id).toBe('proj-123')
+  })
+})
+
+describe('CreateProjectModal base folder', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    authFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ project: { id: 'p1', name: 'my-project' } }),
+    })
+  })
+
+  afterEach(cleanup)
+
+  it('defaults the base folder to the config workdir', async () => {
+    render(<CreateProjectModal isOpen onClose={vi.fn()} />)
+
+    const baseFolder = await screen.findByTestId('create-project-base-folder')
+    expect(baseFolder.textContent).toContain('C:\\Users\\me')
+  })
+
+  it('renders a control to change the base folder', async () => {
+    render(<CreateProjectModal isOpen onClose={vi.fn()} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /folder/i }))
+
+    await screen.findByRole('button', { name: 'choose' })
+  })
+
+  it('updates the full path preview when the base folder is changed', async () => {
+    render(<CreateProjectModal isOpen onClose={vi.fn()} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /folder/i }))
+    fireEvent.click(await screen.findByRole('button', { name: 'choose' }))
+    fireEvent.change(await screen.findByTestId('create-project-name-input'), {
+      target: { value: 'my-project' },
+    })
+
+    const preview = await screen.findByTestId('create-project-path-preview')
+    await waitFor(() => expect(preview.textContent).toContain('D:\\projects'))
+  })
+
+  it('posts the selected base folder as the project workdir', async () => {
+    render(<CreateProjectModal isOpen onClose={vi.fn()} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /folder/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'choose' }))
+    fireEvent.change(screen.getByTestId('create-project-name-input'), { target: { value: 'my-project' } })
+    fireEvent.click(screen.getByTestId('create-project-submit-button'))
+
+    await waitFor(() => expect(authFetch).toHaveBeenCalled())
+    const body = JSON.parse((authFetch.mock.calls[0] as [string, { body: string }])[1]!.body)
+    expect(body.workdir).toBe('D:\\projects\\my-project')
   })
 })

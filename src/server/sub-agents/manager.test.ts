@@ -4,7 +4,8 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises'
-import { join } from 'node:path'
+import { existsSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import Database from 'better-sqlite3'
 import { EventStore, initEventStore } from '../events/store.js'
@@ -552,6 +553,18 @@ describe('SubAgentManager', () => {
   describe('loadGitIgnoreRules', () => {
     let tempDir: string
 
+    // loadGitIgnoreRules walks up to the filesystem root, so a .gitignore in
+    // any ancestor of tmpdir (e.g. the user's home) leaks into the empty cases.
+    const HAS_ANCESTOR_GITIGNORE = (() => {
+      let dir = tmpdir()
+      while (true) {
+        if (existsSync(join(dir, '.gitignore'))) return true
+        const parent = dirname(dir)
+        if (parent === dir) return false
+        dir = parent
+      }
+    })()
+
     beforeEach(async () => {
       tempDir = await mkdtemp(join(tmpdir(), 'openfox-gitignore-test-'))
     })
@@ -560,7 +573,7 @@ describe('SubAgentManager', () => {
       await rm(tempDir, { recursive: true, force: true })
     })
 
-    it('returns empty string when no .gitignore exists', async () => {
+    it.skipIf(HAS_ANCESTOR_GITIGNORE)('returns empty string when no .gitignore exists', async () => {
       const result = await loadGitIgnoreRules(tempDir)
       expect(result).toBe('')
     })
@@ -596,7 +609,7 @@ describe('SubAgentManager', () => {
       expect(result).toBe('')
     })
 
-    it('handles nonexistent workdir gracefully', async () => {
+    it.skipIf(HAS_ANCESTOR_GITIGNORE)('handles nonexistent workdir gracefully', async () => {
       const fakeDir = join(tempDir, 'nonexistent')
       const result = await loadGitIgnoreRules(fakeDir)
       expect(result).toBe('')

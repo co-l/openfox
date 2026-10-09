@@ -1,25 +1,14 @@
 import { ScrollArea } from './ScrollArea'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Modal } from './Modal'
-import { ArrowLeftIcon, ChevronDownIcon, FolderIcon, SearchIcon } from './icons'
+import { ArrowLeftIcon, ChevronDownIcon, DriveIcon, FolderIcon, SearchIcon } from './icons'
 import { Spinner } from './Spinner'
 import { authFetch } from '../../lib/api'
 import { pathBreadcrumbs } from '../../lib/path'
 import { shouldAutofocus } from '../../lib/device'
 import { Input } from './Input'
 import { useT } from '../../hooks/useT'
-
-interface DirectoryEntry {
-  name: string
-  path: string
-}
-
-interface DirectoryListing {
-  current: string
-  parent: string | null
-  directories: DirectoryEntry[]
-  basename: string
-}
+import { DRIVES_VIEW, type DirectoryListing } from '@shared/directory'
 
 interface DirectoryBrowserProps {
   onSelect: (path: string) => void
@@ -36,12 +25,19 @@ export function DirectoryBrowser({ onSelect, onClose, initialPath }: DirectoryBr
   const inputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
+  const isDrivesView = listing?.current === DRIVES_VIEW
+
   const fetchDir = useCallback(async (path?: string) => {
     setLoading(true)
     setSearchQuery('')
     setFocusedIndex(-1)
     try {
-      const url = path ? `/api/directories?path=${encodeURIComponent(path)}` : '/api/directories'
+      const url =
+        path === DRIVES_VIEW
+          ? '/api/directories/drives'
+          : path
+            ? `/api/directories?path=${encodeURIComponent(path)}`
+            : '/api/directories'
       // Authorized transient read: directory listings are interactive browser queries, not shared state.
       const response = await authFetch(url)
       const data = await response.json()
@@ -57,7 +53,7 @@ export function DirectoryBrowser({ onSelect, onClose, initialPath }: DirectoryBr
     fetchDir(initialPath)
   }, [initialPath, fetchDir])
 
-  const crumbs = pathBreadcrumbs(listing?.current ?? '')
+  const crumbs = isDrivesView ? [] : pathBreadcrumbs(listing?.current ?? '')
 
   const filteredDirs =
     listing?.directories.filter(
@@ -125,6 +121,17 @@ export function DirectoryBrowser({ onSelect, onClose, initialPath }: DirectoryBr
             <div className="px-3 pt-3 pb-1">
               <div className="flex items-center gap-2 text-sm">
                 <div className="flex items-center flex-wrap min-w-0">
+                  {listing.drives && (
+                    <span className="flex items-center shrink-0">
+                      <span className="text-text-muted">/</span>
+                      <button
+                        onClick={() => fetchDir(DRIVES_VIEW)}
+                        className={`px-1 ${isDrivesView ? 'text-accent-primary font-medium' : 'text-text-secondary hover:text-accent-primary'}`}
+                      >
+                        {t({ en: 'Drives', fr: 'Disques' })}
+                      </button>
+                    </span>
+                  )}
                   {crumbs.map((crumb, index) => (
                     <span key={crumb.path} className="flex items-center shrink-0">
                       <span className="text-text-muted">/</span>
@@ -136,13 +143,13 @@ export function DirectoryBrowser({ onSelect, onClose, initialPath }: DirectoryBr
                       </button>
                     </span>
                   ))}
-                  {crumbs.length === 0 && (
+                  {crumbs.length === 0 && !isDrivesView && (
                     <button onClick={() => fetchDir('/')} className="text-text-muted hover:text-accent-primary">
                       /
                     </button>
                   )}
                 </div>
-                {listing?.current && (
+                {listing.current && !isDrivesView && (
                   <button
                     onClick={() => onSelect(listing.current)}
                     className="ml-auto shrink-0 px-4 py-2 text-sm font-medium rounded-lg bg-accent-primary text-text-primary hover:bg-accent-primary/90"
@@ -201,6 +208,8 @@ export function DirectoryBrowser({ onSelect, onClose, initialPath }: DirectoryBr
                   >
                     {item.type === 'parent' ? (
                       <ArrowLeftIcon className="w-5 h-5 text-text-muted shrink-0" />
+                    ) : isDrivesView ? (
+                      <DriveIcon className="w-5 h-5 shrink-0" />
                     ) : (
                       <FolderIcon className="w-5 h-5 shrink-0" />
                     )}

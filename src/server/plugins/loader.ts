@@ -1,5 +1,6 @@
-import { readdir, readFile, stat } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { packageDirectories } from './fs-utils.js'
 import { pathToFileURL } from 'node:url'
 import type { PluginContext, PluginDefinition, PluginManifest } from '../../plugin/index.js'
 import { pluginManifestSchema } from '../../plugin/index.js'
@@ -216,35 +217,6 @@ function noopContext(manifest: PluginManifest): PluginContext {
     notify: () => {},
     publish: () => {},
   }
-}
-
-async function packageDirectories(root: string): Promise<string[]> {
-  let entries
-  try {
-    entries = await readdir(root, { withFileTypes: true })
-  } catch {
-    return []
-  }
-  const directories: string[] = []
-  for (const entry of entries) {
-    const entryPath = join(root, entry.name)
-    const isDirectory =
-      entry.isDirectory() || (entry.isSymbolicLink() && (await stat(entryPath).catch(() => undefined))?.isDirectory())
-    if (!isDirectory) continue
-    if (entry.name.startsWith('@')) {
-      const scoped = await readdir(entryPath, { withFileTypes: true }).catch(() => [])
-      for (const child of scoped) {
-        const childPath = join(entryPath, child.name)
-        const childIsDirectory =
-          child.isDirectory() ||
-          (child.isSymbolicLink() && (await stat(childPath).catch(() => undefined))?.isDirectory())
-        if (childIsDirectory) directories.push(childPath)
-      }
-    } else {
-      directories.push(entryPath)
-    }
-  }
-  return directories
 }
 
 export async function loadPlugins(options: LoadPluginsOptions): Promise<PluginDiagnostic[]> {

@@ -9,6 +9,8 @@ import { Input } from './shared/Input'
 import { authFetch } from '../lib/api'
 import { shouldAutofocus } from '../lib/device'
 import { validateProjectName } from './shared/validation'
+import { joinPath } from '../lib/path'
+import { DirectoryBrowser } from './shared/DirectoryBrowser'
 import { PlusMdIcon } from './shared/icons'
 import { PermissionDeniedModal } from './PermissionDeniedModal'
 
@@ -24,7 +26,8 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
   const [projectName, setProjectName] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [workdir, setWorkdir] = useState<string>('')
+  const [baseWorkdir, setBaseWorkdir] = useState<string>('')
+  const [showBrowser, setShowBrowser] = useState(false)
   const [permissionDeniedPath, setPermissionDeniedPath] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -32,11 +35,12 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
   useEffect(() => {
     if (isOpen) {
       if (config?.workdir) {
-        setWorkdir(config.workdir)
+        setBaseWorkdir(config.workdir)
       }
       setProjectName('')
       setError(null)
       setLoading(false)
+      setShowBrowser(false)
       setPermissionDeniedPath(null)
       // Focus the input after modal renders
       setTimeout(() => {
@@ -56,10 +60,10 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
         return
       }
 
-      const fullPath = `${workdir}/${projectName}`
+      const fullPath = joinPath(baseWorkdir, projectName)
       await createProjectWithPermissionHandling(fullPath)
     },
-    [projectName, navigate, onClose, workdir],
+    [projectName, navigate, onClose, baseWorkdir],
   )
 
   const handlePermissionDeniedClose = useCallback(() => {
@@ -67,9 +71,9 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
   }, [])
 
   const handleRetry = useCallback(async () => {
-    const fullPath = `${workdir}/${projectName}`
+    const fullPath = joinPath(baseWorkdir, projectName)
     await createProjectWithPermissionHandling(fullPath)
-  }, [workdir, projectName, navigate, onClose, setPermissionDeniedPath, setError, setLoading])
+  }, [baseWorkdir, projectName, navigate, onClose, setPermissionDeniedPath, setError, setLoading])
 
   async function createProjectWithPermissionHandling(fullPath: string) {
     setLoading(true)
@@ -115,7 +119,12 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
     onClose()
   }, [onClose])
 
-  const fullPath = projectName ? `${workdir}/${projectName}` : ''
+  const fullPath = projectName ? joinPath(baseWorkdir, projectName) : ''
+
+  const handleBaseFolderSelect = useCallback((path: string) => {
+    setBaseWorkdir(path)
+    setShowBrowser(false)
+  }, [])
 
   return (
     <>
@@ -167,21 +176,52 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
               data-testid="create-project-name-input"
               className="w-full"
             />
-
-            {/* Path preview */}
-            {projectName && (
-              <div className="mt-2 text-xs text-text-muted">
-                {t({ en: 'Full path:', fr: 'Chemin complet :' })} <span className="font-mono">{fullPath}</span>
-              </div>
-            )}
-
-            {/* Error message */}
-            {error && (
-              <div className="mt-3 p-3 bg-accent-error/10 border border-accent-error/30 rounded text-sm text-accent-error">
-                {error}
-              </div>
-            )}
           </div>
+
+          <div>
+            <label htmlFor="project-base-folder" className="block text-sm font-medium text-text-secondary mb-2">
+              {t({ en: 'Base Folder', fr: 'Dossier de base' })}
+            </label>
+            <div className="flex items-center gap-2 min-w-0">
+              <span
+                id="project-base-folder"
+                data-testid="create-project-base-folder"
+                className="flex-1 truncate font-mono text-sm text-text-secondary"
+              >
+                {baseWorkdir}
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowBrowser(true)}
+                aria-label={t({ en: 'Change folder', fr: 'Changer de dossier' })}
+                className="shrink-0 px-3 py-2 text-sm rounded-lg border border-border text-text-secondary hover:text-accent-primary"
+              >
+                {t({ en: 'Folder...', fr: 'Dossier...' })}
+              </button>
+            </div>
+          </div>
+
+          {showBrowser && (
+            <DirectoryBrowser
+              initialPath={baseWorkdir}
+              onSelect={handleBaseFolderSelect}
+              onClose={() => setShowBrowser(false)}
+            />
+          )}
+
+          {/* Path preview */}
+          {projectName && (
+            <div data-testid="create-project-path-preview" className="text-xs text-text-muted">
+              {t({ en: 'Full path:', fr: 'Chemin complet :' })} <span className="font-mono">{fullPath}</span>
+            </div>
+          )}
+
+          {/* Error message */}
+          {error && (
+            <div className="mt-3 p-3 bg-accent-error/10 border border-accent-error/30 rounded text-sm text-accent-error">
+              {error}
+            </div>
+          )}
         </form>
       </Modal>
 

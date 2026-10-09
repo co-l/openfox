@@ -11,6 +11,15 @@ export function listPluginModelMetadataProviders(): PluginModelMetadataProvider[
   return [...providers]
 }
 
+function applyMetadataAccumulation(
+  merged: PluginModelMetadata,
+  badges: NonNullable<PluginModelMetadata['badges']>,
+  metadata: PluginModelMetadata,
+): void {
+  if (metadata.extra !== undefined) merged.extra = { ...(merged.extra ?? {}), ...metadata.extra }
+  if (metadata.badges) badges.push(...metadata.badges)
+}
+
 export async function enrichModelWithPluginMetadata(providerId: string, model: ModelConfig): Promise<ModelConfig> {
   if (providers.length === 0) return model
   const merged: PluginModelMetadata = {}
@@ -30,8 +39,7 @@ export async function enrichModelWithPluginMetadata(providerId: string, model: M
     if (metadata.popover !== undefined) merged.popover = metadata.popover
     if (metadata.subline !== undefined) merged.subline = metadata.subline
     if (metadata.bottomSubline !== undefined) merged.bottomSubline = metadata.bottomSubline
-    if (metadata.extra !== undefined) merged.extra = { ...(merged.extra ?? {}), ...metadata.extra }
-    if (metadata.badges) badges.push(...metadata.badges)
+    applyMetadataAccumulation(merged, badges, metadata)
   }
   if (badges.length > 0) merged.badges = badges
   if (Object.keys(merged).length === 0) return model
@@ -52,8 +60,7 @@ export async function enrichProviderWithPluginMetadata(provider: Provider): Prom
       continue
     }
     if (!metadata) continue
-    if (metadata.extra !== undefined) merged.extra = { ...(merged.extra ?? {}), ...metadata.extra }
-    if (metadata.badges) badges.push(...metadata.badges)
+    applyMetadataAccumulation(merged, badges, metadata)
   }
 
   if (badges.length > 0) merged.badges = badges

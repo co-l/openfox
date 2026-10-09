@@ -12,6 +12,7 @@ import { getBuiltInToolNames } from '../tools/index.js'
 import { setPluginCommands } from '../commands/registry.js'
 import { setPluginSkills } from '../skills/registry.js'
 import { getAllSettings, setSetting } from '../db/settings.js'
+import { withTimeout } from './with-timeout.js'
 import type { ServerMessage } from '../../shared/protocol.js'
 import { createServerMessage } from '../../shared/protocol.js'
 import type {
@@ -206,7 +207,11 @@ export class PluginHost {
     }
     const handler = this.registry.getRpcHandler(pluginId, method)
     if (!handler) throw new Error(`Plugin '${pluginId}' has no RPC method '${method}'`)
-    return withTimeout(Promise.resolve(handler(params, context)), record.diagnostic.timeoutMs ?? this.rpcTimeoutMs)
+    return withTimeout(
+      Promise.resolve(handler(params, context)),
+      record.diagnostic.timeoutMs ?? this.rpcTimeoutMs,
+      'Plugin RPC',
+    )
   }
 
   getPluginTools(): { name: string; description: string; pluginId: string }[] {
@@ -596,20 +601,4 @@ const EVENT_HOOK_MAP: Partial<Record<string, PluginHookEvent>> = {
   // session's EventStore stream.
   'context.compacted': 'context.compacted',
   'pattern.retry': 'retry.triggered',
-}
-
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`Plugin RPC timed out after ${timeoutMs}ms`)), timeoutMs)
-    promise.then(
-      (value) => {
-        clearTimeout(timer)
-        resolve(value)
-      },
-      (error: unknown) => {
-        clearTimeout(timer)
-        reject(error instanceof Error ? error : new Error(String(error)))
-      },
-    )
-  })
 }
