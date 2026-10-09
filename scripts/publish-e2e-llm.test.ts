@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
+import { join } from 'node:path'
 import { resolveLlmMode, resolveProdConfigPath, selectProdLlm, type ProdLlmSelection } from './publish-e2e-llm.js'
+
+const prodConfig = (home: string) => join(home, '.config', 'openfox', 'config.json')
 
 const provider = (overrides: Record<string, unknown> = {}) => ({
   name: 'DeepSeek API',
@@ -37,7 +40,7 @@ describe('resolveLlmMode', () => {
 
 describe('resolveProdConfigPath', () => {
   it('defaults to the prod config in the home directory', () => {
-    expect(resolveProdConfigPath({}, '/home/conrad')).toBe('/home/conrad/.config/openfox/config.json')
+    expect(resolveProdConfigPath({}, '/home/conrad')).toBe(prodConfig('/home/conrad'))
   })
 
   it('honours the OPENFOX_PUBLISH_E2E_PROD_CONFIG override', () => {
@@ -48,7 +51,7 @@ describe('resolveProdConfigPath', () => {
 
   it('ignores a blank override', () => {
     expect(resolveProdConfigPath({ OPENFOX_PUBLISH_E2E_PROD_CONFIG: '  ' }, '/home/conrad')).toBe(
-      '/home/conrad/.config/openfox/config.json',
+      prodConfig('/home/conrad'),
     )
   })
 })
