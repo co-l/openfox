@@ -18,6 +18,7 @@ import { useCurrentProject } from './hooks/useCurrentProject'
 import { useProviders } from './hooks/useProviders'
 import { useThemeStore } from './stores/theme'
 import { useProjectLoader } from './hooks/useProjectLoader'
+import { useMissingProjectRedirect } from './hooks/useMissingProjectRedirect'
 import { useSessionLoader } from './hooks/useSessionLoader'
 import { computeSidebarVisibility, FEED_MIN_WIDTH } from './lib/sidebar-visibility'
 import { useSidebarStore } from './stores/sidebar'
@@ -78,6 +79,7 @@ function ProjectView({
   const canLoad = connectionStatus === 'connected' || hasToken
 
   useProjectLoader({ canLoad, projectId, currentProjectId: currentProject?.id })
+  useMissingProjectRedirect(projectId)
 
   if (!currentProject || currentProject.id !== projectId) {
     return <LoadingSpinner />
@@ -129,6 +131,8 @@ function ProjectSessionView({
     currentProjectId: currentProject?.id,
     currentSessionId: session?.id,
   })
+
+  useMissingProjectRedirect(projectId)
 
   useEffect(() => {
     if (error?.code === 'NOT_FOUND' && projectId) {
