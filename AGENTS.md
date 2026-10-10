@@ -227,6 +227,8 @@ Every file in `.openfox/` must be **committable** and **meaningful in the projec
 
 **Rationale:** Clean repo, no leaked personal config, reliable source of truth for CI and collaborators.
 
+**Command arguments:** a command's Message template takes `{{name}}` placeholders, filled positionally by order of appearance, and `{{ARGUMENTS}}`, which takes everything typed after the id. Quoted values (`/cmd "two words"`) fill one placeholder whole. Parsing lives in `src/shared/slash-args.ts` and is shared by the chat composer and the task board's server-side resolution — change it there, not in either caller. Full design: [docs/DESIGN-SLASH-ARGUMENTS.md](DESIGN-SLASH-ARGUMENTS.md).
+
 **Workflows:** When asked to create or edit a workflow, load the built-in `workflows` skill via `load_skill("workflows")` — it is the authoritative reference for workflow file format, storage locations (project `.openfox/workflows/` vs global `{configDir}/workflows/`), the full JSON schema, step types, transition conditions, and template variables ([docs/WORKFLOWS.md](docs/WORKFLOWS.md) is a pointer to it). Project workflows belong in `.openfox/workflows/` and are committable.
 
 **Plugins:** When asked to create or edit a plugin, read [docs/PLUGINS.md](docs/PLUGINS.md) — the authoritative reference for the `openfox/plugin` contract (manifest, registry API, UI slots, settings, hooks, RPC, transitions, versioning, trust model). For host internals (lifecycle, install pipeline, wiring) see [docs/PLUGIN-ARCHITECTURE.md](docs/PLUGIN-ARCHITECTURE.md). The reference implementation lives in [examples/hello-plugin](examples/hello-plugin). Plugins run in-process with full trust; never load project-local plugin code from a cloned repo.

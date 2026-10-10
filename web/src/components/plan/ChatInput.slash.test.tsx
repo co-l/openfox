@@ -27,12 +27,17 @@ describe('parseSlashCommand', () => {
 
   it('parses /pr-review 157 into workflow and params', () => {
     const result = parseSlashCommand('/pr-review 157', workflows)
-    expect(result).toEqual({ workflowId: 'pr-review', params: { pr_number: '157' } })
+    expect(result).toEqual({ workflowId: 'pr-review', params: { pr_number: '157' }, args: ['157'], rest: '157' })
   })
 
   it('maps positional args by parameter position', () => {
     const result = parseSlashCommand('/pr-review 42 fix-bug', workflows)
-    expect(result).toEqual({ workflowId: 'pr-review', params: { pr_number: '42', pr_title: 'fix-bug' } })
+    expect(result).toEqual({
+      workflowId: 'pr-review',
+      params: { pr_number: '42', pr_title: 'fix-bug' },
+      args: ['42', 'fix-bug'],
+      rest: '42 fix-bug',
+    })
   })
 
   it('returns null for non-slash input', () => {
@@ -49,12 +54,17 @@ describe('parseSlashCommand', () => {
 
   it('handles workflow without parameter definitions', () => {
     const result = parseSlashCommand('/simple foo bar', workflows)
-    expect(result).toEqual({ workflowId: 'simple', params: { '0': 'foo', '1': 'bar' } })
+    expect(result).toEqual({
+      workflowId: 'simple',
+      params: { '0': 'foo', '1': 'bar' },
+      args: ['foo', 'bar'],
+      rest: 'foo bar',
+    })
   })
 
   it('handles extra args beyond defined parameters', () => {
     const result = parseSlashCommand('/pr-review 42', workflows)
-    expect(result).toEqual({ workflowId: 'pr-review', params: { pr_number: '42' } })
+    expect(result).toEqual({ workflowId: 'pr-review', params: { pr_number: '42' }, args: ['42'], rest: '42' })
   })
 })
 
@@ -93,18 +103,38 @@ describe('parseSlashCommand with commands', () => {
 
   it('matches a command by ID', () => {
     const result = parseSlashCommand('/review arg1 arg2', workflows, commands)
-    expect(result).toEqual({ commandId: 'review', params: { '0': 'arg1', '1': 'arg2' } })
+    expect(result).toEqual({
+      commandId: 'review',
+      params: { '0': 'arg1', '1': 'arg2' },
+      args: ['arg1', 'arg2'],
+      rest: 'arg1 arg2',
+    })
   })
 
   it('returns null for unknown command', () => {
     expect(parseSlashCommand('/nonexistent', workflows, commands)).toBeNull()
   })
 
+  it('keeps a quoted multi-word argument as one token', () => {
+    const result = parseSlashCommand('/review src/a.ts "gestion des erreurs"', workflows, commands)
+    expect(result).toEqual({
+      commandId: 'review',
+      params: { '0': 'src/a.ts', '1': 'gestion des erreurs' },
+      args: ['src/a.ts', 'gestion des erreurs'],
+      rest: 'src/a.ts "gestion des erreurs"',
+    })
+  })
+
+  it('exposes the raw remainder for {{ARGUMENTS}}', () => {
+    const result = parseSlashCommand('/summarize the whole thread please', workflows, commands)
+    expect(result?.rest).toBe('the whole thread please')
+  })
+
   it('workflow takes priority over command with same ID', () => {
     const wf: WorkflowInfo[] = [{ id: 'review', name: 'Review WF', scope: 'builtin' }]
     const cmds: CommandInfo[] = [{ id: 'review', name: 'Review CMD' }]
     const result = parseSlashCommand('/review arg', wf, cmds)
-    expect(result).toEqual({ workflowId: 'review', params: { '0': 'arg' } })
+    expect(result).toEqual({ workflowId: 'review', params: { '0': 'arg' }, args: ['arg'], rest: 'arg' })
   })
 })
 
@@ -322,6 +352,33 @@ describe('ChatInput slash command integration', () => {
     })
     expect(mockSendMessage).not.toHaveBeenCalled()
     expect(mockLaunchWorkflow).not.toHaveBeenCalled()
+  })
+
+  it('feeds a quoted multi-word argument into the command template', async () => {
+    await commandsResource.refresh('/tmp')
+    const setInput = vi.fn()
+    const onSendCommand = vi.fn()
+    renderChatInput({ input: '/review "157 et 158"', setInput, onSendCommand })
+
+    fireEvent.click(screen.getByTestId('chat-send-button'))
+
+    await waitFor(() => {
+      expect(onSendCommand).toHaveBeenCalledWith('Please review PR 157 et 158', 'builder')
+    })
+    expect(mockSendMessage).not.toHaveBeenCalled()
+  })
+
+  it('leaves an unfilled placeholder in place so the params modal can ask for it', async () => {
+    await commandsResource.refresh('/tmp')
+    const setInput = vi.fn()
+    const onSendCommand = vi.fn()
+    renderChatInput({ input: '/review', setInput, onSendCommand })
+
+    fireEvent.click(screen.getByTestId('chat-send-button'))
+
+    await waitFor(() => {
+      expect(onSendCommand).toHaveBeenCalledWith('Please review PR {{pr_number}}', 'builder')
+    })
   })
 
   it('shows error for missing required params', () => {
