@@ -142,5 +142,13 @@
     "githubUrl": "https://github.com/JamesDAdams/openfox-multi-rep",
     "author": "James Adams",
     "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#3b82f6\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><line x1=\"6\" y1=\"3\" x2=\"6\" y2=\"15\"/><circle cx=\"18\" cy=\"6\" r=\"3\"/><circle cx=\"6\" cy=\"18\" r=\"3\"/><path d=\"M18 9a9 9 0 0 1-9 9\"/></svg>"
+  },
+  {
+    "name": "openfox-semantic-tools",
+    "displayName": "Semantic Tools",
+    "description": "Typed noul/choice/score decision tools against any System One-compatible endpoint (hosted or local). Advisory only, with an opt-in, unmeasured context-reduction transform.",
+    "githubUrl": "https://github.com/theshwal/openfox-semantic-tools",
+    "author": "theshwal",
+    "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M8 12h3l2-4 2 8 2-4h1\"/></svg>"
   }
 ]
