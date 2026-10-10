@@ -58,6 +58,8 @@ interface ThemeState {
   saveUserPresets: () => void
 
   setFollowSystemTheme: (enabled: boolean) => void
+  /** Adopt the server's saved value (settings resource) without persisting it back. */
+  applyServerFollowSystemTheme: (serverValue: string) => void
   initSystemThemeListener: () => () => void
 
   systemDarkPreset: string
@@ -263,6 +265,16 @@ export const useThemeStore = create<ThemeState>((set, get) => {
     setFollowSystemTheme: (enabled: boolean) => {
       set({ followSystemTheme: enabled })
       void setSetting(SETTINGS_KEYS.DISPLAY_FOLLOW_SYSTEM_THEME, String(enabled))
+    },
+
+    applyServerFollowSystemTheme: (serverValue: string) => {
+      // '' is the settings fallback while the value is still loading, not a
+      // saved value. Never PUT here: the value came from the server, and writing
+      // it back raced in-flight GETs returning the server default, so each
+      // response triggered the opposite PUT and the two never settled.
+      if (serverValue !== 'true' && serverValue !== 'false') return
+      const enabled = serverValue === 'true'
+      if (get().followSystemTheme !== enabled) set({ followSystemTheme: enabled })
     },
 
     initSystemThemeListener: () => {
