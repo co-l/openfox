@@ -9,6 +9,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from
 import { execSync } from 'node:child_process'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { gitSpawnEnv } from '../src/server/git/env.js'
 import {
   createTestClient,
   createTestProject,
@@ -211,11 +212,14 @@ describe('Git Tool', () => {
   describe('Git with Working Directory', () => {
     it('supports cwd parameter', async () => {
       // Create a subdirectory that's also a git repo
-      execSync('mkdir -p subproject && cd subproject && git init', { cwd: testDir.path })
-      execSync('git config user.email "test@example.com"', { cwd: join(testDir.path, 'subproject') })
-      execSync('git config user.name "Test"', { cwd: join(testDir.path, 'subproject') })
+      execSync('mkdir -p subproject && cd subproject && git init', { cwd: testDir.path, env: gitSpawnEnv() })
+      execSync('git config user.email "test@example.com"', {
+        cwd: join(testDir.path, 'subproject'),
+        env: gitSpawnEnv(),
+      })
+      execSync('git config user.name "Test"', { cwd: join(testDir.path, 'subproject'), env: gitSpawnEnv() })
       await writeFile(join(testDir.path, 'subproject/file.txt'), 'content')
-      execSync('git add . && git commit -m "Sub commit"', { cwd: join(testDir.path, 'subproject') })
+      execSync('git add . && git commit -m "Sub commit"', { cwd: join(testDir.path, 'subproject'), env: gitSpawnEnv() })
 
       // The git tool with cwd should work
       await client.send('chat.send', {

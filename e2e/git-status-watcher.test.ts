@@ -15,9 +15,10 @@ import {
   type TestServerHandle,
 } from './utils/index.js'
 import type { GitStatusPayload, GitDiffFile } from '@openfox/shared/protocol'
+import { gitSpawnEnv } from '../src/server/git/env.js'
 
 function runGit(cwd: string, args: string[]): void {
-  execFileSync('git', args, { cwd, stdio: 'ignore' })
+  execFileSync('git', args, { cwd, stdio: 'ignore', env: gitSpawnEnv() })
 }
 
 describe('Git Status Watcher', () => {

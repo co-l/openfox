@@ -9,6 +9,7 @@ import { execSync } from 'node:child_process'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { forceRemove } from './force-remove.js'
+import { gitSpawnEnv } from '../../src/server/git/env.js'
 
 // ============================================================================
 // Types
@@ -193,12 +194,7 @@ export async function createTestProject(options: TestProjectOptions = {}): Promi
 
   // Initialize git repository if requested or using git-repo template
   if (initGit || template === 'git-repo') {
-    const cleanEnv = { ...process.env }
-    delete cleanEnv['GIT_DIR']
-    delete cleanEnv['GIT_INDEX_FILE']
-    delete cleanEnv['GIT_WORK_TREE']
-    delete cleanEnv['GIT_PREFIX']
-    const execOpts = { cwd: projectPath, stdio: 'ignore' as const, env: cleanEnv }
+    const execOpts = { cwd: projectPath, stdio: 'ignore' as const, env: gitSpawnEnv() }
     execSync('git init --initial-branch=main', execOpts)
     execSync('git config user.email "test@example.com"', execOpts)
     execSync('git config user.name "Test User"', execOpts)
