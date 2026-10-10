@@ -5,10 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Markdown } from './Markdown'
 
 const highlightCodeMock = vi.hoisted(() => vi.fn())
+const warmUpMock = vi.hoisted(() => vi.fn())
 
 vi.mock('../../lib/syntax-highlighter', () => ({
   highlightCode: highlightCodeMock,
   useShikiTheme: () => 'github-dark-default',
+  warmUpHighlighter: warmUpMock,
 }))
 
 const settingsMock = vi.hoisted(() => ({ deferCodeHighlightWhileStreaming: false }))
@@ -79,6 +81,86 @@ describe('Markdown streaming highlight deferral', () => {
 
     rerender(<Markdown content={'```js\nconst x = 1\n```'} />)
     await waitFor(() => expect(highlightCodeMock).toHaveBeenCalledTimes(1))
+  })
+
+  describe('growing code block (streaming)', () => {
+    // Same structure as shiki's output: one block-level `.line` span per line.
+    const shikiLike = (code: string) =>
+      `<pre class="shiki"><code>${code
+        .split('\n')
+        .map((line) => `<span class="line"><span data-testid="token">${line}</span></span>`)
+        .join('\n')}</code></pre>`
+
+    beforeEach(() => {
+      highlightCodeMock.mockImplementation(async (code: string) => shikiLike(code))
+    })
+
+    it('re-highlights at most once per throttle window while showing every new line', async () => {
+      const { rerender, container } = render(<Markdown content={'```ts\nconst a = 1'} isStreaming />)
+      await waitFor(() => expect(highlightCodeMock).toHaveBeenCalledTimes(1))
+      await waitFor(() => expect(container.querySelector('.shiki')).toBeTruthy())
+
+      rerender(<Markdown content={'```ts\nconst a = 1\nconst b = 2'} isStreaming />)
+      rerender(<Markdown content={'```ts\nconst a = 1\nconst b = 2\nconst c = 3'} isStreaming />)
+
+      // Throttled: no new highlight yet, but the new lines are already on screen
+      // as plain lines appended to the highlighted block.
+      expect(highlightCodeMock).toHaveBeenCalledTimes(1)
+      expect(container.textContent).toContain('const c = 3')
+      expect(container.querySelectorAll('.shiki .line')).toHaveLength(3)
+
+      // The trailing highlight catches up with the latest content.
+      await waitFor(() => expect(highlightCodeMock).toHaveBeenCalledTimes(2))
+      expect(highlightCodeMock).toHaveBeenLastCalledWith(
+        'const a = 1\nconst b = 2\nconst c = 3',
+        'ts',
+        expect.anything(),
+      )
+      await waitFor(() => expect(container.querySelectorAll('[data-testid="token"]')).toHaveLength(3))
+    })
+
+    it('keeps a highlight that resolves after the block grew (no starvation)', async () => {
+      let resolveFirst: (html: string) => void = () => {}
+      highlightCodeMock.mockImplementationOnce(() => new Promise<string>((resolve) => (resolveFirst = resolve)))
+      const { rerender, container } = render(<Markdown content={'```ts\nconst a = 1'} isStreaming />)
+      await waitFor(() => expect(highlightCodeMock).toHaveBeenCalledTimes(1))
+
+      rerender(<Markdown content={'```ts\nconst a = 1\nconst b = 2'} isStreaming />)
+      resolveFirst(shikiLike('const a = 1'))
+
+      // The result for the shorter prefix is still used: highlighted first line + plain tail.
+      await waitFor(() => expect(container.querySelector('.shiki')).toBeTruthy())
+      expect(container.textContent).toContain('const b = 2')
+    })
+
+    it('appends a partial last line to the highlighted line instead of starting a new one', async () => {
+      const { rerender, container } = render(<Markdown content={'```ts\nconst a'} isStreaming />)
+      await waitFor(() => expect(container.querySelector('.shiki')).toBeTruthy())
+
+      rerender(<Markdown content={'```ts\nconst a = 1'} isStreaming />)
+
+      const lines = container.querySelectorAll('.shiki .line')
+      expect(lines).toHaveLength(1)
+      expect(lines[0]?.textContent).toBe('const a = 1')
+    })
+
+    it('escapes the plain tail', async () => {
+      const { rerender, container } = render(<Markdown content={'```ts\nconst a = 1'} isStreaming />)
+      await waitFor(() => expect(container.querySelector('.shiki')).toBeTruthy())
+
+      rerender(<Markdown content={'```ts\nconst a = 1\nif (a < b && c > d) {}'} isStreaming />)
+
+      expect(container.querySelector('.shiki img, .shiki b')).toBeNull()
+      expect(container.textContent).toContain('if (a < b && c > d) {}')
+    })
+  })
+
+  it('warms the highlighter up as soon as a message shows', () => {
+    // Compiling the common languages while the page is idle keeps that cost
+    // off the first code block (see warmUpHighlighter).
+    warmUpMock.mockClear()
+    render(<Markdown content="Plain text, no code yet." />)
+    expect(warmUpMock).toHaveBeenCalled()
   })
 
   it('skips highlighting for plain text blocks', async () => {

@@ -1,4 +1,4 @@
-import { createHighlighter, type Highlighter, bundledLanguages } from 'shiki'
+import { createHighlighter, type BundledTheme, type Highlighter, bundledLanguages } from 'shiki'
 import type { ShikiTransformer } from 'shiki'
 import { useThemeStore } from '../stores/theme'
 import { pathBasename } from './path'
@@ -155,6 +155,57 @@ export async function highlightCode(code: string, language: string, theme = 'git
   highlightCache.set(key, result)
 
   return result
+}
+
+/**
+ * Representative snippets of the languages agents write most. shiki compiles a
+ * language's rules the first time it tokenizes text in it, so a richer snippet
+ * leaves less to compile later.
+ */
+const WARM_UP_SNIPPETS = {
+  typescript: `import { a } from './a'\nexport interface P { id: string; n?: number }\nexport async function f(p: P): Promise<string[]> {\n  // comment\n  const s = \`v=\${p.id}\`\n  return [s, "x", String(1.5)].filter((x) => x !== '')\n}\nclass C<T> extends B implements I { private x = /re+/g }`,
+  javascript: `const { a } = require('a')\nexport default async function f(x = 1) {\n  // comment\n  return [\`t\${x}\`, "s", 0x1f].map((v) => v ?? null)\n}`,
+  python: `import os\nfrom typing import Optional\n\nclass A(B):\n    """doc"""\n    def f(self, x: int = 1) -> Optional[str]:\n        # comment\n        return f"v={x}" if x > 0 else None\n\n@decorator\ndef g(*args, **kw):\n    return [i for i in range(3)]`,
+  bash: `#!/usr/bin/env bash\nset -euo pipefail\n# comment\nfor f in "$@"; do\n  echo "file: \${f}" | grep -E 'x' > /dev/null && npm run test -- --flag=1\ndone`,
+  json: `{"name": "x", "n": 1.5, "ok": true, "list": [null, {"a": "b"}]}`,
+  diff: `--- a/f.ts\n+++ b/f.ts\n@@ -1,2 +1,2 @@\n-const a = 1\n+const a = 2\n context`,
+} as const
+
+export const WARM_UP_LANGUAGES = Object.keys(WARM_UP_SNIPPETS) as Array<keyof typeof WARM_UP_SNIPPETS>
+
+let warmUpStarted = false
+
+function whenIdle(callback: () => void): void {
+  // Safari has no requestIdleCallback: a short delay keeps the work off the
+  // current task at least.
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(callback, { timeout: 5000 })
+  else setTimeout(callback, 200)
+}
+
+/**
+ * Create the highlighter and compile the common languages' rules while the
+ * page is idle, one language per idle slot (each costs up to ~150 ms on a slow
+ * phone). Otherwise the first code block shown pays for it: the first answer
+ * of a session, or a whole answer rendered at once when the user comes back to
+ * a tab that was in the background. Runs once per page.
+ */
+export function warmUpHighlighter(): void {
+  if (warmUpStarted) return
+  warmUpStarted = true
+  const pending = [...WARM_UP_LANGUAGES]
+  const next = () => {
+    const lang = pending.shift()
+    if (!lang) return
+    getHighlighter()
+      .then((h) => {
+        h.codeToTokensBase(WARM_UP_SNIPPETS[lang], { lang, theme: getShikiTheme() as BundledTheme })
+      })
+      .catch(() => {
+        // Warm-up only: a failure here just leaves the cost to the first block.
+      })
+      .finally(() => whenIdle(next))
+  }
+  whenIdle(next)
 }
 
 if (import.meta.hot) {
