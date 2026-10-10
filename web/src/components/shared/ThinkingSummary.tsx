@@ -1,5 +1,6 @@
 import { memo, useEffect, useState } from 'react'
 import { useT } from '../../hooks/useT'
+import { usePageVisible } from '../../hooks/usePageVisible'
 import { formatTime } from '../../lib/format-stats'
 
 interface ThinkingTimingEntry {
@@ -53,6 +54,7 @@ export const ThinkingSummary = memo(function ThinkingSummary({
   thinkingDuration,
 }: ThinkingSummaryProps) {
   const t = useT()
+  const visible = usePageVisible()
   const [now, setNow] = useState(() => Date.now())
   const [clientDuration, setClientDuration] = useState<number | undefined>()
   const startedAt = thinkingTiming.get(messageId)?.start
@@ -68,11 +70,14 @@ export const ThinkingSummary = memo(function ThinkingSummary({
     }
     if (isStreaming && !thinkingFinished) {
       ensureThinkingStart(messageId)
+      // No ticking while the page is hidden; catch up as soon as it is shown.
+      if (!visible) return
+      setNow(Date.now())
       const timer = setInterval(() => setNow(Date.now()), fastTicking ? 100 : 1000)
       return () => clearInterval(timer)
     }
     setClientDuration(latchThinkingEnd(messageId))
-  }, [messageId, isStreaming, thinkingFinished, thinkingDuration, fastTicking])
+  }, [messageId, isStreaming, thinkingFinished, thinkingDuration, fastTicking, visible])
 
   // A collapsed thinking block must always render something: an empty chip
   // would make the block vanish from the feed, with no click target left to

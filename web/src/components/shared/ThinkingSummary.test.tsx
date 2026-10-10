@@ -31,6 +31,25 @@ describe('ThinkingSummary', () => {
     expect(container.textContent).toContain('(0.7s)')
   })
 
+  it('stops ticking while the page is hidden and catches up when shown again', () => {
+    let hidden = false
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden })
+    const setHidden = (value: boolean) => {
+      hidden = value
+      document.dispatchEvent(new Event('visibilitychange'))
+    }
+    vi.useFakeTimers()
+    vi.setSystemTime(100_000)
+    const { container } = render(<ThinkingSummary messageId="m-hidden" isStreaming thinkingFinished={false} />)
+
+    act(() => setHidden(true))
+    act(() => vi.advanceTimersByTime(3_000))
+    expect(vi.getTimerCount()).toBe(0)
+
+    act(() => setHidden(false))
+    expect(container.textContent).toContain('(3.0s)')
+  })
+
   it('switches to a final duration once thinking finishes mid-stream', () => {
     vi.useFakeTimers()
     vi.setSystemTime(100_000)

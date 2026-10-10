@@ -54,21 +54,34 @@ function doFlush() {
   dirtySessionIds.clear()
 }
 
+let waitingForVisible = false
+
+function flushWhenVisible() {
+  if (document.hidden) return
+  document.removeEventListener('visibilitychange', flushWhenVisible)
+  waitingForVisible = false
+  if (pendingTimer === null) doFlush()
+}
+
 export function scheduleStreamingFlush(sessionId: string = DEFAULT_BUFFER_KEY) {
   dirtySessionIds.add(sessionId)
   if (pendingTimer !== null) return
+  if (typeof document !== 'undefined' && document.hidden) {
+    // Nobody sees a hidden page: keep buffering and render everything in one
+    // flush when it is shown again, instead of rendering the stream in the
+    // background (terminal commits still flush through cancelStreamingFlush).
+    if (!waitingForVisible) {
+      waitingForVisible = true
+      document.addEventListener('visibilitychange', flushWhenVisible)
+    }
+    return
+  }
   const elapsed = Date.now() - lastFlushTime
   if (elapsed >= MIN_STREAM_FLUSH_INTERVAL_MS) {
     // Fast path: enough time passed since the last flush — defer to the next
     // animation frame so deltas arriving in the same frame coalesce into one render.
-    // rAF is paused in hidden tabs, so fall back to a timeout there.
-    if (typeof document !== 'undefined' && document.hidden) {
-      pendingTimer = setTimeout(doFlush, 0)
-      pendingTimerKind = 'timeout'
-    } else {
-      pendingTimer = requestAnimationFrame(doFlush)
-      pendingTimerKind = 'raf'
-    }
+    pendingTimer = requestAnimationFrame(doFlush)
+    pendingTimerKind = 'raf'
   } else {
     // Throttle: wait until the minimum interval has elapsed since the last flush.
     pendingTimer = setTimeout(doFlush, MIN_STREAM_FLUSH_INTERVAL_MS - elapsed)
