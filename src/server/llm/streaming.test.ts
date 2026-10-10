@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { SegmentBuilder, streamWithSegments, type StreamEvent } from './streaming.js'
 import type { LLMClient, LLMStreamEvent, LLMCompletionResponse } from './types.js'
+import { readResponseLines } from './http-shared.js'
 
 // Helper to create a mock LLM client
 function createMockClient(events: LLMStreamEvent[]): LLMClient {
@@ -257,5 +258,39 @@ describe('streamWithSegments', () => {
 
     builder.clear()
     expect(builder.build()).toEqual([])
+  })
+})
+
+describe('readResponseLines', () => {
+  it('yields trimmed non-empty lines from a stream', async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('data: line1\n\ndata: line2\n'))
+        controller.close()
+      },
+    })
+    const response = new Response(stream)
+    const lines: string[] = []
+    for await (const line of readResponseLines(response)) {
+      lines.push(line)
+    }
+    expect(lines).toEqual(['data: line1', 'data: line2'])
+  })
+
+  it('cancels reader when iteration breaks early', async () => {
+    let cancelCalled = false
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('line1\nline2\nline3\n'))
+      },
+      cancel() {
+        cancelCalled = true
+      },
+    })
+    const response = new Response(stream)
+    for await (const line of readResponseLines(response)) {
+      if (line === 'line1') break
+    }
+    expect(cancelCalled).toBe(true)
   })
 })

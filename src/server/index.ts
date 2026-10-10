@@ -3945,6 +3945,21 @@ export async function createServer(config: Config): Promise<void> {
     logger.error('Unhandled promise rejection', errorInfo)
   })
 
+  // Catch Node/undici internal socket assertion errors (e.g. assert(!this.paused))
+  // when an HTTP stream is closed abruptly while the parser is paused due to backpressure.
+  process.on('uncaughtException', (error) => {
+    if ((error as { code?: string })?.code === 'ERR_ASSERTION' && error.message?.includes('!this.paused')) {
+      logger.warn('Ignored undici socket assertion error (remote closed while parser paused)', {
+        error: error.message,
+      })
+      return
+    }
+    logger.error('Uncaught exception', {
+      error: error instanceof Error ? (error.stack ?? error.message) : String(error),
+    })
+    process.exit(1)
+  })
+
   process.on('SIGINT', shutdown)
   process.on('SIGTERM', shutdown)
 }
