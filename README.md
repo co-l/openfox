@@ -102,6 +102,7 @@ Authoring guide: [docs/PLUGINS.md](docs/PLUGINS.md) — working reference plugin
 - To authenticate with an X (xAI) SuperGrok subscription, you can install the [`openfox-xai-supergrok`](https://github.com/Olgean-Group/openfox-xai-supergrok) plugin.
 - To use free OpenRouter models, you can install the [`openfox-openrouter-free`](https://github.com/JamesDAdams/openfox-openrouter-free) plugin.
 - To use free OpenCode models, you can install the [`openfox-opencode-free`](https://github.com/JamesDAdams/openfox-opencode-free) plugin.
+- To drive OpenFox from Telegram (projects, sessions, agent turns, questions and permission requests), you can install the [`openfox-telegram`](https://github.com/vv7r/openfox-telegram) plugin.
 
 ## Screenshots
 
