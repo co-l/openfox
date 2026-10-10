@@ -39,6 +39,7 @@ export function spreadOptionalMessageFields(message: SnapshotMessage) {
     ...(message.messageKind !== undefined && { messageKind: message.messageKind }),
     ...(message.contextWindowId !== undefined && { contextWindowId: message.contextWindowId }),
     ...(message.isCompactionSummary !== undefined && { isCompactionSummary: message.isCompactionSummary }),
+    ...(message.carriedMessageIds !== undefined && { carriedMessageIds: message.carriedMessageIds }),
     ...(message.attachments !== undefined && { attachments: message.attachments }),
     ...(message.preparingToolCalls !== undefined &&
       message.preparingToolCalls.length > 0 && { preparingToolCalls: message.preparingToolCalls }),
@@ -87,6 +88,12 @@ export function snapshotMessagesToEvents(messages: SnapshotMessage[], sessionId 
         ...(message.subAgentId !== undefined && { subAgentId: message.subAgentId }),
         ...(message.subAgentType !== undefined && { subAgentType: message.subAgentType }),
         ...(message.attachments !== undefined && { attachments: message.attachments }),
+        // Needed to recognize an interrupted compaction prompt (see below).
+        ...(message.isSystemGenerated !== undefined && { isSystemGenerated: message.isSystemGenerated }),
+        ...(message.metadata !== undefined && { metadata: message.metadata }),
+        // A compaction summary and the round it carries (see placeCarriedRounds).
+        ...(message.isCompactionSummary !== undefined && { isCompactionSummary: message.isCompactionSummary }),
+        ...(message.carriedMessageIds !== undefined && { carriedMessageIds: message.carriedMessageIds }),
       },
     })
 
@@ -268,6 +275,13 @@ export function buildContextMessagesFromStoredEvents(
   const messages: Array<ContextMessage & { id: string }> = []
   const messageMap = new Map<string, ContextMessage & { id: string }>()
   const fulfilledToolCallIds = new Set<string>()
+  // Messages that start an interrupted compaction: its prompt, followed by a
+  // message the user wrote (see dropInterruptedCompactions).
+  const compactionPromptIds = new Set<string>()
+  const userWrittenIds = new Set<string>()
+  // Messages of the previous window that a compaction summary of this window
+  // carries (see placeCarriedRounds).
+  const carriedBy = collectCarriedMessageIds(events, (data) => data.contextWindowId === windowId)
 
   for (const event of events) {
     switch (event.type) {
@@ -275,7 +289,7 @@ export function buildContextMessagesFromStoredEvents(
         const data = event.data as Extract<TurnEvent, { type: 'message.start' }>['data']
         if (
           data.role !== 'system' &&
-          (windowId === undefined || data.contextWindowId === windowId) &&
+          (windowId === undefined || data.contextWindowId === windowId || carriedBy.has(data.messageId)) &&
           (includeVerifier || data.subAgentType !== 'verifier') &&
           !data.subAgentId
         ) {
@@ -287,6 +301,8 @@ export function buildContextMessagesFromStoredEvents(
           }
           messageMap.set(data.messageId, message)
           messages.push(message)
+          if (data.role === 'user' && data.metadata?.type === 'compaction') compactionPromptIds.add(data.messageId)
+          else if (data.role === 'user' && !data.isSystemGenerated) userWrittenIds.add(data.messageId)
         }
         break
       }
@@ -314,9 +330,76 @@ export function buildContextMessagesFromStoredEvents(
     }
   }
 
+  placeCarriedRounds(messages, carriedBy)
+  dropInterruptedCompactions(messages, compactionPromptIds, userWrittenIds)
   stripOrphanedToolCalls(messages, fulfilledToolCallIds)
   reorderToolMessages(messages)
   return messages.map(({ id: _id, ...message }) => message)
+}
+
+/**
+ * Carried message id → id of the compaction summary that carries it, for the
+ * summaries `accept` selects (those of the window or sub-agent being built).
+ */
+export function collectCarriedMessageIds(
+  events: StoredEvent[],
+  accept: (data: Extract<TurnEvent, { type: 'message.start' }>['data']) => boolean,
+): Map<string, string> {
+  const carriedBy = new Map<string, string>()
+  for (const event of events) {
+    if (event.type !== 'message.start') continue
+    const data = event.data as Extract<TurnEvent, { type: 'message.start' }>['data']
+    if (!data.isCompactionSummary || !data.carriedMessageIds || !accept(data)) continue
+    for (const id of data.carriedMessageIds) carriedBy.set(id, data.messageId)
+  }
+  return carriedBy
+}
+
+/**
+ * Move each carried round (assistant messages of the previous window and
+ * their tool results) right after the compaction summary that carries it.
+ * The agent loop leaves the round that pushed the context over the threshold
+ * out of the summary request, so that request is the previous one plus the
+ * compaction prompt, all of it in the backend's prompt cache; the next window
+ * then goes on from the summary and that round.
+ */
+export function placeCarriedRounds(messages: MessageWithId[], carriedBy: Map<string, string>): void {
+  for (const summaryId of new Set(carriedBy.values())) {
+    const ids = new Set([...carriedBy].filter(([, by]) => by === summaryId).map(([id]) => id))
+    const callIds = new Set(
+      messages.filter((message) => ids.has(message.id)).flatMap((message) => message.toolCalls?.map((c) => c.id) ?? []),
+    )
+    const block = messages.filter(
+      (message) =>
+        ids.has(message.id) ||
+        (message.role === 'tool' && message.toolCallId !== undefined && callIds.has(message.toolCallId)),
+    )
+    const rest = messages.filter((message) => !block.includes(message))
+    const at = rest.findIndex((message) => message.id === summaryId)
+    if (block.length === 0 || at < 0) continue
+    messages.splice(0, messages.length, ...rest.slice(0, at + 1), ...block, ...rest.slice(at + 1))
+  }
+}
+
+/**
+ * A compaction stopped or cut by a crash before its summary leaves its prompt
+ * (and any cut attempt) in the window. Once the user has written since, it is
+ * no longer being answered: left in, the model answers the user with a
+ * summary instead of the work. Drop it, and what follows it, up to that user
+ * message. A prompt still being answered is followed only by system messages
+ * (retries, reminders) and is kept.
+ */
+function dropInterruptedCompactions(
+  messages: MessageWithId[],
+  compactionPromptIds: Set<string>,
+  userWrittenIds: Set<string>,
+): void {
+  if (compactionPromptIds.size === 0) return
+  for (let index = messages.length - 1; index >= 0; index--) {
+    if (!compactionPromptIds.has(messages[index]!.id)) continue
+    const resumedAt = messages.findIndex((message, later) => later > index && userWrittenIds.has(message.id))
+    if (resumedAt !== -1) messages.splice(index, resumedAt - index)
+  }
 }
 
 export function handleMessageThinking(

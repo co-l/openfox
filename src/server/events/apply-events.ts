@@ -27,6 +27,7 @@ export interface MessageFragment {
   isSystemGenerated?: boolean
   messageKind?: 'correction' | 'auto-prompt' | 'context-reset' | 'task-completed' | 'workflow-started' | 'command'
   isCompactionSummary?: boolean
+  carriedMessageIds?: string[]
   attachments?: unknown[]
   metadata?: unknown
 }
@@ -39,6 +40,7 @@ function extractMessageOptionalFields(data: {
   isSystemGenerated?: boolean
   messageKind?: string
   isCompactionSummary?: boolean
+  carriedMessageIds?: string[]
   attachments?: unknown[]
   metadata?: unknown
 }): Record<string, unknown> {
@@ -50,6 +52,7 @@ function extractMessageOptionalFields(data: {
     ...(data.isSystemGenerated !== undefined && { isSystemGenerated: data.isSystemGenerated }),
     ...(data.messageKind !== undefined && { messageKind: data.messageKind }),
     ...(data.isCompactionSummary !== undefined && { isCompactionSummary: data.isCompactionSummary }),
+    ...(data.carriedMessageIds !== undefined && { carriedMessageIds: data.carriedMessageIds }),
     ...(data.attachments !== undefined && { attachments: data.attachments }),
     ...(data.metadata !== undefined && { metadata: data.metadata }),
   }
@@ -148,6 +151,7 @@ export function applyEvents<
     isSystemGenerated?: boolean
     messageKind?: string
     isCompactionSummary?: boolean
+    carriedMessageIds?: string[]
     attachments?: unknown[]
     metadata?: unknown
     preparingToolCalls?: PreparingToolCall[]

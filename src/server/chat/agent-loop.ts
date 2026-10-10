@@ -46,7 +46,15 @@ import {
   createChatStatsMessage,
 } from '../ws/protocol.js'
 import { executeTools, type ToolBatchContext } from './execute-tools.js'
-import { estimateToolResultTokens, isContextLengthError } from './token-budget.js'
+import {
+  CHARS_PER_TOKEN,
+  estimateToolResultTokens,
+  fitToolResults,
+  isContextLengthError,
+  messageChars,
+  promptOverflow,
+} from './token-budget.js'
+import { appendCompactionPrompt, shouldCompact } from '../context/compactor.js'
 import { loadAllAgentsDefault, getSubAgents } from '../agents/registry.js'
 import { createRetryLimiter, type RetryLimiter } from './retry-limiter.js'
 import { drainQueue } from './drain-queue.js'
@@ -216,6 +224,14 @@ export interface TopLevelLoopConfig {
 const MAX_TRUNCATION_RETRIES = 3
 const MAX_CONTEXT_LENGTH_RETRIES = 3
 const OUTPUT_RESERVE_TOKENS = 2048
+/** Output room a compaction request keeps for the summary (see fitToolResults). */
+const COMPACTION_SUMMARY_TOKENS = 4096
+/**
+ * Message characters a request needs before its measured prompt tokens are
+ * used as the density: below, the system prompt and tool definitions (counted
+ * in the tokens, not in the characters) skew it too much.
+ */
+const DENSITY_MIN_CHARS = 40_000
 
 export async function runTopLevelAgentLoop(
   config: TopLevelLoopConfig,
@@ -243,7 +259,66 @@ export async function runTopLevelAgentLoop(
   let currentMaxTokensOverride: number | undefined
   let lastPatternMatch: { pattern: string; field: string; matchedContent: string } | undefined
   let compacting = config.initialCompacting ?? false
+  // Set after a compaction attempt that produced no usable summary: the
+  // single retry runs without thinking (see the compacting branch below).
+  let compactionRetryWithoutThinking = false
+  // Characters per prompt token, measured on the last large enough request
+  // (its characters, system prompt and tool definitions included / the prompt
+  // tokens the backend counted or, on an overflow, reported). Our ~4 characters per token estimate is far off
+  // for code and logs (llama.cpp counted ~3): once measured, this density
+  // sizes the compaction requests and the pre-send estimate for the rest of
+  // the turn. Measured on every response, not only on overflows: when the
+  // configured window is smaller than the backend's, nothing ever overflows.
+  let measuredCharsPerToken: number | undefined
+  // Characters of the request last sent: messages, system prompt and tools.
+  let lastRequestChars: number | undefined
+  // Characters of the last assembled system prompt and tool definitions. The
+  // summary request is sized before it is assembled: this fixed part weighs
+  // more on it than on the larger request the density was measured on, and
+  // leaving it out made it come out larger than its target.
+  let lastOverheadChars = 0
+  // The tool round run since the last request (its assistant message and the
+  // calls it made): its results are not in the backend's prompt cache yet.
+  let pendingRound: { messageId: string; toolCallIds: Set<string> } | undefined
+  // The round the compaction in progress leaves out of the summary request and
+  // carries into the next window, after the summary (see the compacting branch).
+  let carriedRound: typeof pendingRound
   let returnValueNudgeCount = 0
+
+  /** Context size the auto-compaction is decided on, its window and threshold. */
+  const compactionMeasure = () => {
+    const contextState = sessionManager.getContextState(sessionId)
+    return {
+      tokens: config.subAgentMetadata
+        ? (sessionManager.getSubAgentContextTokens?.(config.subAgentMetadata.subAgentId) ?? 0)
+        : contextState.currentTokens,
+      window: config.subAgentMetadata
+        ? sessionManager.getCurrentModelContext(sessionId, config.mode)
+        : contextState.maxTokens,
+      threshold:
+        sessionManager.getModelCompactionThreshold(sessionId, config.mode) ??
+        getRuntimeConfig().context.compactionThreshold,
+    }
+  }
+
+  /**
+   * Start a compaction. The tool round run since the last request is left out
+   * of the summary request when the next window can hold it: the summary
+   * request is then the previous request plus the compaction prompt, all of it
+   * in the backend's prompt cache, and the round follows the summary in the
+   * next window. A round too big for that (more than half of what the window
+   * leaves after the summary) is summarized with the rest instead.
+   */
+  const startCompaction = () => {
+    appendCompactionPrompt(sessionId, append, config.subAgentMetadata)
+    compacting = true
+    const window = sessionManager.getCurrentModelContext(sessionId, config.mode)
+    const roundTokens = measuredCharsPerToken
+      ? Math.ceil((pendingToolResultTokens * CHARS_PER_TOKEN) / measuredCharsPerToken)
+      : pendingToolResultTokens
+    const carryable = roundTokens <= (window - COMPACTION_SUMMARY_TOKENS - OUTPUT_RESERVE_TOKENS) / 2
+    carriedRound = carryable ? pendingRound : undefined
+  }
 
   for (;;) {
     if (signal?.aborted) throw new Error('Aborted')
@@ -309,6 +384,17 @@ export async function runTopLevelAgentLoop(
     const toolRegistry = config.getToolRegistry()
     const currentWindowMessageOptions = getCurrentWindowMessageOptions(sessionId)
 
+    // The threshold is checked after each response, on the measured prompt.
+    // Tool results added since can push the next request over it (or over the
+    // window: a big read_file): check again before sending.
+    if (!compacting && pendingToolResultTokens > 0) {
+      const measure = compactionMeasure()
+      const pendingTokens = measuredCharsPerToken
+        ? Math.ceil((pendingToolResultTokens * CHARS_PER_TOKEN) / measuredCharsPerToken)
+        : pendingToolResultTokens
+      if (shouldCompact(measure.tokens + pendingTokens, measure.window, measure.threshold)) startCompaction()
+    }
+
     // ---- LLM round with automatic failure retry ----
     // Case 1: a request fails before any content → retry the same request with
     // exponential backoff; nothing is written (message.start deferred).
@@ -333,7 +419,38 @@ export async function runTopLevelAgentLoop(
       const attemptClient = resolveClient()
       const profileDefaultMaxTokens = getModelProfile(attemptClient.getModel()).defaultMaxTokens
 
-      const requestMessages = await config.getConversationMessages()
+      let requestMessages = await config.getConversationMessages()
+
+      // A compaction request runs on a nearly full context: when it would not
+      // leave room for the summary, shorten tool results (start and end kept,
+      // see fitToolResults for the order), rather than let it overflow too.
+      if (compacting) {
+        // The carried round goes to the next window, not to the summary.
+        const carried = carriedRound
+        if (carried) {
+          requestMessages = requestMessages.filter((message) =>
+            message.role === 'tool'
+              ? !(message.toolCallId !== undefined && carried.toolCallIds.has(message.toolCallId))
+              : !(message.role === 'assistant' && message.toolCalls?.some((call) => carried.toolCallIds.has(call.id))),
+          )
+        }
+        const window = sessionManager.getCurrentModelContext(sessionId, config.mode)
+        const charsPerToken = measuredCharsPerToken ?? CHARS_PER_TOKEN
+        const estimate = measuredCharsPerToken
+          ? Math.ceil((messageChars(requestMessages) + lastOverheadChars) / charsPerToken)
+          : compactionMeasure().tokens + (carried ? 0 : pendingToolResultTokens)
+        const excess = estimate - (window - COMPACTION_SUMMARY_TOKENS - OUTPUT_RESERVE_TOKENS)
+        if (excess > 0) {
+          // fitToolResults counts CHARS_PER_TOKEN characters per token.
+          const fitted = fitToolResults(requestMessages, Math.ceil((excess * charsPerToken) / CHARS_PER_TOKEN))
+          requestMessages = fitted.messages
+          logger.info('Shortened tool results to fit the compaction request', {
+            sessionId,
+            excessTokens: excess,
+            savedTokens: fitted.savedTokens,
+          })
+        }
+      }
 
       // The format-retry continuation is appended once per round (not on
       // LLM-error retries) — its persisted copy feeds later context rebuilds.
@@ -366,6 +483,8 @@ export async function runTopLevelAgentLoop(
         ...(instructionContent ? { customInstructions: instructionContent } : {}),
         ...(skills.length > 0 ? { skills } : {}),
       })
+      lastOverheadChars = assembledRequest.systemPrompt.length + JSON.stringify(assembledRequest.tools ?? []).length
+      lastRequestChars = messageChars(requestMessages) + lastOverheadChars
 
       assistantMsgId = crypto.randomUUID()
       // The assistant message.start is DEFERRED until the first streamed event:
@@ -398,7 +517,11 @@ export async function runTopLevelAgentLoop(
         contextWindow - previousContextTokens - pendingToolResultTokens - OUTPUT_RESERVE_TOKENS,
       )
 
-      let modelSettings = config.modelSettings ?? sessionManager.getCurrentModelSettings(sessionId, config.mode)
+      let modelSettings =
+        config.modelSettings ??
+        (compacting && compactionRetryWithoutThinking
+          ? sessionManager.getCurrentModelSettings(sessionId, config.mode, { thinking: false })
+          : sessionManager.getCurrentModelSettings(sessionId, config.mode))
       if (modelSettings && currentMaxTokensOverride !== undefined) {
         modelSettings = { ...modelSettings, maxTokens: currentMaxTokensOverride }
       }
@@ -480,6 +603,15 @@ export async function runTopLevelAgentLoop(
       if (!attemptResult.error) {
         ensureAssistantMessage()
         result = attemptResult
+        // A density above the estimate means fewer tokens than characters / 4
+        // were reported (e.g. only the uncached part): not a measure, ignored.
+        if (lastRequestChars !== undefined && lastRequestChars >= DENSITY_MIN_CHARS) {
+          const charsPerToken = lastRequestChars / Math.max(1, attemptResult.usage.promptTokens)
+          if (charsPerToken >= 1 && charsPerToken <= CHARS_PER_TOKEN) measuredCharsPerToken = charsPerToken
+        }
+        // The overflow retries are a budget per run of failures, not per turn:
+        // a long turn can compact several times.
+        contextRetryCount = 0
         const usage = attemptResult.usage
         emitPluginHook('llm.completed', {
           sessionId,
@@ -524,6 +656,29 @@ export async function runTopLevelAgentLoop(
       }
 
       if (signal?.aborted) throw new Error('Aborted')
+
+      // The prompt alone exceeds the window: a smaller maxTokens cannot help.
+      // Compact (the summary request is shortened to fit, see above); if the
+      // summary request itself overflowed, shorten it by what was measured.
+      const overflow = promptOverflow(attemptResult.error)
+      const measure = compactionMeasure()
+      if (overflow && measure.threshold > 0 && contextRetryCount < MAX_CONTEXT_LENGTH_RETRIES) {
+        contextRetryCount += 1
+        // Always set: every attempt records its size before it is sent.
+        if (lastRequestChars !== undefined) {
+          // Messages lighter than our estimate (a heavy system prompt) keep the
+          // estimate; an implausible value (nearly empty request) is ignored.
+          const charsPerToken = lastRequestChars / overflow.promptTokens
+          if (charsPerToken >= 1) measuredCharsPerToken = Math.min(charsPerToken, CHARS_PER_TOKEN)
+        }
+        if (!compacting) startCompaction()
+        logger.warn('Request exceeds the context window, compacting', {
+          sessionId,
+          promptTokens: overflow.promptTokens,
+          windowTokens: overflow.windowTokens,
+        })
+        continue
+      }
 
       // Context overflow: the prompt (including tool results) plus the requested
       // maxTokens exceeds the model's window. The error is deterministic, so
@@ -653,30 +808,31 @@ export async function runTopLevelAgentLoop(
       config.subAgentMetadata?.subAgentId,
     )
     pendingToolResultTokens = 0
+    pendingRound = undefined
     currentMaxTokensOverride = undefined
 
     // Check compaction threshold with fresh promptTokens from LLM.
     // When exceeded, append compaction prompt and let the next iteration
     // handle summarization — same agent, same loop, no nested call.
-    if (!compacting) {
-      const contextState = sessionManager.getContextState(sessionId)
-      const { shouldCompact, appendCompactionPrompt } = await import('../context/compactor.js')
-      const compactionTokens = config.subAgentMetadata
-        ? (sessionManager.getSubAgentContextTokens?.(config.subAgentMetadata.subAgentId) ?? 0)
-        : contextState.currentTokens
-      const compactionWindow = config.subAgentMetadata
-        ? sessionManager.getCurrentModelContext(sessionId, config.mode)
-        : contextState.maxTokens
-      if (
-        shouldCompact(
-          compactionTokens,
-          compactionWindow,
-          sessionManager.getModelCompactionThreshold(sessionId, config.mode) ??
-            runtimeConfig.context.compactionThreshold,
-        )
-      ) {
-        appendCompactionPrompt(sessionId, append, config.subAgentMetadata)
-        compacting = true
+    // A response with tool calls is not interrupted: its calls run first and
+    // the pre-send check compacts before the next request (their results are
+    // pending then). Compacting here dropped those calls: the model's work
+    // (a write of what it had just read) was lost and redone after the summary.
+    if (!compacting && result.toolCalls.length === 0) {
+      const measure = compactionMeasure()
+      if (shouldCompact(measure.tokens, measure.window, measure.threshold)) {
+        // Close the response first: it stayed "streaming" for good otherwise,
+        // live and after a reload.
+        if (assistantMessageStarted) {
+          append(
+            createMessageDoneEvent(assistantMsgId, {
+              segments: result.segments,
+              stats: turnMetrics.buildStats(statsIdentity, mode),
+            }),
+          )
+          onMessage?.(createChatMessageUpdatedMessage(assistantMsgId, { isStreaming: false }))
+        }
+        startCompaction()
         continue
       }
     }
@@ -736,6 +892,11 @@ export async function runTopLevelAgentLoop(
 
     if (result.toolCalls.length > 0) {
       if (compacting) {
+        // Close the attempt first: it stayed "streaming" for good otherwise.
+        if (assistantMessageStarted) {
+          append(createMessageDoneEvent(assistantMsgId, { segments: result.segments, partial: true }))
+          onMessage?.(createChatMessageUpdatedMessage(assistantMsgId, { isStreaming: false, partial: true }))
+        }
         const rejectionMsgId = crypto.randomUUID()
         append(
           createMessageStartEvent(
@@ -794,6 +955,7 @@ ${COMPACTION_PROMPT}`,
         batchContext.allowParallelSubAgents = getSetting(SETTINGS_KEYS.AGENT_ALLOW_PARALLEL_SUB_AGENTS) === 'true'
         const batchResult = await executeTools(assistantMsgId, result.toolCalls, batchContext, append)
         pendingToolResultTokens = estimateToolResultTokens(batchResult.toolMessages)
+        pendingRound = { messageId: assistantMsgId, toolCallIds: new Set(result.toolCalls.map((call) => call.id)) }
         if (batchResult.stepDoneCalled) {
           emitDoneAndBreak(
             assistantMsgId,
@@ -851,8 +1013,56 @@ ${COMPACTION_PROMPT}`,
     }
 
     if (compacting) {
-      const summary = result.content?.trim() || result.thinkingContent?.trim() || ''
+      // The summary request runs with the context nearly full, so its output
+      // budget can be tiny: a thinking model may spend all of it reasoning and
+      // return no answer, or a cut one. That reasoning must not become the
+      // summary (the next window would start from it, and the next compaction
+      // copy it). Retry once without thinking; on that retry, a complete
+      // reasoning-only answer is accepted (setups that route the whole answer
+      // through the reasoning field), a cut one is not.
+      const answer = result.content?.trim() ?? ''
+      const reasoning = result.thinkingContent?.trim() ?? ''
+      const cut = result.finishReason === 'length'
+      const isRetry = compactionRetryWithoutThinking
+      const summary = answer && !(cut && !isRetry) ? answer : isRetry && !cut ? reasoning : ''
+      if (!summary && !isRetry && (answer || reasoning)) {
+        logger.warn('Compaction produced no usable summary, retrying without thinking', {
+          sessionId,
+          finishReason: result.finishReason,
+          answerChars: answer.length,
+          reasoningChars: reasoning.length,
+        })
+        if (assistantMessageStarted) {
+          append(createMessageDoneEvent(assistantMsgId, { partial: true }))
+          onMessage?.(createChatMessageUpdatedMessage(assistantMsgId, { isStreaming: false, partial: true }))
+        }
+        const retryMsgId = crypto.randomUUID()
+        append(
+          createMessageStartEvent(
+            retryMsgId,
+            'user',
+            'Your previous reply contained no summary. Reply now with the summary only, as instructed above, without deliberating first.',
+            {
+              ...(currentWindowMessageOptions ?? {}),
+              isSystemGenerated: true,
+              messageKind: 'correction',
+              ...subAgentTags(),
+            },
+          ),
+        )
+        append({ type: 'message.done', data: { messageId: retryMsgId } })
+        compactionRetryWithoutThinking = true
+        continue
+      }
+      compactionRetryWithoutThinking = false
       if (!summary) {
+        // The window is kept as is, round included.
+        carriedRound = undefined
+        // Close the attempt first: it stayed "streaming" for good otherwise.
+        if (assistantMessageStarted) {
+          append(createMessageDoneEvent(assistantMsgId, { partial: true }))
+          onMessage?.(createChatMessageUpdatedMessage(assistantMsgId, { isStreaming: false, partial: true }))
+        }
         append({
           type: 'chat.error',
           data: {
@@ -911,9 +1121,12 @@ ${COMPACTION_PROMPT}`,
           content: summary,
           contextWindowId: newWindowId,
           isCompactionSummary: true,
+          // The context builds the next window with this round after the summary.
+          ...(carriedRound && { carriedMessageIds: [carriedRound.messageId] }),
           ...subAgentTags(),
         },
       })
+      carriedRound = undefined
       append(createMessageDoneEvent(assistantMsgId, { stats: turnMetrics.buildStats(statsIdentity, mode) }))
       append(createChatDoneEvent(assistantMsgId, 'complete', undefined, agentType))
 

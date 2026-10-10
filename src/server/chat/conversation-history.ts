@@ -23,7 +23,12 @@ import {
 } from '../events/folding.js'
 import type { RequestContextMessage } from './request-context.js'
 import { minimalMessagesToRequestContextMessages } from './request-context.js'
-import { buildContextMessagesFromEventHistory, foldContextState } from '../events/folding.js'
+import {
+  buildContextMessagesFromEventHistory,
+  collectCarriedMessageIds,
+  foldContextState,
+  placeCarriedRounds,
+} from '../events/folding.js'
 import { getEventStore } from '../events/index.js'
 import { processContextImages, loadResolvedVisionModel } from '../context/image-processor.js'
 import { modelSupportsVision } from '../llm/profiles.js'
@@ -109,9 +114,43 @@ function buildSubAgentContextMessages(events: StoredEvent[], scope: SubAgentScop
   }
 
   const startIdx = compactionSummaryIndex >= 0 ? compactionSummaryIndex : 0
+  // The round the latest compaction left out of its summary request: it
+  // comes from before the boundary and follows the summary (see
+  // placeCarriedRounds).
+  const carriedBy = collectCarriedMessageIds(events.slice(startIdx), (data) => data.subAgentId === subAgentId)
+  const isCarried = (event: StoredEvent) => {
+    const messageId = (event.data as { messageId?: unknown }).messageId
+    return typeof messageId === 'string' && carriedBy.has(messageId)
+  }
 
-  for (let i = startIdx; i < events.length; i++) {
+  // After a compaction the context restarts at the summary, which would drop
+  // the sub-agent's task (its first user message). Keep it first: the summary
+  // is the model's paraphrase, the task is what was asked, and without any
+  // user message Qwen3-style chat templates reject the request ("No user
+  // query found in messages") once the sub-agent goes on with tool calls.
+  if (compactionSummaryIndex > 0) {
+    for (let i = 0; i < compactionSummaryIndex; i++) {
+      const event = events[i]!
+      if (event.type !== 'message.start') continue
+      const data = event.data as Extract<TurnEvent, { type: 'message.start' }>['data']
+      if (data.subAgentId !== subAgentId || data.role !== 'user' || data.messageKind === 'context-reset') continue
+      const task: InternalMessage = {
+        id: data.messageId,
+        role: 'user',
+        content: data.content ?? '',
+        subAgentId,
+        ...(data.subAgentType ? { subAgentType: data.subAgentType } : {}),
+        ...(data.attachments !== undefined ? { attachments: data.attachments as Attachment[] } : {}),
+      }
+      messageMap.set(task.id, task)
+      messages.push(task)
+      break
+    }
+  }
+
+  for (let i = 0; i < events.length; i++) {
     const event = events[i]!
+    if (i < startIdx && !isCarried(event)) continue
     switch (event.type) {
       case 'message.start': {
         const data = event.data as Extract<TurnEvent, { type: 'message.start' }>['data']
@@ -166,6 +205,7 @@ function buildSubAgentContextMessages(events: StoredEvent[], scope: SubAgentScop
     }
   }
 
+  placeCarriedRounds(messages, carriedBy)
   stripOrphanedToolCalls(messages, fulfilledToolCallIds)
   reorderToolMessages(messages)
 

@@ -640,6 +640,7 @@ export class EventStore {
           ...(msg.subAgentId !== undefined && { subAgentId: msg.subAgentId }),
           ...(msg.subAgentType !== undefined && { subAgentType: msg.subAgentType }),
           ...(msg.isCompactionSummary !== undefined && { isCompactionSummary: msg.isCompactionSummary }),
+          ...(msg.carriedMessageIds !== undefined && { carriedMessageIds: msg.carriedMessageIds }),
           ...(msg.attachments !== undefined && { attachments: msg.attachments }),
         },
       })

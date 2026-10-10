@@ -283,6 +283,8 @@ export class SessionManager {
   getCurrentModelSettings(
     sessionId?: string,
     agentId?: string,
+    /** `thinking: false` forces the non-thinking mode (e.g. a compaction retry). */
+    options?: { thinking?: boolean },
   ): { temperature?: number; topP?: number; topK?: number; maxTokens?: number; supportsVision?: boolean } | undefined {
     let providerId: string | undefined
     let model: string | undefined
@@ -309,7 +311,7 @@ export class SessionManager {
     // model whose default is off makes Qwen3-style models burn their output
     // budget on reasoning and return empty/garbled responses.
     const effort = this.providerManager.resolveModelEffort(providerId, model, reasoningEffort)
-    const mode = effort === 'none' ? 'non-thinking' : 'thinking'
+    const mode = options?.thinking === false || effort === 'none' ? 'non-thinking' : 'thinking'
     return this.providerManager.getModelSettings(providerId, model, mode)
   }
 
