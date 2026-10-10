@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useSessionStore } from '../../stores/session'
 import { SETTINGS_KEYS, settingResource } from '../../lib/resources'
@@ -330,6 +330,23 @@ describe('ToolCallDisplay — default expansion', () => {
     const { container } = render(
       <ToolCallDisplay tool="custom_tool" args={{}} status="success" result={bigResult} variant="expandable" />,
     )
+
+    expect(container.querySelector('pre')).toBeNull()
+  })
+
+  it('collapses large finished results when the setting arrives after mount', () => {
+    // The settings load asynchronously: on a page load or reload the cards
+    // render with the default (off) first. They kept that state, so the
+    // setting only worked when navigating inside an already loaded app; seen
+    // on a phone, a long session rendered every read_file result in full
+    // (190,000 elements, ~50 s of main-thread work on a 4x throttled CPU).
+    const bigResult = 'x'.repeat(10_000)
+    const { container } = render(
+      <ToolCallDisplay tool="custom_tool" args={{}} status="success" result={bigResult} variant="expandable" />,
+    )
+    expect(container.querySelector('pre')?.textContent).toContain(bigResult)
+
+    act(() => settingResource.write('true', SETTINGS_KEYS.DISPLAY_COLLAPSE_LARGE_TOOL_CALLS))
 
     expect(container.querySelector('pre')).toBeNull()
   })
