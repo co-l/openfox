@@ -487,7 +487,13 @@ function App() {
 
   const [isReadonly] = useRoute('/p/:projectId/s/:sessionId/readonly')
 
-  if (!isReadonly && connectionStatus !== 'connected' && !showPasswordModal && !hasToken) {
+  // Gate only the first connect. Once the app has been shown, a dropped
+  // connection keeps it mounted (ConnectionStatusBar reports it): replacing it
+  // would remount and re-render the whole chat on every reconnect.
+  const [hasConnected, setHasConnected] = useState(false)
+  if (connectionStatus === 'connected' && !hasConnected) setHasConnected(true)
+
+  if (!isReadonly && !hasConnected && connectionStatus !== 'connected' && !showPasswordModal && !hasToken) {
     return (
       <div className="h-screen flex items-center justify-center">
         <SpinnerWithText text="Connecting to server..." />

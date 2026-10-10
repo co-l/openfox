@@ -4,6 +4,11 @@ import { generateUUID } from './uuid.js'
 import { appUrl } from './basePath.js'
 
 export type ConnectionStatus = 'connected' | 'disconnected' | 'reconnecting'
+
+// A phone suspends a background page and its socket can die without a close
+// event: after being hidden this long, a socket that still reads OPEN is
+// replaced rather than trusted (a resume only replays the missed events).
+const STALE_AFTER_HIDDEN_MS = 30_000
 type MessageHandler = (message: ServerMessage) => void
 type StatusHandler = (status: ConnectionStatus) => void
 
@@ -19,9 +24,86 @@ export class WebSocketClient {
   private manualReconnectScheduled = false // User triggered reconnect pending
   private pwaRecoveryAttempted = false
   private intentionalClose = false
+  private hasConnected = false
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  // Set when a resume happens while an attempt is still dialing: that attempt
+  // may be going to the network that just dropped, so if it fails, retry at
+  // once instead of waiting the next (up to 30 s) backoff step.
+  private resumeRequested = false
+  // When the page was last hidden (null while visible).
+  private hiddenSince: number | null = null
 
   constructor(url: string) {
     this.baseUrl = url
+    // Mobile browsers drop the socket while the page is in the background, and
+    // the backoff timer is frozen with it: without these, coming back could
+    // wait up to 30 s for the next attempt.
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', this.resume)
+      window.addEventListener('pageshow', this.resume)
+      document.addEventListener('visibilitychange', this.resume)
+    }
+  }
+
+  /**
+   * Reconnect right away when the network comes back or the page is shown
+   * again, dropping any pending backoff attempt. While an attempt is still
+   * connecting, only make its failure retry at once. A socket still open is
+   * kept, unless the page was hidden long enough for it to have died silently.
+   * No-op after an intentional disconnect, before the first connect, or after
+   * an auth failure waiting for the user.
+   */
+  private resume = (): void => {
+    if (typeof document !== 'undefined' && document.hidden) {
+      this.hiddenSince ??= Date.now()
+      return
+    }
+    const hiddenFor = this.hiddenSince === null ? 0 : Date.now() - this.hiddenSince
+    this.hiddenSince = null
+    if (!this.hasConnected || this.intentionalClose) return
+    const state = this.ws?.readyState
+    if (state === WebSocket.OPEN) {
+      if (hiddenFor >= STALE_AFTER_HIDDEN_MS) this.replaceSocket()
+      return
+    }
+    if (state === WebSocket.CONNECTING) {
+      this.resumeRequested = true
+      return
+    }
+    if (this.lastCloseCode === 4000 && this.hasToken()) return
+    if (this.reconnectTimer !== null) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+    this.isReconnecting = false
+    this.manualReconnectScheduled = false
+    this.reconnectAttempts = 0
+    this.connect().catch(() => {
+      // a failed attempt closes the socket, which resumes the normal backoff
+    })
+  }
+
+  /**
+   * Drop a socket that may be dead without knowing it and connect again. The
+   * status goes through 'disconnected' then 'connected', like a real drop, so
+   * the session resumes from its last applied event.
+   */
+  private replaceSocket(): void {
+    const socket = this.ws
+    if (socket) {
+      this.ws = null
+      socket.onopen = null
+      socket.onclose = null
+      socket.onerror = null
+      socket.onmessage = null
+      socket.close()
+    }
+    this.connectingPromise = null
+    this.reconnectAttempts = 0
+    this.statusHandler?.('disconnected')
+    this.connect().catch(() => {
+      // a failed attempt closes the socket, which resumes the normal backoff
+    })
   }
 
   private getUrl(): string {
@@ -74,6 +156,7 @@ export class WebSocketClient {
     }
 
     this.intentionalClose = false
+    this.hasConnected = true
     this.connectingPromise = new Promise((resolve, reject) => {
       try {
         const url = this.getUrl()
@@ -90,6 +173,7 @@ export class WebSocketClient {
           clearTimeout(timeout)
           this.isReconnecting = false
           this.reconnectAttempts = 0
+          this.resumeRequested = false
           this.connectingPromise = null
           this.statusHandler?.('connected')
           resolve()
@@ -165,10 +249,16 @@ export class WebSocketClient {
     this.isReconnecting = true
     this.statusHandler?.('reconnecting')
 
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts || 0), 30000)
+    let delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts || 0), 30000)
+    if (this.resumeRequested) {
+      this.resumeRequested = false
+      this.reconnectAttempts = 0
+      delay = 0
+    }
     this.reconnectAttempts = (this.reconnectAttempts || 0) + 1
 
-    setTimeout(() => {
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null
       this.isReconnecting = false
       this.manualReconnectScheduled = false
       this.connect().catch(() => {
@@ -191,6 +281,10 @@ export class WebSocketClient {
   }
 
   disconnect(): void {
+    if (this.reconnectTimer !== null) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
     this.isReconnecting = false
     this.reconnectAttempts = 0
     this.intentionalClose = true

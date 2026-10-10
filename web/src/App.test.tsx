@@ -255,6 +255,29 @@ describe('App - Password modal rendering', () => {
     expect(container.querySelector('[data-testid="password-modal"]')).toBeNull()
   })
 
+  it('keeps the app mounted when the connection drops after the first connect (no remount on reconnect)', async () => {
+    // Without a password there is no stored token: the full-screen gate used to
+    // replace the whole app on every drop, so each reconnect re-rendered the
+    // entire chat from scratch (seconds of main-thread work on mobile).
+    const App = (await import('./App')).default
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    await act(async () => {
+      root.render(<App />)
+    })
+    const mounted = container.querySelector('[data-switch]')
+    expect(mounted).not.toBeNull()
+
+    sessionState.connectionStatus = 'reconnecting'
+    await act(async () => {
+      root.render(<App />)
+    })
+
+    expect(container.textContent).not.toContain('Connecting to server...')
+    expect(container.querySelector('[data-switch]')).toBe(mounted)
+  })
+
   it('renders PasswordModal via showPasswordModal state after /api/auth confirms auth required', async () => {
     sessionState.connectionStatus = 'reconnecting'
     sessionState.showPasswordModal = true

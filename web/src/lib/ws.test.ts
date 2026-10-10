@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 type WsEvents = {
   open: (() => void)[]
@@ -74,6 +74,13 @@ async function connectClient(client: import('./ws').WebSocketClient, statusHandl
 
 describe('WebSocketClient reconnect logic', () => {
   let WebSocketClient: typeof import('./ws').WebSocketClient
+  // Every client listens to window/document lifecycle events; disconnect the
+  // ones a test created so they cannot react to the next test's events.
+  const created: import('./ws').WebSocketClient[] = []
+
+  afterEach(() => {
+    for (const client of created.splice(0)) client.disconnect()
+  })
 
   beforeEach(async () => {
     vi.resetModules()
@@ -83,7 +90,12 @@ describe('WebSocketClient reconnect logic', () => {
     localStorage.clear()
 
     const mod = await import('./ws')
-    WebSocketClient = mod.WebSocketClient
+    WebSocketClient = class extends mod.WebSocketClient {
+      constructor(url: string) {
+        super(url)
+        created.push(this)
+      }
+    }
   })
 
   it('triggers auto-reconnect on close code 1006 when token exists', async () => {
@@ -140,6 +152,160 @@ describe('WebSocketClient reconnect logic', () => {
     client.reconnect()
 
     await vi.waitFor(() => expect(statusHandler).toHaveBeenCalledWith('connected'))
+  })
+
+  describe('resume (network back, page shown again)', () => {
+    let hidden = false
+
+    beforeEach(() => {
+      hidden = false
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden })
+    })
+
+    async function droppedClient() {
+      const client = new WebSocketClient('ws://localhost:9999/ws')
+      const statusHandler = vi.fn()
+      client.onStatusChange(statusHandler)
+      await connectClient(client, statusHandler)
+      simulateClose(0, 1006)
+      expect(statusHandler).toHaveBeenCalledWith('reconnecting')
+      return { client, statusHandler }
+    }
+
+    it('reconnects immediately when the network comes back, instead of waiting for the backoff', async () => {
+      const { statusHandler } = await droppedClient()
+
+      window.dispatchEvent(new Event('online'))
+
+      // A new socket right away — the pending backoff attempt (1 s here, up to
+      // 30 s after a few failures) is cancelled, not added on top.
+      expect(wsInstances.length).toBe(2)
+      await vi.waitFor(() => expect(statusHandler).toHaveBeenCalledWith('connected'))
+      await new Promise((resolve) => setTimeout(resolve, 1200))
+      expect(wsInstances.length).toBe(2)
+    })
+
+    it('reconnects immediately when the page is shown again', async () => {
+      await droppedClient()
+      hidden = true
+      document.dispatchEvent(new Event('visibilitychange'))
+      expect(wsInstances.length).toBe(1)
+
+      hidden = false
+      document.dispatchEvent(new Event('visibilitychange'))
+      expect(wsInstances.length).toBe(2)
+    })
+
+    it('retries right away when the network comes back during an attempt that then fails', async () => {
+      vi.useFakeTimers()
+      try {
+        const { client } = await droppedClient()
+        // Let a few backoff attempts fail (1 s, 2 s, 4 s...): the next delay grows.
+        for (const delay of [1000, 2000, 4000]) {
+          await vi.advanceTimersByTimeAsync(delay)
+          const attempt = wsInstances[wsInstances.length - 1]!
+          simulateClose(wsInstances.length - 1, 1006)
+          expect(attempt.readyState).toBe(MockWebSocket.CLOSED)
+        }
+        // A backoff attempt is dialing (CONNECTING) when the network comes back.
+        await vi.advanceTimersByTimeAsync(8000)
+        const dialing = wsInstances.length
+        const pending = wsInstances[dialing - 1]!
+        pending.readyState = MockWebSocket.CONNECTING
+        window.dispatchEvent(new Event('online'))
+        expect(wsInstances.length).toBe(dialing)
+
+        // That attempt fails (it was dialing the dead network): retry at once
+        // instead of waiting the next backoff step (16 s here, up to 30 s).
+        simulateClose(dialing - 1, 1006)
+        await vi.advanceTimersByTimeAsync(50)
+        expect(wsInstances.length).toBe(dialing + 1)
+        client.disconnect()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('replaces a socket still marked open after a long time hidden', async () => {
+      // iOS suspends a background page and its socket can die silently: it
+      // still reads OPEN when the page comes back, and nothing arrives until
+      // the TCP timeout. After a long time hidden, reconnect (cheap: the
+      // session resumes from its last event) instead of trusting it.
+      const now = vi.spyOn(Date, 'now')
+      try {
+        now.mockReturnValue(1_000_000)
+        const client = new WebSocketClient('ws://localhost:9999/ws')
+        const statusHandler = vi.fn()
+        client.onStatusChange(statusHandler)
+        await connectClient(client, statusHandler)
+        const stale = wsInstances[0]!
+
+        hidden = true
+        document.dispatchEvent(new Event('visibilitychange'))
+        now.mockReturnValue(1_000_000 + 31_000)
+        hidden = false
+        document.dispatchEvent(new Event('visibilitychange'))
+
+        expect(stale.close).toHaveBeenCalled()
+        expect(wsInstances.length).toBe(2)
+        await vi.waitFor(() => expect(statusHandler).toHaveBeenCalledWith('connected'))
+        expect(statusHandler.mock.calls.map((c) => c[0])).toEqual(['disconnected', 'connected'])
+      } finally {
+        now.mockRestore()
+      }
+    })
+
+    it('keeps an open socket after a short time hidden', async () => {
+      const now = vi.spyOn(Date, 'now')
+      try {
+        now.mockReturnValue(1_000_000)
+        const client = new WebSocketClient('ws://localhost:9999/ws')
+        const statusHandler = vi.fn()
+        client.onStatusChange(statusHandler)
+        await connectClient(client, statusHandler)
+
+        hidden = true
+        document.dispatchEvent(new Event('visibilitychange'))
+        now.mockReturnValue(1_000_000 + 5_000)
+        hidden = false
+        document.dispatchEvent(new Event('visibilitychange'))
+
+        expect(wsInstances.length).toBe(1)
+        expect(statusHandler).not.toHaveBeenCalled()
+      } finally {
+        now.mockRestore()
+      }
+    })
+
+    it('does nothing when the socket is still open', async () => {
+      const client = new WebSocketClient('ws://localhost:9999/ws')
+      const statusHandler = vi.fn()
+      client.onStatusChange(statusHandler)
+      await connectClient(client, statusHandler)
+
+      window.dispatchEvent(new Event('online'))
+      document.dispatchEvent(new Event('visibilitychange'))
+
+      expect(wsInstances.length).toBe(1)
+    })
+
+    it('does not reconnect after an intentional disconnect', async () => {
+      const client = new WebSocketClient('ws://localhost:9999/ws')
+      const statusHandler = vi.fn()
+      client.onStatusChange(statusHandler)
+      await connectClient(client, statusHandler)
+      client.disconnect()
+
+      window.dispatchEvent(new Event('online'))
+
+      expect(wsInstances.length).toBe(1)
+    })
+
+    it('does not reconnect a client that never connected', () => {
+      new WebSocketClient('ws://localhost:9999/ws')
+      window.dispatchEvent(new Event('online'))
+      expect(wsInstances.length).toBe(0)
+    })
   })
 
   it('does not auto-reconnect after an intentional disconnect', async () => {
