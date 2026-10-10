@@ -1,6 +1,12 @@
 import { defineConfig } from 'vitest/config'
 import path from 'path'
 
+/** OPENFOX_TEST_TIMEOUT_MULTIPLIER, when set to a number >= 1; 1 otherwise. */
+function resolveTimeoutMultiplier(env: NodeJS.ProcessEnv = process.env): number {
+  const parsed = Number(env['OPENFOX_TEST_TIMEOUT_MULTIPLIER'])
+  return Number.isFinite(parsed) && parsed >= 1 ? parsed : 1
+}
+
 export default defineConfig({
   resolve: {
     alias: {
@@ -29,8 +35,10 @@ export default defineConfig({
       'examples/**/*.test.ts',
     ],
     // A few tests (init-llm, test-params) flake past the 5s default under
-    // full-suite load on slower machines.
-    testTimeout: 15_000,
+    // full-suite load on slower machines. OPENFOX_TEST_TIMEOUT_MULTIPLIER
+    // scales it further where even 15s is not enough (e.g. the pre-commit hook
+    // running every check in parallel on a small VM).
+    testTimeout: 15_000 * resolveTimeoutMultiplier(),
     exclude: ['e2e/**', 'node_modules/**'],
     setupFiles: ['vitest-localstorage-mock', './web/src/test-setup.ts'],
     env: {
