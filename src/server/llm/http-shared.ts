@@ -137,11 +137,15 @@ export async function* readResponseLines(response: Response): AsyncGenerator<str
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
+  let completed = false
 
   try {
     while (true) {
       const { done, value } = await reader.read()
-      if (done) break
+      if (done) {
+        completed = true
+        break
+      }
 
       buffer += decoder.decode(value, { stream: true })
       const lines = buffer.split('\n')
@@ -153,6 +157,13 @@ export async function* readResponseLines(response: Response): AsyncGenerator<str
       }
     }
   } finally {
+    if (!completed) {
+      try {
+        await reader.cancel()
+      } catch {
+        // Ignore errors if the stream was already aborted/closed
+      }
+    }
     reader.releaseLock()
   }
 }
