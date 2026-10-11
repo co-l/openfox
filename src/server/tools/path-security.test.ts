@@ -209,8 +209,15 @@ describe('path-security', () => {
       })
 
       it('denies subdir/../../../../../etc resolved escape', async () => {
-        // Need to escape far enough to get out of /tmp entirely
-        const maliciousPath = join(WORKDIR, 'subdir', '..', '..', '..', '..', '..', 'etc')
+        // Calculate how many .. are needed to escape to the filesystem root.
+        // tmpdir() varies by system (/tmp on Linux, /tmp/user/1000 on systemd,
+        // /var/folders/... on macOS), and ALLOWED_ROOTS includes /tmp and
+        // /var/tmp. To guarantee the resolved path is outside all allowed
+        // roots, we climb all the way to / and then descend into /etc.
+        const startPath = join(CANONICAL_WORKDIR, 'subdir')
+        const depth = startPath.split('/').filter(Boolean).length
+        const dots = Array.from({ length: depth }, () => '..')
+        const maliciousPath = join(WORKDIR, 'subdir', ...dots, 'etc')
         const result = await isPathWithinSandbox(maliciousPath, WORKDIR)
         expect(result.allowed).toBe(false)
         expect(result.resolvedPath.startsWith(CANONICAL_TMP)).toBe(false)

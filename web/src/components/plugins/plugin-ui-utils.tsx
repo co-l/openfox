@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react'
 import * as iconsModule from '../shared/icons'
 import { invokePluginRpc } from '../../lib/plugin-actions'
+import { sanitizeSvg } from '../../lib/sanitize'
 import { usePluginUiStore } from '../../stores/pluginUi'
 import { usePluginToastStore } from '../../stores/pluginToasts'
 import type { DeclarativeNode, PluginActivation, PluginBadgeTone, PluginVisibilityCondition } from '@shared/plugin.js'
@@ -84,11 +85,13 @@ export function pluginIcon(name: string | undefined): IconComponent {
   if (name) {
     const trimmed = name.trim()
     if (trimmed.startsWith('<svg')) {
+      const safeSvg = sanitizeSvg(trimmed)
+      if (!safeSvg) return MissingIcon
       return function RawSvgIcon({ className = 'w-4 h-4' }: { className?: string }) {
         return (
           <span
             className={`inline-flex items-center justify-center [&>svg]:w-full [&>svg]:h-full ${className}`}
-            dangerouslySetInnerHTML={{ __html: trimmed }}
+            dangerouslySetInnerHTML={{ __html: safeSvg }}
           />
         )
       }

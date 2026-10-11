@@ -2,6 +2,7 @@ import TurndownService from 'turndown'
 import { createTool, buildSignal } from './tool-helpers.js'
 import { OUTPUT_LIMITS } from './types.js'
 import { isPdfBuffer, extractPdfText, processPdfContent, formatPdfErrorMessage } from './pdf-utils.js'
+import { validatePublicUrl } from '../utils/url-security.js'
 
 const MAX_RESPONSE_SIZE = 5 * 1024 * 1024 // 5MB
 const DEFAULT_TIMEOUT_MS = 30_000
@@ -90,6 +91,11 @@ export const webFetchTool = createTool<WebFetchArgs>(
 
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       return helpers.error('URL must start with http:// or https://')
+    }
+
+    const urlValidation = await validatePublicUrl(url)
+    if (!urlValidation.valid) {
+      return helpers.error(urlValidation.error ?? 'URL blocked by security policy')
     }
 
     const timeoutMs = (args.timeout ?? DEFAULT_TIMEOUT_MS / 1000) * 1000

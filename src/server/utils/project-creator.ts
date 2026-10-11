@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process'
+import { execSync, spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 import { createProject as createProjectDb } from '../db/projects.js'
 import { logger } from './logger.js'
@@ -113,13 +113,13 @@ export async function createProjectDirectory(
         if (isPermission && process.platform !== 'win32') {
           try {
             const currentUser = execSync('id -un', { encoding: 'utf-8', windowsHide: true }).trim()
-            execSync(`sudo -u ${currentUser} git init`, {
+            const result = spawnSync('sudo', ['-u', currentUser, 'git', 'init'], {
               cwd: fullPath,
               stdio: 'pipe',
               windowsHide: true,
               env: cleanExecEnv(),
             })
-            sudoSuccess = true
+            sudoSuccess = !result.error && result.status === 0
           } catch {
             // sudo also failed, fall through to error
           }

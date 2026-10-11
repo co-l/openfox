@@ -17,10 +17,18 @@ export function getStatusConfig(status: string): { icon: string; color: string }
   return statusConfig[status] ?? { icon: '○', color: 'text-text-muted' }
 }
 
+const HTML_ENTITIES: Record<string, string> = {
+  '&amp;': '&',
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&#39;': "'",
+  '&apos;': "'",
+  '&nbsp;': ' ',
+}
+
 export function decodeHtmlEntities(text: string): string {
-  const textarea = document.createElement('textarea')
-  textarea.innerHTML = text
-  return textarea.value
+  return text.replace(/&(?:amp|lt|gt|quot|#39|apos|nbsp);/g, (entity) => HTML_ENTITIES[entity] ?? entity)
 }
 
 interface MetadataStatusIconProps {

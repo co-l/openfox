@@ -58,6 +58,7 @@ import { createWorkspaceConfigRoutes } from './routes/workspace-config.js'
 import { createTerminalRoutes } from './routes/terminals.js'
 import { WorkspaceInUseError } from './utils/errors.js'
 import { createDirectoryRoutes } from './routes/directories.js'
+import { createProjectsRouter } from './routes/projects.js'
 import { createFileSearchRoutes } from './routes/file-search.js'
 import { createAutoUpdateRoutes } from './routes/auto-update.js'
 import { createProviderAuthRoutes } from './routes/provider-auth.js'
@@ -326,6 +327,9 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   app.use('/api', authMiddleware)
   app.use(express.json({ limit: '75mb' }))
 
+  // Project routes (extracted from index.ts for better code organization)
+  app.use('/api', createProjectsRouter({ config, sessionManager }))
+
   // Streamable HTTP MCP endpoint. Mounted before the SPA catch-all so /mcp is
   // never swallowed; tool deps are resolved lazily per request and filled in
   // once the WebSocket/queue plumbing exists below (requests only flow after start()).
@@ -418,139 +422,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     res.json({ tools })
   })
 
-  // Project endpoints (REST)
-  app.get('/api/projects', async (_req, res) => {
-    const { listProjects } = await import('./db/projects.js')
-    const projects = listProjects()
-    res.json({ projects })
-  })
-
-  app.post('/api/projects', async (req, res) => {
-    const { name, workdir } = req.body
-    if (!name || !workdir) {
-      return res.status(400).json({ error: 'name and workdir are required' })
-    }
-    const { createProjectDirectory } = await import('./utils/project-creator.js')
-    const { loadGlobalConfig } = await import('../cli/config.js')
-    const globalConfig = await loadGlobalConfig(config.mode ?? 'production', config.globalConfigPath)
-    try {
-      const project = await createProjectDirectory(name, workdir, globalConfig.workspace?.autoGitInit ?? true)
-      res.status(201).json({ project })
-    } catch (err) {
-      const eaccError = err as Error & { code?: string; cause?: unknown }
-      return res.status(403).json({
-        error: eaccError.message || 'Unknown error',
-        code: eaccError.code || 'UNKNOWN',
-        path: workdir,
-      })
-    }
-  })
-
-  app.post('/api/projects/check-permissions', async (req, res) => {
-    const { path: targetPath } = req.body
-    if (!targetPath) {
-      return res.status(400).json({ error: 'path is required' })
-    }
-
-    const { checkPermissions } = await import('./utils/permissions.js')
-    const result = await checkPermissions(targetPath)
-
-    if (result.success) {
-      res.json(result)
-    } else {
-      const status = (result as { status?: number }).status ?? 500
-      res.status(status).json({ error: result.error })
-    }
-  })
-
-  app.post('/api/projects/fix-permissions', async (req, res) => {
-    const { path: targetPath, action } = req.body
-    if (!targetPath) {
-      return res.status(400).json({ error: 'path is required' })
-    }
-    if (!['group', 'ownership', 'join_group', 'join_group_and_group'].includes(action)) {
-      return res
-        .status(400)
-        .json({ error: 'action must be "group", "ownership", "join_group", or "join_group_and_group"' })
-    }
-
-    const { fixPermissions } = await import('./utils/permissions.js')
-    const result = await fixPermissions(targetPath, action)
-
-    if (result.success) {
-      res.json(result)
-    } else {
-      const status = (result as { status?: number }).status ?? 500
-      res.status(status).json(result)
-    }
-  })
-
-  app.get('/api/projects/:id', async (req, res) => {
-    const { getProject } = await import('./db/projects.js')
-    const project = getProject(req.params.id)
-    if (!project) {
-      return res.status(404).json({ error: 'Project not found' })
-    }
-    res.json({ project })
-  })
-
-  app.get('/api/projects/:id/open-folder', async (req, res) => {
-    const { getProject } = await import('./db/projects.js')
-    const project = getProject(req.params.id)
-    if (!project) {
-      return res.status(404).json({ error: 'Project not found' })
-    }
-    try {
-      const { openFolder } = await import('./utils/openFolder.js')
-      await openFolder(project.workdir)
-      res.json({ success: true })
-    } catch (err) {
-      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to open folder' })
-    }
-  })
-
-  app.put('/api/projects/:id', async (req, res) => {
-    const { updateProject } = await import('./db/projects.js')
-    const { name, customInstructions, dangerLevel, defaultAgent } = req.body
-    const updates: {
-      name?: string
-      customInstructions?: string | null
-      dangerLevel?: string | null
-      defaultAgent?: string | null
-    } = {}
-    if (name !== undefined) updates.name = name
-    if (customInstructions !== undefined) updates.customInstructions = customInstructions
-    if (dangerLevel !== undefined) updates.dangerLevel = dangerLevel as string | null
-    if (defaultAgent !== undefined) updates.defaultAgent = defaultAgent as string | null
-    const updated = updateProject(req.params.id, updates)
-    if (!updated) {
-      return res.status(404).json({ error: 'Project not found' })
-    }
-    res.json({ project: updated })
-  })
-
-  app.delete('/api/projects/:id', async (req, res) => {
-    const { getProject, deleteProject } = await import('./db/projects.js')
-    const project = getProject(req.params.id)
-    if (!project) {
-      return res.status(404).json({ error: 'Project not found' })
-    }
-    deleteProject(req.params.id)
-    res.json({ success: true })
-  })
-
-  app.put('/api/projects/:id/star', async (req, res) => {
-    const { toggleStar } = await import('./db/projects.js')
-    const { isStarred } = req.body
-    if (typeof isStarred !== 'boolean') {
-      return res.status(400).json({ error: 'isStarred is required and must be a boolean' })
-    }
-    const project = toggleStar(req.params.id, isStarred)
-    if (!project) {
-      return res.status(404).json({ error: 'Project not found' })
-    }
-    res.json({ project })
-  })
+  // Project endpoints (REST) — extracted to ./routes/projects.ts
 
   const sessionFavoriteRouter = express.Router()
   registerSessionFavoriteRoute(sessionFavoriteRouter, sessionManager)
@@ -582,85 +454,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   registerTaskRoutes(tasksRouter, tasksService)
   app.use('/api', tasksRouter)
 
-  // Branch management endpoints (project-scoped, repo operations)
-
-  /** List local git branches */
-  app.get('/api/projects/:id/branches', async (req, res) => {
-    const { getProject } = await import('./db/projects.js')
-    const project = getProject(req.params.id)
-    if (!project) return res.status(404).json({ error: 'Project not found' })
-    const { listBranches } = await import('./git/workspace.js')
-    const branches = await listBranches(project.workdir)
-    res.json({ branches })
-  })
-
-  /** Switch to an existing branch */
-  app.post('/api/projects/:id/checkout', async (req, res) => {
-    const { getProject } = await import('./db/projects.js')
-    const project = getProject(req.params.id)
-    if (!project) return res.status(404).json({ error: 'Project not found' })
-    const { branch } = req.body
-    if (!branch || typeof branch !== 'string') return res.status(400).json({ error: 'branch is required' })
-    const { checkoutBranch, isGitRepository } = await import('./git/workspace.js')
-    if (!(await isGitRepository(project.workdir))) {
-      return res.status(400).json({ error: 'Project is not a git repository' })
-    }
-    try {
-      await checkoutBranch(project.workdir, branch)
-      // Update all sessions using this project tree
-      const { updateSessionBranch } = await import('./db/sessions.js')
-      const allSessions = sessionManager.listSessions()
-      for (const s of allSessions) {
-        if (sessionManager.getEffectiveWorkdir(s.id) === project.workdir) {
-          updateSessionBranch(s.id, branch)
-          sessionManager.emitBranchChange(s.id)
-        }
-      }
-      res.json({ branch })
-    } catch (err) {
-      res.status(400).json({ error: err instanceof Error ? err.message : 'Failed to checkout branch' })
-    }
-  })
-
-  /** Create and switch to a new branch */
-  app.post('/api/projects/:id/checkout-new', async (req, res) => {
-    const { getProject } = await import('./db/projects.js')
-    const project = getProject(req.params.id)
-    if (!project) return res.status(404).json({ error: 'Project not found' })
-    const { name, sourceBranch } = req.body
-    if (!name || typeof name !== 'string') return res.status(400).json({ error: 'name is required' })
-    const { createBranch, resolveAndValidateSourceBranch, validateRef, getDefaultBranch, isGitRepository } =
-      await import('./git/workspace.js')
-    if (!(await isGitRepository(project.workdir))) {
-      return res.status(400).json({ error: 'Project is not a git repository' })
-    }
-    try {
-      await validateRef(project.workdir, name)
-      let sb: string | undefined
-      if (sourceBranch) {
-        sb = await resolveAndValidateSourceBranch(project.workdir, sourceBranch, project.workdir)
-      } else {
-        sb = await resolveAndValidateSourceBranch(
-          project.workdir,
-          await getDefaultBranch(project.workdir),
-          project.workdir,
-        )
-      }
-      await createBranch(project.workdir, name, sb)
-      // Update all sessions using this project tree
-      const { updateSessionBranch } = await import('./db/sessions.js')
-      const allSessions = sessionManager.listSessions()
-      for (const s of allSessions) {
-        if (sessionManager.getEffectiveWorkdir(s.id) === project.workdir) {
-          updateSessionBranch(s.id, name)
-          sessionManager.emitBranchChange(s.id)
-        }
-      }
-      res.json({ branch: name, sourceBranch: sourceBranch ?? null })
-    } catch (err) {
-      res.status(400).json({ error: err instanceof Error ? err.message : 'Failed to create branch' })
-    }
-  })
+  // Project branch management endpoints — extracted to ./routes/projects.ts
 
   // Session-scoped branch endpoints (operate on session's effective workdir)
 
@@ -781,17 +575,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
   })
 
-  /** List existing workspaces for a project (excluding the main repo) */
-  app.get('/api/projects/:id/workspaces', async (req, res) => {
-    const { getProject } = await import('./db/projects.js')
-    const project = getProject(req.params.id)
-    if (!project) return res.status(404).json({ error: 'Project not found' })
-    const { listWorkspaces } = await import('./git/workspace.js')
-    const all = await listWorkspaces(project.name, project.workdir)
-    // Filter out the main workspace (the repo itself) — only show linked workspaces
-    const workspacesList = all.filter((ws) => ws.path !== project.workdir)
-    res.json({ workspaces: workspacesList })
-  })
+  // Project workspaces endpoint — extracted to ./routes/projects.ts
 
   // Session endpoints (REST)
 

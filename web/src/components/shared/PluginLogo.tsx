@@ -1,5 +1,6 @@
 import { pluginIcon } from '../plugins/plugin-ui-utils'
 import { appUrl } from '../../lib/basePath'
+import { sanitizeSvg } from '../../lib/sanitize'
 import type { PluginInfo } from '@shared/plugin.js'
 
 const BUILTIN_PROVIDER_LOGOS: Record<string, string> = {
@@ -126,10 +127,12 @@ export function PluginLogo({
   const trimmed = iconValue.trim()
 
   if (trimmed.startsWith('<svg')) {
+    const safeSvg = sanitizeSvg(trimmed)
+    if (!safeSvg) return null
     return (
       <span
         className={`inline-flex items-center justify-center shrink-0 [&>svg]:w-full [&>svg]:h-full ${className}`}
-        dangerouslySetInnerHTML={{ __html: trimmed }}
+        dangerouslySetInnerHTML={{ __html: safeSvg }}
       />
     )
   }

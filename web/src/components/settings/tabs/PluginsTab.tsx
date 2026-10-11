@@ -12,6 +12,7 @@ import { Toggle } from '../../shared/Toggle'
 import { ConfirmModal } from '../../shared/ConfirmModal'
 import { PluginSettingsForm } from '../../plugins/PluginSettingsForm'
 import { PluginLogo } from '../../shared/PluginLogo'
+import { sanitizeHtml } from '../../../lib/sanitize'
 import type { PluginContributionSummary, PluginInfo } from '@shared/plugin.js'
 
 interface RegistryPlugin {
@@ -95,10 +96,12 @@ function PluginTitle({
 
 function PluginDescription({ description }: { description?: string }) {
   if (!description) return null
+  const safeHtml = sanitizeHtml(description)
+  if (!safeHtml) return null
   return (
     <div
       className="text-xs text-text-muted mt-1 whitespace-pre-line leading-relaxed"
-      dangerouslySetInnerHTML={{ __html: description }}
+      dangerouslySetInnerHTML={{ __html: safeHtml }}
     />
   )
 }

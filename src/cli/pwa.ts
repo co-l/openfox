@@ -1,4 +1,4 @@
-import { execSync, spawn } from 'node:child_process'
+import { execSync, spawn, spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 import { readFile, writeFile, access, mkdir } from 'node:fs/promises'
 import { platform } from 'node:os'
@@ -30,6 +30,14 @@ function execSyncOk(cmd: string): boolean {
     return true
   } catch {
     return false
+  }
+}
+
+function spawnSyncOrThrow(command: string, args: string[]): void {
+  const result = spawnSync(command, args, { encoding: 'utf-8', windowsHide: true })
+  if (result.error) throw result.error
+  if (result.status !== 0) {
+    throw new Error(result.stderr?.trim() || `Command failed: ${command} ${args.join(' ')}`)
   }
 }
 
@@ -278,7 +286,7 @@ async function pwaInstall(mode: Mode): Promise<void> {
   let appId = ''
   let profileId = '00000000000000000000000000'
   try {
-    execSync(`firefoxpwa site install ${manifestUrl}`, { encoding: 'utf-8', windowsHide: true })
+    spawnSyncOrThrow('firefoxpwa', ['site', 'install', manifestUrl])
     const detected = probeInstalledApp(manifestUrl)
     if (detected) {
       appId = detected.appId
@@ -341,7 +349,7 @@ async function pwaUninstall(mode: Mode): Promise<void> {
 
   log.info(cliT({ en: 'Removing OpenFox PWA...', fr: 'Suppression de la PWA OpenFox...' }))
   try {
-    execSync(`firefoxpwa site uninstall ${appId} --quiet`, { encoding: 'utf-8', windowsHide: true })
+    spawnSyncOrThrow('firefoxpwa', ['site', 'uninstall', appId, '--quiet'])
   } catch {
     log.error(
       cliT({
@@ -426,7 +434,7 @@ async function pwaUpdate(mode: Mode): Promise<void> {
   }
 
   try {
-    execSync(`firefoxpwa site update ${appId}`, { encoding: 'utf-8', windowsHide: true })
+    spawnSyncOrThrow('firefoxpwa', ['site', 'update', appId])
   } catch {
     log.error(cliT({ en: 'Failed to update PWA metadata.', fr: 'Échec de la mise à jour des métadonnées PWA.' }))
     process.exit(1)

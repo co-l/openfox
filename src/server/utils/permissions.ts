@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import { access, stat } from 'node:fs/promises'
 import { constants } from 'node:fs'
@@ -10,12 +10,24 @@ function sanitizeShellArg(arg: string): string {
   return arg
 }
 
+function runSync(command: string, args: string[]): string {
+  const result = spawnSync(command, args, { encoding: 'utf-8', windowsHide: true })
+  if (result.error) throw result.error
+  if (result.status !== 0) {
+    throw new Error(result.stderr?.trim() || `Command failed: ${command} ${args.join(' ')}`)
+  }
+  return result.stdout
+}
+
+function runSyncOptional(command: string, args: string[]): string | null {
+  const result = spawnSync(command, args, { encoding: 'utf-8', windowsHide: true })
+  if (result.error || result.status !== 0) return null
+  return result.stdout
+}
+
 function addUserToGroup(groupName: string): void {
-  const currentUser = execSync('id -un', { encoding: 'utf-8', windowsHide: true }).trim()
-  execSync(`sudo usermod -aG ${sanitizeShellArg(groupName)} ${sanitizeShellArg(currentUser)}`, {
-    stdio: 'pipe',
-    windowsHide: true,
-  })
+  const currentUser = runSync('id', ['-un']).trim()
+  runSync('sudo', ['usermod', '-aG', sanitizeShellArg(groupName), sanitizeShellArg(currentUser)])
 }
 
 interface DirInfo {
@@ -39,32 +51,29 @@ async function getDirInfo(targetPath: string): Promise<DirInfo> {
   }
 
   // Check if passwordless sudo is available
-  let sudoAvailable: boolean
-  try {
-    execSync('sudo -n true', { stdio: 'pipe', windowsHide: true })
-    sudoAvailable = true
-  } catch {
-    sudoAvailable = false
-  }
+  const sudoAvailable = runSyncOptional('sudo', ['-n', 'true']) !== null
 
   // Get the directory's group and permissions
   const dirStat = await stat(resolvedPath)
   const groupGid = dirStat.gid
 
   // Get current user's groups
-  const currentUser = sanitizeShellArg(execSync('id -un', { encoding: 'utf-8', windowsHide: true }).trim())
-  const groupsOutput = execSync(`id -Gn ${currentUser}`, { encoding: 'utf-8', windowsHide: true }).trim()
+  const currentUser = sanitizeShellArg(runSync('id', ['-un']).trim())
+  const groupsOutput = runSync('id', ['-Gn', currentUser]).trim()
   const userGroups = groupsOutput.split(/\s+/)
 
   // Get the group name for the directory's gid
   let groupName: string | null = null
-  try {
-    const rawGroupName = execSync(`getent group ${groupGid}`, { encoding: 'utf-8', windowsHide: true })
-      .split(':')[0]
-      ?.trim()
-    groupName = rawGroupName ? sanitizeShellArg(rawGroupName) : null
-  } catch {
-    // ignore
+  const rawGroupName = runSyncOptional('getent', ['group', String(groupGid)])
+  if (rawGroupName) {
+    const name = rawGroupName.split(':')[0]?.trim()
+    if (name) {
+      try {
+        groupName = sanitizeShellArg(name)
+      } catch {
+        // ignore invalid group names
+      }
+    }
   }
 
   // Check if user is in the directory's group
@@ -120,7 +129,7 @@ export async function fixPermissions(targetPath: string, action: string) {
             'You are not in the group that owns this directory. Use "Join group & extend group permissions" instead.',
         }
       }
-      execSync(`sudo chmod g+w "${info.resolvedPath}"`, { stdio: 'pipe', windowsHide: true })
+      runSync('sudo', ['chmod', 'g+w', info.resolvedPath])
       return { success: true, sudoAvailable: info.sudoAvailable, method: 'group' }
     }
 
@@ -136,17 +145,14 @@ export async function fixPermissions(targetPath: string, action: string) {
       if (!info.groupName) {
         return { success: false, sudoAvailable: info.sudoAvailable, error: 'Could not determine group name' }
       }
-      execSync(`sudo chmod g+w "${info.resolvedPath}"`, { stdio: 'pipe', windowsHide: true })
+      runSync('sudo', ['chmod', 'g+w', info.resolvedPath])
       addUserToGroup(info.groupName)
       return { success: true, sudoAvailable: info.sudoAvailable, method: 'join_group_and_group' }
     }
 
     // ownership action
-    const ownerUser = execSync('id -un', { encoding: 'utf-8', windowsHide: true }).trim()
-    execSync(`sudo chown -R ${sanitizeShellArg(ownerUser)} "${info.resolvedPath}"`, {
-      stdio: 'pipe',
-      windowsHide: true,
-    })
+    const ownerUser = runSync('id', ['-un']).trim()
+    runSync('sudo', ['chown', '-R', sanitizeShellArg(ownerUser), info.resolvedPath])
     return { success: true, sudoAvailable: info.sudoAvailable, method: 'ownership' }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'

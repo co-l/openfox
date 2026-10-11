@@ -16,6 +16,7 @@
     "@openfox/shared": "file:..",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^5.5.0",
+    "dompurify": "^3.4.16",
     "html2canvas": "^1.4.1",
     "overlayscrollbars": "^2.16.0",
     "overlayscrollbars-react": "^0.5.6",
@@ -29,6 +30,7 @@
   },
   "devDependencies": {
     "@tailwindcss/container-queries": "^0.1.1",
+    "@types/dompurify": "^3.0.5",
     "@types/react": "^19.0.8",
     "@types/react-dom": "^19.0.3",
     "@types/react-syntax-highlighter": "^15.5.13",

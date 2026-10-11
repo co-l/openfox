@@ -1,4 +1,4 @@
-// @vitest-environment happy-dom
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest'
 import { render } from '@testing-library/react'
 import { PluginLogo, findPluginLogoForProvider } from './PluginLogo'
