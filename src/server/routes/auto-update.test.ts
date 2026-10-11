@@ -22,6 +22,7 @@ const mockSpawn = vi.fn()
 
 vi.mock('node:child_process', () => ({
   spawn: (...args: any[]) => mockSpawn(...args),
+  spawnSync: () => ({ status: 1, stdout: '', stderr: '', pid: 0, output: [], signal: null }),
 }))
 
 describe('Auto Update Routes', () => {

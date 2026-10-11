@@ -3,6 +3,7 @@ import type { Request, Response } from 'express'
 import { spawn } from 'node:child_process'
 import { VERSION } from '../../constants.js'
 import { logger } from '../utils/logger.js'
+import { isRunningAsService, resetServiceDetectionCache } from '../utils/service.js'
 import { serverT } from '../i18n.js'
 
 export interface AutoUpdateRoutesOptions {
@@ -32,9 +33,7 @@ export function resetVersionCache(): void {
   versionCache.timestamp = 0
 }
 
-function isRunningAsService(): boolean {
-  return process.env['OPENFOX_SERVICE'] === 'true'
-}
+export { resetServiceDetectionCache }
 
 const UPDATE_TIMEOUT = 120_000
 
