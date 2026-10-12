@@ -1,9 +1,31 @@
-import { execFile } from 'node:child_process'
+import { execFile, type ExecFileOptions } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { cp, mkdir, readFile, rename, rm } from 'node:fs/promises'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 
 const execFileP = promisify(execFile)
+
+/**
+ * Windows ships npm as `npm.cmd`, which `execFile('npm')` cannot find (ENOENT) and which Node refuses
+ * to spawn without a shell (EINVAL), so run npm's own script with the current node binary instead.
+ */
+export function npmInvocation(
+  args: string[],
+  platform: NodeJS.Platform = process.platform,
+  nodePath: string = process.execPath,
+): { command: string; args: string[] } {
+  if (platform === 'win32') {
+    const npmCli = join(dirname(nodePath), 'node_modules', 'npm', 'bin', 'npm-cli.js')
+    if (existsSync(npmCli)) return { command: nodePath, args: [npmCli, ...args] }
+  }
+  return { command: 'npm', args }
+}
+
+function runNpm(args: string[], options: ExecFileOptions) {
+  const invocation = npmInvocation(args)
+  return execFileP(invocation.command, invocation.args, options)
+}
 
 export function parseGithubUrl(githubUrl: string): { owner: string; repo: string; cloneUrl: string } {
   const parsed = githubUrl.match(/github\.com\/([^/]+)\/([^/?#]+)/)
@@ -49,7 +71,7 @@ export async function installPluginFromGithub(githubUrl: string, pluginsDir: str
 
 export async function installPluginFromNpm(packageName: string, pluginsDir: string): Promise<string> {
   await mkdir(pluginsDir, { recursive: true })
-  await execFileP('npm', ['install', '--no-audit', '--no-fund', '--prefix', pluginsDir, packageName], {
+  await runNpm(['install', '--no-audit', '--no-fund', '--prefix', pluginsDir, packageName], {
     timeout: 180000,
   })
   await removeNpmArtifacts(pluginsDir)
@@ -92,6 +114,6 @@ export async function buildIfNeeded(directory: string): Promise<void> {
     return
   }
   if (!manifest.scripts?.['build']) return
-  await execFileP('npm', ['install', '--no-audit', '--no-fund'], { cwd: directory, timeout: 180000 })
-  await execFileP('npm', ['run', 'build'], { cwd: directory, timeout: 180000 })
+  await runNpm(['install', '--no-audit', '--no-fund'], { cwd: directory, timeout: 180000 })
+  await runNpm(['run', 'build'], { cwd: directory, timeout: 180000 })
 }

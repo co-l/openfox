@@ -1,8 +1,8 @@
-import { mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { installPluginFromPath, parseGithubUrl } from './install.js'
+import { buildIfNeeded, installPluginFromPath, npmInvocation, parseGithubUrl } from './install.js'
 
 describe('parseGithubUrl', () => {
   it('accepts the plain repository URL', () => {
@@ -61,5 +61,67 @@ describe('installPluginFromPath', () => {
     expect(entries).toContain('index.js')
     expect(entries).not.toContain('node_modules')
     expect(entries).not.toContain('.git')
+  })
+})
+
+describe('buildIfNeeded', () => {
+  let root: string
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), 'openfox-plugin-build-'))
+  })
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true })
+  })
+
+  it('runs npm install and the build script of a plugin', async () => {
+    await writeFile(
+      join(root, 'package.json'),
+      JSON.stringify({ name: 'build-plugin', version: '1.0.0', scripts: { build: 'node build.js' } }),
+    )
+    await writeFile(join(root, 'build.js'), "require('node:fs').writeFileSync('built.txt', 'ok')")
+
+    await buildIfNeeded(root)
+
+    expect(await readFile(join(root, 'built.txt'), 'utf8')).toBe('ok')
+  }, 60000)
+})
+
+describe('npmInvocation', () => {
+  let root: string
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), 'openfox-npm-invocation-'))
+  })
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true })
+  })
+
+  it('runs npm through the node binary next to it on Windows', async () => {
+    const npmCli = join(root, 'node_modules', 'npm', 'bin', 'npm-cli.js')
+    await mkdir(join(root, 'node_modules', 'npm', 'bin'), { recursive: true })
+    await writeFile(npmCli, '')
+    const nodePath = join(root, 'node.exe')
+
+    expect(npmInvocation(['install', 'left-pad'], 'win32', nodePath)).toEqual({
+      command: nodePath,
+      args: [npmCli, 'install', 'left-pad'],
+    })
+  })
+
+  it('falls back to npm on Windows when node has no npm next to it', () => {
+    expect(npmInvocation(['run', 'build'], 'win32', join(root, 'node.exe'))).toEqual({
+      command: 'npm',
+      args: ['run', 'build'],
+    })
+  })
+
+  it('calls npm directly on other platforms', () => {
+    expect(npmInvocation(['run', 'build'], 'linux', join(root, 'node'))).toEqual({
+      command: 'npm',
+      args: ['run', 'build'],
+    })
   })
 })
