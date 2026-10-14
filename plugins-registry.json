@@ -39,6 +39,14 @@
     "author": "James Adams",
     "icon": "https://openrouter.ai/favicon.ico"
   },
+    {
+    "name": "openfox-openrouter-quota",
+    "displayName": "OpenRouter Quota",
+    "description": "Reports OpenRouter usage and quotas to OpenFox via the quota plugin.",
+    "githubUrl": "https://github.com/pledou/openfox-openrouter-quota",
+    "author": "Pierre Leduc",
+    "icon": "https://openrouter.ai/favicon.ico"
+  },
   {
     "name": "openfox-opencode-free",
     "displayName": "OpenCode (Free Models)",
