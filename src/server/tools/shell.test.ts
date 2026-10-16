@@ -100,6 +100,29 @@ describe('hasBackgroundAmpersand', () => {
     expect(hasBackgroundAmpersand('cat <<EOF &')).toBe(true)
   })
 
+  it('ignores bitwise & inside quoted heredoc body', () => {
+    expect(hasBackgroundAmpersand("python3 -B - <<'EOF'\nx = a & b\nEOF\n")).toBe(false)
+  })
+
+  it('ignores bitwise & inside bare heredoc body', () => {
+    expect(hasBackgroundAmpersand('python3 <<EOF\nx = a & b\nEOF\n')).toBe(false)
+  })
+
+  it('still detects background & after a closed heredoc', () => {
+    expect(hasBackgroundAmpersand("python3 <<'EOF'\nx = a & b\nEOF\nsleep 1 &")).toBe(true)
+  })
+
+  it('corpus: python heredoc parser with bitwise & is not backgrounding', () => {
+    const cmd =
+      "python3 -B - <<'EOF'\ndata = open('SD Card/fc_log.log','rb').read(400_000)\ntag = 7 & 1023\nver = (7 >> 10) & 63\nprint(tag, ver)\nEOF\n"
+    expect(hasBackgroundAmpersand(cmd)).toBe(false)
+  })
+
+  it('corpus: php dev-server one-shot with trailing & still detected', () => {
+    const cmd = 'php -S 127.0.0.1:8899 >/tmp/srv.log 2>&1 & sleep 1; curl -s http://127.0.0.1:8899/'
+    expect(hasBackgroundAmpersand(cmd)).toBe(true)
+  })
+
   it('allows & inside nested quotes', () => {
     expect(hasBackgroundAmpersand('echo "foo \'&\' bar"')).toBe(false)
   })

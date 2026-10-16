@@ -42,8 +42,12 @@ export function formatDuration(ms: number): string {
 }
 
 export function hasBackgroundAmpersand(command: string): boolean {
+  // Strip heredoc bodies first — their content is literal text (quoted or
+  // bare delimiter), so any & inside it is data, not a background operator
+  let processed = command.replace(/<<-?[ \t]*(['"]?)([\w./-]+)\1[ \t]*\n([\s\S]*?)^\2[ \t]*$/gm, ' ')
+
   // Strip content inside quotes — & inside quotes is literal, not a background operator
-  let processed = command.replace(/'[^']*'/g, ' ').replace(/"[^"]*"/g, ' ')
+  processed = processed.replace(/'[^']*'/g, ' ').replace(/"[^"]*"/g, ' ')
 
   // Strip escaped characters — \& is a literal ampersand
   processed = processed.replace(/\\./g, '  ')

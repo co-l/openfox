@@ -90,11 +90,16 @@ async function moduleGitDiff(cwd: string): Promise<{ hash: string; files: GitDif
 
 const moduleWorkdirLastHash = new Map<string, string>()
 const moduleWorkdirInterval = new Map<string, ReturnType<typeof setInterval>>()
+const moduleWorkdirPending = new Set<string>()
 const gitPollInterval = parseInt(process.env['OPENFOX_GIT_POLL_INTERVAL'] ?? '', 10) || 10_000
 let moduleClients: Map<WebSocket, ClientConnection> | null = null
 let moduleEnqueueSend: ((client: ClientConnection, data: string, seq: number) => void) | null = null
 
 function moduleGitPoll(workdir: string) {
+  // Skip the tick if the previous poll for this workdir is still running —
+  // slow tree scans otherwise stack up one process group per interval tick.
+  if (moduleWorkdirPending.has(workdir)) return
+  moduleWorkdirPending.add(workdir)
   ;(async () => {
     try {
       const branch = await moduleGitBranch(workdir)
@@ -115,6 +120,8 @@ function moduleGitPoll(workdir: string) {
       }
     } catch {
       /* skip */
+    } finally {
+      moduleWorkdirPending.delete(workdir)
     }
   })()
 }
