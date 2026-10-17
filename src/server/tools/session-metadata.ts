@@ -43,6 +43,19 @@ function normalizeId(id: unknown): string | undefined {
   return String(id)
 }
 
+function validStatusesFor(key: string): string[] | undefined {
+  const statusField = SCHEMAS[key]?.fields['status']
+  if (!statusField) return undefined
+  return statusField
+    .split('|')
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+function defaultStatusFor(key: string): string {
+  return validStatusesFor(key)?.[0] ?? 'pending'
+}
+
 function requireKeyAndId(
   args: SessionMetadataArgs,
   helpers: { error: (msg: string) => ToolResult },
@@ -87,7 +100,8 @@ export const sessionMetadataTool = createTool<SessionMetadataArgs>(
           },
           status: {
             type: 'string',
-            description: 'Item status (for: add, update). Defaults to "pending" on add.',
+            description:
+              'Item status (for: add, update). Must be a valid status for the key (see action=schema). On add it defaults to the key first valid status, or "pending" for keys without a schema.',
           },
         },
         required: ['action'],
@@ -139,11 +153,19 @@ export const sessionMetadataTool = createTool<SessionMetadataArgs>(
       if (!args.key) return helpers.error('Missing required field: key')
       if (!args.description) return helpers.error('Missing required field: description')
 
+      const status = args.status ?? defaultStatusFor(args.key)
+      const validStatuses = validStatusesFor(args.key)
+      if (validStatuses && !validStatuses.includes(status)) {
+        return helpers.error(
+          `Invalid status "${status}" for key "${args.key}". Must be one of: ${validStatuses.join(' | ')}`,
+        )
+      }
+
       const current = entries[args.key] ?? []
       const newEntry: MetadataEntry = {
         id: normalizeId(args.id) ?? (current.length + 1).toString(),
         description: args.description,
-        status: args.status || 'pending',
+        status,
       }
       const updated = [...current, newEntry]
       context.sessionManager.setMetadataEntries(context.sessionId, args.key, updated)
@@ -156,6 +178,15 @@ export const sessionMetadataTool = createTool<SessionMetadataArgs>(
       const id = normalizeId(args.id)!
       const idx = current.findIndex((e) => e.id === id)
       if (idx === -1) return helpers.error(`Item "${id}" not found in "${args.key ?? ''}".`)
+
+      if (args.status !== undefined) {
+        const validStatuses = validStatusesFor(args.key!)
+        if (validStatuses && !validStatuses.includes(args.status)) {
+          return helpers.error(
+            `Invalid status "${args.status}" for key "${args.key}". Must be one of: ${validStatuses.join(' | ')}`,
+          )
+        }
+      }
 
       const updated = current.map((e, i) =>
         i === idx

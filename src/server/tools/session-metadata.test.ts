@@ -152,4 +152,90 @@ describe('sessionMetadataTool', () => {
     expect(result.success).toBe(true)
     expect(sm.setMetadataEntries).toHaveBeenCalledWith('test-session', 'criteria', [])
   })
+
+  describe('status validation against the key schema', () => {
+    it('rejects an out-of-schema status on add and lists the valid statuses', async () => {
+      const sm = createSessionManager({ todos: [] })
+
+      const result = await sessionMetadataTool.execute(
+        { action: 'add', key: 'todos', description: 'a task', status: 'done' },
+        context(sm),
+      )
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('pending | in_progress | completed')
+      expect(sm.setMetadataEntries).not.toHaveBeenCalled()
+    })
+
+    it('rejects an out-of-schema status on update and lists the valid statuses', async () => {
+      const sm = createSessionManager({
+        todos: [{ id: '1', description: 'a task', status: 'pending' }],
+      })
+
+      const result = await sessionMetadataTool.execute(
+        { action: 'update', key: 'todos', id: '1', status: 'done' },
+        context(sm),
+      )
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('pending | in_progress | completed')
+      expect(sm.setMetadataEntries).not.toHaveBeenCalled()
+    })
+
+    it('accepts a valid status on add', async () => {
+      const sm = createSessionManager({ todos: [] })
+
+      const result = await sessionMetadataTool.execute(
+        { action: 'add', key: 'todos', description: 'a task', status: 'in_progress' },
+        context(sm),
+      )
+
+      expect(result.success).toBe(true)
+      expect(sm.setMetadataEntries).toHaveBeenCalledWith('test-session', 'todos', [
+        { id: '1', description: 'a task', status: 'in_progress' },
+      ])
+    })
+
+    it('defaults the add status to the key first valid status for known keys', async () => {
+      const sm = createSessionManager({ review_findings: [] })
+
+      const result = await sessionMetadataTool.execute(
+        { action: 'add', key: 'review_findings', description: 'a finding' },
+        context(sm),
+      )
+
+      expect(result.success).toBe(true)
+      expect(sm.setMetadataEntries).toHaveBeenCalledWith('test-session', 'review_findings', [
+        { id: '1', description: 'a finding', status: 'open' },
+      ])
+    })
+
+    it('keeps a free status for a key without a defined schema', async () => {
+      const sm = createSessionManager({ notes: [] })
+
+      const result = await sessionMetadataTool.execute(
+        { action: 'add', key: 'notes', description: 'a note', status: 'archived' },
+        context(sm),
+      )
+
+      expect(result.success).toBe(true)
+      expect(sm.setMetadataEntries).toHaveBeenCalledWith('test-session', 'notes', [
+        { id: '1', description: 'a note', status: 'archived' },
+      ])
+    })
+
+    it('still defaults to pending for a key without a defined schema', async () => {
+      const sm = createSessionManager({ notes: [] })
+
+      const result = await sessionMetadataTool.execute(
+        { action: 'add', key: 'notes', description: 'a note' },
+        context(sm),
+      )
+
+      expect(result.success).toBe(true)
+      expect(sm.setMetadataEntries).toHaveBeenCalledWith('test-session', 'notes', [
+        { id: '1', description: 'a note', status: 'pending' },
+      ])
+    })
+  })
 })

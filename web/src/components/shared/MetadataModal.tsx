@@ -21,9 +21,9 @@ function getStatusCycle(key: string): string[] {
 
 function cycleStatus(current: string, cycle: string[]): string {
   const idx = cycle.indexOf(current)
-  if (idx === -1) return cycle[0] ?? 'pending'
+  if (idx === -1) return current
   const next = cycle[(idx + 1) % cycle.length]
-  return next ?? 'pending'
+  return next ?? current
 }
 
 interface MetadataModalProps {

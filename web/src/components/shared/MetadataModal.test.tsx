@@ -141,6 +141,17 @@ describe('MetadataModal', () => {
       fireEvent.click(statusIcon)
       expect(mockedAuthFetch).toHaveBeenCalled()
     })
+
+    it('does not reset an unrecognized status to the cycle first value', () => {
+      renderModal({
+        metadataKey: 'todos',
+        entries: [{ id: '0', description: 'Task 1', status: 'done' }],
+      })
+      const statusIcon = screen.getAllByTitle(/click to cycle/i)[0]!
+      fireEvent.click(statusIcon)
+      const callArgs = JSON.parse(mockedAuthFetch.mock.calls[0]![1]!.body as string)
+      expect(callArgs.entries[0].status).toBe('done')
+    })
   })
 
   // ── Criterion 4: Inline editing ─────────────────────────────────────

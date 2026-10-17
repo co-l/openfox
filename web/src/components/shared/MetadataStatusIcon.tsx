@@ -13,8 +13,10 @@ const statusConfig: Record<string, { icon: string; color: string }> = {
 
 export const statusOrder = ['open', 'in_progress', 'pending', 'completed', 'resolved', 'dismissed', 'passed', 'failed']
 
+const UNKNOWN_STATUS: { icon: string; color: string } = { icon: '?', color: 'text-accent-error' }
+
 export function getStatusConfig(status: string): { icon: string; color: string } {
-  return statusConfig[status] ?? { icon: '○', color: 'text-text-muted' }
+  return statusConfig[status] ?? UNKNOWN_STATUS
 }
 
 export function decodeHtmlEntities(text: string): string {
