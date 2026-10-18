@@ -577,6 +577,10 @@ export function createWebSocketServer(
 
   // Session update events — broadcast session.state to session-specific clients
   sessionManager.subscribe((event) => {
+    if (event.type === 'session_deleted') {
+      sessionLLMClients.delete(event.sessionId)
+      return
+    }
     if (event.type === 'pause_changed') {
       // Lightweight pause-state sync (no full session.state rebuild)
       broadcastForSession(event.sessionId, createSessionPauseMessage(event.pauseState))

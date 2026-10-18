@@ -156,6 +156,15 @@ export async function stopProcess(processId: string, sessionId: string): Promise
   store.removeProcess(processId, sessionId)
 }
 
+export async function stopSessionProcesses(sessionId: string): Promise<void> {
+  const running = store
+    .getSessionProcesses(sessionId)
+    .filter((p) => p.status === 'running' && p.pid !== null)
+    .map((p) => p.pid!)
+  store.removeSession(sessionId)
+  await Promise.all(running.map((pid) => killProcessTree(pid)))
+}
+
 export function getProcessStatus(processId: string, sessionId: string): BackgroundProcess | undefined {
   return store.getProcess(processId, sessionId)
 }

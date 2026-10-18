@@ -703,7 +703,12 @@ export class EventStore {
     const unsubscribe = () => {
       subscriber.closed = true
       state.closeIterator()
-      sessionSubs?.delete(subscriber)
+      if (sessionSubs) {
+        sessionSubs.delete(subscriber)
+        if (sessionSubs.size === 0) {
+          this.subscribers.delete(sessionId)
+        }
+      }
     }
 
     return { iterator: createEventIterator(state, subscriber), unsubscribe }

@@ -510,6 +510,14 @@ describe('EventStore', () => {
       expect(received[1]!.type).toBe('message.delta')
     })
 
+    it('drops the session entry once all subscribers have unsubscribed', () => {
+      const { unsubscribe } = store.subscribe('session-1')
+      unsubscribe()
+
+      const subscribers = (store as unknown as { subscribers: Map<string, Set<unknown>> }).subscribers
+      expect(subscribers.has('session-1')).toBe(false)
+    })
+
     it('should only receive events for subscribed session', async () => {
       const { iterator, unsubscribe } = store.subscribe('session-1')
       const received: StoredEvent[] = []

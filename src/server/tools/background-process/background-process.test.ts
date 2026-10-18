@@ -1,5 +1,24 @@
 import { describe, it, expect, beforeEach } from 'vitest'
+import { tmpdir } from 'node:os'
 import * as store from './store.js'
+import * as manager from './manager.js'
+
+// A command that stays alive ~30s on both Unix and Windows (cmd.exe has no
+// `sleep`). Spawned in the OS temp dir, which exists on every platform.
+const LONG_LIVE_CMD = process.platform === 'win32' ? 'ping -n 31 127.0.0.1' : 'sleep 30'
+const TEST_CWD = tmpdir()
+
+async function waitForProcessExit(pid: number): Promise<void> {
+  for (let i = 0; i < 100; i++) {
+    try {
+      process.kill(pid, 0)
+    } catch {
+      return
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+  throw new Error(`Process ${pid} is still alive after 5s`)
+}
 
 describe('background-process store', () => {
   beforeEach(() => {
@@ -196,6 +215,111 @@ describe('background-process store', () => {
       const allOffsets = [...page1.lines, ...page2.lines].map((l) => l.offset)
       const uniqueOffsets = new Set(allOffsets)
       expect(uniqueOffsets.size).toBe(allOffsets.length)
+    })
+  })
+
+  describe('stopSessionProcesses', () => {
+    it('removes all processes and logs for the session and kills running ones', async () => {
+      const sessionId = 'test-session-stop-all'
+      const running = store.createProcess(sessionId, 'sleeper', LONG_LIVE_CMD, TEST_CWD)!
+      const pid = manager.startProcessCommand(running.id, sessionId, LONG_LIVE_CMD, TEST_CWD)!
+      expect(pid).toBeGreaterThan(0)
+
+      const exited = store.createProcess(sessionId, 'exited', 'echo done', '/tmp')!
+      store.updateStatus(exited.id, sessionId, 'exited', 0)
+      store.appendLog(running.id, 'output\n', 'stdout')
+
+      await manager.stopSessionProcesses(sessionId)
+
+      expect(manager.getSessionProcesses(sessionId)).toEqual([])
+      expect(store.getLogs(running.id)).toEqual([])
+      expect(store.getLogs(exited.id)).toEqual([])
+      await waitForProcessExit(pid)
+    })
+
+    it('is a no-op for unknown sessions', async () => {
+      await expect(manager.stopSessionProcesses('unknown-session')).resolves.toBeUndefined()
+    })
+  })
+
+  describe('log capping', () => {
+    it('caps retained lines at 2000, dropping the oldest', () => {
+      const sessionId = 'test-session-cap-lines'
+      const process = store.createProcess(sessionId, 'test', 'echo hello', '/tmp')!
+
+      for (let i = 0; i < 2_100; i++) {
+        store.appendLog(process.id, `line ${i}\n`, 'stdout')
+      }
+
+      const logs = store.getLogs(process.id)
+      expect(logs.length).toBe(2_000)
+      expect(logs[0]?.offset).toBe(100)
+      expect(logs[0]?.content).toBe('line 100\n')
+      expect(logs[logs.length - 1]?.content).toBe('line 2099\n')
+    })
+
+    it('caps retained bytes at 100 Ko, dropping the oldest', () => {
+      const sessionId = 'test-session-cap-bytes'
+      const process = store.createProcess(sessionId, 'test', 'echo hello', '/tmp')!
+
+      const line = 'x'.repeat(1024) + '\n'
+      for (let i = 0; i < 600; i++) {
+        store.appendLog(process.id, line, 'stdout')
+      }
+
+      const logs = store.getLogs(process.id)
+      const totalBytes = logs.reduce((sum, l) => sum + Buffer.byteLength(l.content), 0)
+      expect(totalBytes).toBeLessThanOrEqual(100_000)
+      expect(logs.length).toBe(97)
+      expect(logs[0]?.offset).toBe(503)
+    })
+
+    it('measures the byte cap in UTF-8 bytes, not code units', () => {
+      const sessionId = 'test-session-cap-bytes-utf8'
+      const process = store.createProcess(sessionId, 'test', 'echo hello', '/tmp')!
+
+      const line = 'é'.repeat(4_000) + '\n'
+      for (let i = 0; i < 13; i++) {
+        store.appendLog(process.id, line, 'stdout')
+      }
+
+      const logs = store.getLogs(process.id)
+      const totalBytes = logs.reduce((sum, l) => sum + Buffer.byteLength(l.content), 0)
+      expect(totalBytes).toBeLessThanOrEqual(100_000)
+      expect(logs.length).toBe(12)
+      expect(logs[0]?.offset).toBe(1)
+    })
+
+    it('getLogsPaginated reports only retained lines in totalLines', () => {
+      const sessionId = 'test-session-cap-paginated'
+      const process = store.createProcess(sessionId, 'test', 'echo hello', '/tmp')!
+
+      for (let i = 0; i < 2_050; i++) {
+        store.appendLog(process.id, `line ${i}\n`, 'stdout')
+      }
+
+      const result = store.getLogsPaginated(process.id, 0, 5)
+      expect(result.totalLines).toBe(2_000)
+      expect(result.lines.length).toBe(5)
+      expect(result.lines[0]?.offset).toBe(50)
+      expect(result.hasMore).toBe(true)
+    })
+
+    it('pagination over trimmed logs resumes at the first retained line', () => {
+      const sessionId = 'test-session-cap-since'
+      const process = store.createProcess(sessionId, 'test', 'echo hello', '/tmp')!
+
+      for (let i = 0; i < 2_050; i++) {
+        store.appendLog(process.id, `line ${i}\n`, 'stdout')
+      }
+
+      const result = store.getLogsPaginated(process.id, 2_050, 5)
+      expect(result.lines.length).toBe(0)
+      expect(result.hasMore).toBe(false)
+
+      const resumed = store.getLogsPaginated(process.id, 25, 5)
+      expect(resumed.lines.length).toBe(5)
+      expect(resumed.lines[0]?.offset).toBe(50)
     })
   })
 

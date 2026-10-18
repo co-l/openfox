@@ -54,6 +54,8 @@ import {
   getSessionDisabledServers,
   setSessionDisabledServers,
 } from '../mcp/session-overrides.js'
+import { clearAllowedPaths } from '../tools/path-security.js'
+import { stopSessionProcesses } from '../tools/background-process/manager.js'
 import {
   ensureWorkspace,
   resolveAndValidateSourceBranch,
@@ -160,6 +162,7 @@ export class SessionManager {
   // turn, and the warning is only worth one line per session.
   private unknownProviderWarned = new Set<string>()
   private subAgentContextSizes = new Map<string, number>()
+  private subAgentIdsBySession = new Map<string, Set<string>>()
   // The sub-agent currently running per session (last-wins when parallel).
   // Used to scope system-generated events (drift reminders) to the sub-agent
   // window instead of the main session.
@@ -759,9 +762,28 @@ export class SessionManager {
     this.announcedPromptHashStore.delete(id)
     this.announcedToolFingerprintStore.delete(id)
     this.unknownProviderWarned.delete(id)
+    this.dynamicContextChangedStore.delete(id)
+    this.debugDumpStore.delete(id)
+    this.activeSubAgents.delete(id)
+    this.switchLocks.delete(id)
+    this.workspaceCreationLocks.delete(id)
+    this.readFilesCache.delete(id)
+
+    for (const subAgentId of this.subAgentIdsBySession.get(id) ?? []) {
+      this.subAgentContextSizes.delete(subAgentId)
+    }
+    this.subAgentIdsBySession.delete(id)
 
     // Clean up session MCP overrides
     clearSessionOverrides(id)
+
+    // Clean up the session's path allowlist
+    clearAllowedPaths(id)
+
+    // Stop and release the session's background processes
+    void stopSessionProcesses(id).catch((err: unknown) => {
+      logger.error('Error stopping session background processes', { sessionId: id, error: err })
+    })
 
     // Delete session from DB
     dbDeleteSession(id)
@@ -1582,6 +1604,10 @@ export class SessionManager {
     const dynamicContextChanged = this.getDynamicContextChanged(sessionId)
     if (subAgentId) {
       this.subAgentContextSizes.set(subAgentId, currentTokens)
+      if (!this.subAgentIdsBySession.has(sessionId)) {
+        this.subAgentIdsBySession.set(sessionId, new Set())
+      }
+      this.subAgentIdsBySession.get(sessionId)!.add(subAgentId)
     }
 
     emitContextState(

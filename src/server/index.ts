@@ -3872,6 +3872,13 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
               error: err instanceof Error ? err.message : String(err),
             })
           })
+          void import('./memory-watchdog.js')
+            .then(({ startMemoryWatchdog }) => startMemoryWatchdog())
+            .catch((err: unknown) => {
+              logger.error('Failed to start memory watchdog', {
+                error: err instanceof Error ? err.message : String(err),
+              })
+            })
           const client = getLLMClient()
           logger.info(`OpenFox server running at http://${host}:${actualPort}`)
           logger.info(`WebSocket available at ws://${host}:${actualPort}/ws`)
@@ -3896,6 +3903,8 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
           stopAllInspectProxies()
           const { cleanupAllProcesses } = await import('./tools/background-process/store.js')
           cleanupAllProcesses()
+          const { stopMemoryWatchdog } = await import('./memory-watchdog.js')
+          stopMemoryWatchdog()
           viteServer?.close()
 
           // Clean up isolated config file if one was created
