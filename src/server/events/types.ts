@@ -518,7 +518,12 @@ export interface CompactionRecord {
   newWindowId: string
   beforeTokens: number
   afterTokens: number
-  summary: string
+  /**
+   * Present on the raw `context.compacted` event (and in pre-fix snapshots);
+   * stripped from persisted snapshots by `normalizeSnapshotContextWindows` —
+   * no consumer reads the metadata copy.
+   */
+  summary?: string
   timestamp: number
 }
 

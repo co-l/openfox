@@ -33,7 +33,9 @@ import {
   getContextMessages,
   getReadFilesCache,
   isFileInCache,
+  getLegacyCompactionBaseline,
 } from './session.js'
+import type { SessionSnapshot, CompactionRecord } from './types.js'
 
 let db: Database.Database
 
@@ -738,5 +740,71 @@ describe('getContextMessages — snapshot-optimized (getEventsSinceSnapshot)', (
 
   it('should return empty array for non-existent session', () => {
     expect(getContextMessages('nonexistent')).toEqual([])
+  })
+})
+
+// ============================================================================
+// getLegacyCompactionBaseline — capped contextWindows
+// ============================================================================
+
+describe('getLegacyCompactionBaseline', () => {
+  const makeSnapshot = (contextWindows: unknown[] | undefined, compactionCount: number): SessionSnapshot => ({
+    mode: 'builder',
+    phase: 'build',
+    isRunning: false,
+    messages: [],
+    criteria: [],
+    metadataEntries: {},
+    contextState: {
+      currentTokens: 100,
+      maxTokens: 200000,
+      compactionCount,
+      dangerZone: false,
+      canCompact: false,
+      dynamicContextChanged: false,
+    },
+    currentContextWindowId: 'window-1',
+    todos: [],
+    readFiles: [],
+    ...(contextWindows !== undefined ? { contextWindows: contextWindows as CompactionRecord[] } : {}),
+    snapshotSeq: 1,
+    snapshotAt: Date.parse('2024-01-01T00:00:00.000Z'),
+  })
+
+  const windowRecord = (i: number) => ({
+    closedWindowId: `window-${i}`,
+    newWindowId: `window-${i + 1}`,
+    beforeTokens: 1000,
+    afterTokens: 0,
+    timestamp: Date.parse('2024-01-01T00:00:00.000Z') + i * 1000,
+  })
+
+  it('returns null when details are complete (records cover the count)', () => {
+    const snapshot = makeSnapshot([windowRecord(0), windowRecord(1)], 2)
+    expect(getLegacyCompactionBaseline(snapshot)).toBeNull()
+  })
+
+  it('returns the missing count when contextWindows is truncated by the cap', () => {
+    const snapshot = makeSnapshot(
+      Array.from({ length: 500 }, (_, i) => windowRecord(i)),
+      1000,
+    )
+    expect(getLegacyCompactionBaseline(snapshot)).toEqual({
+      legacyCompactionCount: 500,
+      compactionsDetailsAvailable: false,
+    })
+  })
+
+  it('returns the full count when contextWindows is empty but compactions happened', () => {
+    const snapshot = makeSnapshot(undefined, 7)
+    expect(getLegacyCompactionBaseline(snapshot)).toEqual({
+      legacyCompactionCount: 7,
+      compactionsDetailsAvailable: false,
+    })
+  })
+
+  it('returns null when there are no compactions at all', () => {
+    expect(getLegacyCompactionBaseline(makeSnapshot(undefined, 0))).toBeNull()
+    expect(getLegacyCompactionBaseline(undefined)).toBeNull()
   })
 })

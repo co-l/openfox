@@ -50,4 +50,7 @@ export {
   buildSnapshot,
   buildSnapshotFromSessionState,
   trimSnapshotStreamingOutput,
+  normalizeSnapshotContextWindows,
+  dedupeCompactionRecords,
+  MAX_SNAPSHOT_CONTEXT_WINDOWS,
 } from './fold-state.js'

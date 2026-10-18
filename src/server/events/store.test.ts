@@ -1943,15 +1943,20 @@ describe('EventStore - Event Cleanup', () => {
         .prepare(`INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, 'true', ?)`)
         .run(SETTINGS_KEYS.MAINTENANCE_SNAPSHOT_STREAMS_MIGRATED, new Date().toISOString())
 
-      const backupPath = path + '.pre-de-dup.bak'
-      writeFileSync(backupPath, 'stale rollback backup')
+      // Both migration rollback suffixes are pruned once expired.
+      const deDupBackup = path + '.pre-de-dup.bak'
+      const ctxBackup = path + '.pre-context-windows.bak'
+      writeFileSync(deDupBackup, 'stale rollback backup')
+      writeFileSync(ctxBackup, 'stale contextWindows rollback backup')
       const elevenDaysAgo = new Date(Date.now() - 11 * 24 * 60 * 60 * 1000)
-      utimesSync(backupPath, elevenDaysAgo, elevenDaysAgo)
+      utimesSync(deDupBackup, elevenDaysAgo, elevenDaysAgo)
+      utimesSync(ctxBackup, elevenDaysAgo, elevenDaysAgo)
 
       const report = await fileStore.migrateSnapshotStreams()
 
       expect(report.skipped).toBe(true)
-      expect(existsSync(backupPath)).toBe(false)
+      expect(existsSync(deDupBackup)).toBe(false)
+      expect(existsSync(ctxBackup)).toBe(false)
 
       fileDb.close()
       rmSync(dir, { recursive: true, force: true })
@@ -1987,6 +1992,168 @@ describe('EventStore - Event Cleanup', () => {
 
       expect(typeof result).toBe('object')
       expect(result).toHaveProperty('checkpointed')
+    })
+  })
+
+  // ============================================================================
+  // appendSnapshotWithCleanup — atomic snapshot + cleanup (summary overflow fix)
+  // ============================================================================
+
+  describe('appendSnapshotWithCleanup', () => {
+    const makeSnapshot = (seq: number): SessionSnapshot => ({
+      mode: 'builder',
+      phase: 'build',
+      isRunning: false,
+      messages: [],
+      criteria: [],
+      metadataEntries: {},
+      contextState: {
+        currentTokens: 0,
+        maxTokens: 200000,
+        compactionCount: 0,
+        dangerZone: false,
+        canCompact: false,
+        dynamicContextChanged: false,
+      },
+      currentContextWindowId: 'window-1',
+      todos: [],
+      readFiles: [],
+      snapshotSeq: seq,
+      snapshotAt: Date.parse('2024-01-01T00:00:00.000Z'),
+    })
+
+    it('writes the snapshot and removes stale snapshots and pre-snapshot raw events in one go', () => {
+      store.append('s1', {
+        type: 'session.initialized',
+        data: { projectId: 'p', workdir: '/tmp', contextWindowId: 'window-1' },
+      })
+      store.append('s1', { type: 'message.start', data: { messageId: 'm1', role: 'user', content: 'a' } })
+      store.append('s1', { type: 'turn.snapshot', data: makeSnapshot(3) })
+      store.append('s1', { type: 'message.start', data: { messageId: 'm2', role: 'user', content: 'b' } })
+      store.append('s1', { type: 'metadata.set', data: { key: 'todos', entries: [] } })
+
+      const { event, deletedCount } = store.appendSnapshotWithCleanup('s1', makeSnapshot(6))
+
+      expect(event.type).toBe('turn.snapshot')
+      // the stale snapshot and pre-snapshot raw events are gone
+      const remaining = store.getEvents('s1', 1)
+      const snapshotRows = remaining.filter((e) => e.type === 'turn.snapshot')
+      expect(snapshotRows).toHaveLength(1)
+      expect(snapshotRows[0]!.seq).toBe(6)
+      expect(remaining.filter((e) => e.type === 'message.start')).toHaveLength(0)
+      // cleanup-excluded event types (and seq 1) survive
+      expect(remaining.filter((e) => e.type === 'metadata.set')).toHaveLength(1)
+      expect(remaining.filter((e) => e.type === 'session.initialized')).toHaveLength(1)
+      expect(deletedCount).toBeGreaterThan(0)
+    })
+
+    it('rolls back everything when the snapshot payload cannot be serialized', () => {
+      // Regression: a crash between the snapshot append and the cleanup left
+      // stale snapshots in the raw store; the next fold re-seeded from all of
+      // them, duplicating contextWindows on every turn (unbounded growth,
+      // "Invalid string length" once past V8's max string length). The pair
+      // must be atomic so a serialization failure leaves the store untouched.
+      store.append('s1', {
+        type: 'session.initialized',
+        data: { projectId: 'p', workdir: '/tmp', contextWindowId: 'window-1' },
+      })
+      store.append('s1', { type: 'message.start', data: { messageId: 'm1', role: 'user', content: 'a' } })
+      store.append('s1', { type: 'turn.snapshot', data: makeSnapshot(3) })
+      store.append('s1', { type: 'message.start', data: { messageId: 'm2', role: 'user', content: 'b' } })
+
+      const circular: Record<string, unknown> = {}
+      circular['self'] = circular
+      const badSnapshot = {
+        ...makeSnapshot(4),
+        messages: [circular as unknown as import('./types.js').SnapshotMessage],
+      }
+
+      expect(() => store.appendSnapshotWithCleanup('s1', badSnapshot)).toThrow()
+
+      const remaining = store.getEvents('s1', 1)
+      const snapshotRows = remaining.filter((e) => e.type === 'turn.snapshot')
+      expect(snapshotRows).toHaveLength(1)
+      expect(snapshotRows[0]!.seq).toBe(3)
+      expect(remaining.filter((e) => e.type === 'message.start')).toHaveLength(2)
+    })
+  })
+
+  // ============================================================================
+  // migrateSnapshotContextWindows — one-shot repair of oversized snapshots
+  // ============================================================================
+
+  describe('migrateSnapshotContextWindows', () => {
+    const makeSnapshot = (seq: number): SessionSnapshot => ({
+      mode: 'builder',
+      phase: 'build',
+      isRunning: false,
+      messages: [],
+      criteria: [],
+      metadataEntries: {},
+      contextState: {
+        currentTokens: 0,
+        maxTokens: 200000,
+        compactionCount: 700,
+        dangerZone: false,
+        canCompact: false,
+        dynamicContextChanged: false,
+      },
+      currentContextWindowId: 'window-1',
+      todos: [],
+      readFiles: [],
+      snapshotSeq: seq,
+      snapshotAt: Date.parse('2024-01-01T00:00:00.000Z'),
+    })
+
+    const makeRecords = () => {
+      const t0 = Date.parse('2024-01-01T00:00:00.000Z')
+      // 700 unique windows + 30 verbatim copies of the first 30 (the stale
+      // snapshot re-seed bug duplicates records exactly)
+      const unique = Array.from({ length: 700 }, (_, i) => ({
+        closedWindowId: `w-${i}`,
+        newWindowId: `w-${i + 1}`,
+        beforeTokens: 100,
+        afterTokens: 0,
+        summary: 'x'.repeat(500),
+        timestamp: t0 + i * 1000,
+      }))
+      const duplicates = unique.slice(0, 30)
+      return [...unique, ...duplicates] as import('./types.js').CompactionRecord[]
+    }
+
+    beforeEach(() => {
+      db.exec(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)`)
+    })
+
+    it('strips summaries, dedupes and caps contextWindows in persisted snapshots', async () => {
+      store.append('s1', { type: 'turn.snapshot', data: { ...makeSnapshot(1), contextWindows: makeRecords() } })
+
+      const report = await store.migrateSnapshotContextWindows()
+
+      expect(report.skipped).toBe(false)
+      expect(report.rewritten).toBe(1)
+      expect(report.summariesDropped).toBe(730)
+      expect(report.duplicatesDropped).toBe(30)
+      expect(report.recordsCapped).toBe(200)
+      expect(report.bytesAfter).toBeLessThan(report.bytesBefore)
+
+      const row = db.prepare(`SELECT payload FROM events WHERE event_type = 'turn.snapshot'`).get() as {
+        payload: string
+      }
+      const parsed = JSON.parse(row.payload) as SessionSnapshot
+      expect(parsed.contextWindows).toHaveLength(500)
+      expect(parsed.contextWindows![0]).not.toHaveProperty('summary')
+      expect(parsed.contextWindows![0]!.newWindowId).toBe('w-201')
+      expect(parsed.contextWindows![499]!.newWindowId).toBe('w-700')
+    })
+
+    it('is a no-op once the maintenance flag is set', async () => {
+      store.append('s1', { type: 'turn.snapshot', data: { ...makeSnapshot(1), contextWindows: makeRecords() } })
+
+      await store.migrateSnapshotContextWindows()
+      const second = await store.migrateSnapshotContextWindows()
+
+      expect(second.skipped).toBe(true)
     })
   })
 })

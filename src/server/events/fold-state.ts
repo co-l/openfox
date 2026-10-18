@@ -268,6 +268,14 @@ export function foldSessionState(
   let taskStats: TaskStats | undefined
   const messageStats: MessageStatsEntry[] = []
   let contextWindows: CompactionRecord[] = []
+  // The snapshot is the authoritative absolute state: when several snapshots
+  // survive in the stream (a crash between the snapshot append and
+  // cleanupOldEvents used to leave stale ones behind), only the LATEST
+  // snapshot re-seeds the per-compaction / per-retry history. Accumulating
+  // from every snapshot duplicated records on each fold and grew the array
+  // without bound.
+  let snapshotContextWindows: CompactionRecord[] = []
+  let snapshotFormatRetries: FormatRetry[] = []
 
   for (const event of events) {
     switch (event.type) {
@@ -305,17 +313,18 @@ export function foldSessionState(
         break
       }
       case 'turn.snapshot': {
-        // Re-seed the per-compaction and per-retry history from the
-        // snapshot so that pre-snapshot events (which were pruned from
-        // the raw store) still count when the snapshot is the only
-        // surviving artifact. The post-snapshot events following this
-        // snapshot continue to accumulate on top.
+        // Re-seed the per-compaction and per-retry history from the snapshot
+        // so that pre-snapshot events (which were pruned from the raw store)
+        // still count when the snapshot is the only surviving artifact. The
+        // post-snapshot events following this snapshot continue to accumulate
+        // on top. Latest snapshot wins: an older stale snapshot's records are
+        // already subsumed by the newer one.
         const snapData = event.data as SessionSnapshot
-        if (Array.isArray(snapData.contextWindows) && snapData.contextWindows.length > 0) {
-          contextWindows = [...snapData.contextWindows, ...contextWindows]
+        if (Array.isArray(snapData.contextWindows)) {
+          snapshotContextWindows = snapData.contextWindows
         }
-        if (Array.isArray(snapData.formatRetries) && snapData.formatRetries.length > 0) {
-          formatRetries = [...snapData.formatRetries, ...formatRetries]
+        if (Array.isArray(snapData.formatRetries)) {
+          snapshotFormatRetries = snapData.formatRetries
         }
         break
       }
@@ -377,6 +386,13 @@ export function foldSessionState(
     }
   }
 
+  // Merge the latest snapshot's re-seeded history with the post-snapshot raw
+  // events, de-duplicating by identity: a record already carried by the
+  // snapshot (e.g. a raw context.compacted event that survived a missing
+  // cleanup) must not be double-counted.
+  contextWindows = dedupeCompactionRecords([...snapshotContextWindows, ...contextWindows])
+  formatRetries = dedupeFormatRetries([...snapshotFormatRetries, ...formatRetries])
+
   return {
     mode,
     phase,
@@ -404,6 +420,35 @@ export function foldSessionState(
     contextWindows,
     formatRetries,
   }
+}
+
+/**
+ * De-duplicate compaction records by full identity. A sub-agent compaction
+ * reuses the parent's window pair (same newWindowId), so keying on
+ * newWindowId alone would collapse legitimate records. The records duplicated
+ * by the stale-snapshot re-seed bug are identical across all identity fields,
+ * so a composite key removes the copies without touching real compactions.
+ */
+export function dedupeCompactionRecords(records: CompactionRecord[]): CompactionRecord[] {
+  const byKey = new Map<string, CompactionRecord>()
+  for (const record of records) {
+    const key = [
+      record.closedWindowId,
+      record.newWindowId,
+      record.beforeTokens,
+      record.afterTokens,
+      record.timestamp,
+    ].join('|')
+    byKey.set(key, record)
+  }
+  return [...byKey.values()]
+}
+
+/** De-duplicate format retries by (timestamp, attempt, maxAttempts). */
+function dedupeFormatRetries(retries: FormatRetry[]): FormatRetry[] {
+  const byKey = new Map<string, FormatRetry>()
+  for (const retry of retries) byKey.set(`${retry.timestamp}:${retry.attempt}:${retry.maxAttempts}`, retry)
+  return [...byKey.values()]
 }
 
 /**
@@ -499,6 +544,7 @@ export function buildSnapshot(
   // the never-displayed streaming output before persisting it. The function
   // returns new objects for any modified messages so foldedState is not mutated.
   const { messages } = trimSnapshotStreamingOutput(foldedState.messages)
+  const contextWindows = normalizeSnapshotContextWindows(foldedState.contextWindows)
   return {
     mode: foldedState.mode,
     phase: foldedState.phase,
@@ -525,9 +571,39 @@ export function buildSnapshot(
     ...(foldedState.taskStats !== undefined && { taskStats: foldedState.taskStats }),
     ...(foldedState.messageStats !== undefined && { messageStats: foldedState.messageStats }),
     ...(foldedState.pendingConfirmations !== undefined && { pendingConfirmations: foldedState.pendingConfirmations }),
-    contextWindows: foldedState.contextWindows ?? [],
+    contextWindows,
     ...(foldedState.waitingWorkflow !== undefined && { waitingWorkflow: foldedState.waitingWorkflow }),
   }
+}
+
+/**
+ * Bound the snapshot's `contextWindows` array so a long-lived session cannot
+ * grow it past V8's max string length (~536 MB serialized, which aborts the
+ * turn with "Invalid string length").
+ *
+ * - the `summary` is dropped: the functional copy lives in the
+ *   isCompactionSummary message; no consumer reads the metadata copy
+ *   (reconstruction sets `summary: ''`, the stats rollup has no summary
+ *   field, the client never receives `contextWindows`)
+ * - duplicates are collapsed by full record identity (see
+ *   dedupeCompactionRecords: `newWindowId` alone is unsafe because a
+ *   sub-agent compaction reuses the parent's window pair)
+ * - only the most recent MAX_SNAPSHOT_CONTEXT_WINDOWS records are kept; the
+ *   authoritative total stays in `contextState.compactionCount`
+ */
+export const MAX_SNAPSHOT_CONTEXT_WINDOWS = 500
+
+export function normalizeSnapshotContextWindows(records: CompactionRecord[] | undefined): CompactionRecord[] {
+  if (!records || records.length === 0) return []
+  const deduped = dedupeCompactionRecords(records)
+  const capped = deduped.length > MAX_SNAPSHOT_CONTEXT_WINDOWS ? deduped.slice(-MAX_SNAPSHOT_CONTEXT_WINDOWS) : deduped
+  return capped.map(({ closedWindowId, newWindowId, beforeTokens, afterTokens, timestamp }) => ({
+    closedWindowId,
+    newWindowId,
+    beforeTokens,
+    afterTokens,
+    timestamp,
+  }))
 }
 
 export function buildSnapshotFromSessionState(input: {
@@ -592,7 +668,7 @@ export function buildSnapshotFromSessionState(input: {
     // empty) so consumers can rely on a stable shape and the next snapshot
     // can carry them forward without losing per-record history.
     formatRetries: foldedState.formatRetries ?? [],
-    contextWindows: foldedState.contextWindows ?? [],
+    contextWindows: normalizeSnapshotContextWindows(foldedState.contextWindows),
     snapshotSeq: latestSeq,
     snapshotAt,
     ...(foldedState.sessionInit !== undefined && { sessionInit: foldedState.sessionInit }),

@@ -2345,6 +2345,238 @@ describe('event folding', () => {
 })
 
 // ============================================================================
+// contextWindows re-seed — summary overflow regression (fix_summary_overflow)
+// ============================================================================
+
+describe('contextWindows snapshot re-seed (summary overflow regression)', () => {
+  const t0 = Date.parse('2024-01-01T00:00:00.000Z')
+
+  const compactionRecord = (closed: string, opened: string, ts: number) => ({
+    closedWindowId: closed,
+    newWindowId: opened,
+    beforeTokens: 1000,
+    afterTokens: 0,
+    summary: `summary for ${opened}`,
+    timestamp: ts,
+  })
+
+  const makeSnapshotData = (seq: number, at: number, contextWindows: unknown[], compactionCount: number) => ({
+    mode: 'builder',
+    phase: 'build',
+    isRunning: false,
+    messages: [],
+    criteria: [],
+    metadataEntries: {},
+    contextState: {
+      currentTokens: 100,
+      maxTokens: 200000,
+      compactionCount,
+      dangerZone: false,
+      canCompact: false,
+      dynamicContextChanged: false,
+    },
+    currentContextWindowId: 'window-2',
+    todos: [],
+    readFiles: [],
+    contextWindows,
+    formatRetries: [],
+    snapshotSeq: seq,
+    snapshotAt: at,
+  })
+
+  it('does not duplicate contextWindows when a stale snapshot remains in the stream', () => {
+    // Regression: a snapshot left in the raw store (crash between the snapshot
+    // append and cleanupOldEvents) made foldSessionState re-seed contextWindows
+    // from EVERY snapshot event, duplicating records on every fold and growing
+    // without bound (42k records for 12 real compactions in production).
+    const events: StoredEvent[] = [
+      {
+        ...baseEvent,
+        seq: 1,
+        timestamp: t0,
+        type: 'session.initialized',
+        data: { projectId: 'p', workdir: '/tmp', contextWindowId: 'window-1' },
+      },
+      {
+        ...baseEvent,
+        seq: 2,
+        timestamp: t0 + 1000,
+        type: 'turn.snapshot',
+        data: makeSnapshotData(2, t0 + 1000, [compactionRecord('window-1', 'window-2', t0 + 1000)], 1),
+      },
+      {
+        ...baseEvent,
+        seq: 3,
+        timestamp: t0 + 2000,
+        type: 'turn.snapshot',
+        data: makeSnapshotData(3, t0 + 2000, [compactionRecord('window-1', 'window-2', t0 + 1000)], 1),
+      },
+    ]
+
+    const state = foldSessionState(events, 'window-1', 200000)
+
+    expect(state.contextWindows ?? []).toHaveLength(1)
+    expect(state.contextWindows?.[0]?.newWindowId).toBe('window-2')
+  })
+
+  it('still counts compactions that happened after the latest snapshot', () => {
+    const events: StoredEvent[] = [
+      {
+        ...baseEvent,
+        seq: 1,
+        timestamp: t0,
+        type: 'session.initialized',
+        data: { projectId: 'p', workdir: '/tmp', contextWindowId: 'window-1' },
+      },
+      {
+        ...baseEvent,
+        seq: 2,
+        timestamp: t0 + 1000,
+        type: 'turn.snapshot',
+        data: makeSnapshotData(2, t0 + 1000, [compactionRecord('window-1', 'window-2', t0 + 1000)], 1),
+      },
+      {
+        ...baseEvent,
+        seq: 3,
+        timestamp: t0 + 2000,
+        type: 'turn.snapshot',
+        data: makeSnapshotData(3, t0 + 2000, [compactionRecord('window-1', 'window-2', t0 + 1000)], 1),
+      },
+      {
+        ...baseEvent,
+        seq: 4,
+        timestamp: t0 + 3000,
+        type: 'context.compacted',
+        data: {
+          closedWindowId: 'window-2',
+          newWindowId: 'window-3',
+          beforeTokens: 1000,
+          afterTokens: 0,
+          summary: 'summary for window-3',
+        },
+      },
+    ]
+
+    const state = foldSessionState(events, 'window-1', 200000)
+
+    expect((state.contextWindows ?? []).map((w) => w.newWindowId)).toEqual(['window-2', 'window-3'])
+  })
+
+  it('does not duplicate formatRetries when a stale snapshot remains in the stream', () => {
+    const retry = { attempt: 1, maxAttempts: 3, timestamp: t0 + 1000 }
+    const events: StoredEvent[] = [
+      {
+        ...baseEvent,
+        seq: 1,
+        timestamp: t0,
+        type: 'session.initialized',
+        data: { projectId: 'p', workdir: '/tmp', contextWindowId: 'window-1' },
+      },
+      {
+        ...baseEvent,
+        seq: 2,
+        timestamp: t0 + 1000,
+        type: 'turn.snapshot',
+        data: { ...makeSnapshotData(2, t0 + 1000, [], 0), formatRetries: [retry] },
+      },
+      {
+        ...baseEvent,
+        seq: 3,
+        timestamp: t0 + 2000,
+        type: 'turn.snapshot',
+        data: { ...makeSnapshotData(3, t0 + 2000, [], 0), formatRetries: [retry] },
+      },
+    ]
+
+    const state = foldSessionState(events, 'window-1', 200000)
+
+    expect(state.formatRetries).toHaveLength(1)
+  })
+})
+
+describe('snapshot contextWindows size control', () => {
+  const t0 = Date.parse('2024-01-01T00:00:00.000Z')
+
+  it('does not persist compaction summaries in the snapshot', () => {
+    // The functional summary lives in the isCompactionSummary message; nothing
+    // consumes the metadata copy (reconstruction sets summary:'', the stats
+    // rollup has no summary field, the client never receives contextWindows).
+    const snapshot = buildSnapshotFromSessionState({
+      session: {
+        mode: 'builder',
+        phase: 'build',
+        isRunning: false,
+        criteria: [],
+        executionState: { currentTokenCount: 100, compactionCount: 1 },
+      },
+      events: [
+        {
+          timestamp: t0,
+          type: 'session.initialized',
+          data: { projectId: 'p', workdir: '/tmp', contextWindowId: 'window-1' },
+        },
+        {
+          timestamp: t0 + 1000,
+          type: 'context.compacted',
+          data: {
+            closedWindowId: 'window-1',
+            newWindowId: 'window-2',
+            beforeTokens: 1000,
+            afterTokens: 0,
+            summary: 'a long LLM-generated summary of the closed window'.repeat(100),
+          },
+        },
+      ],
+      latestSeq: 2,
+      snapshotAt: t0 + 2000,
+    })
+
+    expect(snapshot.contextWindows).toHaveLength(1)
+    expect(snapshot.contextWindows![0]!.summary).toBeUndefined()
+    expect(snapshot.contextWindows![0]!.newWindowId).toBe('window-2')
+  })
+
+  it('caps contextWindows to the most recent records', () => {
+    const compactions = Array.from({ length: 600 }, (_, i) => ({
+      timestamp: t0 + (i + 1) * 1000,
+      type: 'context.compacted' as const,
+      data: {
+        closedWindowId: `window-${i}`,
+        newWindowId: `window-${i + 1}`,
+        beforeTokens: 1000,
+        afterTokens: 0,
+        summary: `summary ${i + 1}`,
+      },
+    }))
+
+    const snapshot = buildSnapshotFromSessionState({
+      session: {
+        mode: 'builder',
+        phase: 'build',
+        isRunning: false,
+        criteria: [],
+        executionState: { currentTokenCount: 100, compactionCount: 600 },
+      },
+      events: [
+        {
+          timestamp: t0,
+          type: 'session.initialized',
+          data: { projectId: 'p', workdir: '/tmp', contextWindowId: 'window-0' },
+        },
+        ...compactions,
+      ],
+      latestSeq: 601,
+      snapshotAt: t0 + 602_000,
+    })
+
+    expect(snapshot.contextWindows).toHaveLength(500)
+    // most recent records are kept
+    expect(snapshot.contextWindows![0]!.newWindowId).toBe('window-101')
+    expect(snapshot.contextWindows![499]!.newWindowId).toBe('window-600')
+  })
+})
+
+// ============================================================================
 // buildMessagesFromStoredEvents — maxVisibleItems (Criterion 8C)
 // ============================================================================
 

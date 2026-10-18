@@ -18,13 +18,19 @@ import type Database from 'better-sqlite3'
 import { existsSync, statSync, unlinkSync } from 'node:fs'
 import type { TurnEvent, StoredEvent, SessionSnapshot, SnapshotMessage } from './types.js'
 import { logger } from '../utils/logger.js'
-import { foldSessionState, buildSnapshot, trimSnapshotStreamingOutput } from './folding.js'
+import {
+  foldSessionState,
+  buildSnapshot,
+  trimSnapshotStreamingOutput,
+  normalizeSnapshotContextWindows,
+  dedupeCompactionRecords,
+} from './folding.js'
 import { SETTINGS_KEYS } from '../db/settings.js'
 
-// Rollback backups (.pre-de-dup.bak) are held for 10 days after creation, then
-// auto-pruned on the next migration invocation (startup auto-run or manual
-// script). Long enough to recover from a bad migration, short enough that a
-// 1GB+ copy is not left on disk forever.
+// Rollback backups (.pre-de-dup.bak, .pre-context-windows.bak) are held for
+// 10 days after creation, then auto-pruned on the next migration invocation
+// (startup auto-run or manual script). Long enough to recover from a bad
+// migration, short enough that a 1GB+ copy is not left on disk forever.
 const SNAPSHOT_BACKUP_RETENTION_MS = 10 * 24 * 60 * 60 * 1000
 
 /**
@@ -857,6 +863,51 @@ export class EventStore {
   }
 
   /**
+   * Append a turn snapshot and run the post-snapshot cleanup in a single
+   * transaction. The pair MUST be atomic: a crash between the two left stale
+   * snapshots in the raw store, and every subsequent fold re-seeded from all
+   * of them, duplicating contextWindows/formatRetries on each turn (unbounded
+   * growth -> "Invalid string length" once the serialized snapshot passed V8's
+   * max string length). If the snapshot payload cannot be serialized, the
+   * transaction rolls back and the store is left exactly as it was.
+   */
+  appendSnapshotWithCleanup(
+    sessionId: string,
+    snapshot: SessionSnapshot,
+  ): { event: StoredEvent<Extract<TurnEvent, { type: 'turn.snapshot' }>>; deletedCount: number } {
+    return this.db.transaction(() => {
+      const event = this.append(sessionId, {
+        type: 'turn.snapshot',
+        data: snapshot,
+      }) as StoredEvent<Extract<TurnEvent, { type: 'turn.snapshot' }>>
+      const deletedCount = this.cleanupOldEvents(sessionId)
+      return { event, deletedCount }
+    })()
+  }
+
+  /**
+   * Replace all events after `afterSeq` with a fresh snapshot, atomically
+   * (used by truncateSessionMessages). Same atomicity guarantee as
+   * appendSnapshotWithCleanup: the stale snapshot the new one supersedes is
+   * removed in the same transaction.
+   */
+  replaceEventsAfterSeqWithSnapshot(
+    sessionId: string,
+    afterSeq: number,
+    snapshot: SessionSnapshot,
+  ): StoredEvent<Extract<TurnEvent, { type: 'turn.snapshot' }>> {
+    return this.db.transaction(() => {
+      this.deleteEventsAfterSeq(sessionId, afterSeq)
+      const event = this.append(sessionId, {
+        type: 'turn.snapshot',
+        data: snapshot,
+      }) as StoredEvent<Extract<TurnEvent, { type: 'turn.snapshot' }>>
+      this.cleanupOldEvents(sessionId)
+      return event
+    })()
+  }
+
+  /**
    * One-time storage optimization: delete old snapshots across all sessions.
    * Safe to run multiple times (idempotent).
    */
@@ -1022,29 +1073,33 @@ export class EventStore {
   }
 
   /**
-   * Remove an expired rollback backup (`<db>.pre-de-dup.bak`) once it has aged
-   * past the retention window. Best-effort: failures are logged at debug level
-   * and never abort the caller (startup or manual migration).
+   * Remove expired rollback backups once they have aged past the retention
+   * window. Covers every rollback suffix the migrations create
+   * (`.pre-de-dup.bak`, `.pre-context-windows.bak`). Best-effort: failures are
+   * logged at debug level and never abort the caller (startup or manual migration).
    */
   private pruneExpiredRollbackBackup(): void {
     const dbName = this.db.name
     if (!dbName || dbName === ':memory:') return
 
-    const backupPath = `${dbName}.pre-de-dup.bak`
-    try {
-      if (!existsSync(backupPath)) return
-      const ageMs = Date.now() - statSync(backupPath).mtimeMs
-      if (ageMs <= SNAPSHOT_BACKUP_RETENTION_MS) return
-      unlinkSync(backupPath)
-      logger.info('Pruned expired rollback backup', {
-        backupPath,
-        ageDays: Math.round(ageMs / (24 * 60 * 60 * 1000)),
-      })
-    } catch (error) {
-      logger.debug('Could not prune expired rollback backup', {
-        backupPath,
-        error: error instanceof Error ? error.message : String(error),
-      })
+    const rollbackSuffixes = ['.pre-de-dup.bak', '.pre-context-windows.bak']
+    for (const suffix of rollbackSuffixes) {
+      const backupPath = `${dbName}${suffix}`
+      try {
+        if (!existsSync(backupPath)) continue
+        const ageMs = Date.now() - statSync(backupPath).mtimeMs
+        if (ageMs <= SNAPSHOT_BACKUP_RETENTION_MS) continue
+        unlinkSync(backupPath)
+        logger.info('Pruned expired rollback backup', {
+          backupPath,
+          ageDays: Math.round(ageMs / (24 * 60 * 60 * 1000)),
+        })
+      } catch (error) {
+        logger.debug('Could not prune expired rollback backup', {
+          backupPath,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
     }
   }
 
@@ -1075,7 +1130,7 @@ export class EventStore {
     // invocation, including runs skipped by the flag below.
     this.pruneExpiredRollbackBackup()
 
-    const flag = this.getMaintenanceFlag()
+    const flag = this.getMaintenanceFlag(SETTINGS_KEYS.MAINTENANCE_SNAPSHOT_STREAMS_MIGRATED)
     if (flag === 'true') {
       return {
         skipped: true,
@@ -1204,14 +1259,146 @@ export class EventStore {
   }
 
   /**
+   * Rewrite every persisted snapshot's `contextWindows` array with the
+   * bounded form used by new snapshots (see normalizeSnapshotContextWindows):
+   * summaries stripped, duplicates collapsed, most-recent-N kept.
+   *
+   * Repairs sessions that outgrew the array before the fix (a stale-snapshot
+   * re-seed bug duplicated records on every fold until the serialized
+   * snapshot passed V8's max string length and aborted the turn with
+   * "Invalid string length"). Same safety model as migrateSnapshotStreams:
+   * rollback backup before the first rewrite, idempotent via a settings flag,
+   * in-memory DBs (tests) skip the backup.
+   */
+  async migrateSnapshotContextWindows(): Promise<{
+    skipped: boolean
+    backupPath: string | null
+    scanned: number
+    rewritten: number
+    summariesDropped: number
+    duplicatesDropped: number
+    recordsCapped: number
+    bytesBefore: number
+    bytesAfter: number
+  }> {
+    this.pruneExpiredRollbackBackup()
+
+    const flagKey = SETTINGS_KEYS.MAINTENANCE_SNAPSHOT_CONTEXT_WINDOWS_MIGRATED
+    if (this.getMaintenanceFlag(flagKey) === 'true') {
+      return {
+        skipped: true,
+        backupPath: null,
+        scanned: 0,
+        rewritten: 0,
+        summariesDropped: 0,
+        duplicatesDropped: 0,
+        recordsCapped: 0,
+        bytesBefore: 0,
+        bytesAfter: 0,
+      }
+    }
+
+    const dbName = this.db.name
+    let backupPath: string | null = null
+    if (dbName && dbName !== ':memory:') {
+      backupPath = `${dbName}.pre-context-windows.bak`
+      try {
+        if (!existsSync(backupPath)) {
+          logger.info('Creating rollback backup before snapshot contextWindows migration', { backupPath })
+          await this.db.backup(backupPath)
+        }
+      } catch (error) {
+        logger.error('Aborting snapshot contextWindows migration: could not create rollback backup', {
+          backupPath,
+          error: error instanceof Error ? error.message : String(error),
+        })
+        return {
+          skipped: true,
+          backupPath: null,
+          scanned: 0,
+          rewritten: 0,
+          summariesDropped: 0,
+          duplicatesDropped: 0,
+          recordsCapped: 0,
+          bytesBefore: 0,
+          bytesAfter: 0,
+        }
+      }
+    }
+
+    const rows = this.db
+      .prepare(`SELECT id, session_id, payload FROM events WHERE event_type = 'turn.snapshot'`)
+      .all() as Array<{ id: number; session_id: string; payload: string }>
+    const update = this.db.prepare(`UPDATE events SET payload = ? WHERE id = ?`)
+
+    let rewritten = 0
+    let summariesDropped = 0
+    let duplicatesDropped = 0
+    let recordsCapped = 0
+    let bytesBefore = 0
+    let bytesAfter = 0
+
+    this.db.transaction(() => {
+      for (const row of rows) {
+        bytesBefore += Buffer.byteLength(row.payload)
+        let parsed: SessionSnapshot
+        try {
+          parsed = JSON.parse(row.payload) as SessionSnapshot
+        } catch {
+          bytesAfter += Buffer.byteLength(row.payload)
+          continue
+        }
+
+        const before = Array.isArray(parsed.contextWindows) ? parsed.contextWindows : []
+        const deduped = dedupeCompactionRecords(before)
+        const next = normalizeSnapshotContextWindows(before)
+
+        duplicatesDropped += before.length - deduped.length
+        summariesDropped += before.filter((r) => r.summary !== undefined).length
+        recordsCapped += deduped.length - next.length
+
+        if (next.length === before.length && !before.some((r) => r.summary !== undefined)) {
+          bytesAfter += Buffer.byteLength(row.payload)
+          continue
+        }
+
+        const nextPayload = JSON.stringify({ ...parsed, contextWindows: next })
+        update.run(nextPayload, row.id)
+        rewritten++
+        bytesAfter += Buffer.byteLength(nextPayload)
+      }
+    })()
+
+    this.setSettingViaDb(flagKey, 'true')
+    logger.info('Snapshot contextWindows migration complete', {
+      scanned: rows.length,
+      rewritten,
+      summariesDropped,
+      duplicatesDropped,
+      recordsCapped,
+      bytesSaved: bytesBefore - bytesAfter,
+    })
+
+    return {
+      skipped: false,
+      backupPath,
+      scanned: rows.length,
+      rewritten,
+      summariesDropped,
+      duplicatesDropped,
+      recordsCapped,
+      bytesBefore,
+      bytesAfter,
+    }
+  }
+
+  /**
    * Read a maintenance flag from the settings table, tolerating databases
    * without that table (e.g. minimal test fixtures).
    */
-  private getMaintenanceFlag(): string | null {
+  private getMaintenanceFlag(key: string): string | null {
     try {
-      const row = this.db
-        .prepare(`SELECT value FROM settings WHERE key = ?`)
-        .get(SETTINGS_KEYS.MAINTENANCE_SNAPSHOT_STREAMS_MIGRATED) as { value: string } | undefined
+      const row = this.db.prepare(`SELECT value FROM settings WHERE key = ?`).get(key) as { value: string } | undefined
       return row?.value ?? null
     } catch {
       return null
@@ -1306,6 +1493,32 @@ export function initEventStore(db: Database.Database): EventStore {
         }
       } catch (error) {
         logger.warn('Snapshot stream de-dup failed at startup', {
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    })()
+  })
+
+  // Snapshot contextWindows repair, asynchronously (don't block startup).
+  // Repairs sessions whose contextWindows array grew unbounded before the
+  // re-seed fix (summaries stripped, duplicates collapsed, most-recent-N
+  // kept). Same safety model: rollback backup + settings-flag guarded.
+  setImmediate(() => {
+    void (async () => {
+      try {
+        const report = await eventStoreInstance!.migrateSnapshotContextWindows()
+        if (!report.skipped) {
+          logger.info('Snapshot contextWindows repair (auto)', {
+            rewritten: report.rewritten,
+            summariesDropped: report.summariesDropped,
+            duplicatesDropped: report.duplicatesDropped,
+            recordsCapped: report.recordsCapped,
+            bytesSaved: report.bytesBefore - report.bytesAfter,
+            backupPath: report.backupPath,
+          })
+        }
+      } catch (error) {
+        logger.warn('Snapshot contextWindows repair failed at startup', {
           error: error instanceof Error ? error.message : String(error),
         })
       }

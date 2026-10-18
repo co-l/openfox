@@ -178,18 +178,26 @@ function createEventStore() {
     Array<{ seq: number; sessionId: string; timestamp: number; type: string; data: unknown }>
   >()
 
+  const appendFn = vi.fn((sessionId: string, event: { type: string; data: unknown }) => {
+    const existing = eventsBySession.get(sessionId) ?? []
+    const stored = {
+      seq: existing.length + 1,
+      sessionId,
+      timestamp: Date.now(),
+      type: event.type,
+      data: event.data,
+    }
+    eventsBySession.set(sessionId, [...existing, stored])
+    return stored
+  })
+
   return {
-    append: vi.fn((sessionId: string, event: { type: string; data: unknown }) => {
-      const existing = eventsBySession.get(sessionId) ?? []
-      const stored = {
-        seq: existing.length + 1,
-        sessionId,
-        timestamp: Date.now(),
-        type: event.type,
-        data: event.data,
-      }
-      eventsBySession.set(sessionId, [...existing, stored])
-      return stored
+    append: appendFn,
+    // Delegates to the same append so assertions on append.mock.calls still
+    // see the turn.snapshot; returns the { event, deletedCount } shape.
+    appendSnapshotWithCleanup: vi.fn((sessionId: string, snapshot: unknown) => {
+      const event = appendFn(sessionId, { type: 'turn.snapshot', data: snapshot })
+      return { event, deletedCount: 0 }
     }),
     getEvents: vi.fn((sessionId: string) => eventsBySession.get(sessionId) ?? []),
     getAllEvents: vi.fn((sessionId: string) => eventsBySession.get(sessionId) ?? []),

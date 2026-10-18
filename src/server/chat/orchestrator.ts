@@ -206,11 +206,12 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
     // which calls runAgentTurn directly — not through runChatTurn.
     await runAgentTurn(options, turnMetrics, mode, append)
 
-    // Create end-of-turn snapshot
+    // Create end-of-turn snapshot. The append and the post-snapshot cleanup run
+    // in one transaction: a crash between the two used to leave stale snapshots
+    // in the raw store, which the next fold re-seeded (duplicating
+    // contextWindows on every turn until "Invalid string length").
     const snapshot = buildSnapshot(sessionManager, sessionId, turnMetrics.buildStats(statsIdentity, mode))
-    const snapshotEvent = eventStore.append(sessionId, { type: 'turn.snapshot', data: snapshot })
-
-    const deletedCount = eventStore.cleanupOldEvents(sessionId)
+    const { event: snapshotEvent, deletedCount } = eventStore.appendSnapshotWithCleanup(sessionId, snapshot)
     if (deletedCount > 0) {
       logger.debug('Cleaned up old events after snapshot', { sessionId, deletedCount, snapshotSeq: snapshotEvent.seq })
     }
@@ -265,7 +266,10 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
     if (error instanceof Error && error.message === 'Aborted') {
       try {
         const snapshot = buildSnapshot(sessionManager, sessionId, turnMetrics.buildStats(statsIdentity, mode))
-        eventStore.append(sessionId, { type: 'turn.snapshot', data: snapshot })
+        // Atomic append+cleanup: the abort path previously wrote a snapshot
+        // without cleaning up, leaving a stale snapshot that the next fold
+        // re-seeded (duplicating contextWindows on every turn).
+        eventStore.appendSnapshotWithCleanup(sessionId, snapshot)
       } catch {
         // Session may have been deleted during abort — skip cleanup
       }

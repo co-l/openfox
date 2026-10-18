@@ -170,21 +170,36 @@ export function combineEventsWithSnapshot(
  * the rollup reports the correct `compactionCount` while flagging that
  * `compactions[]` is intentionally empty (no fake records are made up).
  *
- * Returns `null` when the snapshot carries modern `contextWindows[]`
- * records (the rollup should derive `compactionCount` from those) or when
- * the count is zero / unknown.
+ * The same applies when the array is CAPPED (holds fewer records than
+ * `compactionCount`): only the most recent records are retained, so the
+ * missing historical compactions are surfaced as a count-only baseline.
+ *
+ * Returns `null` when the records fully cover the count (the rollup should
+ * derive `compactionCount` from those) or when the count is zero / unknown.
  */
 export function getLegacyCompactionBaseline(
   snapshot: import('./types.js').SessionSnapshot | undefined,
 ): { legacyCompactionCount: number; compactionsDetailsAvailable: boolean } | null {
   if (!snapshot) return null
   const cw = snapshot.contextWindows
-  const hasDetails = Array.isArray(cw) && cw.length > 0
-  if (hasDetails) return null
   const ctx = snapshot.contextState
   const count = ctx && typeof ctx.compactionCount === 'number' && ctx.compactionCount > 0 ? ctx.compactionCount : 0
-  if (count === 0) return null
-  return { legacyCompactionCount: count, compactionsDetailsAvailable: false }
+
+  // Missing or empty array: legacy count-only snapshot.
+  if (!Array.isArray(cw) || cw.length === 0) {
+    if (count === 0) return null
+    return { legacyCompactionCount: count, compactionsDetailsAvailable: false }
+  }
+
+  // Capped array: the snapshot keeps only the most recent records, so the
+  // records cover the compactions count only partially. The missing
+  // historical compactions are count-only (no fake records are made up).
+  if (count > cw.length) {
+    return { legacyCompactionCount: count - cw.length, compactionsDetailsAvailable: false }
+  }
+
+  // Full details: the rollup derives compactionCount from the records.
+  return null
 }
 
 function toSnapshotMessage(message: import('../../shared/types.js').Message): SnapshotMessage {
@@ -811,12 +826,9 @@ export function truncateSessionMessages(sessionId: string, messageIndex: number)
   // snapshot cache, and the cache is only invalidated by the append below.
   const truncatedSnapshot = { ...snapshot, messages: messages.slice(0, lastKept) }
 
-  eventStore.deleteEventsAfterSeq(sessionId, snapshotEvent.seq)
-
-  eventStore.append(sessionId, {
-    type: 'turn.snapshot',
-    data: truncatedSnapshot,
-  })
+  // Atomic: drop the events after the old snapshot, write the truncated
+  // snapshot and clean up the superseded stale snapshot in one transaction.
+  eventStore.replaceEventsAfterSeqWithSnapshot(sessionId, snapshotEvent.seq, truncatedSnapshot)
 
   const removed = messages.length - lastKept
   updateSessionMessageCount(sessionId, -removed)
