@@ -443,6 +443,7 @@ export {
   PathAccessDeniedError,
   requestPathAccess,
   cancelPathConfirmationsForSession,
+  getPendingPathConfirmationCallIds,
   autoApprovePendingConfirmationsForSession,
   providePathConfirmation,
   getConfirmationSessionId,
