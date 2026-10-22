@@ -71,6 +71,7 @@ interface ServerEntry {
   client: Client | undefined
   transport: Transport | null
   state: McpServerState
+  reconnecting?: Promise<void> | undefined
 }
 
 export class McpManager {
@@ -185,6 +186,7 @@ export class McpManager {
       entry.client = client
       entry.transport = transport
       entry.state = { name, config: entry.config, status: 'connected', tools, estimatedTokens: totalTokens }
+      client.onclose = () => this.handleConnectionLost(name, client)
 
       // Update cache with raw tool definitions (without enabled state)
       const cachedTools: CachedToolInfo[] = tools.map((t) => ({
@@ -225,14 +227,44 @@ export class McpManager {
   async disconnectServer(name: string): Promise<void> {
     const entry = this.servers.get(name)
     if (!entry) return
+    const client = entry.client
+    entry.client = undefined
+    entry.transport = null
     try {
-      await entry.client?.close()
+      await client?.close()
     } catch {
       /* ignore close errors */
     }
+    entry.state = { name, config: entry.config, status: 'disconnected', tools: [], estimatedTokens: 0 }
+  }
+
+  /**
+   * A stdio child that exits (or an ssh tunnel that drops) closes the transport without any call
+   * in flight. Without this the server kept reporting 'connected' while every call failed with
+   * "Not connected" until a manual reconnect.
+   */
+  private handleConnectionLost(name: string, client: Client): void {
+    const entry = this.servers.get(name)
+    if (!entry || entry.client !== client) return
     entry.client = undefined
     entry.transport = null
-    entry.state = { name, config: entry.config, status: 'disconnected', tools: [], estimatedTokens: 0 }
+    entry.state = {
+      ...entry.state,
+      status: 'error',
+      error: 'Connection closed unexpectedly; reconnecting on next tool call',
+    }
+    logger.warn('MCP server connection closed unexpectedly', { name })
+    this.onServersChanged?.()
+  }
+
+  private async ensureConnected(name: string, entry: ServerEntry): Promise<void> {
+    if (entry.client || entry.state.status !== 'error') return
+    if (!entry.reconnecting) {
+      entry.reconnecting = this.connectServer(name).finally(() => {
+        entry.reconnecting = undefined
+      })
+    }
+    await entry.reconnecting
   }
 
   async disconnectAll(): Promise<void> {
@@ -292,7 +324,11 @@ export class McpManager {
     const entry = this.servers.get(serverName)
     if (!entry) return { success: false, error: `MCP server '${serverName}' not found` }
 
-    if (!entry.client) return { success: false, error: `MCP server '${serverName}' is not connected` }
+    await this.ensureConnected(serverName, entry)
+    if (!entry.client) {
+      const reason = entry.state.error ? `: ${entry.state.error}` : ''
+      return { success: false, error: `MCP server '${serverName}' is not connected${reason}` }
+    }
     const timeoutSeconds = effectiveRequestTimeoutSeconds(entry.config.timeout, args)
     const timeoutMs = timeoutSeconds * 1000
     const controller = new AbortController()

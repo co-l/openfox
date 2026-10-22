@@ -412,6 +412,82 @@ describe('McpManager', () => {
     })
   })
 
+  describe('connection loss', () => {
+    function simulateConnectionClosed(): void {
+      const onclose = (mockClientInstance as { onclose?: () => void }).onclose
+      expect(onclose).toBeTypeOf('function')
+      onclose!()
+    }
+
+    it('should mark the server as errored, keeping its tools, when the connection closes unexpectedly', async () => {
+      const onServersChanged = vi.fn()
+      manager = new McpManager({ onServersChanged })
+      await manager.addServer('test', { transport: 'stdio', command: 'node' })
+      onServersChanged.mockClear()
+
+      simulateConnectionClosed()
+
+      const server = manager.getServer('test')!
+      expect(server.status).toBe('error')
+      expect(server.error).toContain('closed')
+      expect(server.tools).toHaveLength(2)
+      expect(manager.getToolDefinitions()).toHaveLength(2)
+      expect(onServersChanged).toHaveBeenCalled()
+    })
+
+    it('should reconnect on the next tool call after the connection closed', async () => {
+      await manager.addServer('test', { transport: 'stdio', command: 'node' })
+      simulateConnectionClosed()
+      mockClientInstance.connect.mockClear()
+
+      const result = await manager.callTool('test', 'get_weather', { location: 'Paris' })
+
+      expect(mockClientInstance.connect).toHaveBeenCalledTimes(1)
+      expect(result.success).toBe(true)
+      expect(result.output).toBe('Sunny, 72°F')
+      expect(manager.getServer('test')!.status).toBe('connected')
+    })
+
+    it('should report the reconnect failure when the server cannot be reached again', async () => {
+      await manager.addServer('test', { transport: 'stdio', command: 'node' })
+      simulateConnectionClosed()
+      mockClientInstance.connect.mockRejectedValueOnce(new Error('spawn failed'))
+
+      const result = await manager.callTool('test', 'get_weather', {})
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('spawn failed')
+      expect(mockClientInstance.callTool).not.toHaveBeenCalled()
+    })
+
+    it('should share a single reconnect between concurrent tool calls', async () => {
+      await manager.addServer('test', { transport: 'stdio', command: 'node' })
+      simulateConnectionClosed()
+      mockClientInstance.connect.mockClear()
+
+      const results = await Promise.all([
+        manager.callTool('test', 'get_weather', {}),
+        manager.callTool('test', 'get_weather', {}),
+      ])
+
+      expect(mockClientInstance.connect).toHaveBeenCalledTimes(1)
+      expect(results.every((r) => r.success)).toBe(true)
+    })
+
+    it('should not flag an intentional disconnect as a lost connection', async () => {
+      await manager.addServer('test', { transport: 'stdio', command: 'node' })
+      mockClientInstance.close.mockImplementationOnce(async () => {
+        simulateConnectionClosed()
+      })
+
+      await manager.disconnectServer('test')
+
+      const server = manager.getServer('test')!
+      expect(server.status).toBe('disconnected')
+      expect(server.error).toBeUndefined()
+    })
+  })
+
   describe('setToolEnabled', () => {
     it('should toggle tool enabled state', async () => {
       await manager.addServer('test', { transport: 'stdio', command: 'node' })
