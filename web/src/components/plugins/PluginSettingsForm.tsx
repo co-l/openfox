@@ -4,6 +4,7 @@ import { useResource } from '../../hooks/useResource'
 import { useT } from '../../hooks/useT'
 import { useLocalizedString } from '../../hooks/useLocalizedString'
 import { pluginSettingsResource, providersResource } from '../../lib/resources'
+import { useProviders } from '../../hooks/useProviders'
 import { invokePluginRpc, savePluginSettings } from '../../lib/plugin-actions'
 import { Button } from '../shared/Button'
 import { Toggle } from '../shared/Toggle'
@@ -346,6 +347,7 @@ export function PluginSettingsForm({
 }) {
   const t = useT()
   const localize = useLocalizedString()
+  const { providers } = useProviders()
   const [scope, setScope] = useState<PluginSettingScope>(initialScope)
   const { data } = useResource(pluginSettingsResource, pluginId, scope, projectId)
   const activeSchema = data?.schema ?? initialSchema
@@ -606,11 +608,32 @@ export function PluginSettingsForm({
                       onChange={(event) => setValues((state) => ({ ...state, [field.key]: event.target.value }))}
                       className={FIELD_CLASS}
                     >
-                      {(field.options ?? []).map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {localize(option.label)}
-                        </option>
-                      ))}
+                      {(() => {
+                        const options =
+                          field.optionsFrom === 'providers'
+                            ? providers.map((provider) => ({
+                                value: provider.id,
+                                label: { en: provider.name, fr: provider.name },
+                              }))
+                            : field.optionsFrom === 'models'
+                              ? Array.from(
+                                  new Set(
+                                    providers.flatMap((provider) => (provider.models ?? []).map((model) => model.id)),
+                                  ),
+                                ).map((modelId) => ({ value: modelId, label: { en: modelId, fr: modelId } }))
+                              : (field.options ?? [])
+                        // Keep a stale stored value visible instead of silently
+                        // falling back to the first option.
+                        const current = String(value ?? '')
+                        if (current && !options.some((option) => option.value === current)) {
+                          options.push({ value: current, label: { en: current, fr: current } })
+                        }
+                        return options.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {localize(option.label)}
+                          </option>
+                        ))
+                      })()}
                     </select>,
                   )
                 ) : field.type === 'list' ? (

@@ -362,6 +362,12 @@ export interface PluginSettingsField {
   description?: LocalizedString
   default?: PluginSettingValue
   options?: PluginSettingsOption[]
+  /**
+   * Populate `options` dynamically in the settings UI instead of using the
+   * static `options` list. Currently supported: `'providers'` (the OpenFox
+   * Provider Manager list — non-sensitive id/name pairs).
+   */
+  optionsFrom?: 'providers'
   required?: boolean
   secret?: boolean
   placeholder?: string
@@ -514,6 +520,7 @@ export interface PluginContributionSummary {
   uiOverrides: number
   messageTransforms: number
   dangerLevels: number
+  approvalReviewers: number
   vcsProviders: number
 }
 
@@ -583,5 +590,6 @@ export const EMPTY_PLUGIN_CONTRIBUTIONS: PluginContributionSummary = {
   uiOverrides: 0,
   messageTransforms: 0,
   dangerLevels: 0,
+  approvalReviewers: 0,
   vcsProviders: 0,
 }

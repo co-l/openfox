@@ -113,7 +113,7 @@ export const runCommandTool = createTool<RunCommandArgs>(
         },
         { cmd: args.command, mutation: mutationMatch },
       )
-      const approved = await requestUserConfirmation(context, 'command', desc)
+      const approved = await requestUserConfirmation(context, 'command', desc, args.command)
       if (!approved) {
         return helpers.error(
           // LLM-facing (rendered into the tool content) — English by design.

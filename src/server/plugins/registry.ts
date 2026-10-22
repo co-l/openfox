@@ -7,6 +7,7 @@ import type {
   ProviderTransportAdapter,
 } from '../../provider/index.js'
 import type {
+  PluginApprovalReviewer,
   PluginCommand,
   PluginContext,
   PluginDangerLevel,
@@ -58,6 +59,7 @@ type Kind =
   | 'asset'
   | 'messageTransform'
   | 'dangerLevel'
+  | 'approvalReviewer'
   | 'vcsProvider'
 
 interface Owned<T> {
@@ -201,6 +203,10 @@ export class PluginRegistry implements ProviderPluginRegistry, PluginRegistryCon
     this.register('dangerLevel', dangerLevel.id, dangerLevel)
   }
 
+  registerApprovalReviewer(reviewer: PluginApprovalReviewer): void {
+    this.register('approvalReviewer', reviewer.id, reviewer)
+  }
+
   registerVcsProvider(provider: PluginVcsProvider): void {
     this.register('vcsProvider', provider.id, provider)
   }
@@ -254,6 +260,13 @@ export class PluginRegistry implements ProviderPluginRegistry, PluginRegistryCon
     return this.listOwned<PluginMessageTransform>('messageTransform').map((entry) => ({
       pluginId: entry.pluginId,
       transform: entry.value,
+    }))
+  }
+
+  getApprovalReviewers(): { pluginId: string; reviewer: PluginApprovalReviewer }[] {
+    return this.listOwned<PluginApprovalReviewer>('approvalReviewer').map((entry) => ({
+      pluginId: entry.pluginId,
+      reviewer: entry.value,
     }))
   }
 
@@ -362,6 +375,7 @@ export class PluginRegistry implements ProviderPluginRegistry, PluginRegistryCon
       uiOverrides: count('uiOverride'),
       messageTransforms: count('messageTransform'),
       dangerLevels: count('dangerLevel'),
+      approvalReviewers: count('approvalReviewer'),
       vcsProviders: count('vcsProvider'),
     }
   }

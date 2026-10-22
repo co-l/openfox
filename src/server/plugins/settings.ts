@@ -134,12 +134,16 @@ export function readPluginSettings(
   schema: PluginSettingsSchema,
   scope: PluginSettingScope = 'global',
   projectId?: string,
+  options?: { onlyStored?: boolean },
 ): PluginSettingsValues {
   const stored = getAllSettings()
   const values: PluginSettingsValues = {}
   for (const field of schema.fields) {
     if (field.type === 'button' || field.type === 'status') continue
     const raw = fieldStorageRow(stored, pluginId, field, scope, projectId)
+    // onlyStored: return only explicitly stored values so a caller can merge
+    // them over another scope without schema defaults clobbering stored values.
+    if (options?.onlyStored && raw === undefined) continue
     const value = coerce(field, raw)
     if (value !== undefined) values[field.key] = value
   }
@@ -175,7 +179,13 @@ function validateFieldValue(field: PluginSettingsField, value: unknown, path: st
   } else if (field.type === 'number') {
     if (typeof value !== 'number' || !Number.isFinite(value)) errors.push(`Setting '${path}' must be a number`)
   } else if (field.type === 'select') {
-    if (typeof value !== 'string' || !(field.options ?? []).some((option) => option.value === value)) {
+    // Dynamically populated selects (e.g. optionsFrom: 'providers') can't be
+    // validated against a static option list — entries change at runtime and a
+    // stale value must not block saving.
+    if (
+      typeof value !== 'string' ||
+      (!field.optionsFrom && !(field.options ?? []).some((option) => option.value === value))
+    ) {
       errors.push(`Setting '${path}' must be one of the declared options`)
     }
   } else if (field.type === 'list') {

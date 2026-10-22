@@ -256,9 +256,18 @@ export interface PluginContext {
   readonly runtime: PluginRuntime
   readonly logger: PluginLogger
   readonly storage: PluginStorage
-  settings(scope?: 'global' | 'project', projectId?: string): Record<string, PluginSettingValue>
+  settings(
+    scope?: 'global' | 'project',
+    projectId?: string,
+    options?: { onlyStored?: boolean },
+  ): Record<string, PluginSettingValue>
   notify(request: PluginNotificationRequest): void
   publish(panelId: string | undefined, key: string, value: unknown): void
+  /**
+   * Narrow, credential-safe provider access. Present only when the host
+   * provides it; plugins must treat absence as "provider features unavailable".
+   */
+  readonly providerAccess?: PluginProviderAccess
 }
 
 export interface PluginRegistry {
@@ -289,6 +298,7 @@ export interface PluginRegistry {
   registerAsset(relativePath: string): void
   registerMessageTransform(transform: PluginMessageTransform): void
   registerDangerLevel(dangerLevel: PluginDangerLevel): void
+  registerApprovalReviewer(reviewer: PluginApprovalReviewer): void
   registerVcsProvider(provider: PluginVcsProvider): void
 }
 
@@ -309,6 +319,110 @@ export interface PluginDangerLevel {
   description?: LocalizedString
   badgeTone?: PluginBadgeTone
   evaluatePathAccess?(context: PluginPathAccessContext): Promise<PluginPathAccessDecision> | PluginPathAccessDecision
+}
+
+/**
+ * Context handed to a plugin approval reviewer before a tool operation that
+ * would otherwise require a manual confirmation is executed.
+ *
+ * `kind` distinguishes the two native confirmation entry points:
+ * - `path`: path/command confirmation (outside workdir, sensitive files, dangerous command patterns)
+ * - `command`: non-path confirmation (git mutations, workspace switch/delete)
+ *
+ * The reviewer sees the actual operation. `command`/`description` are the
+ * operation itself, not an agent-supplied justification.
+ */
+export interface PluginApprovalContext {
+  kind: 'path' | 'command'
+  sessionId: string
+  projectId?: string | undefined
+  workdir: string
+  tool: string
+  toolCallId?: string | undefined
+  /** Paths requiring confirmation (kind === 'path') */
+  paths?: string[]
+  /** Raw command line being executed, when available */
+  command?: string | undefined
+  /** Human-readable operation description (kind === 'command') */
+  description?: string | undefined
+  /** Native confirmation reason for kind === 'path' */
+  reason?: 'outside_workdir' | 'sensitive_file' | 'both' | 'dangerous_command' | 'git_no_verify'
+  /** Session danger level at evaluation time */
+  dangerLevel?: string | undefined
+  /** Tool cancellation signal — reviewers should abort in-flight requests on abort */
+  signal?: AbortSignal | undefined
+}
+
+/**
+ * - `allow`: execute now WITHOUT confirmation. One-time only — never persisted
+ *   to the session allowlist and never remembered for future operations.
+ * - `ask`: fall through to the native OpenFox confirmation UI.
+ * - `deny`: block execution; `reason` is surfaced to the agent.
+ */
+export type PluginApprovalDecision =
+  { action: 'allow'; reason?: string } | { action: 'ask'; reason?: string } | { action: 'deny'; reason: string }
+
+/**
+ * Reviews eligible confirmation requests before tool execution.
+ *
+ * Registered reviewers are consulted only AFTER OpenFox's mandatory security
+ * rules (git --no-verify, dangerous command patterns, sensitive paths,
+ * workdir confinement, sub-agent/night-mode fail-closed behavior) have been
+ * evaluated. A reviewer can therefore only tighten or auto-approve what would
+ * otherwise become a manual confirmation — it can never downgrade a mandatory
+ * rule.
+ *
+ * If `evaluate` throws or times out, OpenFox falls back to the native
+ * confirmation flow (fail-closed: absence or failure of a reviewer never
+ * weakens existing behavior).
+ */
+export interface PluginApprovalReviewer {
+  id: string
+  evaluate(context: PluginApprovalContext): Promise<PluginApprovalDecision> | PluginApprovalDecision
+}
+
+/** Non-sensitive provider metadata exposed to plugins. Never contains credentials. */
+export interface PluginProviderInfo {
+  id: string
+  name: string
+  backend: string
+  url: string
+  isActive: boolean
+  status?: 'connected' | 'disconnected' | 'unknown'
+  isLocal?: boolean
+  hasCredential: boolean
+  authAdapter?: string
+  models: string[]
+}
+
+/**
+ * Narrow, credential-safe provider access for plugins.
+ *
+ * All requests are performed server-side inside OpenFox. Credentials are
+ * resolved by the host and only attached to an endpoint whose origin matches
+ * an explicitly verified mapping — this is not a generic authenticated HTTP
+ * proxy and can never be used to send provider credentials to arbitrary URLs.
+ */
+export interface PluginProviderAccess {
+  listProviders(): PluginProviderInfo[]
+  getProvider(providerId: string): PluginProviderInfo | undefined
+  /**
+   * Perform an authenticated JSON POST against a verified decision endpoint of
+   * an existing provider. Resolves to the parsed response body only; credentials
+   * never appear in the result or in thrown errors.
+   *
+   * @param providerId stable provider id from the Provider Manager
+   * @param endpointKey provider-specific endpoint key (e.g. 'decisions', 'systemone')
+   * @param body JSON-serializable request body
+   * @param options.timeoutMs strict request timeout (default 10000, max 60000)
+   * @param options.signal tool/session cancellation signal — aborts the request
+   */
+  requestJson(
+    providerId: string,
+    endpointKey: string,
+    body: unknown,
+    options?: { timeoutMs?: number; signal?: AbortSignal },
+  ): Promise<unknown>
 }
 
 export interface PluginMessageTransformContext {

@@ -143,6 +143,46 @@ describe('plugin settings list fields', () => {
   })
 })
 
+describe('select fields with dynamic options', () => {
+  it('accepts any string value when optionsFrom is declared', () => {
+    const dynamic: PluginSettingsSchema = {
+      fields: [
+        {
+          key: 'providerId',
+          type: 'select',
+          label: { en: 'Provider', fr: 'Fournisseur' },
+          optionsFrom: 'providers',
+          options: [],
+        },
+      ],
+    }
+    expect(validatePluginSettings(dynamic, { providerId: 'some-runtime-provider' })).toEqual([])
+    expect(validatePluginSettings(dynamic, { providerId: 42 })).toEqual([
+      "Setting 'providerId' must be one of the declared options",
+    ])
+  })
+
+  it('still validates static select options when optionsFrom is absent', () => {
+    const staticSelect: PluginSettingsSchema = {
+      fields: [
+        {
+          key: 'mode',
+          type: 'select',
+          label: { en: 'Mode', fr: 'Mode' },
+          options: [
+            { value: 'shadow', label: { en: 'Shadow', fr: 'Shadow' } },
+            { value: 'enforce', label: { en: 'Enforce', fr: 'Enforce' } },
+          ],
+        },
+      ],
+    }
+    expect(validatePluginSettings(staticSelect, { mode: 'shadow' })).toEqual([])
+    expect(validatePluginSettings(staticSelect, { mode: 'other' })).toEqual([
+      "Setting 'mode' must be one of the declared options",
+    ])
+  })
+})
+
 const storageSchema: PluginSettingsSchema = {
   fields: [
     { key: 'endpoint', type: 'text', label: { en: 'Endpoint', fr: 'Endpoint' }, default: 'https://api.test' },
@@ -207,5 +247,70 @@ describe('plugin settings backed by the plugin storage', () => {
 
     writePluginSettings('demo', storageSchema, { token: '' })
     expect(readPluginSettings('demo', storageSchema)['token']).toBe('ghp_legacy')
+  })
+})
+
+const scopedSchema: PluginSettingsSchema = {
+  fields: [
+    { key: 'model', type: 'text', label: { en: 'Model', fr: 'Modèle' }, default: 'default-model' },
+    { key: 'enabled', type: 'boolean', label: { en: 'Enabled', fr: 'Activé' }, default: false },
+  ],
+}
+
+describe('project-scoped reads with onlyStored', () => {
+  beforeEach(() => {
+    closeDatabase()
+    const config = loadConfig()
+    config.database.path = ':memory:'
+    initDatabase(config)
+  })
+
+  afterEach(() => {
+    closeDatabase()
+  })
+
+  it('returns schema defaults for unset project keys by default (display behavior unchanged)', () => {
+    const values = readPluginSettings('demo', scopedSchema, 'project', 'proj-1')
+    expect(values['model']).toBe('default-model')
+    expect(values['enabled']).toBe(false)
+  })
+
+  it('onlyStored returns only explicitly stored project values', () => {
+    setSetting(pluginSettingKey('demo', 'project', 'proj-1', 'model'), JSON.stringify('project-model'))
+
+    const all = readPluginSettings('demo', scopedSchema, 'project', 'proj-1')
+    expect(all).toMatchObject({ model: 'project-model', enabled: false })
+
+    const onlyStored = readPluginSettings('demo', scopedSchema, 'project', 'proj-1', { onlyStored: true })
+    expect(onlyStored).toEqual({ model: 'project-model' })
+    expect('enabled' in onlyStored).toBe(false)
+  })
+
+  it('a stored project override wins over the stored global value when merged', () => {
+    setSetting(pluginSettingKey('demo', 'global', undefined, 'model'), JSON.stringify('global-model'))
+    setSetting(pluginSettingKey('demo', 'global', undefined, 'enabled'), JSON.stringify(true))
+    setSetting(pluginSettingKey('demo', 'project', 'proj-1', 'model'), JSON.stringify('project-model'))
+
+    const merged = {
+      ...readPluginSettings('demo', scopedSchema, 'global'),
+      ...readPluginSettings('demo', scopedSchema, 'project', 'proj-1', { onlyStored: true }),
+    }
+    expect(merged['model']).toBe('project-model')
+    expect(merged['enabled']).toBe(true)
+  })
+
+  it('an unset project key does not clobber the stored global with the schema default', () => {
+    setSetting(pluginSettingKey('demo', 'global', undefined, 'model'), JSON.stringify('global-model'))
+
+    const projectOnlyStored = readPluginSettings('demo', scopedSchema, 'project', 'proj-1', { onlyStored: true })
+    const merged = { ...readPluginSettings('demo', scopedSchema, 'global'), ...projectOnlyStored }
+    expect(merged['model']).toBe('global-model')
+  })
+
+  it('a project scope without a projectId stays global', () => {
+    setSetting(pluginSettingKey('demo', 'global', undefined, 'model'), JSON.stringify('global-model'))
+    expect(readPluginSettings('demo', scopedSchema, 'project', undefined, { onlyStored: true })).toEqual({
+      model: 'global-model',
+    })
   })
 })

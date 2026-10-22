@@ -21,7 +21,7 @@ import { detectBackendFromUrl } from './llm/backend.js'
 import { buildModelsUrl } from './llm/url-utils.js'
 
 import { createMockLLMClient } from './llm/mock.js'
-import { createProviderManager, parseDefaultModelSelection } from './provider-manager.js'
+import { createProviderManager, parseDefaultModelSelection, type ProviderManager } from './provider-manager.js'
 import { cascadeProviderDelete } from './providers/adapters/provider-deletion.js'
 import { isReasoningEffortValidForModel, collapseModeFamilies } from '../shared/reasoning-effort.js'
 import { createToolRegistry, setMcpTools, getBuiltInToolNames } from './tools/index.js'
@@ -66,6 +66,7 @@ import { getGlobalConfigDir } from '../cli/paths.js'
 import { ProviderRegistry } from './providers/plugins/index.js'
 import { PluginHost } from './plugins/host.js'
 import { createPluginRoutes } from './routes/plugins.js'
+import { createPluginProviderAccess } from './plugins/provider-access.js'
 import { createNotificationRoutes } from './routes/notifications.js'
 import { pluginAssetToken } from './plugins/asset-auth.js'
 import { registerSessionFavoriteRoute } from './routes/session-favorite.js'
@@ -141,11 +142,19 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     mode: config.mode === 'development' ? 'development' : 'production',
     configDirectory: configDir,
   })
+  // Provider Manager is created after plugins load; expose a lazy, narrow
+  // provider access to plugins that resolves against it once available.
+  const providerHolder: { current?: ProviderManager } = {}
+  const providerAccess = createPluginProviderAccess({
+    getProviders: () => providerHolder.current?.getProviders() ?? [],
+    getAuth: (adapterId) => providerAdapters.getAuth(adapterId),
+  })
   const pluginHost = new PluginHost({
     configDirectory: configDir,
     mode: config.mode === 'development' ? 'development' : 'production',
     logger,
     registry: providerAdapters,
+    providerAccess,
   })
   const pluginDiagnostics = await pluginHost.start()
   for (const diagnostic of pluginDiagnostics) {
@@ -158,6 +167,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   // Create Provider Manager (handles LLM client lifecycle)
   const providerManager = createProviderManager(config, { adapters: providerAdapters })
+  providerHolder.current = providerManager
 
   // Repair sessions still pinned to a provider that is gone (deleted before the delete
   // cascade existed, or dropped from a hand-edited config).

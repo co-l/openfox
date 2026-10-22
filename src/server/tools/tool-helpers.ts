@@ -8,6 +8,8 @@ import { requestPathAccess, PathAccessDeniedError, registerPathConfirmation } fr
 import { AskUserInterrupt } from './ask.js'
 import { createChatPathConfirmationMessage } from '../ws/protocol.js'
 import { getEventStore } from '../events/index.js'
+import { evaluatePluginApproval } from '../plugins/approval-reviewers.js'
+import { logger } from '../utils/logger.js'
 
 /**
  * Counter for generating unique confirmation callIds within a single tool invocation.
@@ -74,16 +76,31 @@ export type ToolHandler<TArgs> = (args: TArgs, context: ToolContext, helpers: To
  * If context provides a signal (e.g. user cancel), the returned signal
  * triggers on whichever fires first.
  */
-export async function requestUserConfirmation(context: ToolContext, toolLabel: string, desc: string): Promise<boolean> {
+export async function requestUserConfirmation(
+  context: ToolContext,
+  toolLabel: string,
+  desc: string,
+  command?: string,
+): Promise<boolean> {
+  const emitReason = (code: string): void =>
+    logger.info('approval.mandatory_rule_resolved', { reasonCode: code, sessionId: context.sessionId, tool: toolLabel })
+
   // In dangerous mode, auto-approve all shell guard confirmations
-  if (context.dangerLevel === 'dangerous') return Promise.resolve(true)
+  if (context.dangerLevel === 'dangerous') {
+    emitReason('dangerous_mode')
+    return Promise.resolve(true)
+  }
   // Night mode (normal danger level): no one is home — fail closed, same as sub-agents
-  if (context.nightMode) return Promise.resolve(false)
+  if (context.nightMode) {
+    emitReason('night_mode')
+    return Promise.resolve(false)
+  }
   // Skip workspace/git action confirmations if user opted out via settings
   if (toolLabel === 'workspace' || toolLabel === 'command') {
     try {
       const { getSetting, SETTINGS_KEYS } = await import('../db/settings.js')
       if (getSetting(SETTINGS_KEYS.CONFIRM_ON_WORKSPACE_ACTIONS) !== 'true') {
+        emitReason('settings_opt_out')
         return Promise.resolve(true)
       }
     } catch {
@@ -92,8 +109,32 @@ export async function requestUserConfirmation(context: ToolContext, toolLabel: s
   }
   // Sub-agent shortcut: skip confirmation dialogs since they don't render in the sub-agent bubble.
   // Already handled by dangerous check above; in normal mode, deny (fail closed).
-  if (context.isSubAgent) return Promise.resolve(false)
-  if (typeof context.onEvent !== 'function') return Promise.resolve(false)
+  if (context.isSubAgent) {
+    emitReason('sub_agent')
+    return Promise.resolve(false)
+  }
+  if (typeof context.onEvent !== 'function') {
+    emitReason('no_event_channel')
+    return Promise.resolve(false)
+  }
+  // Plugin approval reviewer: consulted only after every mandatory rule above.
+  // `allow` executes without a dialog (one-time, never persisted anywhere);
+  // `ask` falls through to the native confirmation UI below.
+  const reviewerDecision = await evaluatePluginApproval({
+    kind: 'command',
+    sessionId: context.sessionId,
+    projectId: context.projectId,
+    workdir: context.workdir,
+    tool: toolLabel,
+    toolCallId: context.toolCallId,
+    command,
+    description: desc,
+    reason: 'dangerous_command',
+    dangerLevel: context.dangerLevel,
+    signal: context.signal,
+  })
+  if (reviewerDecision?.action === 'allow') return Promise.resolve(true)
+  if (reviewerDecision?.action === 'deny') return Promise.resolve(false)
   // Generate a unique callId by appending a sequence counter to the toolCallId.
   // This ensures each confirmation has a unique ID while preserving the association
   // with the parent tool call for frontend matching (via prefix matching).
@@ -241,6 +282,7 @@ export function createTool<TArgs>(name: string, definition: LLMToolDefinition, h
               context.isSubAgent,
               projectId,
               context.nightMode,
+              context.signal,
             )
           }
         },

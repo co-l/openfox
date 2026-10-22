@@ -38,16 +38,24 @@ vi.mock('./path-security.js', async (importOriginal) => {
 })
 
 vi.mock('../db/settings.js', () => ({
-  getSetting: (key: string) => {
-    if (key === 'tools.confirmOnWorkspaceActions') return 'true'
-    if (key === 'display.locale') return 'fr'
-    return null
-  },
+  getSetting: vi.fn(),
   SETTINGS_KEYS: {
     CONFIRM_ON_WORKSPACE_ACTIONS: 'tools.confirmOnWorkspaceActions',
     DISPLAY_LOCALE: 'display.locale',
   },
 }))
+
+const { approvalSpy, loggerInfo } = vi.hoisted(() => ({ approvalSpy: vi.fn(), loggerInfo: vi.fn() }))
+
+vi.mock('../plugins/approval-reviewers.js', () => ({
+  evaluatePluginApproval: approvalSpy,
+}))
+
+vi.mock('../utils/logger.js', () => ({
+  logger: { debug: vi.fn(), info: loggerInfo, warn: vi.fn(), error: vi.fn() },
+}))
+
+import { getSetting } from '../db/settings.js'
 
 describe('createTool', () => {
   // Mock sessionManager for test context
@@ -193,6 +201,14 @@ describe('requestUserConfirmation', () => {
 
   beforeEach(() => {
     capturedCallIds.length = 0
+    approvalSpy.mockReset()
+    approvalSpy.mockResolvedValue(undefined)
+    loggerInfo.mockReset()
+    vi.mocked(getSetting).mockImplementation((key: string) => {
+      if (key === 'tools.confirmOnWorkspaceActions') return 'true'
+      if (key === 'display.locale') return 'fr'
+      return null
+    })
   })
 
   it('generates unique callId for each confirmation even when toolCallId is reused [KNOWN BUG]', async () => {
@@ -243,6 +259,81 @@ describe('requestUserConfirmation', () => {
     expect(await requestUserConfirmation(normalContext, 'command', 'night cmd')).toBe(false)
     expect(mockOnEvent).not.toHaveBeenCalled()
     expect(capturedCallIds).toHaveLength(0)
+  })
+
+  it('passes the raw command (not only the localized description) into the reviewer context', async () => {
+    const mockOnEvent = vi.fn()
+    const context: ToolContext = {
+      sessionManager: mockSessionManager,
+      workdir: '/test/workdir',
+      sessionId: 'test-session',
+      toolCallId: 'raw-cmd',
+      onEvent: mockOnEvent,
+    }
+
+    await requestUserConfirmation(context, 'command', 'Command modifies Git state.', 'git push --force origin main')
+
+    expect(approvalSpy).toHaveBeenCalledTimes(1)
+    const reviewerContext = approvalSpy.mock.calls[0]![0] as Record<string, unknown>
+    expect(reviewerContext['kind']).toBe('command')
+    expect(reviewerContext['command']).toBe('git push --force origin main')
+    expect(reviewerContext['description']).toBe('Command modifies Git state.')
+  })
+
+  it('emits a stable reason code and skips the reviewer when a mandatory rule resolves first', async () => {
+    const mockOnEvent = vi.fn()
+
+    const reasonCodeOf = (): string[] =>
+      (loggerInfo.mock.calls as Array<[string, Record<string, unknown>]>)
+        .filter(([message]) => message === 'approval.mandatory_rule_resolved')
+        .map(([, c]) => c['reasonCode'] as string)
+
+    const nightContext: ToolContext = {
+      ...({} as ToolContext),
+      sessionManager: mockSessionManager,
+      workdir: '/test/workdir',
+      sessionId: 's-night',
+      onEvent: mockOnEvent,
+      nightMode: true,
+    }
+    expect(await requestUserConfirmation(nightContext, 'command', 'night cmd')).toBe(false)
+    expect(reasonCodeOf()).toContain('night_mode')
+    expect(approvalSpy).not.toHaveBeenCalled()
+
+    const subAgentContext: ToolContext = {
+      ...({} as ToolContext),
+      sessionManager: mockSessionManager,
+      workdir: '/test/workdir',
+      sessionId: 's-sub',
+      onEvent: mockOnEvent,
+      isSubAgent: true,
+    }
+    expect(await requestUserConfirmation(subAgentContext, 'command', 'sub cmd')).toBe(false)
+    expect(reasonCodeOf()).toContain('sub_agent')
+
+    const dangerousContext: ToolContext = {
+      ...({} as ToolContext),
+      sessionManager: mockSessionManager,
+      workdir: '/test/workdir',
+      sessionId: 's-dangerous',
+      onEvent: mockOnEvent,
+      dangerLevel: 'dangerous',
+    }
+    expect(await requestUserConfirmation(dangerousContext, 'command', 'dangerous cmd')).toBe(true)
+    expect(reasonCodeOf()).toContain('dangerous_mode')
+    expect(approvalSpy).not.toHaveBeenCalled()
+
+    vi.mocked(getSetting).mockImplementation((key: string) => (key === 'display.locale' ? 'fr' : null))
+    const optOutContext: ToolContext = {
+      ...({} as ToolContext),
+      sessionManager: mockSessionManager,
+      workdir: '/test/workdir',
+      sessionId: 's-optout',
+      onEvent: mockOnEvent,
+    }
+    expect(await requestUserConfirmation(optOutContext, 'command', 'opt-out cmd')).toBe(true)
+    expect(reasonCodeOf()).toContain('settings_opt_out')
+    expect(approvalSpy).not.toHaveBeenCalled()
   })
 })
 

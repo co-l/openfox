@@ -6,6 +6,8 @@ import { createChatPathConfirmationMessage } from '../ws/protocol.js'
 import { getEventStore } from '../events/index.js'
 import { getPlatformShell } from '../utils/platform.js'
 import { evaluatePluginPathAccess } from '../plugins/danger-levels.js'
+import { evaluatePluginApproval } from '../plugins/approval-reviewers.js'
+import { logger } from '../utils/logger.js'
 
 // ===========================================================================
 // Constants
@@ -1375,11 +1377,13 @@ export async function requestPathAccess(
   isSubAgent?: boolean,
   projectId?: string,
   nightMode?: boolean,
+  signal?: AbortSignal,
 ): Promise<void> {
   // Night mode: no one is home to confirm. Auto-resolve from the danger level
   // — dangerous approves everything (and lifts the git --no-verify always-ask
   // rule), normal fails closed. Same policy as the sub-agent branch.
   if (nightMode) {
+    logger.info('approval.mandatory_rule_resolved', { reasonCode: 'night_mode', sessionId, tool })
     if (dangerLevel === 'dangerous') {
       await autoResolvePathAccess(paths, workdir, sessionId, tool, dangerLevel, projectId, command)
       return
@@ -1406,6 +1410,7 @@ export async function requestPathAccess(
   // properly in the small sub-agent window. Fail closed in normal mode;
   // auto-approve everything in dangerous mode.
   if (isSubAgent) {
+    logger.info('approval.mandatory_rule_resolved', { reasonCode: 'sub_agent', sessionId, tool })
     await autoResolvePathAccess(paths, workdir, sessionId, tool, dangerLevel, projectId, command)
     return
   }
@@ -1429,6 +1434,7 @@ export async function requestPathAccess(
   // Check for git --no-verify - ALWAYS requires confirmation, even in dangerous mode
   // This ensures the user is aware the agent is bypassing hooks/pre-commit checks
   if (command && extractGitNoVerify(command)) {
+    logger.info('approval.mandatory_rule_resolved', { reasonCode: 'git_no_verify', sessionId, tool })
     emitPendingEvent([workdir], 'git_no_verify')
     const confirmationPromise = registerPathConfirmation(callId, [workdir], sessionId, tool, workdir, 'git_no_verify')
     onEvent(createChatPathConfirmationMessage(callId, tool, ['git --no-verify detected'], workdir, 'git_no_verify'))
@@ -1447,6 +1453,7 @@ export async function requestPathAccess(
   if (dangerLevel !== 'dangerous' && command) {
     const dangerousPatterns = extractDangerousPatterns(command)
     if (dangerousPatterns.length > 0) {
+      logger.info('approval.mandatory_rule_resolved', { reasonCode: 'dangerous_command', sessionId, tool })
       emitPendingEvent([workdir], 'dangerous_command')
       const confirmationPromise = registerPathConfirmation(
         callId,
@@ -1511,6 +1518,31 @@ export async function requestPathAccess(
     if (decision?.action === 'deny') {
       throw new PathAccessDeniedError(allPathsNeedingConfirmation, tool, reason, decision.message)
     }
+  }
+
+  // Plugin approval reviewer: consulted only after every mandatory rule above
+  // (night mode, sub-agents, git --no-verify, dangerous command patterns,
+  // workdir/sensitive-path checks) has passed. `allow` is ONE-TIME — the paths
+  // are deliberately NOT added to the session allowlist, so the next operation
+  // is reviewed again. `ask` falls through to the native confirmation UI.
+  const reviewerDecision = await evaluatePluginApproval({
+    kind: 'path',
+    sessionId,
+    projectId,
+    workdir,
+    tool,
+    toolCallId: callId,
+    paths: allPathsNeedingConfirmation,
+    command,
+    reason,
+    dangerLevel,
+    signal,
+  })
+  if (reviewerDecision?.action === 'allow') {
+    return
+  }
+  if (reviewerDecision?.action === 'deny') {
+    throw new PathAccessDeniedError(allPathsNeedingConfirmation, tool, reason, reviewerDecision.reason)
   }
 
   // Emit pending event for persistence

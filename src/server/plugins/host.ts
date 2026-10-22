@@ -28,6 +28,7 @@ import type {
   PluginHookEvent,
   PluginManifest,
   PluginNotificationRequest,
+  PluginProviderAccess,
   PluginTool,
   PluginToolContext,
 } from '../../plugin/index.js'
@@ -51,6 +52,7 @@ import {
 import { setPluginModelMetadataProviders } from './model-metadata.js'
 import { setPluginMessageTransforms } from './message-transforms.js'
 import { setPluginDangerLevels } from './danger-levels.js'
+import { setPluginApprovalReviewers } from './approval-reviewers.js'
 import { setPluginVcsProviders } from './vcs-providers.js'
 import { setPluginHookEmitter } from './hook-emitter.js'
 import { PluginUpdateChecker, type PluginUpdateInfo } from './update-checker.js'
@@ -65,6 +67,12 @@ export interface PluginHostOptions {
   cwd?: string
   rpcTimeoutMs?: number
   registry?: PluginRegistry
+  /**
+   * Optional narrow provider access handed to plugins (list providers, send
+   * authenticated requests to verified decision endpoints). Supplied by the
+   * server bootstrap; never exposes credentials to plugins.
+   */
+  providerAccess?: PluginProviderAccess
 }
 
 interface PluginRecord {
@@ -387,6 +395,7 @@ export class PluginHost {
     setPluginModelMetadataProviders(this.registry.getModelMetadataProviders())
     setPluginMessageTransforms(this.registry.getMessageTransforms())
     setPluginDangerLevels(this.registry.getDangerLevels())
+    setPluginApprovalReviewers(this.registry.getApprovalReviewers())
     setPluginVcsProviders(this.registry.getVcsProviders())
     void this.refreshSkillSources()
   }
@@ -458,10 +467,10 @@ export class PluginHost {
         get: (key) => readStorageValue(pluginId, key),
         set: (key, value) => setSetting(storageKey(pluginId, key), JSON.stringify(value)),
       },
-      settings: (scope = 'global', projectId) => {
+      settings: (scope = 'global', projectId, options) => {
         const schema = this.registry.getSettingsSchema(pluginId)
         if (!schema) return {}
-        return readPluginSettings(pluginId, schema, scope, projectId)
+        return readPluginSettings(pluginId, schema, scope, projectId, options)
       },
       notify: (request) => {
         this.notifications.emit(pluginId, request)
@@ -476,6 +485,7 @@ export class PluginHost {
           }),
         )
       },
+      ...(this.options.providerAccess ? { providerAccess: this.options.providerAccess } : {}),
     }
   }
 
