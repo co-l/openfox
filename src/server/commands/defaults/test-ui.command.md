@@ -4,9 +4,9 @@ name: Test UI
 agentMode: builder
 ---
 
-Test the feature we've been working on in the browser using the `playwright-cli` skill.
+Test the feature we've been working on in the browser using the `browser` skill.
 
-1. Load the `playwright-cli` skill
+1. Load the `browser` skill with playwrigth-cli commands
 2. Check if the dev server is already running; if not, start it
 3. Open the app in the browser
 4. Take a snapshot to see the current state
