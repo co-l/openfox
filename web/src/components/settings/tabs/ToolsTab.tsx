@@ -332,6 +332,7 @@ export function ToolsTab() {
   const t = useT()
   const searchEngineSetting = useSetting(SETTINGS_KEYS.SEARCH_ENGINE).value
   const tavilyKeySetting = useSetting(SETTINGS_KEYS.SEARCH_TAVILY_API_KEY).value
+  const keenableKeySetting = useSetting(SETTINGS_KEYS.SEARCH_KEENABLE_API_KEY).value
   const searxngUrlSetting = useSetting(SETTINGS_KEYS.SEARCH_SEARXNG_URL).value
   const searxngKeySetting = useSetting(SETTINGS_KEYS.SEARCH_SEARXNG_API_KEY).value
   const confirmWorkspaceSetting = useSetting(SETTINGS_KEYS.CONFIRM_ON_WORKSPACE_ACTIONS).value
@@ -341,10 +342,12 @@ export function ToolsTab() {
   // ── Search Engine state ──
   const [searchEngine, setSearchEngine] = useState(searchEngineSetting)
   const [tavilyKey, setTavilyKey] = useState(tavilyKeySetting)
+  const [keenableKey, setKeenableKey] = useState(keenableKeySetting)
   const [searxngUrl, setSearxngUrl] = useState(searxngUrlSetting)
   const [searxngKey, setSearxngKey] = useState(searxngKeySetting)
 
   useDebouncedSave(tavilyKey, SETTINGS_KEYS.SEARCH_TAVILY_API_KEY, setSetting)
+  useDebouncedSave(keenableKey, SETTINGS_KEYS.SEARCH_KEENABLE_API_KEY, setSetting)
   useDebouncedSave(searxngUrl, SETTINGS_KEYS.SEARCH_SEARXNG_URL, setSetting)
   useDebouncedSave(searxngKey, SETTINGS_KEYS.SEARCH_SEARXNG_API_KEY, setSetting)
 
@@ -358,6 +361,10 @@ export function ToolsTab() {
   useEffect(() => {
     setTavilyKey(tavilyKeySetting)
   }, [tavilyKeySetting])
+
+  useEffect(() => {
+    setKeenableKey(keenableKeySetting)
+  }, [keenableKeySetting])
 
   useEffect(() => {
     setSearxngUrl(searxngUrlSetting)
@@ -677,7 +684,7 @@ export function ToolsTab() {
               {t({ en: 'Engine', fr: 'Moteur' })}
             </label>
             <div className="flex gap-2">
-              {(['', 'tavily', 'searxng'] as const).map((engine) => (
+              {(['', 'tavily', 'keenable', 'searxng'] as const).map((engine) => (
                 <button
                   key={engine}
                   onClick={() => handleEngineChange(engine)}
@@ -724,6 +731,27 @@ export function ToolsTab() {
                 >
                   tavily.com
                 </a>
+              </p>
+            </div>
+          )}
+          {searchEngine === 'keenable' && (
+            <div>
+              <label className="block text-xs font-medium text-text-primary mb-1">
+                {t({ en: 'Keenable API Key', fr: 'Clé API Keenable' })}{' '}
+                <span className="text-text-muted">({t({ en: 'optional', fr: 'facultatif' })})</span>
+              </label>
+              <Input
+                type="password"
+                value={keenableKey}
+                onChange={(e) => setKeenableKey(e.target.value)}
+                placeholder={t({ en: 'Optional API key', fr: 'Clé API facultative' })}
+                className="w-full"
+              />
+              <p className="text-xs text-text-muted mt-1">
+                {t({
+                  en: 'Works without a key via the free public endpoint; add a key for higher limits.',
+                  fr: 'Fonctionne sans clé via le point d’accès public gratuit ; ajoutez une clé pour des limites plus élevées.',
+                })}
               </p>
             </div>
           )}
