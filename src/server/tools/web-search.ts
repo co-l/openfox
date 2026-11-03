@@ -16,7 +16,14 @@ interface SearchResult {
   content: string
 }
 
-type EngineConfig = { engine: 'tavily'; apiKey: string } | { engine: 'searxng'; url: string; apiKey?: string }
+type EngineConfig =
+  | { engine: 'tavily'; apiKey: string }
+  | { engine: 'searxng'; url: string; apiKey?: string }
+  | { engine: 'keenable'; apiKey?: string }
+
+const KEENABLE_PUBLIC_URL = 'https://api.keenable.ai/v1/search/public'
+const KEENABLE_KEYED_URL = 'https://api.keenable.ai/v1/search'
+const KEENABLE_SNIPPET_MAX_CHARS = 1000
 
 function getTavilyApiKey(): string | null {
   return process.env['TAVILY_API_KEY'] ?? getSetting(SETTINGS_KEYS.SEARCH_TAVILY_API_KEY)
@@ -30,6 +37,10 @@ function getSearxngApiKey(): string | null {
   return process.env['SEARXNG_API_KEY'] ?? getSetting(SETTINGS_KEYS.SEARCH_SEARXNG_API_KEY)
 }
 
+function getKeenableApiKey(): string | null {
+  return process.env['KEENABLE_API_KEY'] ?? getSetting(SETTINGS_KEYS.SEARCH_KEENABLE_API_KEY)
+}
+
 function getActiveEngine(): EngineConfig | null {
   const preferredEngine = getSetting(SETTINGS_KEYS.SEARCH_ENGINE)
 
@@ -41,6 +52,12 @@ function getActiveEngine(): EngineConfig | null {
     const apiKey = getTavilyApiKey()
     if (!apiKey) return null
     return { engine: 'tavily', apiKey }
+  }
+
+  // Keenable works without an API key (free public endpoint); a key is optional.
+  if (preferredEngine === 'keenable') {
+    const apiKey = getKeenableApiKey()
+    return apiKey ? { engine: 'keenable', apiKey } : { engine: 'keenable' }
   }
 
   if (preferredEngine === 'searxng') {
@@ -117,6 +134,44 @@ async function searchSearxng(
   }))
 }
 
+async function searchKeenable(
+  query: string,
+  maxResults: number,
+  apiKey: string | undefined,
+  signal: AbortSignal,
+): Promise<SearchResult[]> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'X-Keenable-Title': 'OpenFox',
+  }
+  if (apiKey) headers['X-API-Key'] = apiKey
+
+  const response = await fetch(apiKey ? KEENABLE_KEYED_URL : KEENABLE_PUBLIC_URL, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ query, max_results: maxResults }),
+    signal,
+  })
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '')
+    throw new Error(`Keenable search failed (${response.status}): ${body}`)
+  }
+
+  const data = (await response.json()) as {
+    results?: Array<{ title?: string; url?: string; description?: string; snippet?: string }>
+  }
+  return (data.results ?? [])
+    .filter((r) => !!r.url)
+    .slice(0, maxResults)
+    .map((r) => ({
+      title: r.title ?? r.url ?? '',
+      url: r.url ?? '',
+      // Prefer the short description; the snippet can be a long page excerpt.
+      content: r.description || (r.snippet ?? '').slice(0, KEENABLE_SNIPPET_MAX_CHARS),
+    }))
+}
+
 function formatResults(results: SearchResult[]): string {
   return results.map((r, i) => `[${i + 1}] ${r.title}\n    URL: ${r.url}\n    ${r.content}`).join('\n\n')
 }
@@ -132,7 +187,7 @@ export const webSearchTool = createTool<WebSearchArgs>(
     function: {
       name: 'web_search',
       description:
-        'Search the web using a configured search engine (Tavily or SearXNG). Returns a list of results with title, URL, and content snippet for each. Use this to find relevant web pages, then use web_fetch to retrieve full content.',
+        'Search the web using a configured search engine (Tavily, Keenable, or SearXNG). Returns a list of results with title, URL, and content snippet for each. Use this to find relevant web pages, then use web_fetch to retrieve full content.',
       parameters: {
         type: 'object',
         properties: {
@@ -156,7 +211,7 @@ export const webSearchTool = createTool<WebSearchArgs>(
     const active = getActiveEngine()
     if (!active) {
       return helpers.error(
-        'web_search requires at least one search engine configured. Set the TAVILY_API_KEY environment variable, or configure SearXNG via SEARXNG_URL (and optionally SEARXNG_API_KEY). You can also configure these in Settings > Advanced > Search Engine.',
+        'web_search requires at least one search engine configured. Set the TAVILY_API_KEY environment variable, or configure SearXNG via SEARXNG_URL (and optionally SEARXNG_API_KEY). You can also configure these (or pick Keenable, which needs no API key) in Settings > Advanced > Search Engine.',
       )
     }
 
@@ -167,6 +222,8 @@ export const webSearchTool = createTool<WebSearchArgs>(
 
       if (active.engine === 'tavily') {
         results = await searchTavily(query, maxResults, active.apiKey, signal)
+      } else if (active.engine === 'keenable') {
+        results = await searchKeenable(query, maxResults, active.apiKey, signal)
       } else {
         const searxngConfig: { url: string; apiKey?: string } = { url: active.url }
         if (active.apiKey) searxngConfig.apiKey = active.apiKey

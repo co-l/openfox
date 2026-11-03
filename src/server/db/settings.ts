@@ -48,6 +48,7 @@ export const SETTINGS_KEYS = {
   SKILLS_DIRECTORIES: 'skills.directories',
   SEARCH_ENGINE: 'search.engine',
   SEARCH_TAVILY_API_KEY: 'search.tavilyApiKey',
+  SEARCH_KEENABLE_API_KEY: 'search.keenableApiKey',
   SEARCH_SEARXNG_URL: 'search.searxngUrl',
   SEARCH_SEARXNG_API_KEY: 'search.searxngApiKey',
   TOOLS_SHELL: 'tools.shell',

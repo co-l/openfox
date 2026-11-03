@@ -8,6 +8,7 @@ vi.mock('../db/settings.js', () => ({
   SETTINGS_KEYS: {
     SEARCH_ENGINE: 'search.engine',
     SEARCH_TAVILY_API_KEY: 'search.tavilyApiKey',
+    SEARCH_KEENABLE_API_KEY: 'search.keenableApiKey',
     SEARCH_SEARXNG_URL: 'search.searxngUrl',
     SEARCH_SEARXNG_API_KEY: 'search.searxngApiKey',
   },
@@ -24,6 +25,7 @@ const baseContext: ToolContext = {
 
 function resetEnv() {
   delete process.env['TAVILY_API_KEY']
+  delete process.env['KEENABLE_API_KEY']
   delete process.env['SEARXNG_URL']
   delete process.env['SEARXNG_API_KEY']
 }
@@ -181,6 +183,49 @@ describe('web_search', () => {
 
       expect(result.success).toBe(true)
       expect(result.output).toContain('Env Var Tavily')
+    })
+  })
+
+  describe('Keenable backend', () => {
+    beforeEach(() => {
+      mockDbSettings['search.engine'] = 'keenable'
+    })
+
+    it('uses the public endpoint without an API key', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            results: [
+              { title: 'Keenable', url: 'https://keenable.ai', description: 'Short description', snippet: 'Long' },
+              { title: 'Snippet only', url: 'https://example.org', snippet: 'x'.repeat(2000) },
+              { title: 'No URL', description: 'dropped' },
+            ],
+          }),
+      })
+
+      const result = await webSearchTool.execute({ query: 'hello', max_results: 3 }, baseContext)
+
+      expect(result.success).toBe(true)
+      expect(result.output).toContain('Short description')
+      expect(result.output).not.toContain('dropped')
+      expect(result.output).not.toContain('x'.repeat(1001))
+      const [url, init] = mockFetch.mock.calls[0]!
+      expect(url).toBe('https://api.keenable.ai/v1/search/public')
+      expect(init.headers['X-Keenable-Title']).toBe('OpenFox')
+      expect(init.headers['X-API-Key']).toBeUndefined()
+      expect(JSON.parse(init.body)).toEqual({ query: 'hello', max_results: 3 })
+    })
+
+    it('uses the keyed endpoint when an API key is set', async () => {
+      process.env['KEENABLE_API_KEY'] = 'keen-key'
+      mockFetch.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ results: [] }) })
+
+      await webSearchTool.execute({ query: 'hello' }, baseContext)
+
+      const [url, init] = mockFetch.mock.calls[0]!
+      expect(url).toBe('https://api.keenable.ai/v1/search')
+      expect(init.headers['X-API-Key']).toBe('keen-key')
     })
   })
 
