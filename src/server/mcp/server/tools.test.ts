@@ -544,6 +544,25 @@ describe('openfx MCP tools', () => {
       expect(body.entries[0].status).toBe('completed')
     })
 
+    it('persists a reason when updating an entry', async () => {
+      const deps = makeDeps()
+      await call(createOpenFoxMcpTools(deps), 'openfox_session_metadata', {
+        sessionId: 's-1',
+        action: 'update',
+        key: 'criteria',
+        id: '1',
+        status: 'failed',
+        reason: 'error path not covered',
+      })
+      expect(deps.setMetadataEntries).toHaveBeenCalledWith(
+        's-1',
+        'criteria',
+        expect.arrayContaining([
+          { id: '1', description: 'Write tests', status: 'failed', reason: 'error path not covered' },
+        ]),
+      )
+    })
+
     it('requires at least one field when updating', async () => {
       const tools = createOpenFoxMcpTools(makeDeps())
       const result = await call(tools, 'openfox_session_metadata', {
