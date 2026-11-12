@@ -415,6 +415,16 @@ describe('formatCriteriaList', () => {
     )
   })
 
+  it('appends the reason to failed criteria only', () => {
+    const entries: MetadataEntry[] = [
+      { id: 'c1', description: 'Add tests', status: 'failed', reason: 'error path not covered' },
+      { id: 'c2', description: 'Fix bug', status: 'passed', reason: 'stale reason from an earlier failure' },
+    ]
+    expect(formatCriteriaList(entries)).toBe(
+      '- **c1** [FAILED]: Add tests\n  Reason: error path not covered\n' + '- **c2** [PASSED]: Fix bug',
+    )
+  })
+
   it('formats a single criterion', () => {
     const entries: MetadataEntry[] = [{ id: 'only', description: 'One thing', status: 'pending' }]
     expect(formatCriteriaList(entries)).toBe('- **only** [NOT COMPLETED]: One thing')

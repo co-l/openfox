@@ -51,6 +51,27 @@ describe('sessionMetadataTool', () => {
     ])
   })
 
+  it('persists a reason when updating a criterion', async () => {
+    const sm = createSessionManager({
+      criteria: [{ id: '1', description: 'just a test', status: 'completed' }],
+    })
+
+    const result = await sessionMetadataTool.execute(
+      { action: 'update', key: 'criteria', id: '1', status: 'failed', reason: 'tests do not cover the error path' },
+      context(sm),
+    )
+
+    expect(result.success).toBe(true)
+    expect(sm.setMetadataEntries).toHaveBeenCalledWith('test-session', 'criteria', [
+      { id: '1', description: 'just a test', status: 'failed', reason: 'tests do not cover the error path' },
+    ])
+  })
+
+  it('declares reason in the tool schema', () => {
+    const properties = sessionMetadataTool.definition.function.parameters['properties'] as Record<string, unknown>
+    expect(properties['reason']).toBeDefined()
+  })
+
   it('errors when updating without an id', async () => {
     const sm = createSessionManager({
       criteria: [{ id: '0', description: 'just a test', status: 'pending' }],

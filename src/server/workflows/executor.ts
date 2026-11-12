@@ -56,7 +56,8 @@ export function formatCriteriaList(entries: import('../../shared/types.js').Meta
             : e.status === 'failed'
               ? '[FAILED]'
               : '[NOT COMPLETED]'
-      return `- **${e.id}** ${status}: ${e.description}`
+      const reason = e.status === 'failed' && typeof e['reason'] === 'string' ? `\n  Reason: ${e['reason']}` : ''
+      return `- **${e.id}** ${status}: ${e.description}${reason}`
     })
     .join('\n')
 }

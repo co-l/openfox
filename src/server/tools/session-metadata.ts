@@ -8,6 +8,7 @@ const SCHEMAS: Record<string, { fields: Record<string, string>; description: str
       id: 'string (auto-generated; numeric ids accepted and normalized)',
       description: 'string — what needs to be done and how to verify it',
       status: 'pending | completed | passed | failed',
+      reason: 'string — why the criterion failed (optional, set on update)',
     },
   },
   todos: {
@@ -35,6 +36,7 @@ interface SessionMetadataArgs {
   id?: string
   description?: string
   status?: string
+  reason?: string
 }
 
 function normalizeId(id: unknown): string | undefined {
@@ -88,6 +90,10 @@ export const sessionMetadataTool = createTool<SessionMetadataArgs>(
           status: {
             type: 'string',
             description: 'Item status (for: add, update). Defaults to "pending" on add.',
+          },
+          reason: {
+            type: 'string',
+            description: 'Why the item has its status, e.g. why a criterion failed (for: update).',
           },
         },
         required: ['action'],
@@ -163,6 +169,7 @@ export const sessionMetadataTool = createTool<SessionMetadataArgs>(
               ...e,
               ...(args.description !== undefined ? { description: args.description } : {}),
               ...(args.status !== undefined ? { status: args.status } : {}),
+              ...(args.reason !== undefined ? { reason: args.reason } : {}),
             }
           : e,
       )

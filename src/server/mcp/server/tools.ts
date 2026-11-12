@@ -395,6 +395,7 @@ export function createOpenFoxMcpTools(deps: OpenFoxMcpToolDeps): OpenFoxMcpTool[
         id: z.string().optional().describe('Item id (required for update and remove)'),
         description: z.string().optional().describe('Item description (required for add)'),
         status: z.string().optional().describe('Item status (for add/update)'),
+        reason: z.string().optional().describe('Why the item has its status, e.g. why a criterion failed (for update)'),
       },
       handler: async (args) => {
         const check = requireSession(args['sessionId'])
@@ -457,6 +458,7 @@ export function createOpenFoxMcpTools(deps: OpenFoxMcpToolDeps): OpenFoxMcpTool[
                   ...e,
                   ...(typeof description === 'string' ? { description } : {}),
                   ...(typeof status === 'string' ? { status } : {}),
+                  ...(typeof args['reason'] === 'string' ? { reason: args['reason'] } : {}),
                 }
               : e,
           )
