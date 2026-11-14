@@ -72,7 +72,7 @@ export const runCommandTool = createTool<RunCommandArgs>(
     function: {
       name: 'run_command',
       description:
-        'Execute a shell command. Returns stdout, stderr, exit code, and elapsed duration. Does NOT support trailing "&" for backgrounding — use background_process tool instead.\nCommands run from your working directory automatically, so prefer relative paths.',
+        'Execute a shell command. Returns stdout, stderr, exit code, and elapsed duration. Does NOT support trailing "&" for backgrounding — use background_process tool instead.\nCommands run from your working directory automatically, so prefer relative paths.\nNever wait for a long job with "sleep && tail": start it with background_process (action: "start"), then wait for its real outcome with background_process (action: "wait"), then read the output with background_process (action: "logs").',
       parameters: {
         type: 'object',
         properties: {

@@ -408,6 +408,61 @@ function getPromptAwareToolResponse(prompt: string): MockMatchResult | null {
   return null
 }
 
+/**
+ * Chain for the long background job scenario: start → wait → logs → done.
+ *
+ * Each round is recognized from the tool results already in the conversation,
+ * so the mock drives the whole sequence without any sleep polling.
+ */
+function getBackgroundJobToolResponse(request: LLMCompletionRequest): MockMatchResult | null {
+  const prompt = getLastUserPrompt(request)
+  if (!/Run the long background job/i.test(prompt)) {
+    return null
+  }
+
+  const conversationText = getConversationText(request)
+  const startedProcessId = conversationText.match(/"processId":\s*"([^"]+)"/)?.[1]
+
+  // The job output is the end of the chain: no more tool calls.
+  if (conversationText.includes('build-ok')) {
+    return { tools: [], response: 'The background job finished successfully.' }
+  }
+
+  if (startedProcessId && conversationText.includes('"logCursor"')) {
+    return {
+      tools: [
+        {
+          name: 'background_process',
+          arguments: { action: 'logs', processId: startedProcessId },
+        },
+      ],
+      response: 'Reading the background job output.',
+    }
+  }
+
+  if (startedProcessId) {
+    return {
+      tools: [
+        {
+          name: 'background_process',
+          arguments: { action: 'wait', processId: startedProcessId, waitTimeout: 120000 },
+        },
+      ],
+      response: 'Waiting for the background job to finish.',
+    }
+  }
+
+  return {
+    tools: [
+      {
+        name: 'background_process',
+        arguments: { action: 'start', name: 'long-job', command: 'sleep 2; echo build-ok' },
+      },
+    ],
+    response: 'Started the background job.',
+  }
+}
+
 function getConversationAwareToolResponse(request: LLMCompletionRequest): MockMatchResult | null {
   const prompt = getLastUserPrompt(request)
   const conversationText = getConversationText(request)
@@ -749,6 +804,22 @@ function buildMockResponse(request: LLMCompletionRequest): {
         'Summary of conversation: The user has been working on the project. Files were modified and progress was made on all tasks. No errors were encountered during the session.',
       toolCalls: [],
       finishReason: 'stop',
+    }
+  }
+
+  // Long-running background job: start it, then wait for its real outcome
+  // instead of polling with sleep. This is checked before the generic
+  // tool-result short-circuit so the mock can chain start → wait → logs.
+  const backgroundJobResponse = getBackgroundJobToolResponse(request)
+  if (backgroundJobResponse) {
+    return {
+      content: backgroundJobResponse.response,
+      toolCalls: backgroundJobResponse.tools.map((tool, index) => ({
+        id: `mock-${Date.now()}-${index}`,
+        name: tool.name,
+        arguments: tool.arguments,
+      })),
+      finishReason: backgroundJobResponse.tools.length > 0 ? 'tool_calls' : 'stop',
     }
   }
 

@@ -3,6 +3,13 @@ import * as store from './store.js'
 import { spawnShell } from '../../utils/shell.js'
 import { killProcessTree } from '../../utils/process-tree.js'
 import { createUtf8StreamDecoder } from '../../utils/utf8.js'
+import {
+  recordProcessCreated,
+  recordProcessExited,
+  recordProcessStarted,
+  recordProcessStopped,
+} from '../../db/background-processes.js'
+import type { TerminalOutcome, TerminalReason } from './types.js'
 
 type ProcessEventListener = (processId: string, msg: ServerMessage) => void
 const listeners = new Set<ProcessEventListener>()
@@ -20,6 +27,57 @@ function emitProcessEvent(processId: string, msg: ServerMessage): void {
   }
 }
 
+/**
+ * Reasons of an in-flight explicit stop, keyed by process id.
+ *
+ * A stop kills the process tree, so the child reports an 'exit' with a
+ * signal before the stop itself finishes. The explicit stop reason must win
+ * over that raw signal, otherwise a cancelled process would be reported as
+ * 'signalled'.
+ */
+const pendingStopReasons = new Map<string, TerminalReason>()
+
+/** Terminal outcomes recorded per process.
+ *
+ * The child emits 'exit' and 'error' independently, and a stop removes the
+ * process from the store, so the outcome is memoized here: the first
+ * terminal event wins and later ones are ignored, which prevents duplicate
+ * resumes.
+ */
+const terminalOutcomes = new Map<string, TerminalOutcome>()
+
+export function getTerminalOutcome(processId: string): TerminalOutcome | undefined {
+  return terminalOutcomes.get(processId)
+}
+
+function recordTerminalOutcome(
+  processId: string,
+  sessionId: string,
+  reason: TerminalReason,
+  exitCode: number | null,
+  signal: string | null,
+  detail?: string,
+): TerminalOutcome {
+  const existing = terminalOutcomes.get(processId)
+  if (existing) return existing
+
+  const outcome: TerminalOutcome = {
+    sessionId,
+    reason,
+    exitCode,
+    signal,
+    endedAt: Date.now(),
+    ...(detail ? { detail } : {}),
+  }
+  terminalOutcomes.set(processId, outcome)
+  return outcome
+}
+
+/** Drop the memoized outcome — used by tests and by process cleanup. */
+export function clearTerminalOutcome(processId: string): void {
+  terminalOutcomes.delete(processId)
+}
+
 export function createProcess(
   sessionId: string,
   name: string,
@@ -30,11 +88,13 @@ export function createProcess(
   const process = store.createProcess(sessionId, name, command, cwd)
   if (!process) return null
 
+  recordProcessCreated(process.id, sessionId, name, command, cwd)
+
   if (timeout && timeout > 0) {
     setTimeout(() => {
       const p = store.getProcess(process.id, sessionId)
       if (p && p.status === 'running') {
-        stopProcess(process.id, sessionId)
+        void stopProcess(process.id, sessionId, 'runtime_timeout')
       }
     }, timeout)
   }
@@ -53,6 +113,7 @@ export function startProcessCommand(processId: string, sessionId: string, comman
 
   proc.pid = child.pid ?? null
   store.updateStatus(processId, sessionId, 'running')
+  recordProcessStarted(processId, child.pid ?? 0)
 
   emitProcessEvent(processId, {
     type: 'backgroundProcess.started',
@@ -115,10 +176,29 @@ export function startProcessCommand(processId: string, sessionId: string, comman
   })
 
   child.on('exit', (code, signal) => {
-    store.updateStatus(processId, sessionId, 'exited', code ?? (signal ? 1 : null))
+    // A signal termination must stay distinguishable from a plain non-zero
+    // exit: the exit code of a signalled process is not the process' own
+    // verdict, so the signal is kept separately.
+    const signalName = signal ?? null
+    const exitCode = code ?? null
+    // An explicit stop kills the tree, so the child exits with a signal. The
+    // stop reason is the meaningful outcome in that case.
+    const stopReason = pendingStopReasons.get(processId)
+    const reason: TerminalReason = stopReason
+      ? stopReason
+      : signalName
+        ? 'signalled'
+        : exitCode === 0
+          ? 'success'
+          : 'failed'
+
+    store.updateStatus(processId, sessionId, 'exited', exitCode)
+    recordTerminalOutcome(processId, sessionId, reason, exitCode, signalName)
+    recordProcessExited(processId, exitCode, signalName, reason)
+
     emitProcessEvent(processId, {
       type: 'backgroundProcess.exited',
-      payload: { processId, exitCode: code ?? (signal ? 1 : null) },
+      payload: { processId, exitCode: exitCode ?? (signalName ? 1 : null) },
       sessionId,
     })
   })
@@ -126,6 +206,9 @@ export function startProcessCommand(processId: string, sessionId: string, comman
   child.on('error', (err) => {
     store.appendLog(processId, `Error: ${err.message}\n`, 'stderr')
     store.updateStatus(processId, sessionId, 'exited', 1)
+    recordTerminalOutcome(processId, sessionId, 'error', 1, null, err.message)
+    recordProcessExited(processId, 1, null, 'error', err.message)
+
     emitProcessEvent(processId, {
       type: 'backgroundProcess.exited',
       payload: { processId, exitCode: 1 },
@@ -136,7 +219,11 @@ export function startProcessCommand(processId: string, sessionId: string, comman
   return child.pid ?? null
 }
 
-export async function stopProcess(processId: string, sessionId: string): Promise<void> {
+export async function stopProcess(
+  processId: string,
+  sessionId: string,
+  reason: TerminalReason = 'cancelled',
+): Promise<void> {
   const proc = store.getProcess(processId, sessionId)
 
   if (!proc || proc.status !== 'running' || !proc.pid) {
@@ -144,10 +231,20 @@ export async function stopProcess(processId: string, sessionId: string): Promise
   }
 
   store.updateStatus(processId, sessionId, 'stopping')
+  // Registered before the kill so the child's 'exit' (with a signal) is
+  // attributed to this explicit stop.
+  pendingStopReasons.set(processId, reason)
 
-  await killProcessTree(proc.pid!)
+  try {
+    await killProcessTree(proc.pid!)
+  } finally {
+    pendingStopReasons.delete(processId)
+  }
 
   store.updateStatus(processId, sessionId, 'exited', null)
+  recordTerminalOutcome(processId, sessionId, reason, null, null)
+  recordProcessStopped(processId, reason)
+
   emitProcessEvent(processId, {
     type: 'backgroundProcess.removed',
     payload: { processId },

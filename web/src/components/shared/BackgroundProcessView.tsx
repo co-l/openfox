@@ -34,6 +34,10 @@ export const BackgroundProcessView = memo(function BackgroundProcessView({
     return renderStartStop(parsed, t)
   }
 
+  if (action === 'wait') {
+    return renderWait(parsed, result, t)
+  }
+
   // Unknown action
   return (
     <div className="space-y-2 text-xs">
@@ -212,6 +216,85 @@ function ProcessCard({ process }: { process: BackgroundProcess }) {
         </div>
       )}
       {process.command && <div className="text-text-muted font-mono truncate">{process.command}</div>}
+    </div>
+  )
+}
+
+function renderWait(
+  parsed: Record<string, unknown>,
+  rawResult: string,
+  t: (tx: import('@shared/i18n/index.js').Translation, vars?: Record<string, string | number>) => string,
+) {
+  const status = parsed.status as string | undefined
+  const reason = parsed.reason as string | undefined
+
+  if (!status && !reason) {
+    return (
+      <OptionalScrollArea horizontal className="max-h-[60vh]">
+        <pre className="text-xs bg-bg-primary p-1.5 rounded break-words">{rawResult}</pre>
+      </OptionalScrollArea>
+    )
+  }
+
+  const exitCode = parsed.exitCode as number | null | undefined
+  const signal = parsed.signal as string | null | undefined
+  const timedOut = parsed.timedOut as boolean | undefined
+  const durationMs = parsed.durationMs as number | undefined
+  const detail = parsed.detail as string | undefined
+
+  const reasonColor =
+    reason === 'success'
+      ? 'text-accent-success'
+      : reason === 'failed' || reason === 'signalled' || reason === 'error'
+        ? 'text-accent-error'
+        : reason === 'timeout'
+          ? 'text-accent-warning'
+          : 'text-text-muted'
+
+  return (
+    <div className="space-y-2 text-xs">
+      {reason && (
+        <div className="flex items-center gap-2">
+          <span className="text-text-muted">{t({ en: 'Outcome:', fr: 'Résultat :' })}</span>
+          <span className={`font-medium ${reasonColor}`}>{reason}</span>
+        </div>
+      )}
+      {status && (
+        <div className="flex items-center gap-2">
+          <span className="text-text-muted">{t({ en: 'Status:', fr: 'Statut :' })}</span>
+          <span className="font-medium">{status}</span>
+        </div>
+      )}
+      {exitCode != null && (
+        <div className="flex items-center gap-2">
+          <span className="text-text-muted">{t({ en: 'Exit code', fr: 'Code de sortie' })}</span>
+          <span className="font-mono">{exitCode}</span>
+        </div>
+      )}
+      {signal && (
+        <div className="flex items-center gap-2">
+          <span className="text-text-muted">{t({ en: 'Signal:', fr: 'Signal :' })}</span>
+          <span className="font-mono">{signal}</span>
+        </div>
+      )}
+      {durationMs != null && (
+        <div className="flex items-center gap-2">
+          <span className="text-text-muted">{t({ en: 'Waited:', fr: 'Attente :' })}</span>
+          <span>{formatDuration(durationMs)}</span>
+        </div>
+      )}
+      {timedOut && (
+        <div className="text-accent-warning">
+          {t(
+            {
+              en: 'The wait timed out; the process is still running.',
+              fr: "L'attente a expiré ; le processus tourne toujours.",
+            },
+            {},
+          )}
+        </div>
+      )}
+      {detail && <div className="text-text-muted italic">{detail}</div>}
     </div>
   )
 }
