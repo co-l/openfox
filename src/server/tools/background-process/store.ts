@@ -111,6 +111,11 @@ export function getLogs(processId: string, offset = 0, limit?: number): LogLine[
   return logs.slice(start, end)
 }
 
+/** Number of log entries recorded so far — the cursor a wait hands back. */
+export function getLogCount(processId: string): number {
+  return logsByProcess.get(processId)?.length ?? 0
+}
+
 export interface PaginatedLogs {
   lines: LogLine[]
   totalLines: number

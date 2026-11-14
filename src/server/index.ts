@@ -117,6 +117,18 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   // Initialize event store
   initEventStore(db)
 
+  // Background processes live in memory and their process trees are killed on
+  // shutdown, so any record still marked as running belongs to a previous
+  // server run. Mark them interrupted so a later wait reports an explicit
+  // unknown state instead of claiming a completion that never happened.
+  {
+    const { markInterruptedProcesses } = await import('./db/background-processes.js')
+    const interrupted = markInterruptedProcesses()
+    if (interrupted > 0) {
+      logger.info('Marked interrupted background processes', { count: interrupted })
+    }
+  }
+
   // Deferred broadcast for the project-tasks service. The tasks router must be
   // mounted before the Vite middleware (dev mode), but the WebSocket server
   // isn't created until later — this indirection bridges the gap.

@@ -141,6 +141,32 @@ function runMigrations(db: Database.Database): void {
     )
   `)
 
+  // Create background_processes table: durable terminal state for background
+  // processes. The in-memory store is wiped on restart, so a wait issued after
+  // a restart must be able to report an explicit 'interrupted' state.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS background_processes (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      command TEXT NOT NULL,
+      cwd TEXT NOT NULL,
+      pid INTEGER,
+      status TEXT NOT NULL DEFAULT 'pending',
+      exit_code INTEGER,
+      signal TEXT,
+      reason TEXT,
+      detail TEXT,
+      started_at INTEGER,
+      ended_at INTEGER,
+      created_at INTEGER NOT NULL
+    )
+  `)
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_background_processes_session ON background_processes(session_id)
+  `)
+
   // Create notifications table for plugin-emitted in-app notifications
   db.exec(`
     CREATE TABLE IF NOT EXISTS notifications (

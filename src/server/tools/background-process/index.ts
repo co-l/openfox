@@ -1,9 +1,10 @@
 import { createTool } from '../tool-helpers.js'
 import * as manager from './manager.js'
 import * as store from './store.js'
+import { waitForProcess } from './waiter.js'
 
 export interface BackgroundProcessToolArgs {
-  action: 'start' | 'stop' | 'list' | 'status' | 'logs'
+  action: 'start' | 'stop' | 'list' | 'status' | 'logs' | 'wait'
   name?: string
   command?: string
   cwd?: string
@@ -11,6 +12,8 @@ export interface BackgroundProcessToolArgs {
   processId?: string
   since?: number
   maxLines?: number
+  /** Maximum duration of the "wait" action, in milliseconds. */
+  waitTimeout?: number
 }
 
 function processNotFoundError(id: string | undefined): string {
@@ -32,13 +35,14 @@ These processes run independently of agent turns and persist across session comp
 - stop: Stop a running process and remove it from the sidebar
 - list: Show all processes for this session
 - status: Get detailed status of a specific process
-- logs: Retrieve process output with optional pagination`,
+- logs: Retrieve process output with optional pagination
+- wait: Block until a process reaches a terminal state (exited, failed, signalled, error or stopped) and return its real outcome. Use this instead of "sleep && tail" polling loops: it wakes on the process event, consumes no model turn while waiting, and never kills the process when the wait times out. After it returns, call "logs" with no "since" (the default offset 0) to read the whole output the process wrote. The returned logCursor is the offset of the next line, so pass it as "since" on a later "logs" call to fetch only output produced after this wait.`,
       parameters: {
         type: 'object',
         properties: {
           action: {
             type: 'string',
-            enum: ['start', 'stop', 'list', 'status', 'logs'],
+            enum: ['start', 'stop', 'list', 'status', 'logs', 'wait'],
             description: 'The action to perform on background processes',
           },
           name: {
@@ -63,11 +67,17 @@ These processes run independently of agent turns and persist across session comp
           },
           since: {
             type: 'number',
-            description: 'Return logs after this offset. Default: 0',
+            description:
+              'Return logs from this 0-based offset onward (inclusive). Default: 0, i.e. the whole output written so far.',
           },
           maxLines: {
             type: 'number',
             description: 'Maximum lines to return. Default: 500, max: 2000',
+          },
+          waitTimeout: {
+            type: 'number',
+            description:
+              'Maximum duration of the "wait" action in milliseconds. Default: 120000, min: 1000, max: 600000. A wait timeout never terminates the process.',
           },
         },
         required: ['action'],
@@ -76,6 +86,7 @@ These processes run independently of agent turns and persist across session comp
           stop: ['processId'],
           status: ['processId'],
           logs: ['processId'],
+          wait: ['processId'],
         },
       },
     },
@@ -197,6 +208,37 @@ These processes run independently of agent turns and persist across session comp
               nextOffset,
               hasMore,
               truncated: hasMore,
+            },
+            null,
+            2,
+          ),
+        )
+      }
+
+      case 'wait': {
+        const result = await waitForProcess({
+          processId: args.processId!,
+          sessionId,
+          timeoutMs: args.waitTimeout,
+          signal: context.signal,
+        })
+
+        // A wait that timed out or was aborted is a legitimate outcome, not a
+        // tool failure: the process is still running and can be awaited again.
+        return helpers.success(
+          JSON.stringify(
+            {
+              processId: result.processId,
+              status: result.status,
+              reason: result.reason,
+              terminalReason: result.terminalReason ?? null,
+              exitCode: result.exitCode,
+              signal: result.signal,
+              timedOut: result.timedOut,
+              alreadyFinished: result.alreadyFinished,
+              durationMs: result.durationMs,
+              logCursor: result.logCursor,
+              ...(result.detail ? { detail: result.detail } : {}),
             },
             null,
             2,
