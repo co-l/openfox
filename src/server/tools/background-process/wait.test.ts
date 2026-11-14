@@ -80,8 +80,10 @@ describe('background_process wait', () => {
 
     it('wakes the waiter when the process exits during the wait', async () => {
       const sessionId = 'wait-session-during'
-      const proc = manager.createProcess(sessionId, 'slow', 'sleep 1; exit 7', TEST_CWD)!
-      manager.startProcessCommand(proc.id, sessionId, 'sleep 1; exit 7', TEST_CWD)
+      // Portable delay: `sleep` does not exist in cmd.exe.
+      const command = 'node -e "setTimeout(() => process.exit(7), 1000)"'
+      const proc = manager.createProcess(sessionId, 'slow', command, TEST_CWD)!
+      manager.startProcessCommand(proc.id, sessionId, command, TEST_CWD)
 
       const result = await waitForProcess({ processId: proc.id, sessionId, timeoutMs: 60_000 })
 
@@ -224,8 +226,10 @@ describe('background_process wait', () => {
       const ownerSession = 'wait-session-owner'
       const otherSession = 'wait-session-other'
 
-      const proc = manager.createProcess(ownerSession, 'owned', 'sleep 1; exit 0', TEST_CWD)!
-      manager.startProcessCommand(proc.id, ownerSession, 'sleep 1; exit 0', TEST_CWD)
+      // Portable delay: `sleep` does not exist in cmd.exe.
+      const command = 'node -e "setTimeout(() => process.exit(0), 1000)"'
+      const proc = manager.createProcess(ownerSession, 'owned', command, TEST_CWD)!
+      manager.startProcessCommand(proc.id, ownerSession, command, TEST_CWD)
 
       // The other session cannot even see the process.
       const foreign = await waitForProcess({ processId: proc.id, sessionId: otherSession })
