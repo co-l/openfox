@@ -54,6 +54,14 @@ export function AgentForm({
   onPromptChange,
 }: AgentFormProps) {
   const t = useT()
+  const [search, setSearch] = useState('')
+  const [focusIdx, setFocusIdx] = useState(0)
+  const listRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    listRef.current?.querySelector(`[data-idx="${focusIdx}"]`)?.scrollIntoView({ block: 'nearest' })
+  }, [focusIdx])
+
   const granularTools = parseAllowedTools(formTools)
   const filteredTools = availableTools.filter((t) => !(formSubagent && t.topLevelOnly) && !t.isMcp)
   const mcpTools = availableTools.filter((t) => t.isMcp && !(formSubagent && t.topLevelOnly))
@@ -339,18 +347,6 @@ export function AgentForm({
                   </div>
                   {mcpMode === 'partial' &&
                     (() => {
-                      const [search, setSearch] = useState('')
-                      const [focusIdx, setFocusIdx] = useState(0)
-                      const listRef = useRef<HTMLDivElement>(null)
-
-                      const scrollToFocus = (idx: number) => {
-                        const el = listRef.current?.querySelector(`[data-idx="${idx}"]`)
-                        el?.scrollIntoView({ block: 'nearest' })
-                      }
-
-                      useEffect(() => {
-                        scrollToFocus(focusIdx)
-                      }, [focusIdx])
                       const filtered = search
                         ? mcpTools.filter((t) => t.name.toLowerCase().includes(search.toLowerCase()))
                         : mcpTools
