@@ -545,29 +545,91 @@ function findInterpreterSources(
   const programs: string[] = []
   const sources: string[] = []
   const dynamicPrograms: string[] = []
-  const valueOptions = command === 'awk' ? new Set(['-v', '-F', '-f']) : new Set(['-e', '-f'])
+  if (command === 'sed') {
+    let explicitScript = false
+    for (let j = start + 1; j < words.length; j++) {
+      const word = words[j]!
+      const value = word.value
+      if (value === '--') continue
+      // `-e` / `--expression` carry a script (separate or attached). Every
+      // occurrence is a script, and any of them can execute a command.
+      if (value === '-e' || value === '--expression') {
+        const next = words[j + 1]
+        if (next) {
+          programs.push(next.value)
+          explicitScript = true
+          j += 1
+        }
+        continue
+      }
+      if (value.startsWith('--expression=')) {
+        programs.push(value.slice('--expression='.length))
+        explicitScript = true
+        continue
+      }
+      // A short cluster ending in `e` (`-e'prog'`, `-ne'prog'`): the rest is
+      // the script.
+      const cluster = /^-[a-zA-Z]*e(.+)$/.exec(value)
+      if (cluster && !value.startsWith('--')) {
+        programs.push(cluster[1]!)
+        explicitScript = true
+        continue
+      }
+      if (value === '-f' || value === '--file') {
+        explicitScript = true
+        j += 1
+        continue
+      }
+      if (value.startsWith('--file=') || (value.startsWith('-f') && value.length > 2)) {
+        explicitScript = true
+        continue
+      }
+      if (value.startsWith('-') && value !== '-') continue
+      if (explicitScript) continue
+      // No `-e`/`-f`: the first non-option operand is the script.
+      explicitScript = true
+      if (word.quoted) programs.push(value)
+      else if (hasVariableExpansion(value)) dynamicPrograms.push(value)
+    }
+    return { programs, sources, dynamicPrograms }
+  }
+  // awk: `-v` / `--assign` values can carry the command a pipe/system runs.
   let sawInline = false
   for (let j = start + 1; j < words.length; j++) {
     const word = words[j]!
     const value = word.value
-    if (value.startsWith('-') && value !== '-') {
-      if (valueOptions.has(value)) {
-        const next = words[j + 1]
-        if (command === 'sed' && value === '-e' && next) programs.push(next.value)
-        if (command === 'awk' && value === '-v' && next) sources.push(next.value)
+    if (value === '--') continue
+    if (value === '-v' || value === '--assign') {
+      const next = words[j + 1]
+      if (next) {
+        sources.push(next.value)
         j += 1
       }
       continue
     }
-    if (sawInline) continue
-    if (word.quoted) {
-      programs.push(value)
-      sawInline = true
-    } else if (hasVariableExpansion(value)) {
-      // A program that is only known at run time (`awk "$PROG"`).
-      dynamicPrograms.push(value)
-      sawInline = true
+    if (value.startsWith('--assign=')) {
+      sources.push(value.slice('--assign='.length))
+      continue
     }
+    if (value.startsWith('-v') && !value.startsWith('--') && value.length > 2) {
+      sources.push(value.slice(2))
+      continue
+    }
+    if (value === '-f' || value === '--file') {
+      j += 1
+      continue
+    }
+    if (value.startsWith('--file=') || (value.startsWith('-f') && value.length > 2)) continue
+    if (value === '-F') {
+      j += 1
+      continue
+    }
+    if (value.startsWith('-F')) continue
+    if (value.startsWith('-') && value !== '-') continue
+    if (sawInline) continue
+    sawInline = true
+    if (word.quoted) programs.push(value)
+    else if (hasVariableExpansion(value)) dynamicPrograms.push(value)
   }
   return { programs, sources, dynamicPrograms }
 }

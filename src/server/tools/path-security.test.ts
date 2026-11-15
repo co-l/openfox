@@ -2711,6 +2711,14 @@ describe('extractDangerousPatterns — unresolved commands and awk/sed execution
     'mawk \'BEGIN{system("sudo whoami")}\'',
     "sed '1e sudo whoami'",
     "sed 's/x/sudo whoami/e'",
+    "sed --expression='1e sudo whoami'",
+    "sed -e's/x/sudo whoami/e'",
+    "sed -ne's/x/sudo whoami/e'",
+    "sed -e '' -e '1e sudo whoami'",
+    "sed --expression='' --expression='1e sudo whoami'",
+    "sed -e 's/x/y/' -e 's/a/sudo whoami/e'",
+    "awk -vcmd='sudo whoami' 'BEGIN{print | cmd}'",
+    "awk --assign=cmd='sudo whoami' 'BEGIN{print | cmd}'",
   ])('flags a command executed by an awk/sed program %s', (command) => {
     expect(extractDangerousPatterns(command)).toContain('sudo\\s')
   })

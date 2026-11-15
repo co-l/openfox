@@ -523,6 +523,10 @@ describe('detectGitMutation — global options, quoting and chaining', () => {
     expect(detectGitMutation('sudo awk \'BEGIN{system("git reset --hard")}\'')).not.toBeNull()
     expect(detectGitMutation("sed '1e git reset --hard'")).not.toBeNull()
     expect(detectGitMutation('awk -v cmd="git reset --hard" \'BEGIN{print | cmd}\'')).not.toBeNull()
+    expect(detectGitMutation("sed --expression='1e git reset --hard'")).not.toBeNull()
+    expect(detectGitMutation("sed -e's/x/git reset --hard/e'")).not.toBeNull()
+    expect(detectGitMutation("sed -e '' -e '1e git reset --hard'")).not.toBeNull()
+    expect(detectGitMutation("awk -vcmd='git reset --hard' 'BEGIN{print | cmd}'")).not.toBeNull()
   })
 
   it('fails closed on a dynamic wrapper command', () => {
