@@ -364,6 +364,108 @@ describe('workflow.execution_changed handler', () => {
     expect(exec?.pendingChoices).toEqual([])
   })
 
+  it('ignores a late event from a replaced execution (no step or counter corruption)', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    // The current run is exec-2 (the first one was cancelled/replaced).
+    const current = {
+      id: 'exec-2',
+      sessionId: 'session-a',
+      workflowId: 'default',
+      workflowName: 'Build & Verify',
+      status: 'running' as const,
+      currentStepId: 'step-2',
+      currentStepName: 'Review',
+      stepOutput: {},
+      params: {},
+      iterations: 4,
+      totalIterations: 4,
+      maxIterations: 50,
+      stepIterations: { 'step-2': 4 },
+      createdAt: 1000,
+      updatedAt: 1000,
+    }
+
+    useSessionStore.setState((state) => ({
+      ...state,
+      currentSession: { id: 'session-a', messages: [] } as any,
+      activeWorkflowExecution: current,
+    }))
+
+    // A late event of the OLD execution (exec-1) arrives.
+    useSessionStore.getState().handleServerMessage({
+      type: 'workflow.execution_changed',
+      sessionId: 'session-a',
+      payload: {
+        executionId: 'exec-1',
+        workflowId: 'default',
+        workflowName: 'Build & Verify',
+        status: 'waiting' as const,
+        currentStepId: 'step-1',
+        currentStepName: 'Build',
+        iterations: 99,
+        totalIterations: 99,
+        maxIterations: 50,
+        stepIterations: { 'step-1': 99 },
+      },
+    })
+
+    const exec = useSessionStore.getState().activeWorkflowExecution
+    // The current run keeps its own step and counters.
+    expect(exec?.id).toBe('exec-2')
+    expect(exec?.currentStepId).toBe('step-2')
+    expect(exec?.currentStepName).toBe('Review')
+    expect(exec?.status).toBe('running')
+    expect(exec?.iterations).toBe(4)
+    expect(exec?.totalIterations).toBe(4)
+    expect(exec?.stepIterations).toEqual({ 'step-2': 4 })
+  })
+
+  it('applies an event of the current execution', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    const current = {
+      id: 'exec-2',
+      sessionId: 'session-a',
+      workflowId: 'default',
+      workflowName: 'Build & Verify',
+      status: 'running' as const,
+      currentStepId: 'step-2',
+      stepOutput: {},
+      params: {},
+      iterations: 4,
+      totalIterations: 4,
+      createdAt: 1000,
+      updatedAt: 1000,
+    }
+
+    useSessionStore.setState((state) => ({
+      ...state,
+      currentSession: { id: 'session-a', messages: [] } as any,
+      activeWorkflowExecution: current,
+    }))
+
+    useSessionStore.getState().handleServerMessage({
+      type: 'workflow.execution_changed',
+      sessionId: 'session-a',
+      payload: {
+        executionId: 'exec-2',
+        workflowId: 'default',
+        workflowName: 'Build & Verify',
+        status: 'running' as const,
+        currentStepId: 'step-3',
+        currentStepName: 'Ship',
+        iterations: 5,
+        totalIterations: 5,
+      },
+    })
+
+    const exec = useSessionStore.getState().activeWorkflowExecution
+    expect(exec?.currentStepId).toBe('step-3')
+    expect(exec?.iterations).toBe(5)
+    expect(exec?.totalIterations).toBe(5)
+  })
+
   it('should leave the current session execution untouched when a background event arrives', async () => {
     const useSessionStore = await loadSessionStore()
 

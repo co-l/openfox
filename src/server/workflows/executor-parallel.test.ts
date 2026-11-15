@@ -143,6 +143,7 @@ function makeHarness(criteria: MetadataEntry[] = []) {
     addMessage: vi.fn(),
     startWorkflow: vi.fn(),
     updateWorkflowStep: vi.fn(),
+    updateWorkflowIterations: vi.fn(),
     completeWorkflow: vi.fn(),
     blockWorkflow: vi.fn(),
     waitAtStep: vi.fn(),
@@ -479,7 +480,7 @@ describe('executeWorkflow parallel step', () => {
     expect(lastReportCommand()).toBe('echo success')
     // The slice name is persisted on the workflow execution
     const startArgs = mockSessionManager.startWorkflow.mock.calls[0]!
-    expect(startArgs[startArgs.length - 1]).toBe('reviews-group')
+    expect(startArgs[6]).toBe('reviews-group')
   })
 
   it('re-runs all children when resuming at the parallel step', async () => {

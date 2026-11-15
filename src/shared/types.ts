@@ -88,6 +88,20 @@ export interface WorkflowExecution {
   pendingChoices?: UserStepChoice[]
   /** Sub-group slice this run belongs to, when launched as a slice. */
   subGroup?: string
+  /** Engine iterations consumed by the current invocation of this execution. */
+  iterations?: number
+  /** Cumulative engine iterations across every invocation of this execution. */
+  totalIterations?: number
+  /** Engine iteration cap for this execution (workflow settings.maxIterations). */
+  maxIterations?: number
+  /** Engine iterations consumed per step id — exact counts from the executor. */
+  stepIterations?: Record<string, number>
+  /**
+   * Scope the running definition was resolved from ('builtin' | 'user' |
+   * 'project'). Lets the client load the very definition that is running,
+   * even when another scope shadows the same id.
+   */
+  workflowScope?: WorkflowScope
   createdAt: number
   updatedAt: number
 }

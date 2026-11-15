@@ -320,4 +320,42 @@ describe('db migrations', () => {
 
     db.close()
   })
+
+  it('adds the engine iteration counter and workflow scope columns on upgrade from old schema', () => {
+    createOldSchemaDatabase(dbPath)
+
+    const config = loadConfig()
+    config.database.path = dbPath
+    initDatabase(config)
+
+    const db = new Database(dbPath)
+    const columns = db.prepare(`PRAGMA table_info(workflow_executions)`).all() as { name: string }[]
+    const columnNames = columns.map((c) => c.name)
+
+    expect(columnNames).toContain('iterations')
+    expect(columnNames).toContain('total_iterations')
+    expect(columnNames).toContain('max_iterations')
+    expect(columnNames).toContain('step_iterations')
+    expect(columnNames).toContain('workflow_scope')
+
+    db.close()
+  })
+
+  it('creates workflow_executions with the iteration counter and workflow scope columns on a fresh database', () => {
+    const config = loadConfig()
+    config.database.path = dbPath
+    initDatabase(config)
+
+    const db = new Database(dbPath)
+    const columns = db.prepare(`PRAGMA table_info(workflow_executions)`).all() as { name: string }[]
+    const columnNames = columns.map((c) => c.name)
+
+    expect(columnNames).toContain('iterations')
+    expect(columnNames).toContain('total_iterations')
+    expect(columnNames).toContain('max_iterations')
+    expect(columnNames).toContain('step_iterations')
+    expect(columnNames).toContain('workflow_scope')
+
+    db.close()
+  })
 })

@@ -168,6 +168,7 @@ function makeHarness(criteria: MetadataEntry[]) {
     addMessage: vi.fn(),
     startWorkflow: vi.fn(),
     updateWorkflowStep: vi.fn(),
+    updateWorkflowIterations: vi.fn(),
     completeWorkflow: vi.fn(),
     blockWorkflow: vi.fn(),
     waitAtStep: vi.fn(),
@@ -226,7 +227,7 @@ describe('executeWorkflow sub-group slices', () => {
     expect(mockSessionManager.completeWorkflow).toHaveBeenCalled()
     // The slice name is persisted on the workflow execution
     const startArgs = mockSessionManager.startWorkflow.mock.calls[0]!
-    expect(startArgs[startArgs.length - 1]).toBe('verify')
+    expect(startArgs[6]).toBe('verify')
   })
 
   it('verify slice without a tagged escape transition clamps to $done (untagged regression)', async () => {
@@ -266,7 +267,7 @@ describe('executeWorkflow sub-group slices', () => {
     expect(mockSessionManager.waitAtStep).toHaveBeenCalled()
     // The slice name is persisted on the workflow execution
     const startArgs = mockSessionManager.startWorkflow.mock.calls[0]!
-    expect(startArgs[startArgs.length - 1]).toBe('build')
+    expect(startArgs[6]).toBe('build')
   })
 
   it('build slice stops after implementing without running the verifier', async () => {

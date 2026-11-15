@@ -65,6 +65,52 @@ export interface DragState {
   mouseY: number
 }
 
+/**
+ * Runtime facts a read-only viewer may render on top of the graph. Every field
+ * is optional: an absent fact is unknown, and unknown facts are never
+ * rendered as a guess.
+ */
+export interface WorkflowRuntimeInfo {
+  /** Step the engine is currently on. */
+  currentStepId?: string | null
+  /**
+   * Exact engine iteration count per step id, as counted by the engine.
+   * When the map is present, a step absent from it is known not to have been
+   * entered yet; when it is absent entirely, nothing is known about it.
+   */
+  stepIterationCounts?: Record<string, number>
+}
+
+/** What a read-only viewer may say about one step. */
+export interface WorkflowStepRuntime {
+  /** The step the engine is currently on. */
+  isCurrent: boolean
+  /** The step is known not to have been entered yet. */
+  isPending: boolean
+  /** Exact engine iteration count for this step, when known. */
+  visitCount?: number
+}
+
+/**
+ * Resolve what a read-only viewer may say about a step. Facts are only
+ * reported when the engine actually reported them: inactivity is never
+ * interpreted as a blocked step.
+ */
+export function resolveStepRuntime(runtime: WorkflowRuntimeInfo | undefined, stepId: string): WorkflowStepRuntime {
+  if (!runtime) return { isCurrent: false, isPending: false }
+  const counts = runtime.stepIterationCounts
+  const isCurrent = runtime.currentStepId === stepId
+  const visitCount = counts?.[stepId]
+  // A step absent from a known count map was never entered — the engine
+  // records every step it enters, so this is a fact, not an inference.
+  const isPending = counts !== undefined && visitCount === undefined && !isCurrent
+  return {
+    isCurrent,
+    isPending,
+    ...(visitCount !== undefined ? { visitCount } : {}),
+  }
+}
+
 export function resolveAgent(step: WorkflowStep, agentTypes: AgentInfo[]): { name: string; color: string } {
   if (step.type === 'agent') {
     const agent = agentTypes.find((a) => a.id === step.agentId)

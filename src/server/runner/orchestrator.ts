@@ -10,10 +10,10 @@ import { logger } from '../utils/logger.js'
 import { getRuntimeConfig } from '../runtime-config.js'
 import { getGlobalConfigDir } from '../../cli/paths.js'
 import {
-  loadAllWorkflows,
   loadDefaultWorkflows,
   loadUserWorkflows,
   loadProjectWorkflows,
+  loadWorkflowsWithScope,
   findWorkflowById,
   normalizeWorkflowScope,
 } from '../workflows/registry.js'
@@ -39,20 +39,29 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
 
   const scope = normalizeWorkflowScope(options.scope)
   let workflow
+  let resolvedScope: import('../../shared/types.js').WorkflowScope = 'builtin'
   if (scope === 'builtin') {
     workflow = findWorkflowById(workflowId, await loadDefaultWorkflows())
+    resolvedScope = 'builtin'
   } else if (scope === 'user') {
     workflow = findWorkflowById(workflowId, await loadUserWorkflows(configDir))
+    resolvedScope = 'user'
   } else if (scope === 'project') {
     workflow = projectDir ? findWorkflowById(workflowId, await loadProjectWorkflows(projectDir)) : undefined
+    resolvedScope = 'project'
   } else {
     workflow = undefined
   }
 
   // Fall back to precedence when the explicit bucket has no matching workflow
   if (!workflow) {
-    const workflows = await loadAllWorkflows(configDir, projectDir)
+    // One read of the buckets yields both the definition and the scope that
+    // supplied it, so the precedence rule is never duplicated.
+    const { workflows, scopes } = await loadWorkflowsWithScope(configDir, projectDir)
     workflow = findWorkflowById(workflowId, workflows)
+    // The fallback follows server precedence (project > user > builtin); the
+    // resolved scope tells the client which definition is really running.
+    resolvedScope = scopes.get(workflowId) ?? 'builtin'
   }
 
   if (!workflow) {
@@ -73,5 +82,5 @@ export async function runOrchestrator(options: OrchestratorOptions): Promise<Orc
     workflow: workflow.metadata.id,
     subGroup: options.subGroup,
   })
-  return executeWorkflow(workflow, options, options.subGroup)
+  return executeWorkflow(workflow, options, options.subGroup, resolvedScope)
 }

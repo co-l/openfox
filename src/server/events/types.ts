@@ -229,6 +229,17 @@ export type TurnEvent =
         status: WorkflowExecutionStatus
         currentStepId?: string
         currentStepName?: string
+        pendingChoices?: import('../../shared/types.js').UserStepChoice[]
+        /** Engine iterations consumed by the current invocation. */
+        iterations?: number
+        /** Cumulative engine iterations across every invocation. */
+        totalIterations?: number
+        /** Engine iteration cap. */
+        maxIterations?: number
+        /** Engine iterations consumed per step id. */
+        stepIterations?: Record<string, number>
+        /** Scope the running definition was resolved from. */
+        workflowScope?: import('../../shared/types.js').WorkflowScope
       }
     }
 

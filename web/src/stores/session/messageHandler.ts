@@ -1046,11 +1046,26 @@ export function handleServerMessage(
         currentStepId?: string
         currentStepName?: string
         pendingChoices?: import('@shared/types.js').UserStepChoice[]
+        iterations?: number
+        totalIterations?: number
+        maxIterations?: number
+        stepIterations?: Record<string, number>
+        workflowScope?: import('@shared/types.js').WorkflowScope
       }
       const stepPatch = {
         ...(payload.currentStepId ? { currentStepId: payload.currentStepId } : {}),
         ...(payload.currentStepName ? { currentStepName: payload.currentStepName } : {}),
         ...(payload.pendingChoices ? { pendingChoices: payload.pendingChoices } : {}),
+        // The scope tells the client which definition is really running.
+        ...(payload.workflowScope ? { workflowScope: payload.workflowScope } : {}),
+      }
+      // Engine counters are only patched when the server actually sent them —
+      // an absent counter is unknown, not zero.
+      const counterPatch = {
+        ...(payload.iterations !== undefined ? { iterations: payload.iterations } : {}),
+        ...(payload.totalIterations !== undefined ? { totalIterations: payload.totalIterations } : {}),
+        ...(payload.maxIterations !== undefined ? { maxIterations: payload.maxIterations } : {}),
+        ...(payload.stepIterations !== undefined ? { stepIterations: payload.stepIterations } : {}),
       }
       if (
         !applyChat(set, get, sessionId, (pane) => {
@@ -1067,6 +1082,7 @@ export function handleServerMessage(
                 ...(payload.workflowColor ? { workflowColor: payload.workflowColor } : {}),
                 status: payload.status,
                 ...stepPatch,
+                ...counterPatch,
                 stepOutput: {},
                 params: {},
                 createdAt: Date.now(),
@@ -1074,12 +1090,18 @@ export function handleServerMessage(
               },
             }
           }
+          // A late event from a replaced or cancelled execution must not
+          // overwrite the current run's step or counters.
+          if (current.id !== payload.executionId) {
+            return pane
+          }
           return {
             ...pane,
             activeWorkflowExecution: {
               ...current,
               status: payload.status,
               ...stepPatch,
+              ...counterPatch,
             },
           }
         })

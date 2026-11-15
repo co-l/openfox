@@ -370,6 +370,11 @@ function runMigrations(db: Database.Database): void {
       params TEXT,
       pending_choices TEXT,
       sub_group TEXT,
+      iterations INTEGER NOT NULL DEFAULT 0,
+      total_iterations INTEGER NOT NULL DEFAULT 0,
+      max_iterations INTEGER,
+      step_iterations TEXT,
+      workflow_scope TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
@@ -393,6 +398,26 @@ function runMigrations(db: Database.Database): void {
   if (!workflowExecColumnNames.includes('sub_group')) {
     logger.info('Migrating workflow_executions table: adding sub_group column')
     db.exec(`ALTER TABLE workflow_executions ADD COLUMN sub_group TEXT`)
+  }
+
+  // Migration: Add engine iteration counters (exact engine iterations per execution)
+  for (const column of ['iterations', 'total_iterations']) {
+    if (!workflowExecColumnNames.includes(column)) {
+      logger.info(`Migrating workflow_executions table: adding ${column} column`)
+      db.exec(`ALTER TABLE workflow_executions ADD COLUMN ${column} INTEGER NOT NULL DEFAULT 0`)
+    }
+  }
+  if (!workflowExecColumnNames.includes('max_iterations')) {
+    logger.info('Migrating workflow_executions table: adding max_iterations column')
+    db.exec(`ALTER TABLE workflow_executions ADD COLUMN max_iterations INTEGER`)
+  }
+  if (!workflowExecColumnNames.includes('step_iterations')) {
+    logger.info('Migrating workflow_executions table: adding step_iterations column')
+    db.exec(`ALTER TABLE workflow_executions ADD COLUMN step_iterations TEXT`)
+  }
+  if (!workflowExecColumnNames.includes('workflow_scope')) {
+    logger.info('Migrating workflow_executions table: adding workflow_scope column')
+    db.exec(`ALTER TABLE workflow_executions ADD COLUMN workflow_scope TEXT`)
   }
 
   // ------------------------------------------------------------------

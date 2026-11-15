@@ -94,27 +94,67 @@ export async function loadProjectWorkflows(projectDir: string): Promise<Workflow
   return loadWorkflowsFromDir(getProjectWorkflowsDir(projectDir))
 }
 
-export async function loadAllWorkflows(configDir: string, projectDir?: string): Promise<WorkflowDefinition[]> {
-  const [defaultWorkflows, userWorkflows] = await Promise.all([loadDefaultWorkflows(), loadUserWorkflows(configDir)])
-
-  const workflowMap = new Map<string, WorkflowDefinition>()
-  for (const workflow of defaultWorkflows) {
-    workflowMap.set(workflow.metadata.id, workflow)
-  }
-  for (const workflow of userWorkflows) {
-    workflowMap.set(workflow.metadata.id, workflow)
-  }
-
-  if (projectDir) {
-    const projectWorkflows = await loadProjectWorkflows(projectDir)
-    for (const workflow of projectWorkflows) {
-      workflowMap.set(workflow.metadata.id, workflow)
-    }
-  }
-
-  return Array.from(workflowMap.values())
+interface WorkflowBuckets {
+  defaultWorkflows: WorkflowDefinition[]
+  userWorkflows: WorkflowDefinition[]
+  projectWorkflows: WorkflowDefinition[]
 }
 
+/**
+ * Read the three workflow buckets once. Both the merged list and the resolved
+ * scope are derived from these buckets, so the project > user > builtin
+ * precedence lives in exactly one place.
+ */
+async function loadWorkflowBuckets(configDir: string, projectDir?: string): Promise<WorkflowBuckets> {
+  const [defaultWorkflows, userWorkflows, projectWorkflows] = await Promise.all([
+    loadDefaultWorkflows(),
+    loadUserWorkflows(configDir),
+    projectDir ? loadProjectWorkflows(projectDir) : Promise.resolve([] as WorkflowDefinition[]),
+  ])
+  return { defaultWorkflows, userWorkflows, projectWorkflows }
+}
+
+/**
+ * Merge the buckets with project > user > builtin precedence and tag each id
+ * with the scope that supplied it.
+ */
+function mergeWorkflowBuckets(buckets: WorkflowBuckets): {
+  workflows: WorkflowDefinition[]
+  scopes: Map<string, WorkflowScope>
+} {
+  const workflowMap = new Map<string, WorkflowDefinition>()
+  const scopes = new Map<string, WorkflowScope>()
+  for (const workflow of buckets.defaultWorkflows) {
+    workflowMap.set(workflow.metadata.id, workflow)
+    scopes.set(workflow.metadata.id, 'builtin')
+  }
+  for (const workflow of buckets.userWorkflows) {
+    workflowMap.set(workflow.metadata.id, workflow)
+    scopes.set(workflow.metadata.id, 'user')
+  }
+  for (const workflow of buckets.projectWorkflows) {
+    workflowMap.set(workflow.metadata.id, workflow)
+    scopes.set(workflow.metadata.id, 'project')
+  }
+  return { workflows: Array.from(workflowMap.values()), scopes }
+}
+
+/**
+ * Load every effective workflow together with the scope that supplied each id.
+ * Callers that need both the definition and its scope must use this instead of
+ * calling `loadAllWorkflows` + `resolveWorkflowScope`, which would read the
+ * buckets twice.
+ */
+export async function loadWorkflowsWithScope(
+  configDir: string,
+  projectDir?: string,
+): Promise<{ workflows: WorkflowDefinition[]; scopes: Map<string, WorkflowScope> }> {
+  return mergeWorkflowBuckets(await loadWorkflowBuckets(configDir, projectDir))
+}
+
+export async function loadAllWorkflows(configDir: string, projectDir?: string): Promise<WorkflowDefinition[]> {
+  return (await loadWorkflowsWithScope(configDir, projectDir)).workflows
+}
 export interface WorkflowCatalogEntry {
   id: string
   name: string
@@ -130,27 +170,14 @@ export interface WorkflowCatalogEntry {
  * tagged with the scope that supplied it.
  */
 export async function listAvailableWorkflows(configDir: string, projectDir?: string): Promise<WorkflowCatalogEntry[]> {
-  const [defaultWorkflows, userWorkflows, projectWorkflows] = await Promise.all([
-    loadDefaultWorkflows(),
-    loadUserWorkflows(configDir),
-    projectDir ? loadProjectWorkflows(projectDir) : Promise.resolve([] as WorkflowDefinition[]),
-  ])
+  const { workflows, scopes } = await loadWorkflowsWithScope(configDir, projectDir)
 
-  const projectIds = new Set(projectWorkflows.map((w) => w.metadata.id))
-  const userIds = new Set(userWorkflows.map((w) => w.metadata.id))
-  const effective = [...defaultWorkflows, ...userWorkflows, ...projectWorkflows]
-  const byId = new Map(effective.map((w) => [w.metadata.id, w]))
-
-  return Array.from(byId.values()).map((workflow) => ({
+  return workflows.map((workflow) => ({
     id: workflow.metadata.id,
     name: workflow.metadata.name,
     description: workflow.metadata.description,
     ...(workflow.metadata.color ? { color: workflow.metadata.color } : {}),
-    scope: projectIds.has(workflow.metadata.id)
-      ? ('project' as const)
-      : userIds.has(workflow.metadata.id)
-        ? ('user' as const)
-        : ('builtin' as const),
+    scope: scopes.get(workflow.metadata.id) ?? ('builtin' as const),
     ...(workflow.metadata.parameters ? { parameters: workflow.metadata.parameters } : {}),
   }))
 }
@@ -190,6 +217,25 @@ export async function isDefaultWorkflow(workflowId: string): Promise<boolean> {
 
 export function findWorkflowById(workflowId: string, workflows: WorkflowDefinition[]): WorkflowDefinition | undefined {
   return workflows.find((p) => p.metadata.id === workflowId)
+}
+
+/**
+ * Resolve a workflow id to the scope that actually supplies it, applying the
+ * server precedence (project > user > builtin). The client uses it to load the
+ * very definition that is running, even when another scope shadows the same
+ * id.
+ *
+ * Callers that also need the definitions must use `loadWorkflowsWithScope`
+ * instead of calling this next to `loadAllWorkflows`, so the buckets are read
+ * once.
+ */
+export async function resolveWorkflowScope(
+  workflowId: string,
+  configDir: string,
+  projectDir?: string,
+): Promise<WorkflowScope> {
+  const { scopes } = await loadWorkflowsWithScope(configDir, projectDir)
+  return scopes.get(workflowId) ?? 'builtin'
 }
 
 export async function workflowExists(configDir: string, workflowId: string, projectDir?: string): Promise<boolean> {

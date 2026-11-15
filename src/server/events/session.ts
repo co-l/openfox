@@ -588,6 +588,25 @@ export function emitRunningChanged(sessionId: string, isRunning: boolean): void 
 }
 
 /**
+ * Everything a `workflow.execution_changed` event can carry beyond its
+ * identity. Passing an options object keeps the call sites readable and makes
+ * a misplaced counter or scope impossible (it would no longer compile).
+ */
+export interface WorkflowExecutionChangedOptions {
+  status: import('../../shared/types.js').WorkflowExecutionStatus
+  currentStepId?: string
+  currentStepName?: string
+  pendingChoices?: import('../../shared/types.js').UserStepChoice[]
+  iterations?: {
+    iterations: number
+    totalIterations: number
+    maxIterations?: number
+    stepIterations?: Record<string, number>
+  }
+  workflowScope?: import('../../shared/types.js').WorkflowScope
+}
+
+/**
  * Emit workflow execution changed (lightweight sync event)
  */
 export function emitWorkflowExecutionChanged(
@@ -596,10 +615,14 @@ export function emitWorkflowExecutionChanged(
   workflowId: string,
   workflowName: string,
   workflowColor: string | undefined,
-  status: import('../../shared/types.js').WorkflowExecutionStatus,
-  currentStepId?: string,
-  currentStepName?: string,
-  pendingChoices?: import('../../shared/types.js').UserStepChoice[],
+  {
+    status,
+    currentStepId,
+    currentStepName,
+    pendingChoices,
+    iterations,
+    workflowScope,
+  }: WorkflowExecutionChangedOptions,
 ): void {
   const eventStore = getEventStore()
   eventStore.append(sessionId, {
@@ -613,6 +636,15 @@ export function emitWorkflowExecutionChanged(
       ...(currentStepId ? { currentStepId } : {}),
       ...(currentStepName ? { currentStepName } : {}),
       ...(pendingChoices !== undefined ? { pendingChoices } : {}),
+      ...(workflowScope ? { workflowScope } : {}),
+      ...(iterations
+        ? {
+            iterations: iterations.iterations,
+            totalIterations: iterations.totalIterations,
+            ...(iterations.maxIterations !== undefined ? { maxIterations: iterations.maxIterations } : {}),
+            ...(iterations.stepIterations ? { stepIterations: iterations.stepIterations } : {}),
+          }
+        : {}),
     },
   })
 }

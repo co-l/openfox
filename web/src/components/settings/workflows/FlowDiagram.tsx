@@ -1,7 +1,15 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import type { WorkflowStep } from '../../../lib/workflows-actions'
 import type { AgentInfo } from '../../../lib/agents-actions'
-import { computeLayout, PORT_R, type LayoutEdge, type LayoutNode, type DragState } from './layout'
+import {
+  computeLayout,
+  PORT_R,
+  resolveStepRuntime,
+  type LayoutEdge,
+  type LayoutNode,
+  type DragState,
+  type WorkflowRuntimeInfo,
+} from './layout'
 
 interface FlowDiagramProps {
   steps: WorkflowStep[]
@@ -18,6 +26,11 @@ interface FlowDiagramProps {
   onReconnectTo: (edgeKey: string, newTarget: string) => void
   onReconnectFrom: (edgeKey: string, newSourceId: string) => void
   onDeleteTransition: (edgeKey: string) => void
+  /**
+   * Runtime facts of a running execution (read-only viewers only). When
+   * omitted the diagram renders as a plain graph — no status is invented.
+   */
+  runtime?: WorkflowRuntimeInfo
 }
 
 export function FlowDiagram({
@@ -35,6 +48,7 @@ export function FlowDiagram({
   onReconnectTo,
   onReconnectFrom,
   onDeleteTransition,
+  runtime,
 }: FlowDiagramProps) {
   const svgRef = useRef<SVGSVGElement>(null)
   const dragEndedRef = useRef(false)
@@ -516,6 +530,7 @@ export function FlowDiagram({
         }
 
         const color = node.color ?? '#6b7280'
+        const stepRuntime = resolveStepRuntime(runtime, node.id)
         return (
           <g
             key={node.id}
@@ -526,6 +541,8 @@ export function FlowDiagram({
             onMouseEnter={() => setHoveredNodeId(node.id)}
             onMouseLeave={() => setHoveredNodeId(null)}
             className={isReadOnly ? undefined : 'cursor-pointer'}
+            data-testid={stepRuntime.isCurrent ? 'flow-step-current' : undefined}
+            data-step-id={node.id}
           >
             {isDragTarget && (
               <rect
@@ -553,6 +570,19 @@ export function FlowDiagram({
                 strokeWidth={2}
               />
             )}
+            {stepRuntime.isCurrent && (
+              <rect
+                x={x - 3}
+                y={y - 3}
+                width={node.w + 6}
+                height={node.h + 6}
+                rx={12}
+                fill="none"
+                stroke="#f59e0b"
+                strokeOpacity={0.9}
+                strokeWidth={2.5}
+              />
+            )}
             <rect
               x={x}
               y={y}
@@ -560,21 +590,33 @@ export function FlowDiagram({
               height={node.h}
               rx={10}
               fill={color}
-              fillOpacity={0.08}
+              fillOpacity={stepRuntime.isPending ? 0.03 : 0.08}
               stroke={color}
-              strokeOpacity={0.6}
+              strokeOpacity={stepRuntime.isPending ? 0.25 : 0.6}
               strokeWidth={isNodeSelected ? 2 : 1.5}
             />
             <text
               x={node.cx}
               y={node.cy + 4}
               textAnchor="middle"
-              fill="#c9d1d9"
+              fill={stepRuntime.isPending ? '#6e7681' : '#c9d1d9'}
               className="text-[11px] font-medium"
               pointerEvents="none"
             >
               {node.label}
             </text>
+            {stepRuntime.visitCount !== undefined && stepRuntime.visitCount > 1 && (
+              <text
+                x={x + node.w - 6}
+                y={y + 11}
+                textAnchor="end"
+                fill="#f59e0b"
+                className="text-[9px] font-medium"
+                pointerEvents="none"
+              >
+                {`x${stepRuntime.visitCount}`}
+              </text>
+            )}
             {!isReadOnly && renderOutputPort(node)}
             {!isReadOnly && renderInputPort(node)}
             {isHovered && !dragState && !isReadOnly && (

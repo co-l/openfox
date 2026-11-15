@@ -663,8 +663,25 @@ export interface WorkflowExecutionRow {
   params: string | null
   pending_choices: string | null
   sub_group: string | null
+  iterations: number
+  total_iterations: number
+  max_iterations: number | null
+  step_iterations: string | null
+  workflow_scope: string | null
   created_at: number
   updated_at: number
+}
+
+/** Engine iteration counters persisted per workflow execution. */
+export interface WorkflowExecutionIterations {
+  /** Engine iterations consumed by the current invocation of this execution. */
+  iterations: number
+  /** Cumulative engine iterations across every invocation of this execution. */
+  totalIterations: number
+  /** Engine iteration cap for this execution. */
+  maxIterations?: number
+  /** Engine iterations consumed per step id. */
+  stepIterations?: Record<string, number>
 }
 
 export function createWorkflowExecution(
@@ -675,12 +692,14 @@ export function createWorkflowExecution(
   workflowColor: string | undefined,
   params: Record<string, string>,
   subGroup?: string,
+  maxIterations?: number,
+  workflowScope?: import('../../shared/types.js').WorkflowScope,
 ): void {
   const db = getDatabase()
   const now = Date.now()
   db.prepare(
-    `INSERT INTO workflow_executions (id, session_id, workflow_id, workflow_name, workflow_color, status, step_output, params, sub_group, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, 'running', '{}', ?, ?, ?, ?)`,
+    `INSERT INTO workflow_executions (id, session_id, workflow_id, workflow_name, workflow_color, status, step_output, params, sub_group, iterations, total_iterations, max_iterations, step_iterations, workflow_scope, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 'running', '{}', ?, ?, 0, 0, ?, '{}', ?, ?, ?)`,
   ).run(
     id,
     sessionId,
@@ -689,8 +708,32 @@ export function createWorkflowExecution(
     workflowColor ?? null,
     JSON.stringify(params),
     subGroup ?? null,
+    maxIterations ?? null,
+    workflowScope ?? null,
     now,
     now,
+  )
+}
+
+/**
+ * Persist the exact engine iteration counters of a workflow execution.
+ * Every value is written from the executor's own counters — nothing here is
+ * derived or approximated.
+ */
+export function updateWorkflowExecutionIterations(executionId: string, counters: WorkflowExecutionIterations): void {
+  const db = getDatabase()
+  const now = Date.now()
+  db.prepare(
+    `UPDATE workflow_executions
+     SET iterations = ?, total_iterations = ?, max_iterations = COALESCE(?, max_iterations), step_iterations = ?, updated_at = ?
+     WHERE id = ?`,
+  ).run(
+    counters.iterations,
+    counters.totalIterations,
+    counters.maxIterations ?? null,
+    JSON.stringify(counters.stepIterations ?? {}),
+    now,
+    executionId,
   )
 }
 
@@ -738,4 +781,11 @@ export function clearWorkflowExecution(executionId: string): void {
   const db = getDatabase()
   const now = Date.now()
   db.prepare(`UPDATE workflow_executions SET updated_at = ? WHERE id = ?`).run(now, executionId)
+}
+
+/** Read a workflow execution row by its id (any status). */
+export function getWorkflowExecutionById(executionId: string): WorkflowExecutionRow | undefined {
+  const db = getDatabase()
+  return db.prepare(`SELECT * FROM workflow_executions WHERE id = ?`).get(executionId) as
+    WorkflowExecutionRow | undefined
 }

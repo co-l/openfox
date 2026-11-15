@@ -336,6 +336,7 @@ export async function executeWorkflow(
   workflow: WorkflowDefinition,
   options: OrchestratorOptions,
   subGroup?: string,
+  workflowScope?: import('../../shared/types.js').WorkflowScope,
 ): Promise<OrchestratorResult> {
   const { sessionManager, sessionId, llmClient, signal, onMessage } = options
   const eventStore = getEventStore()
@@ -399,10 +400,22 @@ export async function executeWorkflow(
   // condition) can be marked blocked even on resume. On fresh starts it stays
   // undefined until the marker is emitted below.
   let executionId: string | undefined
+  // Engine iteration counters of this execution, restored from persistence on
+  // resume. `iterations` (the local counter) always describes the CURRENT
+  // invocation; `persistedTotalIterations` is the cumulative count of every
+  // previous invocation of the same execution.
+  let persistedTotalIterations = 0
+  const stepIterationCounts: Record<string, number> = {}
   if (isResume) {
     const activeExec = sessionManager.getActiveWorkflowExecution(sessionId)
     if (activeExec) {
       executionId = activeExec.id
+      persistedTotalIterations = activeExec.totalIterations ?? 0
+      if (activeExec.stepIterations) {
+        for (const [stepId, count] of Object.entries(activeExec.stepIterations)) {
+          stepIterationCounts[stepId] = count
+        }
+      }
     }
   }
 
@@ -458,6 +471,8 @@ export async function executeWorkflow(
       workflow.metadata.color,
       options.params ?? {},
       subGroup,
+      workflow.settings.maxIterations,
+      workflowScope,
     )
   }
 
@@ -468,6 +483,31 @@ export async function executeWorkflow(
       content: options.userMessage.content,
       ...(options.userMessage.attachments ? { attachments: options.userMessage.attachments } : {}),
     })
+  }
+
+  /**
+   * Persist and broadcast the exact engine counters of this execution. The
+   * broadcast uses the lightweight workflow event, so the client stays exact
+   * without a full session rebuild on every iteration.
+   */
+  const publishIterations = (): void => {
+    if (!executionId) return
+    sessionManager.updateWorkflowIterations(
+      sessionId,
+      executionId,
+      {
+        iterations,
+        totalIterations: persistedTotalIterations + iterations,
+        maxIterations: workflow.settings.maxIterations,
+        stepIterations: { ...stepIterationCounts },
+      },
+      {
+        workflowId: workflow.metadata.id,
+        workflowName: workflow.metadata.name,
+        ...(workflow.metadata.color ? { workflowColor: workflow.metadata.color } : {}),
+        ...(workflowScope ? { workflowScope } : {}),
+      },
+    )
   }
 
   while (iterations < workflow.settings.maxIterations) {
@@ -482,7 +522,6 @@ export async function executeWorkflow(
         totalTime: (performance.now() - startTime) / 1000,
       }
     }
-
     iterations++
 
     const step = stepsById.get(currentStepId)
@@ -521,6 +560,17 @@ export async function executeWorkflow(
 
     // Track current step in workflow execution
     if (executionId) {
+      // Persist and broadcast the exact engine counters of this execution: the
+      // iterations of the current invocation, the cumulative count across
+      // invocations, the engine cap, and the per-step iteration counts. Every
+      // value is the executor's own counter — nothing is estimated. The
+      // counters travel with the same lightweight event as the step change, so
+      // a step transition costs no extra round trip.
+      const stepIterations = {
+        ...stepIterationCounts,
+        [step.id]: (stepIterationCounts[step.id] ?? 0) + 1,
+      }
+      stepIterationCounts[step.id] = stepIterations[step.id]!
       sessionManager.updateWorkflowStep(
         sessionId,
         executionId,
@@ -529,6 +579,13 @@ export async function executeWorkflow(
         workflow.metadata.id,
         workflow.metadata.name,
         workflow.metadata.color,
+        {
+          iterations,
+          totalIterations: persistedTotalIterations + iterations,
+          maxIterations: workflow.settings.maxIterations,
+          stepIterations,
+        },
+        workflowScope,
       )
     }
 
@@ -609,6 +666,7 @@ export async function executeWorkflow(
         const blockOnLLMFailure = (errorMessage: string): OrchestratorResult => {
           sessionManager.setPhase(sessionId, 'blocked')
           if (executionId) {
+            publishIterations()
             sessionManager.blockWorkflow(
               sessionId,
               executionId,
@@ -812,6 +870,8 @@ export async function executeWorkflow(
             const target = choice.goto ? stepsById.get(choice.goto) : undefined
             return target ? { ...choice, nextStepName: target.name } : choice
           })
+          // The engine is parked on this step: it waits for the user.
+          publishIterations()
           sessionManager.waitAtStep(
             sessionId,
             executionId,
@@ -876,6 +936,7 @@ export async function executeWorkflow(
 
       // Clean up workflow execution
       if (executionId) {
+        publishIterations()
         sessionManager.completeWorkflow(
           sessionId,
           executionId,
@@ -932,6 +993,7 @@ export async function executeWorkflow(
 
       // Clean up workflow execution
       if (executionId) {
+        publishIterations()
         sessionManager.blockWorkflow(
           sessionId,
           executionId,
@@ -960,6 +1022,11 @@ export async function executeWorkflow(
 
   // Max iterations reached
   logger.warn('Workflow executor max iterations reached', { sessionId, iterations })
+  if (executionId) {
+    // The engine hit its own cap: persist the exact counters (including the
+    // cap) so the UI can show the ceiling truthfully.
+    publishIterations()
+  }
   return {
     finalAction: {
       type: 'BLOCKED',

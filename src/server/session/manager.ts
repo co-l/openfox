@@ -42,8 +42,10 @@ import {
   getSessionCachedPrompt,
   createWorkflowExecution,
   updateWorkflowExecutionStatus,
+  updateWorkflowExecutionIterations,
   getActiveWorkflowExecution as dbGetActiveWorkflowExecution,
   getLatestWorkflowExecution as dbGetLatestWorkflowExecution,
+  getWorkflowExecutionById as dbGetWorkflowExecutionById,
   clearWorkflowExecution,
   type DangerLevel,
 } from '../db/sessions.js'
@@ -146,6 +148,60 @@ To land changes from this workspace when the user asks to commit and push:
 // ============================================================================
 // Session Manager
 // ============================================================================
+
+/**
+ * Engine iteration counters of a workflow execution, mapped onto the shared
+ * client type. Values come from the executor's own counters — never derived
+ * from timestamps or reconstructed.
+ */
+function workflowIterationFields(row: import('../db/sessions.js').WorkflowExecutionRow): {
+  iterations?: number
+  totalIterations?: number
+  maxIterations?: number
+  stepIterations?: Record<string, number>
+  workflowScope?: import('../../shared/types.js').WorkflowScope
+} {
+  const stepIterations = row.step_iterations ? (JSON.parse(row.step_iterations) as Record<string, number>) : {}
+  return {
+    iterations: row.iterations ?? 0,
+    totalIterations: row.total_iterations ?? 0,
+    ...(row.max_iterations !== null && row.max_iterations !== undefined ? { maxIterations: row.max_iterations } : {}),
+    ...(Object.keys(stepIterations).length > 0 ? { stepIterations } : {}),
+    ...(row.workflow_scope
+      ? { workflowScope: row.workflow_scope as import('../../shared/types.js').WorkflowScope }
+      : {}),
+  }
+}
+
+/**
+ * True when the persisted counters already hold exactly these values, i.e. a
+ * republish would emit a `workflow.execution_changed` carrying nothing new.
+ */
+function workflowCountersEqual(
+  row: import('../db/sessions.js').WorkflowExecutionRow,
+  counters: {
+    iterations: number
+    totalIterations: number
+    maxIterations?: number
+    stepIterations?: Record<string, number>
+  },
+): boolean {
+  const persistedSteps = row.step_iterations ? (JSON.parse(row.step_iterations) as Record<string, number>) : {}
+  const nextSteps = counters.stepIterations ?? {}
+  // Compare by key set, not by serialized order: a future change that sorts or
+  // reorders the map must not turn an identical republish into a spurious event.
+  const persistedKeys = Object.keys(persistedSteps).sort()
+  const nextKeys = Object.keys(nextSteps).sort()
+  const sameSteps =
+    persistedKeys.length === nextKeys.length &&
+    persistedKeys.every((key, index) => key === nextKeys[index] && persistedSteps[key] === nextSteps[key])
+  return (
+    (row.iterations ?? 0) === counters.iterations &&
+    (row.total_iterations ?? 0) === counters.totalIterations &&
+    (row.max_iterations ?? null) === (counters.maxIterations ?? null) &&
+    sameSteps
+  )
+}
 
 export class SessionManager {
   private events = new EventEmitter<SessionEvents>()
@@ -1130,6 +1186,8 @@ export class SessionManager {
     workflowColor: string | undefined,
     params: Record<string, string>,
     subGroup?: string,
+    maxIterations?: number,
+    workflowScope?: import('../../shared/types.js').WorkflowScope,
   ): void {
     // Cancel any existing active workflow execution before starting a new one
     const existing = this.getActiveWorkflowExecution(sessionId)
@@ -1137,14 +1195,90 @@ export class SessionManager {
       this.cancelWorkflow(sessionId, existing.id, existing.workflowId, existing.workflowName, existing.workflowColor)
     }
 
-    createWorkflowExecution(executionId, sessionId, workflowId, workflowName, workflowColor, params, subGroup)
-    emitWorkflowExecutionChanged(sessionId, executionId, workflowId, workflowName, workflowColor, 'running')
+    createWorkflowExecution(
+      executionId,
+      sessionId,
+      workflowId,
+      workflowName,
+      workflowColor,
+      params,
+      subGroup,
+      maxIterations,
+      workflowScope,
+    )
+    emitWorkflowExecutionChanged(sessionId, executionId, workflowId, workflowName, workflowColor, {
+      status: 'running',
+      ...(workflowScope ? { workflowScope } : {}),
+    })
     const updatedSession = this.requireSession(sessionId)
     this.emit({ type: 'session_updated', session: updatedSession })
   }
 
   /**
+   * Persist the exact engine iteration counters of a workflow execution.
+   * The values come straight from the executor's own counters — the UI shows
+   * them as-is, so nothing here is derived or rounded.
+   *
+   * No `session_updated` is emitted: the lightweight `workflow.execution_changed`
+   * event already carries the counters, and a full session broadcast would
+   * rebuild and rebroadcast the whole message list on every iteration.
+   */
+  updateWorkflowIterations(
+    sessionId: string,
+    executionId: string,
+    counters: {
+      iterations: number
+      totalIterations: number
+      maxIterations?: number
+      stepIterations?: Record<string, number>
+    },
+    workflow?: {
+      workflowId: string
+      workflowName: string
+      workflowColor?: string
+      workflowScope?: import('../../shared/types.js').WorkflowScope
+    },
+  ): void {
+    // The persisted row is the authority on the current status and step, so
+    // the event never reports a stale or invented state.
+    const row = dbGetWorkflowExecutionById(executionId)
+    // Terminal transitions republish the counters right after the last step
+    // event already shipped these exact values. Skipping the duplicate keeps
+    // the event stream honest: a "running" event that changes nothing would
+    // only add noise before the "completed"/"blocked" one.
+    const unchanged = row !== undefined && workflowCountersEqual(row, counters)
+    if (!unchanged) updateWorkflowExecutionIterations(executionId, counters)
+    if (!workflow || unchanged) return
+    // The lightweight `workflow.execution_changed` event carries the counters,
+    // so the client stays exact without a full session broadcast (which would
+    // rebuild and rebroadcast the whole message list on every iteration).
+    const current = row ?? dbGetWorkflowExecutionById(executionId)
+    emitWorkflowExecutionChanged(
+      sessionId,
+      executionId,
+      workflow.workflowId,
+      workflow.workflowName,
+      workflow.workflowColor,
+      {
+        status: (current?.status as import('../../shared/types.js').WorkflowExecutionStatus) ?? 'running',
+        ...(current?.current_step_id ? { currentStepId: current.current_step_id } : {}),
+        ...(current?.current_step_name ? { currentStepName: current.current_step_name } : {}),
+        iterations: counters,
+        ...(workflow.workflowScope ? { workflowScope: workflow.workflowScope } : {}),
+      },
+    )
+  }
+
+  /**
    * Update the current step of a running workflow execution.
+   *
+   * `iterations` carries the exact engine counters of the execution. They are
+   * persisted with the step change and shipped in the same lightweight event,
+   * so the client never has to guess a number.
+   *
+   * No `session_updated` is emitted: the lightweight workflow event already
+   * carries the step and the counters, and a full session broadcast would
+   * rebuild and rebroadcast the whole message list on every iteration.
    */
   updateWorkflowStep(
     sessionId: string,
@@ -1154,20 +1288,25 @@ export class SessionManager {
     workflowId: string,
     workflowName: string,
     workflowColor: string | undefined,
+    iterations?: {
+      iterations: number
+      totalIterations: number
+      maxIterations?: number
+      stepIterations?: Record<string, number>
+    },
+    workflowScope?: import('../../shared/types.js').WorkflowScope,
   ): void {
     updateWorkflowExecutionStatus(executionId, 'running', stepId, stepName)
-    emitWorkflowExecutionChanged(
-      sessionId,
-      executionId,
-      workflowId,
-      workflowName,
-      workflowColor,
-      'running',
-      stepId,
-      stepName,
-    )
-    const updatedSession = this.requireSession(sessionId)
-    this.emit({ type: 'session_updated', session: updatedSession })
+    if (iterations) {
+      updateWorkflowExecutionIterations(executionId, iterations)
+    }
+    emitWorkflowExecutionChanged(sessionId, executionId, workflowId, workflowName, workflowColor, {
+      status: 'running',
+      ...(stepId ? { currentStepId: stepId } : {}),
+      ...(stepName ? { currentStepName: stepName } : {}),
+      ...(iterations ? { iterations } : {}),
+      ...(workflowScope ? { workflowScope } : {}),
+    })
   }
 
   /**
@@ -1185,17 +1324,12 @@ export class SessionManager {
     pendingChoices?: import('../../shared/types.js').UserStepChoice[],
   ): void {
     updateWorkflowExecutionStatus(executionId, 'waiting', stepId, stepName, stepOutput, pendingChoices)
-    emitWorkflowExecutionChanged(
-      sessionId,
-      executionId,
-      workflowId,
-      workflowName,
-      workflowColor,
-      'waiting',
-      stepId,
-      stepName,
-      pendingChoices,
-    )
+    emitWorkflowExecutionChanged(sessionId, executionId, workflowId, workflowName, workflowColor, {
+      status: 'waiting',
+      ...(stepId ? { currentStepId: stepId } : {}),
+      ...(stepName ? { currentStepName: stepName } : {}),
+      ...(pendingChoices !== undefined ? { pendingChoices } : {}),
+    })
     this.setPhase(sessionId, 'waiting')
     const updatedSession = this.requireSession(sessionId)
     this.emit({ type: 'session_updated', session: updatedSession })
@@ -1217,17 +1351,12 @@ export class SessionManager {
     if (row.status !== 'waiting' && row.status !== 'blocked') return null
     // Clear pending choices — they only apply to the paused step being resumed
     updateWorkflowExecutionStatus(executionId, 'running', undefined, undefined, undefined, [])
-    emitWorkflowExecutionChanged(
-      sessionId,
-      executionId,
-      workflowId,
-      workflowName,
-      workflowColor,
-      'running',
-      row.current_step_id ?? undefined,
-      row.current_step_name ?? undefined,
-      [],
-    )
+    emitWorkflowExecutionChanged(sessionId, executionId, workflowId, workflowName, workflowColor, {
+      status: 'running',
+      ...(row.current_step_id ? { currentStepId: row.current_step_id } : {}),
+      ...(row.current_step_name ? { currentStepName: row.current_step_name } : {}),
+      pendingChoices: [],
+    })
     const updatedSession = this.requireSession(sessionId)
     this.emit({ type: 'session_updated', session: updatedSession })
     return {
@@ -1248,17 +1377,10 @@ export class SessionManager {
   ): void {
     updateWorkflowExecutionStatus(executionId, 'completed', undefined, undefined, undefined, [])
     clearWorkflowExecution(executionId)
-    emitWorkflowExecutionChanged(
-      sessionId,
-      executionId,
-      workflowId,
-      workflowName,
-      workflowColor,
-      'completed',
-      undefined,
-      undefined,
-      [],
-    )
+    emitWorkflowExecutionChanged(sessionId, executionId, workflowId, workflowName, workflowColor, {
+      status: 'completed',
+      pendingChoices: [],
+    })
     this.setPhase(sessionId, 'done')
     const updatedSession = this.requireSession(sessionId)
     this.emit({ type: 'session_updated', session: updatedSession })
@@ -1276,17 +1398,10 @@ export class SessionManager {
   ): void {
     updateWorkflowExecutionStatus(executionId, 'cancelled', undefined, undefined, undefined, [])
     clearWorkflowExecution(executionId)
-    emitWorkflowExecutionChanged(
-      sessionId,
-      executionId,
-      workflowId,
-      workflowName,
-      workflowColor,
-      'cancelled',
-      undefined,
-      undefined,
-      [],
-    )
+    emitWorkflowExecutionChanged(sessionId, executionId, workflowId, workflowName, workflowColor, {
+      status: 'cancelled',
+      pendingChoices: [],
+    })
     this.setPhase(sessionId, 'build')
     const updatedSession = this.requireSession(sessionId)
     this.emit({ type: 'session_updated', session: updatedSession })
@@ -1304,17 +1419,10 @@ export class SessionManager {
   ): void {
     updateWorkflowExecutionStatus(executionId, 'blocked', undefined, undefined, undefined, [])
     clearWorkflowExecution(executionId)
-    emitWorkflowExecutionChanged(
-      sessionId,
-      executionId,
-      workflowId,
-      workflowName,
-      workflowColor,
-      'blocked',
-      undefined,
-      undefined,
-      [],
-    )
+    emitWorkflowExecutionChanged(sessionId, executionId, workflowId, workflowName, workflowColor, {
+      status: 'blocked',
+      pendingChoices: [],
+    })
     this.setPhase(sessionId, 'blocked')
     const updatedSession = this.requireSession(sessionId)
     this.emit({ type: 'session_updated', session: updatedSession })
@@ -1341,6 +1449,7 @@ export class SessionManager {
       ...(row.pending_choices
         ? { pendingChoices: JSON.parse(row.pending_choices) as import('../../shared/types.js').UserStepChoice[] }
         : {}),
+      ...workflowIterationFields(row),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }
@@ -1369,6 +1478,7 @@ export class SessionManager {
       ...(row.pending_choices
         ? { pendingChoices: JSON.parse(row.pending_choices) as import('../../shared/types.js').UserStepChoice[] }
         : {}),
+      ...workflowIterationFields(row),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }

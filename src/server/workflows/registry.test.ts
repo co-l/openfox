@@ -20,6 +20,7 @@ import {
   saveWorkflowToProject,
   deleteProjectWorkflow,
   normalizeWorkflowScope,
+  resolveWorkflowScope,
 } from './registry.js'
 import type { WorkflowDefinition } from './types.js'
 
@@ -462,5 +463,44 @@ describe('normalizeWorkflowScope', () => {
     expect(normalizeWorkflowScope(42)).toBe('auto')
     expect(normalizeWorkflowScope(undefined)).toBe('auto')
     expect(normalizeWorkflowScope(null)).toBe('auto')
+  })
+})
+
+describe('resolveWorkflowScope', () => {
+  it('reports the user scope when the id only exists in the user directory', async () => {
+    const workflowsDir = join(tempDir, 'workflows')
+    await mkdir(workflowsDir, { recursive: true })
+    await writeFile(
+      join(workflowsDir, 'shadowed.workflow.json'),
+      JSON.stringify(makeWorkflow({ metadata: { id: 'shadowed', name: 'User copy', description: '', version: '1' } })),
+    )
+
+    expect(await resolveWorkflowScope('shadowed', tempDir, join(tempDir, 'project'))).toBe('user')
+  })
+
+  it('reports the project scope when the id is shadowed by a project copy', async () => {
+    const projectDir = join(tempDir, 'project')
+    const projectWorkflowsDir = join(projectDir, '.openfox', 'workflows')
+    await mkdir(projectWorkflowsDir, { recursive: true })
+    await writeFile(
+      join(projectWorkflowsDir, 'shadowed.workflow.json'),
+      JSON.stringify(
+        makeWorkflow({ metadata: { id: 'shadowed', name: 'Project copy', description: '', version: '1' } }),
+      ),
+    )
+
+    // The same id also exists in the user scope: the project copy wins.
+    const workflowsDir = join(tempDir, 'workflows')
+    await mkdir(workflowsDir, { recursive: true })
+    await writeFile(
+      join(workflowsDir, 'shadowed.workflow.json'),
+      JSON.stringify(makeWorkflow({ metadata: { id: 'shadowed', name: 'User copy', description: '', version: '1' } })),
+    )
+
+    expect(await resolveWorkflowScope('shadowed', tempDir, projectDir)).toBe('project')
+  })
+
+  it('falls back to builtin when the id is unknown in the user and project scopes', async () => {
+    expect(await resolveWorkflowScope('unknown-id', tempDir, join(tempDir, 'project'))).toBe('builtin')
   })
 })
