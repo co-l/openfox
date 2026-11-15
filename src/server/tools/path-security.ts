@@ -6,7 +6,7 @@ import { createChatPathConfirmationMessage } from '../ws/protocol.js'
 import { getEventStore } from '../events/index.js'
 import { getPlatformShell } from '../utils/platform.js'
 import { evaluatePluginPathAccess } from '../plugins/danger-levels.js'
-import { scanExecutableSurfaces } from './shell-parse.js'
+import { hasUnresolvedExecution, scanExecutableSurfaces } from './shell-parse.js'
 
 // ===========================================================================
 // Constants
@@ -1222,6 +1222,11 @@ export function extractDangerousPatterns(command: string): string[] {
       }
     }
   }
+  // A command that is only known at run time cannot be checked against the
+  // patterns: fail closed by reporting it as dangerous.
+  if (hasUnresolvedExecution(command) && !dangerous.includes('unresolved-command')) {
+    dangerous.push('unresolved-command')
+  }
   return dangerous
 }
 
@@ -1412,6 +1417,15 @@ export async function requestPathAccess(
   // properly in the small sub-agent window. Fail closed in normal mode;
   // auto-approve everything in dangerous mode.
   if (isSubAgent) {
+    // Dangerous and unresolved commands are denied for sub-agents too (they
+    // cannot be confirmed in the small sub-agent window). The git --no-verify
+    // policy is intentionally left to the path checks, as before.
+    if (dangerLevel !== 'dangerous') {
+      const dangerousPatterns = command ? extractDangerousPatterns(command) : []
+      if (dangerousPatterns.length > 0) {
+        throw new PathAccessDeniedError(dangerousPatterns, tool, 'dangerous_command')
+      }
+    }
     await autoResolvePathAccess(paths, workdir, sessionId, tool, dangerLevel, projectId, command)
     return
   }

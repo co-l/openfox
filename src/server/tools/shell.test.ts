@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { hasBackgroundAmpersand, runCommandTool, detectGitMutation, formatDuration } from './shell.js'
-import { providePathConfirmation } from './path-security.js'
+import { PathAccessDeniedError, providePathConfirmation } from './path-security.js'
 import type { ToolContext, ToolResult } from './types.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -517,6 +517,47 @@ describe('detectGitMutation — global options, quoting and chaining', () => {
     expect(detectGitMutation('powershell.exe -Command "git reset --hard"')).not.toBeNull()
     expect(detectGitMutation('pwsh.exe -c "git reset --hard"')).not.toBeNull()
   })
+
+  it('detects a Git mutation executed by an awk/sed program', () => {
+    expect(detectGitMutation('awk \'BEGIN{system("git reset --hard")}\'')).not.toBeNull()
+    expect(detectGitMutation('sudo awk \'BEGIN{system("git reset --hard")}\'')).not.toBeNull()
+    expect(detectGitMutation("sed '1e git reset --hard'")).not.toBeNull()
+    expect(detectGitMutation('awk -v cmd="git reset --hard" \'BEGIN{print | cmd}\'')).not.toBeNull()
+  })
+
+  it('fails closed on a dynamic wrapper command', () => {
+    expect(detectGitMutation('sudo "$CMD"')).not.toBeNull()
+    expect(detectGitMutation('sudo $CMD')).not.toBeNull()
+    expect(detectGitMutation('$CMD')).not.toBeNull()
+    expect(detectGitMutation('"$CMD"')).not.toBeNull()
+    expect(detectGitMutation('eval "$CMD"')).not.toBeNull()
+  })
+
+  it('fails closed on a runtime awk/sed program', () => {
+    expect(detectGitMutation('awk "$PROG"')).not.toBeNull()
+    expect(detectGitMutation('sed "$SCRIPT" file')).not.toBeNull()
+    expect(detectGitMutation('sed -e "$SCRIPT"')).not.toBeNull()
+  })
+
+  it('fails closed on a runtime command behind a runner or ssh', () => {
+    expect(detectGitMutation('docker run alpine "$CMD" arg')).not.toBeNull()
+    expect(detectGitMutation('docker exec "$POD" "$CMD"')).not.toBeNull()
+    expect(detectGitMutation('kubectl exec "$POD" -- "$CMD"')).not.toBeNull()
+    expect(detectGitMutation('ssh host "$CMD"')).not.toBeNull()
+  })
+
+  it('does not report data-only mentions of git', () => {
+    expect(detectGitMutation('man git reset')).toBeNull()
+    expect(detectGitMutation('printf git log')).toBeNull()
+    expect(detectGitMutation('awk \'BEGIN{print "git reset"}\'')).toBeNull()
+    expect(detectGitMutation('sed -n "s/git reset //p" file')).toBeNull()
+    expect(detectGitMutation('bash scripts/build.sh "$TARGET"')).toBeNull()
+    expect(detectGitMutation('ssh host "awk \'{print $1}\'"')).toBeNull()
+    expect(detectGitMutation('docker run -v "$PWD":/app alpine ls')).toBeNull()
+    expect(detectGitMutation('kubectl exec "$POD" -- ls')).toBeNull()
+    expect(detectGitMutation('docker logs "$C"')).toBeNull()
+    expect(detectGitMutation('docker pull "$IMG"')).toBeNull()
+  })
 })
 
 describe('detectGitMutation — read-only forms of state-changing subcommands', () => {
@@ -735,7 +776,17 @@ describe('run_command Git confirmation gating (tool level)', () => {
       ...options.context,
     }
 
-    const result = await runCommandTool.execute({ command, timeout: 10000 }, context)
+    // A dangerous-command denial is thrown (the framework re-throws
+    // PathAccessDeniedError for the orchestrator); a Git denial is returned as
+    // an error result. Normalise both to a failed result so the tests can
+    // assert on the outcome.
+    let result: ToolResult
+    try {
+      result = await runCommandTool.execute({ command, timeout: 10000 }, context)
+    } catch (error) {
+      if (!(error instanceof PathAccessDeniedError)) throw error
+      result = { success: false, error: error.message, durationMs: 0, truncated: false }
+    }
     return { result, confirmations, gitConfirmations }
   }
 
@@ -805,6 +856,93 @@ describe('run_command Git confirmation gating (tool level)', () => {
 
     expect(confirmations).toBe(0)
   })
+
+  it.each([
+    '$CMD',
+    'eval "$CMD"',
+    'sudo "$CMD"',
+    'sudo $CMD',
+    'sh -c "$CMD"',
+    'awk \'BEGIN{system("sudo whoami")}\'',
+    "sed '1e sudo whoami'",
+    'docker run alpine "rm -rf ~/" "extra"',
+    'ssh host "rm -rf ~/" "extra"',
+    'parallel "echo hi" "sudo x"',
+    'ssh "host" "sudo rm -rf /"',
+    'awk "$PROG"',
+    'sed "$SCRIPT" file',
+    'sed -e "$SCRIPT"',
+    'gawk \'BEGIN{system("sudo whoami")}\'',
+    'docker run alpine "$CMD"',
+    'docker run alpine "$CMD" arg',
+    'kubectl exec "$POD" -- "$CMD"',
+    'ssh host "$CMD"',
+  ])('requests a confirmation for the unresolved or dangerous command %s', async (command) => {
+    const { result, confirmations } = await runWithConfirmation(command, { approve: false })
+
+    expect(confirmations).toBeGreaterThan(0)
+    expect(result.success).toBe(false)
+  })
+
+  it.each([
+    '$CMD',
+    'sudo "$CMD"',
+    'awk \'BEGIN{system("git reset --hard")}\'',
+    'sudo awk \'BEGIN{system("git reset --hard")}\'',
+  ])('requests a Git confirmation for the unresolved Git command %s', async (command) => {
+    const { result, gitConfirmations } = await runWithConfirmation(command, { approve: false })
+
+    expect(gitConfirmations.length).toBeGreaterThan(0)
+    expect(result.success).toBe(false)
+  })
+
+  it.each([
+    'man git reset',
+    'printf git log',
+    'awk \'BEGIN{print "sudo test"}\'',
+    'sed -n "s/sudo //p" file',
+    'docker run alpine echo "sudo test"',
+    'bash scripts/build.sh "$TARGET"',
+    'timeout 60 curl "$URL"',
+    'xargs curl "$URL"',
+  ])('requests no confirmation for the data-only command %s', async (command) => {
+    const { confirmations, gitConfirmations } = await runWithConfirmation(command)
+
+    expect(confirmations).toBe(0)
+    expect(gitConfirmations.length).toBe(0)
+  })
+
+  it('does not request a Git confirmation for a Git word that is echo data behind sudo', async () => {
+    // sudo itself still requires approval, but the quoted Git text is data.
+    const { result, gitConfirmations } = await runWithConfirmation('sudo echo "git reset --hard"', { approve: false })
+
+    expect(gitConfirmations.length).toBe(0)
+    expect(result.success).toBe(false)
+  })
+
+  it.each(['sudo "$CMD"', 'awk \'BEGIN{system("sudo whoami")}\'', 'docker run alpine "rm -rf ~/" "extra"'])(
+    'denies the unresolved or dangerous command %s in night mode without prompting',
+    async (command) => {
+      const { result, confirmations } = await runWithConfirmation(command, {
+        context: { nightMode: true },
+      })
+
+      expect(confirmations).toBe(0)
+      expect(result.success).toBe(false)
+    },
+  )
+
+  it.each(['$CMD', 'awk \'BEGIN{system("sudo whoami")}\'', 'docker run alpine "rm -rf ~/" "extra"'])(
+    'denies the unresolved or dangerous command %s for a sub-agent without prompting',
+    async (command) => {
+      const { result, confirmations } = await runWithConfirmation(command, {
+        context: { isSubAgent: true },
+      })
+
+      expect(confirmations).toBe(0)
+      expect(result.success).toBe(false)
+    },
+  )
 
   it('denies the command when the user rejects the Git confirmation', async () => {
     const { result, confirmations } = await runWithConfirmation('git clean -fd', { approve: false })

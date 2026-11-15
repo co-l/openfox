@@ -2162,9 +2162,9 @@ describe('path-security', () => {
     })
 
     it('skips git --no-verify check entirely when isSubAgent (paths win)', async () => {
-      // For sub-agents, the git --no-verify and dangerous command checks are
-      // skipped entirely. Only path access is evaluated. If paths are within
-      // the sandbox, the operation proceeds regardless of --no-verify.
+      // For sub-agents, the git --no-verify check is skipped (path access is
+      // evaluated). If paths are within the sandbox, the operation proceeds
+      // regardless of --no-verify. (Dangerous commands are still denied.)
       const onEvent = vi.fn()
       const promise = requestPathAccess(
         [WORKDIR],
@@ -2678,6 +2678,79 @@ describe('extractDangerousPatterns — quoted text is data, not code', () => {
     'cd $DIR && rm -rf ~/',
   ])('flags the dangerous command that follows a variable expansion %s', (command) => {
     expect(extractDangerousPatterns(command).length).toBeGreaterThan(0)
+  })
+})
+
+describe('extractDangerousPatterns — unresolved commands and awk/sed execution', () => {
+  it.each([
+    '$CMD',
+    'eval "$CMD"',
+    'sudo "$CMD"',
+    'sudo $CMD',
+    'sh -c "$CMD"',
+    "awk 'BEGIN{system($CMD)}'",
+    'awk "$PROG"',
+    'sed "$SCRIPT" file',
+    'sed -e "$SCRIPT"',
+    'docker run alpine "$CMD" arg',
+    'docker exec "$POD" "$CMD"',
+    'docker compose run svc "$CMD"',
+    'kubectl exec "$POD" "$CMD"',
+    'nsenter -t 1 "$CMD"',
+    'systemd-run --unit=x "$CMD"',
+    'ssh host "$CMD"',
+  ])('flags a command that is only known at run time %s', (command) => {
+    expect(extractDangerousPatterns(command)).toContain('unresolved-command')
+  })
+
+  it.each([
+    'awk \'BEGIN{system("sudo whoami")}\'',
+    'awk \'BEGIN{print | "sudo whoami"}\'',
+    'awk -v cmd="sudo whoami" \'BEGIN{print | cmd}\'',
+    'gawk \'BEGIN{system("sudo whoami")}\'',
+    'mawk \'BEGIN{system("sudo whoami")}\'',
+    "sed '1e sudo whoami'",
+    "sed 's/x/sudo whoami/e'",
+  ])('flags a command executed by an awk/sed program %s', (command) => {
+    expect(extractDangerousPatterns(command)).toContain('sudo\\s')
+  })
+
+  it.each(['docker run alpine "rm -rf ~/" "extra"', 'ssh host "rm -rf ~/" "extra"'])(
+    'flags the command even when a quoted argument follows it %s',
+    (command) => {
+      expect(extractDangerousPatterns(command)).toContain('rm\\s+(-rf?|--recursive)\\s+[~]')
+    },
+  )
+
+  it.each(['parallel "echo hi" "sudo x"', 'ssh "host" "sudo rm -rf /"'])(
+    'flags a dangerous command behind a quoted operand %s',
+    (command) => {
+      expect(extractDangerousPatterns(command)).toContain('sudo\\s')
+    },
+  )
+
+  it.each([
+    'man git reset',
+    'printf git log',
+    'awk \'BEGIN{print "sudo test"}\'',
+    'sed -n "s/sudo //p" file',
+    'docker run alpine echo "sudo test"',
+    'bash scripts/build.sh "$TARGET"',
+    'timeout 60 curl "$URL"',
+    'ssh host "awk \'{print $1}\'"',
+    'docker run -v "$PWD":/app alpine ls',
+    'docker run -u "$USER" alpine ls',
+    'docker build -t "$TAG" .',
+    'docker run --rm "$IMAGE"',
+    'kubectl exec "$POD" -- ls',
+    'docker logs "$C"',
+    'docker inspect "$C"',
+    'docker pull "$IMG"',
+    'kubectl logs "$POD"',
+    'docker build "$CTX"',
+    'docker compose logs "$S"',
+  ])('does not flag the data-only command %s', (command) => {
+    expect(extractDangerousPatterns(command)).toEqual([])
   })
 })
 

@@ -685,6 +685,18 @@ function classifyCommand(segment: ShellCommand): GitCommandClassification | null
 
   const command = commandBasename(words[index]!.value)
 
+  // A command word that is a variable expansion (`$CMD`, `"$CMD"`) is only
+  // known at run time: it could be any Git mutation, so it fails closed.
+  if (hasVariableExpansion(words[index]!.value)) {
+    return {
+      invocation: segment.raw.trim(),
+      risk: 'unknown',
+      dryRun: false,
+      unresolved: true,
+      reason: 'the command is only known at run time',
+    }
+  }
+
   if (GIT_WRAPPERS.has(command)) {
     // A wrapper can hide anything behind the wrapped command: `env git …`.
     // The wrapper's own options and their values sit between the wrapper and
@@ -702,12 +714,15 @@ function classifyCommand(segment: ShellCommand): GitCommandClassification | null
       }
     }
     // The wrapper runs a command string: `sudo sh -c "git clean -fd"`.
-    // Classify what that command really runs.
-    const payload = findCommandPayloads(segment)[0]
-    if (payload !== undefined) {
+    // Classify what that command really runs. All payloads are considered:
+    // `sudo awk 'BEGIN{system("git reset --hard")}'` yields both the wrapper's
+    // quoted argument and the awk program source.
+    const payloads = findCommandPayloads(segment)
+    if (payloads.length > 0) {
       // A dynamic payload (`sh -c "$CMD"`) runs whatever the variable holds:
       // the command is only known at run time, so it fails closed.
-      if (payload.dynamic) {
+      for (const payload of payloads) {
+        if (!payload.dynamic) continue
         return {
           invocation: segment.raw.trim(),
           risk: 'unknown',
@@ -716,10 +731,27 @@ function classifyCommand(segment: ShellCommand): GitCommandClassification | null
           reason: `wrapped in \`${command}\`: the command it runs is only known at run time`,
         }
       }
-      const nested = classifyGitCommand(payload.text)
-      if (nested) return { ...nested, invocation: segment.raw.trim() }
-      // No Git in the payload: the wrapper runs something else entirely.
-      if (!mentionsGitCommand(payload.text)) return null
+      for (const payload of payloads) {
+        const nested = classifyGitCommand(payload.text)
+        if (nested) return { ...nested, invocation: segment.raw.trim() }
+      }
+      // A source payload (`awk 'BEGIN{system("git reset --hard")}'`) holds the
+      // Git command as program text: scan it as raw text and fail closed.
+      for (const payload of payloads) {
+        if (!payload.source || !mentionsGitCommandInText(payload.text)) continue
+        return {
+          invocation: segment.raw.trim(),
+          risk: 'unknown',
+          dryRun: false,
+          unresolved: true,
+          reason: `wrapped in \`${command}\`: the Git command inside the program source cannot be resolved`,
+        }
+      }
+      const mentionsGit = payloads.some((payload) =>
+        payload.source ? mentionsGitCommandInText(payload.text) : mentionsGitCommand(payload.text),
+      )
+      // No Git in any payload: the wrapper runs something else entirely.
+      if (!mentionsGit) return null
       return {
         invocation: segment.raw.trim(),
         risk: 'unknown',

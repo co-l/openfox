@@ -1417,7 +1417,12 @@ describe('ProviderModal - model mode merge', () => {
     )
     expect(syncButton).toBeTruthy()
     syncButton?.click()
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await vi.waitFor(
+      () => {
+        expect(document.body.textContent).toContain('model-c-new')
+      },
+      { timeout: 5000 },
+    )
 
     // Click Save Provider
     const saveButton = document.body.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
@@ -1497,7 +1502,12 @@ describe('ProviderModal - model mode merge', () => {
     )
     expect(syncButton).toBeTruthy()
     syncButton?.click()
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await vi.waitFor(
+      () => {
+        expect(document.body.textContent).toContain('gemini-3.1-pro')
+      },
+      { timeout: 5000 },
+    )
 
     const saveButton = document.body.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
     saveButton?.click()
@@ -1564,7 +1574,12 @@ describe('ProviderModal - model mode merge', () => {
     )
     expect(syncButton).toBeTruthy()
     syncButton?.click()
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await vi.waitFor(
+      () => {
+        expect(document.body.textContent).not.toContain('model-b')
+      },
+      { timeout: 5000 },
+    )
 
     const saveButton = document.body.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
     saveButton?.click()
@@ -1622,7 +1637,12 @@ describe('ProviderModal - model mode merge', () => {
     )
     expect(syncButton).toBeTruthy()
     syncButton?.click()
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await vi.waitFor(
+      () => {
+        expect(document.body.textContent).not.toContain('model-removed')
+      },
+      { timeout: 5000 },
+    )
 
     const saveButton = document.body.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
     saveButton?.click()

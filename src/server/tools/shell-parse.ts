@@ -399,24 +399,36 @@ const COMMAND_RUNNERS = new Set(['docker', 'kubectl', 'make', 'nsenter', 'parall
  * must not be read as a destructive command.
  */
 export const DATA_ONLY_COMMANDS = new Set([
-  'ag',
   'ack',
+  'ag',
+  'apropos',
   'awk',
   'cat',
   'echo',
   'egrep',
   'fgrep',
+  'gawk',
   'grep',
   'head',
   'less',
+  'man',
+  'mawk',
   'more',
+  'nawk',
+  'printf',
   'rg',
   'sed',
   'tail',
   'tee',
   'tr',
+  'type',
   'wc',
+  'whereis',
+  'which',
 ])
+
+/** awk-family interpreters whose quoted program is code. */
+const AWK_COMMANDS = new Set(['awk', 'gawk', 'mawk', 'nawk'])
 
 /**
  * Options that carry a command string for an interpreter.
@@ -481,7 +493,83 @@ export interface CommandPayload {
  * run time, so the text cannot be trusted to describe what runs.
  */
 export function hasVariableExpansion(text: string): boolean {
+  return /\$[A-Za-z_{0-9@*#?$!-]/.test(text)
+}
+
+/** True when a text references a named shell variable (`$VAR`, `${VAR}`). */
+function hasNamedExpansion(text: string): boolean {
   return /\$[A-Za-z_{]/.test(text)
+}
+
+/** True when a word is a shell `NAME=value` assignment. */
+function isAssignmentWord(word: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*=/.test(word)
+}
+
+/**
+ * True when an awk program can run a command: `system(...)`, a pipe to a
+ * command (`print | "cmd"`, `cmd | getline`), or a runtime environment lookup.
+ * A plain `print`/`printf` without a pipe is data.
+ */
+function awkExecutesCommands(program: string): boolean {
+  return (
+    /\bsystem\s*\(/.test(program) ||
+    /\|\s*getline\b/.test(program) ||
+    /\b(print|printf)\s*\|/.test(program) ||
+    /\bENVIRON\b/.test(program)
+  )
+}
+
+/**
+ * True when a sed script can run a command: the `e` command (optionally
+ * preceded by an address) or the `e` flag of a substitution. Plain
+ * substitutions and prints are data.
+ */
+function sedExecutesCommands(script: string): boolean {
+  if (/(^|[;{}\n])\s*(?:\d+|\$|\/[^/\n]*\/)?\s*e(\s|$)/.test(script)) return true
+  return /s(.).*?\1.*?\1[a-zA-Z]*e[a-zA-Z]*(\s*;|\s*$)/.test(script)
+}
+
+/**
+ * Find the inline awk/sed programs and any runtime sources.
+ *
+ * `sed -e` carries the script; `awk -v name=value` values can hold the command
+ * a `system(...)`/pipe runs, so they are scanned as sources too. `-f` names a
+ * script file, not inline code.
+ */
+function findInterpreterSources(
+  words: ShellWord[],
+  start: number,
+  command: 'awk' | 'sed',
+): { programs: string[]; sources: string[]; dynamicPrograms: string[] } {
+  const programs: string[] = []
+  const sources: string[] = []
+  const dynamicPrograms: string[] = []
+  const valueOptions = command === 'awk' ? new Set(['-v', '-F', '-f']) : new Set(['-e', '-f'])
+  let sawInline = false
+  for (let j = start + 1; j < words.length; j++) {
+    const word = words[j]!
+    const value = word.value
+    if (value.startsWith('-') && value !== '-') {
+      if (valueOptions.has(value)) {
+        const next = words[j + 1]
+        if (command === 'sed' && value === '-e' && next) programs.push(next.value)
+        if (command === 'awk' && value === '-v' && next) sources.push(next.value)
+        j += 1
+      }
+      continue
+    }
+    if (sawInline) continue
+    if (word.quoted) {
+      programs.push(value)
+      sawInline = true
+    } else if (hasVariableExpansion(value)) {
+      // A program that is only known at run time (`awk "$PROG"`).
+      dynamicPrograms.push(value)
+      sawInline = true
+    }
+  }
+  return { programs, sources, dynamicPrograms }
 }
 
 /**
@@ -524,15 +612,100 @@ function isValueOption(word: string): boolean {
  * @param segment - One command of a command line
  * @returns The command strings the segment executes
  */
+/**
+ * Indices of the words a runner executes as a command, based on its
+ * subcommand grammar:
+ *   docker/podman run IMAGE CMD, docker/podman exec CONTAINER CMD,
+ *   docker compose run SERVICE CMD, kubectl exec POD -- CMD,
+ *   nsenter ... CMD, systemd-run CMD, parallel CMD...
+ * Other subcommands (`docker logs`, `docker pull`, `docker build`,
+ * `kubectl get`) take operands, not a command.
+ */
+function runnerCommandIndices(words: ShellWord[], start: number, name: string): number[] {
+  const operands: number[] = []
+  let afterDoubleDash = -1
+  for (let j = start + 1; j < words.length; j++) {
+    const value = words[j]!.value
+    if (value === '--') {
+      afterDoubleDash = j
+      continue
+    }
+    if (value.startsWith('-') && value !== '-') {
+      if (isValueOption(value)) j += 1
+      continue
+    }
+    const previous = words[j - 1]?.value
+    const precededByOption =
+      previous !== undefined &&
+      previous.startsWith('-') &&
+      previous !== '-' &&
+      previous !== '--' &&
+      !previous.includes('=')
+    if (precededByOption) continue
+    operands.push(j)
+  }
+  if (afterDoubleDash !== -1) return [afterDoubleDash + 1]
+  const sub = operands[0] !== undefined ? words[operands[0]]!.value : ''
+  if (name === 'docker' || name === 'podman') {
+    if (sub === 'run' || sub === 'exec') return operands[2] !== undefined ? [operands[2]] : []
+    if (sub === 'compose') {
+      const composeSub = operands[1] !== undefined ? words[operands[1]]!.value : ''
+      if (composeSub === 'run' || composeSub === 'exec') return operands[3] !== undefined ? [operands[3]] : []
+    }
+    return []
+  }
+  if (name === 'kubectl') {
+    if (sub === 'exec' || sub === 'run') return operands[2] !== undefined ? [operands[2]] : []
+    return []
+  }
+  if (name === 'parallel') return operands
+  // nsenter, systemd-run, make: the first operand is the program/target.
+  return operands[0] !== undefined ? [operands[0]] : []
+}
+
 export function findCommandPayloads(segment: ShellCommand): CommandPayload[] {
   const payloads: CommandPayload[] = []
   const words = segment.words
 
   for (let i = 0; i < words.length; i++) {
     const name = commandBasename(words[i]!.value)
+    // awk and sed programs are code: when they execute a command
+    // (`system(...)`, a pipe, the `e` command/flag) the program is scanned as
+    // raw source text. Plain substitutions/prints stay data.
+    if (AWK_COMMANDS.has(name) || name === 'sed') {
+      const family = name === 'sed' ? 'sed' : 'awk'
+      const { programs, sources, dynamicPrograms } = findInterpreterSources(words, i, family)
+      if (dynamicPrograms.length > 0) {
+        for (const program of dynamicPrograms) {
+          payloads.push({ text: program, source: true, dynamic: true })
+        }
+        continue
+      }
+      const executes = programs.some((program) =>
+        family === 'awk'
+          ? awkExecutesCommands(program) || hasNamedExpansion(program)
+          : sedExecutesCommands(program) || hasNamedExpansion(program),
+      )
+      if (executes) {
+        for (const program of programs) {
+          const runs = family === 'awk' ? awkExecutesCommands(program) : sedExecutesCommands(program)
+          const dynamic = hasNamedExpansion(program) || /\bENVIRON\b/.test(program)
+          if (!runs && !dynamic) continue
+          payloads.push({ text: program, source: true, dynamic })
+        }
+        // `awk -v name=value` can carry the command a pipe/system() runs.
+        for (const source of sources) {
+          payloads.push({ text: source, source: true, dynamic: hasNamedExpansion(source) })
+        }
+      }
+      continue
+    }
     const isExecutor = COMMAND_EXECUTORS.has(name)
     const isRunner = COMMAND_RUNNERS.has(name)
     if (!isExecutor && !isRunner) continue
+    // `docker exec` / `kubectl exec`: `exec` is a subcommand of the runner, not
+    // the shell builtin. The runner's own iteration handles the operands.
+    if (isExecutor && i > 0 && COMMAND_RUNNERS.has(commandBasename(words[i - 1]!.value))) continue
     // A search or text tool takes data, never a command.
     if (DATA_ONLY_COMMANDS.has(name)) continue
 
@@ -549,27 +722,45 @@ export function findCommandPayloads(segment: ShellCommand): CommandPayload[] {
     }
 
     if (name === 'ssh') {
-      // `ssh host "command"` runs the quoted string on the remote host.
-      // The quoted words before the host are option values (`-o "Opt=val"`),
-      // not the command: the remote command is the last quoted word.
-      const quoted = words.slice(i + 1).filter((word) => word.quoted)
-      const last = quoted[quoted.length - 1]
-      if (last) {
-        payloads.push({ text: last.value, source: false, dynamic: hasVariableExpansion(last.value) })
+      // `ssh host "command"` runs the quoted string on the remote host. A
+      // quoted option value (`-o "Opt=val"`) is data; every other quoted word
+      // is a candidate command (the host itself may be quoted). A non-quoted
+      // word with a variable expansion (`ssh host "$CMD"`) is a runtime
+      // command and fails closed. Scanning all of them stops a quoted host
+      // from shadowing the remote command.
+      const args = words.slice(i + 1)
+      for (let j = 0; j < args.length; j++) {
+        const word = args[j]!
+        const previous = j > 0 ? args[j - 1]?.value : words[i]?.value
+        const precededByOption =
+          previous !== undefined &&
+          previous.startsWith('-') &&
+          previous !== '-' &&
+          previous !== '--' &&
+          !previous.includes('=')
+        if (precededByOption) continue
+        if (word.quoted) {
+          payloads.push({ text: word.value, source: false, dynamic: hasNamedExpansion(word.value) })
+        } else if (hasVariableExpansion(word.value)) {
+          payloads.push({ text: word.value, source: false, dynamic: true })
+        }
       }
       continue
     }
 
     // Which options take a value is not enumerable, so a quoted word that
     // directly follows an option (`-u "root"`, `--name "my app"`) is treated
-    // as that option's value, not as the command. The command string is the
-    // last quoted word in command position; when every quoted word follows an
-    // option (a no-value flag such as `sudo -n` right before the command), the
-    // last quoted word is used so the payload is never lost.
+    // as that option's value, not as the command. Every quoted word in command
+    // position is scanned (the command is not necessarily the first one); when
+    // every quoted word follows an option (a no-value flag such as `sudo -n`
+    // right before the command), the last quoted word is used so the payload
+    // is never lost.
     const isInterpreter = SOURCE_INTERPRETERS.has(name)
     const commandCandidates: ShellWord[] = []
     const quotedWords: ShellWord[] = []
     let foundCommandOption = false
+    let commandSeen = false
+    const runnerCommandIdx = isRunner ? new Set(runnerCommandIndices(words, i, name)) : null
     for (let j = i + 1; j < words.length; j++) {
       const candidate = words[j]!
       const value = candidate.value
@@ -597,21 +788,92 @@ export function findCommandPayloads(segment: ShellCommand): CommandPayload[] {
         foundCommandOption = true
         break
       }
-      if (!candidate.quoted) continue
-      quotedWords.push(candidate)
+      if (value === '--') continue
       const previous = words[j - 1]?.value
       const precededByOption =
-        previous !== undefined && previous.startsWith('-') && previous !== '-' && previous !== '--'
-      if (!precededByOption) commandCandidates.push(candidate)
+        previous !== undefined &&
+        previous.startsWith('-') &&
+        previous !== '-' &&
+        previous !== '--' &&
+        !previous.includes('=')
+      // The wrapped command is a text tool (`sudo echo "…"`): its quoted
+      // arguments are data, not a command string.
+      if (
+        !precededByOption &&
+        !candidate.quoted &&
+        !value.startsWith('-') &&
+        DATA_ONLY_COMMANDS.has(commandBasename(value))
+      ) {
+        break
+      }
+      // A command word that is only known at run time cannot be classified:
+      // fail closed. For a wrapper/shell only the command word (before any
+      // other command/script word) counts. For a runner the subcommand grammar
+      // says which word is the command (`docker run IMAGE CMD`, `kubectl exec
+      // POD -- CMD`), so operands like `docker run -u "$USER"` or
+      // `docker logs "$C"` are not mistaken for commands.
+      if (
+        !isAssignmentWord(value) &&
+        !value.startsWith('-') &&
+        hasVariableExpansion(value) &&
+        (isRunner ? (runnerCommandIdx?.has(j) ?? false) : !commandSeen)
+      ) {
+        payloads.push({ text: value, source: false, dynamic: true })
+        foundCommandOption = true
+        break
+      }
+      if (!candidate.quoted) {
+        if (!precededByOption && !value.startsWith('-')) commandSeen = true
+        continue
+      }
+      quotedWords.push(candidate)
+      if (!precededByOption) {
+        commandCandidates.push(candidate)
+        commandSeen = true
+      }
     }
     if (foundCommandOption) continue
-    const target = commandCandidates[commandCandidates.length - 1] ?? quotedWords[quotedWords.length - 1]
-    if (target) {
-      payloads.push({ text: target.value, source: false, dynamic: hasVariableExpansion(target.value) })
+    // Scan every quoted word in command position: the command is not
+    // necessarily the first one (`parallel "echo hi" "sudo x"`), and a quoted
+    // argument after it must not shadow a dangerous earlier word.
+    if (commandCandidates.length > 0) {
+      for (const candidate of commandCandidates) {
+        payloads.push({
+          text: candidate.value,
+          source: false,
+          dynamic: hasVariableExpansion(candidate.value),
+        })
+      }
+    } else {
+      const fallback = quotedWords[quotedWords.length - 1]
+      if (fallback) {
+        payloads.push({ text: fallback.value, source: false, dynamic: hasVariableExpansion(fallback.value) })
+      }
     }
   }
 
   return payloads
+}
+
+/**
+ * True when a command runs a command string that is only known at run time
+ * (a variable expansion in command position, or an awk/sed program that
+ * executes a runtime command). Both guards fail closed on such input.
+ *
+ * @param command - The command line to inspect
+ */
+export function hasUnresolvedExecution(command: string): boolean {
+  for (const segment of splitShellCommands(command)) {
+    if (findCommandPayloads(segment).some((payload) => payload.dynamic)) return true
+    // A command word that is a variable expansion (`$CMD`) is only known at
+    // run time.
+    const words = segment.words
+    let index = 0
+    while (index < words.length && isAssignmentWord(words[index]!.value)) index += 1
+    const commandWord = words[index]?.value
+    if (commandWord !== undefined && hasVariableExpansion(commandWord)) return true
+  }
+  return false
 }
 
 /**
