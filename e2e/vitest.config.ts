@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitest/config'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { availableParallelism, cpus } from 'node:os'
 
 // Globs require forward slashes; on Windows dirname/resolve produce backslashes,
 // which tinyglobby treats as escape characters (include matches nothing).
@@ -18,13 +19,23 @@ export function resolveMaxWorkers(env: NodeJS.ProcessEnv = process.env): number 
     const parsed = Number(raw)
     if (Number.isInteger(parsed) && parsed >= 1) return parsed
   }
-  return env['CI'] === 'true' ? 1 : 12
+  if (env['CI'] === 'true') return 1
+  // Each test file starts an in-process server, and that server module is
+  // imported through tsx (~7s on this repo). A fixed 12 oversubscribes a small
+  // machine, so every worker's import misses the beforeAll hook timeout. Cap
+  // at half the available parallelism instead.
+  const parallelism = typeof availableParallelism === 'function' ? availableParallelism() : cpus().length
+  return Math.max(1, Math.min(12, Math.floor(parallelism / 2)))
 }
 
 export default defineConfig({
   test: {
     testTimeout: 15_000 * CI_MULTIPLIER,
-    hookTimeout: 10_000 * CI_MULTIPLIER,
+    // Starting the in-process server imports the whole server module through
+    // tsx (measured ~7.4s import + ~1.7s start in isolation). The 10s hook left
+    // no margin once the suite was under load, so give the beforeAll hook a
+    // realistic budget.
+    hookTimeout: 30_000 * CI_MULTIPLIER,
 
     // Run tests in parallel with fork pool
     // Each test file gets its own in-process server on a dynamic port

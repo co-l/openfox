@@ -6,6 +6,7 @@ import { createChatPathConfirmationMessage } from '../ws/protocol.js'
 import { getEventStore } from '../events/index.js'
 import { getPlatformShell } from '../utils/platform.js'
 import { evaluatePluginPathAccess } from '../plugins/danger-levels.js'
+import { scanExecutableSurfaces } from './shell-parse.js'
 
 // ===========================================================================
 // Constants
@@ -1211,9 +1212,14 @@ const WINDOWS_DANGEROUS_PATTERNS = [
 export function extractDangerousPatterns(command: string): string[] {
   const patterns = isWindows() ? [...DANGEROUS_PATTERNS, ...WINDOWS_DANGEROUS_PATTERNS] : DANGEROUS_PATTERNS
   const dangerous: string[] = []
-  for (const pattern of patterns) {
-    if (pattern.test(command)) {
-      dangerous.push(pattern.source)
+  // Only the code the shell actually runs is inspected: quoted text is data.
+  // `grep -R 'sudo ' docs/` searches for the word "sudo", while
+  // `echo "$(sudo whoami)"` really runs sudo.
+  for (const surface of scanExecutableSurfaces(command)) {
+    for (const pattern of patterns) {
+      if (pattern.test(surface) && !dangerous.includes(pattern.source)) {
+        dangerous.push(pattern.source)
+      }
     }
   }
   return dangerous

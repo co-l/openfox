@@ -2564,6 +2564,146 @@ describe('extractDangerousPatterns — Windows equivalents', () => {
   })
 })
 
+describe('extractDangerousPatterns — quoted text is data, not code', () => {
+  beforeEach(() => {
+    mockPlatform('linux')
+  })
+
+  it.each([
+    "grep -R 'sudo ' docs/",
+    'grep -n "chmod 777" script.sh',
+    'echo "sudo "',
+    "echo 'rm -rf ~/'",
+    "git commit -m 'sudo rm -rf ~/'",
+    "sed -n 's/sudo //p' file",
+    "grep -rn 'mkfs ' src/",
+  ])('does not flag the quoted occurrence %s', (command) => {
+    expect(extractDangerousPatterns(command)).toEqual([])
+  })
+
+  it.each([
+    'sudo apt install x',
+    'sudo rm -rf ~/data',
+    'rm -rf ~/data',
+    'chmod 777 /etc/x',
+    'mkfs /dev/sda',
+    'dd if=/dev/zero of=/dev/sda',
+    'echo x > /dev/sda',
+  ])('still flags the executable command %s', (command) => {
+    expect(extractDangerousPatterns(command).length).toBeGreaterThan(0)
+  })
+
+  it.each([
+    'echo "$(sudo whoami)"',
+    'echo `sudo whoami`',
+    'echo "$(rm -rf ~/)"',
+    'echo "$(mkfs /dev/sda)"',
+    'sh -c "sudo apt install x"',
+  ])('flags the nested executable form %s', (command) => {
+    expect(extractDangerousPatterns(command).length).toBeGreaterThan(0)
+  })
+
+  it.each([
+    'bash -lc "sudo rm -rf ~/"',
+    'sh -lc "mkfs /dev/sda"',
+    'zsh -lc "sudo apt install x"',
+    'bash -c "sudo rm -rf ~/"',
+    'sh -x -c "sudo rm -rf ~/"',
+  ])('flags the dangerous command in the shell payload %s', (command) => {
+    expect(extractDangerousPatterns(command).length).toBeGreaterThan(0)
+  })
+
+  it.each([
+    'su -c "rm -rf ~/"',
+    'env sh -c "rm -rf ~/"',
+    'nohup sh -c "rm -rf ~/"',
+    'timeout 5 sh -c "rm -rf ~/"',
+    'watch -c "rm -rf ~/"',
+    'FOO=1 sh -c "rm -rf ~/"',
+  ])('flags the dangerous command in a wrapped shell payload %s', (command) => {
+    expect(extractDangerousPatterns(command).length).toBeGreaterThan(0)
+  })
+
+  it('flags a dangerous command carried in a quoted command argument', () => {
+    expect(extractDangerousPatterns('sudo "rm -rf ~/"').length).toBeGreaterThan(0)
+  })
+
+  it.each([
+    'fish -c "rm -rf ~/"',
+    'csh -c "rm -rf ~/"',
+    'python -c "import os; os.system(\'rm -rf ~/\')"',
+    'perl -e \'system("rm -rf ~/")\'',
+    'ssh host "rm -rf ~/"',
+    'node -e "execSync(\'rm -rf ~/\')"',
+  ])('flags the dangerous command in an interpreter payload %s', (command) => {
+    expect(extractDangerousPatterns(command).length).toBeGreaterThan(0)
+  })
+
+  it.each([
+    'parallel "rm -rf ~/"',
+    'parallel -v "rm -rf ~/"',
+    'sudo -n "rm -rf ~/"',
+    'systemd-run "rm -rf ~/"',
+    'docker run --rm alpine "rm -rf ~/"',
+    'nsenter -t 1 "rm -rf ~/"',
+  ])('flags the dangerous command in an unlisted executor payload %s', (command) => {
+    expect(extractDangerousPatterns(command).length).toBeGreaterThan(0)
+  })
+
+  it.each(['grep -rn "rm -rf" docs/', 'sed -n "s/rm -rf //p" file', 'awk "{ print }" file', 'echo "rm -rf ~/"'])(
+    'does not flag the quoted data %s',
+    (command) => {
+      expect(extractDangerousPatterns(command)).toEqual([])
+    },
+  )
+
+  it.each([
+    'docker run --env "FOO=bar" alpine "rm -rf ~/"',
+    'docker run -e "FOO=bar" alpine sh -c "rm -rf ~/"',
+    'docker run -v "/tmp:/data" alpine "rm -rf ~/"',
+    'docker run -u "root" alpine "rm -rf ~/"',
+    'docker run -p "8080:80" alpine sh -c "rm -rf ~/"',
+    'docker run --name "my app" alpine "rm -rf ~/"',
+    'docker run -c 512 alpine "rm -rf ~/"',
+    'ssh -o "StrictHostKeyChecking=no" host "rm -rf ~/"',
+  ])('flags the dangerous command behind a quoted option value %s', (command) => {
+    expect(extractDangerousPatterns(command).length).toBeGreaterThan(0)
+  })
+
+  it.each([
+    'echo "$HOME"; rm -rf ~/',
+    'echo "$USER" && rm -rf ~/',
+    'FOO=1; rm -rf ~/',
+    'echo $HOME; rm -rf ~/',
+    'cd $DIR && rm -rf ~/',
+  ])('flags the dangerous command that follows a variable expansion %s', (command) => {
+    expect(extractDangerousPatterns(command).length).toBeGreaterThan(0)
+  })
+})
+
+describe('extractDangerousPatterns — Windows quoted command payloads', () => {
+  beforeEach(() => {
+    mockPlatform('win32')
+  })
+
+  it('flags the dangerous command in a cmd /c payload', () => {
+    expect(extractDangerousPatterns('cmd /c "del /f /s /q *.log"').length).toBeGreaterThan(0)
+  })
+
+  it('flags the dangerous command in a powershell -Command payload', () => {
+    expect(extractDangerousPatterns('powershell -Command "Remove-Item -Recurse -Force C:\\x"').length).toBeGreaterThan(
+      0,
+    )
+  })
+
+  it('flags the dangerous command in a .exe executor payload', () => {
+    expect(extractDangerousPatterns('cmd.exe /c "del /f /s /q *.log"').length).toBeGreaterThan(0)
+    expect(
+      extractDangerousPatterns('powershell.exe -Command "Remove-Item -Recurse -Force C:\\x"').length,
+    ).toBeGreaterThan(0)
+  })
+})
+
 describe('extractDangerousPatterns — Unix scope', () => {
   // Without this pin the block runs on the host platform, so it only asserts
   // "Unix scope" when the host happens to be Unix. The module-level afterEach

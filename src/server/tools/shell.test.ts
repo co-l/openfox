@@ -1,9 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { hasBackgroundAmpersand, runCommandTool, detectGitMutation, formatDuration } from './shell.js'
-import type { ToolContext } from './types.js'
+import { providePathConfirmation } from './path-security.js'
+import type { ToolContext, ToolResult } from './types.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+
+// The confirmation settings are mutable so the tool-level tests can turn the
+// workspace-action confirmations on: with them off, requestUserConfirmation
+// auto-approves and no prompt would ever be observable.
+const settingsState = vi.hoisted(() => ({ confirmOnWorkspaceActions: 'false' }))
 
 // Force the fr display locale for every test in this file: the LLM-facing
 // run_command error strings must remain English no matter the UI locale.
@@ -11,7 +17,11 @@ vi.mock('../db/settings.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../db/settings.js')>()
   return {
     ...actual,
-    getSetting: (key: string) => (key === actual.SETTINGS_KEYS.DISPLAY_LOCALE ? 'fr' : 'false'),
+    getSetting: (key: string) => {
+      if (key === actual.SETTINGS_KEYS.DISPLAY_LOCALE) return 'fr'
+      if (key === actual.SETTINGS_KEYS.CONFIRM_ON_WORKSPACE_ACTIONS) return settingsState.confirmOnWorkspaceActions
+      return 'false'
+    },
   }
 })
 
@@ -296,6 +306,256 @@ describe('detectGitMutation', () => {
   })
 })
 
+describe('detectGitMutation — worktree subcommands', () => {
+  it('allows the read-only worktree list and its output variants', () => {
+    expect(detectGitMutation('git worktree list')).toBeNull()
+    expect(detectGitMutation('git worktree list --porcelain')).toBeNull()
+    expect(detectGitMutation('git worktree list -v')).toBeNull()
+    expect(detectGitMutation('git worktree list --porcelain -z')).toBeNull()
+    expect(detectGitMutation('git -C /repo worktree list')).toBeNull()
+  })
+
+  it.each([
+    'git worktree add /tmp/test main',
+    'git worktree add -f /tmp/test main',
+    'git worktree remove /tmp/test',
+    'git worktree remove -f /tmp/test',
+    'git worktree move /tmp/test /tmp/other',
+    'git worktree prune',
+    'git worktree prune -v',
+    'git worktree repair',
+    'git worktree lock /tmp/test',
+    'git worktree lock --reason wip /tmp/test',
+    'git worktree unlock /tmp/test',
+  ])('keeps %s classified as a mutation', (command) => {
+    expect(detectGitMutation(command)).toContain('git worktree')
+  })
+})
+
+describe('detectGitMutation — symbolic-ref read vs write', () => {
+  it('allows the read-only forms', () => {
+    expect(detectGitMutation('git symbolic-ref HEAD')).toBeNull()
+    expect(detectGitMutation('git symbolic-ref --short HEAD')).toBeNull()
+    expect(detectGitMutation('git symbolic-ref --quiet HEAD')).toBeNull()
+  })
+
+  it('detects the write and delete forms', () => {
+    expect(detectGitMutation('git symbolic-ref HEAD refs/heads/other')).toContain('git symbolic-ref')
+    expect(detectGitMutation('git symbolic-ref HEAD refs/heads/other refs/heads/main')).toContain('git symbolic-ref')
+    expect(detectGitMutation('git symbolic-ref --delete refs/heads/other')).toContain('git symbolic-ref')
+    expect(detectGitMutation('git symbolic-ref -d refs/heads/other')).toContain('git symbolic-ref')
+  })
+})
+
+describe('detectGitMutation — clean destructive vs dry-run', () => {
+  it.each([
+    'git clean -fd',
+    'git clean -fxd',
+    'git clean -f -d',
+    'git clean -dfx',
+    'git clean -fdx',
+    'git clean -d -f',
+  ])('detects the destructive spelling %s', (command) => {
+    expect(detectGitMutation(command)).toContain('git clean')
+  })
+
+  it.each(['git clean -n', 'git clean --dry-run', 'git clean -nd', 'git clean -n -d'])(
+    'allows the dry-run spelling %s',
+    (command) => {
+      expect(detectGitMutation(command)).toBeNull()
+    },
+  )
+
+  it('allows routine local writes', () => {
+    expect(detectGitMutation('git add .')).toBeNull()
+    expect(detectGitMutation('git add -A')).toBeNull()
+    expect(detectGitMutation('git commit -m "msg"')).toBeNull()
+    expect(detectGitMutation('git commit --amend --no-edit')).toBeNull()
+  })
+})
+
+describe('detectGitMutation — global options, quoting and chaining', () => {
+  it('keeps mutating subcommands behind global options detected', () => {
+    expect(detectGitMutation('git -C /repo worktree add /tmp/test main')).toContain('git worktree')
+    expect(detectGitMutation('git --git-dir=/repo/.git worktree add /tmp/test main')).toContain('git worktree')
+    expect(detectGitMutation('git --work-tree=/repo worktree add /tmp/test main')).toContain('git worktree')
+  })
+
+  it('distinguishes quoted read and write forms', () => {
+    expect(detectGitMutation('git "worktree" list')).toBeNull()
+    expect(detectGitMutation("git 'worktree' list")).toBeNull()
+    expect(detectGitMutation("git 'reset' --hard")).toContain('git')
+  })
+
+  it('detects mutations hidden behind a harmless read in a chain', () => {
+    expect(detectGitMutation('git worktree list; git worktree add /tmp/test main')).toContain('git worktree')
+    expect(detectGitMutation('git status && git clean -fd')).toContain('git clean')
+    expect(detectGitMutation('git log | git reset --hard')).toContain('git')
+  })
+
+  it('allows the original compound reproduction', () => {
+    expect(detectGitMutation("git worktree list; git branch -a --list '*perf*'; grep -n pattern docs/file")).toBeNull()
+    expect(detectGitMutation('git worktree list && git branch -a')).toBeNull()
+    expect(detectGitMutation('git worktree list | head')).toBeNull()
+  })
+
+  it('detects mutations executed through command substitution', () => {
+    expect(detectGitMutation('echo "$(git clean -fd)"')).toContain('git clean')
+    expect(detectGitMutation('x=$(git reset --hard)')).toContain('git')
+    expect(detectGitMutation('echo `git clean -fd`')).toContain('git clean')
+  })
+
+  it('fails closed on unresolvable aliases and wrappers', () => {
+    expect(detectGitMutation('git wt')).not.toBeNull()
+    expect(detectGitMutation('env git worktree list')).not.toBeNull()
+  })
+
+  it('detects mutations executed through a shell wrapper', () => {
+    expect(detectGitMutation('sh -c "git clean -fd"')).toContain('git clean')
+    expect(detectGitMutation("bash -c 'git reset --hard'")).toContain('git')
+    expect(detectGitMutation('eval "git clean -fd"')).toContain('git clean')
+  })
+
+  it('detects a mutation that follows a read-only command in the shell payload', () => {
+    expect(detectGitMutation('sh -c "git status; git clean -fd"')).toContain('git clean')
+    expect(detectGitMutation('sh -c "git status; git reset --hard"')).toContain('git')
+    expect(detectGitMutation('sh -c "git worktree list; git worktree add /tmp/test main"')).toContain('git worktree')
+    expect(detectGitMutation('bash -lc "git status; git clean -fd"')).toContain('git clean')
+  })
+
+  it('detects a mutation hidden behind a wrapper that takes options', () => {
+    expect(detectGitMutation('sudo -u root git reset --hard')).not.toBeNull()
+    expect(detectGitMutation('env -i git reset --hard')).not.toBeNull()
+    expect(detectGitMutation('nohup git clean -fd')).not.toBeNull()
+    expect(detectGitMutation('time -p git reset --hard')).not.toBeNull()
+  })
+
+  it('detects a mutation inside a shell payload that runs behind a wrapper', () => {
+    expect(detectGitMutation('sudo sh -c "git reset --hard"')).not.toBeNull()
+    expect(detectGitMutation('env sh -c "git reset --hard"')).not.toBeNull()
+    expect(detectGitMutation('nohup bash -c "git checkout main"')).not.toBeNull()
+    expect(detectGitMutation('su -c "git reset --hard"')).not.toBeNull()
+    expect(detectGitMutation('timeout 5 sh -c "git reset --hard"')).not.toBeNull()
+    expect(detectGitMutation('watch -c "git reset --hard"')).not.toBeNull()
+  })
+
+  it('allows the read-only form through a shell wrapper', () => {
+    expect(detectGitMutation('sh -c "git worktree list"')).toBeNull()
+  })
+
+  it('does not report a non-Git command that runs behind a wrapper', () => {
+    expect(detectGitMutation('sudo sh -c "npm run build"')).toBeNull()
+    expect(detectGitMutation('timeout 5 "npm test"')).toBeNull()
+    expect(detectGitMutation('sudo "apt install x"')).toBeNull()
+  })
+
+  it('detects a Git mutation executed through an absolute path', () => {
+    expect(detectGitMutation('/usr/bin/git reset --hard')).not.toBeNull()
+    expect(detectGitMutation('sudo /usr/bin/git reset --hard')).not.toBeNull()
+    expect(detectGitMutation('/usr/local/bin/git worktree add /tmp/test main')).not.toBeNull()
+    expect(detectGitMutation('C:\\Program Files\\Git\\bin\\git.exe reset --hard')).not.toBeNull()
+  })
+
+  it('does not report a command that merely mentions the word git', () => {
+    expect(detectGitMutation('sudo apt install git')).toBeNull()
+    expect(detectGitMutation('sudo yum install -y git')).toBeNull()
+    expect(detectGitMutation('sudo ls /opt/git')).toBeNull()
+    expect(detectGitMutation('grep git README.md')).toBeNull()
+    expect(detectGitMutation('echo git status')).toBeNull()
+    expect(detectGitMutation('grep git log README.md')).toBeNull()
+  })
+
+  it('detects a mutation that follows a shell variable expansion', () => {
+    expect(detectGitMutation('echo "$HOME"; git reset --hard')).not.toBeNull()
+    expect(detectGitMutation('FOO=1; git clean -fd')).not.toBeNull()
+    expect(detectGitMutation('echo "$PATH" && git worktree add /tmp/test main')).not.toBeNull()
+  })
+
+  it('detects a Git mutation hidden in an interpreter payload', () => {
+    expect(detectGitMutation('fish -c "git reset --hard"')).not.toBeNull()
+    expect(detectGitMutation('csh -c "git reset --hard"')).not.toBeNull()
+    expect(detectGitMutation('ssh host "git reset --hard"')).not.toBeNull()
+  })
+
+  it('detects a Git mutation behind a wrapper that is not allowlisted', () => {
+    expect(detectGitMutation('docker exec c git reset --hard')).not.toBeNull()
+    expect(detectGitMutation('docker compose exec app git reset --hard')).not.toBeNull()
+    expect(detectGitMutation('kubectl exec p -- git reset --hard')).not.toBeNull()
+    expect(detectGitMutation('ssh host git reset --hard')).not.toBeNull()
+    expect(detectGitMutation('ssh -p 22 host git reset --hard')).not.toBeNull()
+    expect(detectGitMutation('timeout 5 git reset --hard')).not.toBeNull()
+    expect(detectGitMutation('watch git reset --hard')).not.toBeNull()
+    expect(detectGitMutation('make git reset --hard')).not.toBeNull()
+  })
+
+  it('detects a Git mutation nested in an interpreter source string', () => {
+    expect(detectGitMutation('python -c "os.system(\'git reset --hard\')"')).not.toBeNull()
+    expect(detectGitMutation('perl -e \'system("git reset --hard")\'')).not.toBeNull()
+    expect(detectGitMutation('node -e "execSync(\'git reset --hard\')"')).not.toBeNull()
+    expect(detectGitMutation('ruby -e \'system("git reset --hard")\'')).not.toBeNull()
+  })
+
+  it('detects a Git mutation that follows a bare variable expansion', () => {
+    expect(detectGitMutation('echo $HOME; git reset --hard')).not.toBeNull()
+    expect(detectGitMutation('cd $DIR && git reset --hard')).not.toBeNull()
+    expect(detectGitMutation('X=$FOO; git reset --hard')).not.toBeNull()
+  })
+
+  it('fails closed on a dynamic interpreter payload', () => {
+    expect(detectGitMutation('sh -c $CMD')).not.toBeNull()
+    expect(detectGitMutation('eval $CMD')).not.toBeNull()
+  })
+
+  it('detects a Git mutation behind an option value', () => {
+    expect(detectGitMutation('docker run --user "root" alpine "git reset --hard"')).not.toBeNull()
+    expect(detectGitMutation('sudo -u "root" sh -c "git reset --hard"')).not.toBeNull()
+    expect(detectGitMutation('parallel -v "git reset --hard"')).not.toBeNull()
+  })
+
+  it('detects a Git mutation hidden in a Windows executor payload', () => {
+    expect(detectGitMutation('cmd.exe /c "git reset --hard"')).not.toBeNull()
+    expect(detectGitMutation('powershell.exe -Command "git reset --hard"')).not.toBeNull()
+    expect(detectGitMutation('pwsh.exe -c "git reset --hard"')).not.toBeNull()
+  })
+})
+
+describe('detectGitMutation — read-only forms of state-changing subcommands', () => {
+  it.each([
+    'git stash list',
+    'git stash show',
+    'git stash list --stat',
+    'git submodule status',
+    'git notes list',
+    'git replace -l',
+    'git sparse-checkout list',
+    'git update-index --refresh',
+    'git bisect log',
+  ])('does not report the read-only form %s', (command) => {
+    expect(detectGitMutation(command)).toBeNull()
+  })
+
+  it.each([
+    'git stash push -m wip',
+    'git stash pop',
+    'git submodule update',
+    'git notes add note',
+    'git replace -g old new',
+    'git sparse-checkout set src',
+    'git update-index --cacheinfo 1234,file',
+  ])('still reports the mutating form %s', (command) => {
+    expect(detectGitMutation(command)).not.toBeNull()
+  })
+})
+
+describe('detectGitMutation — fetch/push dry-run semantics', () => {
+  it('keeps fetch and push as remote-affecting, dry-run or not', () => {
+    expect(detectGitMutation('git fetch origin')).toContain('git fetch')
+    expect(detectGitMutation('git fetch --dry-run origin')).toContain('git fetch')
+    expect(detectGitMutation('git push origin main')).toContain('git push')
+    expect(detectGitMutation('git push --dry-run origin main')).toContain('git push')
+  })
+})
+
 describe('formatDuration', () => {
   const cases: Array<[number, string]> = [
     [0, '0ms'],
@@ -431,6 +691,154 @@ function baseContext(tempDir: string): ToolContext {
     sessionId: 'test-session',
   }
 }
+
+describe('run_command Git confirmation gating (tool level)', () => {
+  let tempDir: string
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'shell-git-gate-'))
+    settingsState.confirmOnWorkspaceActions = 'true'
+  })
+
+  afterEach(async () => {
+    settingsState.confirmOnWorkspaceActions = 'false'
+    await rm(tempDir, { recursive: true, force: true })
+  })
+
+  /**
+   * Run a command with the workspace-action confirmations enabled and record
+   * whether a confirmation was requested.
+   *
+   * @returns The tool result and the number of requested confirmations
+   */
+  async function runWithConfirmation(
+    command: string,
+    options: { approve?: boolean; context?: Partial<ToolContext> } = {},
+  ): Promise<{ result: ToolResult; confirmations: number; gitConfirmations: string[] }> {
+    let confirmations = 0
+    const gitConfirmations: string[] = []
+    const context: ToolContext = {
+      ...baseContext(tempDir),
+      toolCallId: 'call-git-gate',
+      onEvent: (event: unknown) => {
+        const message = event as { type?: string; payload?: { callId?: string; tool?: string; paths?: string[] } }
+        if (message.type !== 'chat.path_confirmation') return
+        confirmations += 1
+        // The Git-state confirmation is issued with the 'command' tool label,
+        // the dangerous-command confirmation with the tool's own name.
+        if (message.payload?.tool === 'command') {
+          gitConfirmations.push((message.payload?.paths ?? []).join(' '))
+        }
+        const callId = message.payload?.callId
+        if (callId) providePathConfirmation(callId, options.approve ?? true)
+      },
+      ...options.context,
+    }
+
+    const result = await runCommandTool.execute({ command, timeout: 10000 }, context)
+    return { result, confirmations, gitConfirmations }
+  }
+
+  it.each([
+    'git worktree list',
+    'git worktree list --porcelain',
+    'git -C /tmp worktree list',
+    "git worktree list; git branch -a --list '*perf*'; grep -n pattern docs/file",
+    'git worktree list && git branch -a',
+    'git worktree list | head',
+  ])('requests no Git confirmation for the read-only command %s', async (command) => {
+    const { result, confirmations } = await runWithConfirmation(command)
+
+    expect(confirmations).toBe(0)
+    // The command itself may fail (the temp dir is not a Git repository), but
+    // it must never be blocked by a Git-state confirmation.
+    expect(result.error ?? '').not.toContain('User denied')
+  })
+
+  it.each(['git clean -fd', 'git clean -fxd', 'git clean -f -d', 'git clean -dfx'])(
+    'requests a Git confirmation for the destructive command %s',
+    async (command) => {
+      const { gitConfirmations } = await runWithConfirmation(command)
+
+      expect(gitConfirmations.length).toBeGreaterThan(0)
+    },
+  )
+
+  it.each(['git clean -n', 'git clean --dry-run', 'git clean -nd'])(
+    'requests no confirmation for the dry-run command %s',
+    async (command) => {
+      const { confirmations } = await runWithConfirmation(command)
+
+      expect(confirmations).toBe(0)
+    },
+  )
+
+  it.each(['git add .', 'git commit -m "msg"'])(
+    'requests no Git confirmation for the routine local write %s',
+    async (command) => {
+      const { confirmations } = await runWithConfirmation(command)
+
+      expect(confirmations).toBe(0)
+    },
+  )
+
+  it('requests a Git confirmation for the mutating symbolic-ref form', async () => {
+    const { gitConfirmations } = await runWithConfirmation('git symbolic-ref HEAD refs/heads/other')
+
+    expect(gitConfirmations.length).toBeGreaterThan(0)
+  })
+
+  it('requests no Git confirmation for the read-only symbolic-ref form', async () => {
+    const { gitConfirmations } = await runWithConfirmation('git symbolic-ref HEAD')
+
+    expect(gitConfirmations.length).toBe(0)
+  })
+
+  it('requests a dangerous-command confirmation for an executable nested sudo', async () => {
+    const { confirmations } = await runWithConfirmation('echo "$(sudo whoami)"')
+
+    expect(confirmations).toBeGreaterThan(0)
+  })
+
+  it('requests no confirmation for a quoted sudo search', async () => {
+    const { confirmations } = await runWithConfirmation("grep -R 'sudo ' docs/")
+
+    expect(confirmations).toBe(0)
+  })
+
+  it('denies the command when the user rejects the Git confirmation', async () => {
+    const { result, confirmations } = await runWithConfirmation('git clean -fd', { approve: false })
+
+    expect(confirmations).toBeGreaterThan(0)
+    expect(result.success).toBe(false)
+  })
+
+  it('denies the Git mutation in night mode without prompting', async () => {
+    const { result, confirmations } = await runWithConfirmation('git clean -fd', {
+      context: { nightMode: true },
+    })
+
+    expect(confirmations).toBe(0)
+    expect(result.success).toBe(false)
+  })
+
+  it('denies the Git mutation for a sub-agent without prompting', async () => {
+    const { result, confirmations } = await runWithConfirmation('git clean -fd', {
+      context: { isSubAgent: true },
+    })
+
+    expect(confirmations).toBe(0)
+    expect(result.success).toBe(false)
+  })
+
+  it('auto-approves the Git mutation in dangerous mode', async () => {
+    const { confirmations } = await runWithConfirmation('git clean -fd', {
+      context: { dangerLevel: 'dangerous' },
+    })
+
+    expect(confirmations).toBe(0)
+  })
+})
 
 function parseDurationMs(match: RegExpMatchArray): number {
   if (match[1]) return Number(match[1]) * (match[2] === 'ms' ? 1 : 1000)
