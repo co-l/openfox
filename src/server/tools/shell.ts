@@ -12,21 +12,24 @@ import {
 } from './path-security.js'
 import { terminateProcessTree } from '../utils/process-tree.js'
 import { stripTailPipe } from './shell-tail.js'
+import { classifyGitCommand } from './git-command-risk.js'
 
 /**
  * Check if a command performs a Git mutation that changes branches or workspace state.
- * Does NOT strip quotes — doing so would let git "checkout" main bypass detection.
+ *
+ * The classification is deterministic: the command line is split on shell
+ * operators, every Git invocation is resolved from its real subcommand and
+ * flags, and read-only invocations (`git worktree list`, `git symbolic-ref HEAD`)
+ * are not reported. Anything that cannot be resolved deterministically — an
+ * alias, a wrapper, an unknown flag — fails closed and is reported.
+ *
+ * Quoted text is data, not code: `git commit -m 'sudo rm -rf ~/'` is a commit,
+ * while `echo "$(git clean -fd)"` really runs `git clean -fd` and is reported.
  */
 export function detectGitMutation(command: string): string | null {
-  // Check for git commands with mutation verbs (on the raw command, no quote stripping)
-  const gitMatch = command.match(
-    /\bgit\s+['"]?(?:checkout|switch|branch\s+(-[dDmcMC]|--delete|--move|--copy|--force|-f)|-b\s+\S+|merge|rebase|reset|cherry-pick|worktree|clone|pull|push|fetch|update-ref|symbolic-ref)/,
-  )
-  if (gitMatch) {
-    return gitMatch[0].trim()
-  }
-
-  return null
+  const classification = classifyGitCommand(command)
+  if (!classification) return null
+  return classification.invocation
 }
 
 export function formatDuration(ms: number): string {
@@ -104,20 +107,20 @@ export const runCommandTool = createTool<RunCommandArgs>(
     }
 
     // Detect Git mutations (checkout, switch, branch creation, etc.)
-    const mutationMatch = detectGitMutation(args.command)
-    if (mutationMatch) {
+    const classification = classifyGitCommand(args.command)
+    if (classification) {
       const desc = serverT(
         {
-          en: 'Command "{{cmd}}" modifies Git state ({{mutation}}). Allow this Git operation?',
+          en: 'Command "{{cmd}}" modifies Git state ({{mutation}}): {{reason}}. Allow this Git operation?',
           fr: 'La commande « {{cmd}} » modifie l’état Git ({{mutation}}). Autoriser cette opération Git ?',
         },
-        { cmd: args.command, mutation: mutationMatch },
+        { cmd: args.command, mutation: classification.invocation, reason: classification.reason },
       )
       const approved = await requestUserConfirmation(context, 'command', desc)
       if (!approved) {
         return helpers.error(
           // LLM-facing (rendered into the tool content) — English by design.
-          `User denied: "${mutationMatch}" modifies Git state. Use the workspace tool to switch workspaces or branches.`,
+          `User denied: "${classification.invocation}" modifies Git state. Use the workspace tool to switch workspaces or branches.`,
         )
       }
     }

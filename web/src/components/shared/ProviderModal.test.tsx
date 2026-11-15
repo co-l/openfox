@@ -39,6 +39,33 @@ async function renderProviderModal(props: Partial<ComponentProps<typeof Provider
     />,
   )
   await tick(waitMs)
+
+  // The reset effect populates the model list after mount. When an edit
+  // provider carries models, wait until the expanded model's controls are
+  // rendered so callers can query them deterministically instead of relying on
+  // a load-sensitive fixed sleep.
+  if (props.editProvider?.models?.length && props.initialStep !== 1) {
+    await vi.waitFor(
+      () => {
+        expect(document.body.querySelector('input[data-testid^="send-"]')).not.toBeNull()
+      },
+      { timeout: 5000 },
+    )
+  }
+}
+
+/**
+ * Wait until the expanded model's controls are rendered. The reset effect
+ * populates `models` asynchronously, so a fixed sleep is not reliable under
+ * CPU contention.
+ */
+async function waitForModelControls(): Promise<void> {
+  await vi.waitFor(
+    () => {
+      expect(document.body.querySelector('input[data-testid^="send-"]')).not.toBeNull()
+    },
+    { timeout: 5000 },
+  )
 }
 
 function providerWithModels(models: Array<Record<string, unknown>>) {
@@ -419,10 +446,31 @@ describe('ProviderModal - thinkingLevel persistence', () => {
     // Starts on step 1: the engine picker is only reachable from there.
     await renderProviderModal({ initialStep: undefined }, 100)
 
-    buttonByText('Account Provider')?.click()
-    await tick(0)
+    const accountPreset = await vi.waitFor(
+      () => {
+        const button = buttonByText('Account Provider')
+        expect(button).toBeDefined()
+        return button!
+      },
+      { timeout: 5000 },
+    )
+    accountPreset.click()
+    await vi.waitFor(
+      () => {
+        const nextButton = document.body.querySelector(
+          '[data-testid="provider-modal-next"]',
+        ) as HTMLButtonElement | null
+        expect(nextButton?.disabled).toBe(false)
+      },
+      { timeout: 5000 },
+    )
     buttonByText(engineName)?.click()
-    await tick(0)
+    await vi.waitFor(
+      () => {
+        expect(buttonByText(engineName)?.className).toContain('border-accent-primary')
+      },
+      { timeout: 5000 },
+    )
 
     const nextButton = document.body.querySelector('[data-testid="provider-modal-next"]') as HTMLButtonElement | null
     expect(nextButton?.disabled).toBe(false)
@@ -703,7 +751,7 @@ describe('ProviderModal - effort presets and override editor', () => {
           editModelId={editModelId}
         />,
       )
-      setTimeout(resolve, 200)
+      void waitForModelControls().then(resolve)
     })
   }
 
@@ -923,7 +971,7 @@ describe('ProviderModal - small context window warning', () => {
           editModelId="test-model"
         />,
       )
-      setTimeout(resolve, 200)
+      void waitForModelControls().then(resolve)
     })
   }
 
@@ -990,7 +1038,7 @@ describe('ProviderModal - model mode merge', () => {
           }}
         />,
       )
-      setTimeout(resolve, 200)
+      void waitForModelControls().then(resolve)
     })
   }
 
@@ -1012,6 +1060,14 @@ describe('ProviderModal - model mode merge', () => {
         }
         return new Response(JSON.stringify({ models: [], url: 'https://omniroute.example/v1' }), { status: 200 })
       }),
+    )
+    root.render(
+      <ProviderModal
+        isOpen={true}
+        onClose={vi.fn()}
+        onSave={onSaveMock as (provider: ProviderFormData) => void}
+        initialStep={1}
+      />,
     )
     await new Promise<void>((resolve) => {
       root.render(
@@ -1117,7 +1173,7 @@ describe('ProviderModal - model mode merge', () => {
           }}
         />,
       )
-      setTimeout(resolve, 200)
+      void waitForModelControls().then(resolve)
     })
   }
 
@@ -1353,7 +1409,7 @@ describe('ProviderModal - model mode merge', () => {
           initialStep={2}
         />,
       )
-      setTimeout(resolve, 200)
+      void waitForModelControls().then(resolve)
     })
 
     const syncButton = Array.from(document.body.querySelectorAll('button')).find((b) =>
@@ -1361,7 +1417,12 @@ describe('ProviderModal - model mode merge', () => {
     )
     expect(syncButton).toBeTruthy()
     syncButton?.click()
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await vi.waitFor(
+      () => {
+        expect(document.body.textContent).toContain('model-c-new')
+      },
+      { timeout: 5000 },
+    )
 
     // Click Save Provider
     const saveButton = document.body.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
@@ -1433,7 +1494,7 @@ describe('ProviderModal - model mode merge', () => {
           initialStep={2}
         />,
       )
-      setTimeout(resolve, 200)
+      void waitForModelControls().then(resolve)
     })
 
     const syncButton = Array.from(document.body.querySelectorAll('button')).find((b) =>
@@ -1441,7 +1502,12 @@ describe('ProviderModal - model mode merge', () => {
     )
     expect(syncButton).toBeTruthy()
     syncButton?.click()
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await vi.waitFor(
+      () => {
+        expect(document.body.textContent).toContain('gemini-3.1-pro')
+      },
+      { timeout: 5000 },
+    )
 
     const saveButton = document.body.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
     saveButton?.click()
@@ -1500,7 +1566,7 @@ describe('ProviderModal - model mode merge', () => {
           initialStep={2}
         />,
       )
-      setTimeout(resolve, 200)
+      void waitForModelControls().then(resolve)
     })
 
     const syncButton = Array.from(document.body.querySelectorAll('button')).find((b) =>
@@ -1508,7 +1574,12 @@ describe('ProviderModal - model mode merge', () => {
     )
     expect(syncButton).toBeTruthy()
     syncButton?.click()
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await vi.waitFor(
+      () => {
+        expect(document.body.textContent).not.toContain('model-b')
+      },
+      { timeout: 5000 },
+    )
 
     const saveButton = document.body.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
     saveButton?.click()
@@ -1558,7 +1629,7 @@ describe('ProviderModal - model mode merge', () => {
           initialStep={2}
         />,
       )
-      setTimeout(resolve, 200)
+      void waitForModelControls().then(resolve)
     })
 
     const syncButton = Array.from(document.body.querySelectorAll('button')).find((b) =>
@@ -1566,7 +1637,12 @@ describe('ProviderModal - model mode merge', () => {
     )
     expect(syncButton).toBeTruthy()
     syncButton?.click()
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await vi.waitFor(
+      () => {
+        expect(document.body.textContent).not.toContain('model-removed')
+      },
+      { timeout: 5000 },
+    )
 
     const saveButton = document.body.querySelector('[data-testid="provider-modal-save"]') as HTMLButtonElement | null
     saveButton?.click()
@@ -1677,7 +1753,14 @@ describe('ProviderModal - plugins and proxy informational banners (Step 1)', () 
       b.textContent?.includes('Ollama'),
     )
     ollamaBtn?.click()
-    await tick(50)
+    // The logo input disappears after the click's state update; wait for that
+    // observable result instead of a fixed sleep that is load-sensitive.
+    await vi.waitFor(
+      () => {
+        expect(document.body.querySelector('input[placeholder="https://example.com/logo.png"]')).toBeNull()
+      },
+      { timeout: 5000 },
+    )
 
     const hiddenLogoInput = document.body.querySelector('input[placeholder="https://example.com/logo.png"]')
     expect(hiddenLogoInput).toBeNull()
@@ -1697,6 +1780,15 @@ describe('ProviderModal - plugins and proxy informational banners (Step 1)', () 
         },
       },
       100,
+    )
+
+    // The reset effect hides the logo input asynchronously; wait for the
+    // observable result instead of a fixed sleep.
+    await vi.waitFor(
+      () => {
+        expect(document.body.querySelector('input[placeholder="https://example.com/logo.png"]')).toBeNull()
+      },
+      { timeout: 5000 },
     )
 
     const logoInput = document.body.querySelector('input[placeholder="https://example.com/logo.png"]')
@@ -1784,6 +1876,16 @@ describe('ProviderModal - provider auth zone context', () => {
       250,
     )
 
+    // The auth zone renders after the provider/auth state settles; wait for the
+    // call that carries the edited provider id instead of a fixed sleep.
+    await vi.waitFor(
+      () => {
+        const rpcCall = calls.find((call) => call.url.includes('/rpc/getAuthUi'))
+        expect((rpcCall?.body as { params?: { providerId?: string } })?.params?.providerId).toBe('edited-provider-id')
+      },
+      { timeout: 5000 },
+    )
+
     const rpcCall = calls.find((call) => call.url.includes('/rpc/getAuthUi'))
     expect(rpcCall).toBeDefined()
     expect((rpcCall?.body as { params?: { providerId?: string } }).params?.providerId).toBe('edited-provider-id')
@@ -1793,15 +1895,47 @@ describe('ProviderModal - provider auth zone context', () => {
     const calls = stubAuthFetch()
     await renderProviderModal({ initialStep: undefined }, 100)
 
-    buttonByText('Google Antigravity')?.click()
-    await tick(0)
-    const nextButton = document.body.querySelector('[data-testid="provider-modal-next"]') as HTMLButtonElement | null
-    nextButton?.click()
-    await tick(250)
+    const presetButton = await vi.waitFor(
+      () => {
+        const button = buttonByText('Google Antigravity')
+        expect(button).toBeDefined()
+        return button!
+      },
+      { timeout: 5000 },
+    )
+    presetButton.click()
 
+    // Next enables once the preset's URL lands in state; wait for it so the
+    // draft-provider effect sees the auth adapter.
+    const nextButton = await vi.waitFor(
+      () => {
+        const button = document.body.querySelector('[data-testid="provider-modal-next"]') as HTMLButtonElement | null
+        expect(button).not.toBeNull()
+        expect(button?.disabled).toBe(false)
+        return button!
+      },
+      { timeout: 5000 },
+    )
+    nextButton.click()
+
+    await vi.waitFor(
+      () => {
+        const createCall = calls.find((call) => call.url.endsWith('/api/providers') && !call.url.includes('models'))
+        expect(createCall).toBeDefined()
+      },
+      { timeout: 5000 },
+    )
     const createCall = calls.find((call) => call.url.endsWith('/api/providers') && !call.url.includes('models'))
     expect(createCall).toBeDefined()
     // The zone re-renders once the draft id exists, so assert on the latest call.
+    await vi.waitFor(
+      () => {
+        const rpcCalls = calls.filter((call) => call.url.includes('/rpc/getAuthUi'))
+        const last = rpcCalls[rpcCalls.length - 1]
+        expect((last?.body as { params?: { providerId?: string } })?.params?.providerId).toBe('draft-provider-id')
+      },
+      { timeout: 5000 },
+    )
     const rpcCalls = calls.filter((call) => call.url.includes('/rpc/getAuthUi'))
     expect(rpcCalls.length).toBeGreaterThan(0)
     expect((rpcCalls[rpcCalls.length - 1]?.body as { params?: { providerId?: string } }).params?.providerId).toBe(
